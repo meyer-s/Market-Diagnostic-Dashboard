@@ -1215,7 +1215,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
         <div className="mb-4 md:mb-6 border-b border-stealth-700 flex gap-4">
           <button
             onClick={() => setBondTab("core")}
-            className={`pb-3 px-2 font-semibold border-b-2 transition ${
+            className={`min-h-11 pb-3 px-2 font-semibold border-b-2 transition ${
               bondTab === "core"
                 ? "border-blue-500 text-blue-300"
                 : "border-transparent text-stealth-400 hover:text-stealth-300"
@@ -1225,7 +1225,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
           </button>
           <button
             onClick={() => setBondTab("public")}
-            className={`pb-3 px-2 font-semibold border-b-2 transition ${
+            className={`min-h-11 pb-3 px-2 font-semibold border-b-2 transition ${
               bondTab === "public"
                 ? "border-emerald-500 text-emerald-300"
                 : "border-transparent text-stealth-400 hover:text-stealth-300"
@@ -1235,7 +1235,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
           </button>
           <button
             onClick={() => setBondTab("yield")}
-            className={`pb-3 px-2 font-semibold border-b-2 transition ${
+            className={`min-h-11 pb-3 px-2 font-semibold border-b-2 transition ${
               bondTab === "yield"
                 ? "border-cyan-500 text-cyan-300"
                 : "border-transparent text-stealth-400 hover:text-stealth-300"

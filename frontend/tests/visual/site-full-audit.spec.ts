@@ -520,9 +520,13 @@ async function inspectTargetSizes(page: Page) {
             control.matches('input[type="checkbox"], input[type="radio"]') &&
             control.closest("label");
           const rect = (usesLabelTarget || element).getBoundingClientRect();
-          const priority = element.matches(
-            'button, input, select, textarea, summary, [role="button"], .field-button, .topbar a, .section-nav-link, [data-touch-target="priority"]',
+          const explicitPriority = element.matches(
+            'input, select, textarea, .field-button, .field-icon-button, .topbar a, .topbar button, .section-nav-link, [data-touch-target="priority"]',
           );
+          const coarsePointerControl =
+            window.matchMedia("(any-pointer: coarse)").matches &&
+            element.matches('button, summary, [role="button"]');
+          const priority = explicitPriority || coarsePointerControl;
           return { rect, priority };
         })
         .filter(({ rect }) => rect.width > 0 && rect.height > 0);
@@ -752,6 +756,7 @@ test("capture every route, state, indicator, and recap at full page height", asy
       locale: "en-US",
       timezoneId: "America/New_York",
       deviceScaleFactor: 1,
+      hasTouch: viewport.name === "mobile",
     });
     const page = await context.newPage();
     page.setDefaultTimeout(15_000);

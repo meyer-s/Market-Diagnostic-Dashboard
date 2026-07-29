@@ -1098,19 +1098,17 @@ textarea {
   font: inherit;
 }
 
-button,
-input,
+input:not([type="checkbox"]):not([type="radio"]),
 select,
-textarea,
-summary,
-[role="button"] {
+textarea {
   min-height: 44px;
 }
 
 button,
 summary,
 [role="button"] {
-  min-width: 44px;
+  min-width: 24px;
+  min-height: 24px;
 }
 
 button,
@@ -1153,12 +1151,19 @@ textarea::placeholder {
   line-height: 1rem !important;
 }
 
-@media (pointer: coarse) {
-  :where(button, input, select, textarea, summary, [role="button"]) {
+@media (pointer: coarse), (any-pointer: coarse) {
+  button,
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea,
+  summary,
+  [role="button"] {
     min-height: 44px;
   }
 
-  :where(button, summary, [role="button"]) {
+  button,
+  summary,
+  [role="button"] {
     min-width: 44px;
   }
 }

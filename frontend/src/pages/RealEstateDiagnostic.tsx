@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -15,6 +15,7 @@ import {
 } from "recharts";
 import MarketLoading from "../components/ui/MarketLoading";
 import DataScroller from "../components/ui/DataScroller";
+import SupportingContextTooltip from "../components/ui/SupportingContextTooltip";
 import CommercialRealEstateTab from "../components/realEstate/CommercialRealEstateTab";
 import { useApi } from "../hooks/useApi";
 import {
@@ -303,30 +304,6 @@ const Kicker = ({ children }: { children: React.ReactNode }) => (
   <p className="page-kicker mb-3">{children}</p>
 );
 
-function HoverTooltip({ children, tip, width = "w-64" }: { children: React.ReactNode; tip: string; width?: string }) {
-  const tooltipId = useId();
-  return (
-    <div className="group/htip relative inline-flex max-w-full items-start gap-1">
-      {children}
-      <button
-        type="button"
-        aria-describedby={tooltipId}
-        aria-label="Show supporting context"
-        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-stealth-600 text-xs font-semibold text-stealth-300 transition-colors hover:border-stealth-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-      >
-        i
-      </button>
-      <span
-        id={tooltipId}
-        role="tooltip"
-        className={`pointer-events-none absolute bottom-full left-0 z-30 mb-1.5 hidden max-w-[min(20rem,calc(100vw-2rem))] ${width} rounded-lg border border-stealth-600 bg-stealth-950/98 px-3 py-2 text-xs font-normal text-stealth-100 shadow-[0_14px_44px_rgba(2,6,23,0.9)] backdrop-blur-xl group-hover/htip:block group-focus-within/htip:block`}
-      >
-        {tip}
-      </span>
-    </div>
-  );
-}
-
 function LabelCaps({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return <p className={`text-xs uppercase tracking-[0.14em] text-stealth-500 ${className}`.trim()}>{children}</p>;
 }
@@ -351,11 +328,11 @@ function CardHeader({
       <Kicker>{kicker}</Kicker>
       <div className="flex items-start gap-2">
         {tooltipText ? (
-          <HoverTooltip tip={tooltipText} width="w-72">
-            <h2 className="text-base font-semibold text-stealth-100">{title}</h2>
-          </HoverTooltip>
+          <SupportingContextTooltip text={tooltipText}>
+            <h2 className="min-w-0 break-words text-base font-semibold text-stealth-100">{title}</h2>
+          </SupportingContextTooltip>
         ) : (
-          <h2 className="text-base font-semibold text-stealth-100">{title}</h2>
+          <h2 className="min-w-0 break-words text-base font-semibold text-stealth-100">{title}</h2>
         )}
       </div>
       {description ? <BodyHint>{description}</BodyHint> : null}
@@ -375,9 +352,9 @@ function SectionHeader({
   return (
     <div>
       <p className="page-kicker">{kicker}</p>
-      <HoverTooltip tip={tooltipText} width="w-80">
-        <h2 className="text-lg font-semibold text-stealth-100">{title}</h2>
-      </HoverTooltip>
+      <SupportingContextTooltip text={tooltipText}>
+        <h2 className="min-w-0 break-words text-lg font-semibold text-stealth-100">{title}</h2>
+      </SupportingContextTooltip>
     </div>
   );
 }
@@ -396,9 +373,9 @@ function StatTile({
   return (
     <div className="surface-card-muted px-2.5 py-2">
       {detail ? (
-        <HoverTooltip tip={String(detail)} width="w-64">
+        <SupportingContextTooltip text={String(detail)}>
           <LabelCaps>{label}</LabelCaps>
-        </HoverTooltip>
+        </SupportingContextTooltip>
       ) : (
         <LabelCaps>{label}</LabelCaps>
       )}
@@ -420,9 +397,9 @@ function SignalTile({
 }) {
   return (
     <div className="surface-card-muted px-3 py-2.5">
-      <HoverTooltip tip={String(detail)} width="w-72">
+      <SupportingContextTooltip text={String(detail)}>
         <LabelCaps>{label}</LabelCaps>
-      </HoverTooltip>
+      </SupportingContextTooltip>
       <p className={`mt-1 text-sm font-semibold ${tone}`}>{title}</p>
     </div>
   );
@@ -454,21 +431,20 @@ function GroupSummaryStrip({ groups }: { groups: GroupCard[] }) {
     <div className="mt-3 border-t border-stealth-800/60 pt-3">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <HoverTooltip
-            tip="Grouped pressure scores: higher means more stress in that segment. Financing and REIT scores confirm whether listed-market and credit channels are amplifying the residential read."
-            width="w-80"
+          <SupportingContextTooltip
+            text="Grouped pressure scores: higher means more stress in that segment. Financing and REIT scores confirm whether listed-market and credit channels are amplifying the residential read."
           >
             <LabelCaps className="mb-0">Segment Pressure by Group</LabelCaps>
-          </HoverTooltip>
+          </SupportingContextTooltip>
         </div>
       </div>
       <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
         {groups.map((group) => (
           <div key={group.group} className="surface-card-muted px-3 py-2.5">
             <div className="flex items-center justify-between gap-2">
-              <HoverTooltip tip={`Members: ${group.components.join(" · ")}`} width="w-64">
+              <SupportingContextTooltip text={`Members: ${group.components.join(" · ")}`}>
                 <LabelCaps className="mb-0">{group.label}</LabelCaps>
-              </HoverTooltip>
+              </SupportingContextTooltip>
               <BodyHint>{group.weight.toFixed(0)}% wt</BodyHint>
             </div>
             <div className="mt-1 flex items-end justify-between gap-3">
@@ -2042,12 +2018,12 @@ export default function RealEstateDiagnostic() {
 
       {/* Sources footer */}
       <div className="flex items-center justify-end gap-2">
-        <HoverTooltip
-          tip={`Listed real-estate proxies via Yahoo Finance. Mortgage rates, Treasury yields, HY OAS, housing supply, new home sales, rent CPI, housing CPI, median housing CPI, and shelter CPI via FRED. As of ${overview.as_of.slice(0, 16).replace("T", " ")} UTC.`}
-          width="w-80"
+        <SupportingContextTooltip
+          text={`Listed real-estate proxies via Yahoo Finance. Mortgage rates, Treasury yields, HY OAS, housing supply, new home sales, rent CPI, housing CPI, median housing CPI, and shelter CPI via FRED. As of ${overview.as_of.slice(0, 16).replace("T", " ")} UTC.`}
+          align="end"
         >
           <LabelCaps className="mb-0">Sources</LabelCaps>
-        </HoverTooltip>
+        </SupportingContextTooltip>
       </div>
 
       <div id="real-estate-methodology" className="scroll-mt-32">

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import AccessibleChartFrame from "./AccessibleChartFrame";
@@ -6,9 +6,13 @@ import FormField from "./FormField";
 import PageState, { type PageStateVariant } from "./PageState";
 import SectionNav from "./SectionNav";
 import SegmentedControl from "./SegmentedControl";
+import SupportingContextTooltip from "./SupportingContextTooltip";
 
 describe("shared interface primitives", () => {
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
 
   it("gives charts a name, interpretation, and discoverable data alternative", () => {
     render(
@@ -73,6 +77,50 @@ describe("shared interface primitives", () => {
     expect(screen.getByRole("button", { name: "1 month" }).getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "1 year" }));
     expect(onChange).toHaveBeenCalledWith("1y");
+  });
+
+  it("keeps supporting context visually compact without shrinking its hit target", () => {
+    vi.useFakeTimers();
+    render(
+      <SupportingContextTooltip
+        id="stability-context"
+        text="Higher means the complex is absorbing large moves cleanly."
+        align="end"
+      >
+        <h2>Stability history</h2>
+      </SupportingContextTooltip>,
+    );
+
+    const trigger = screen.getByRole("button", { name: "Show supporting context" });
+    const visualRing = trigger.querySelector("span");
+    const tooltip = screen.getByRole("tooltip");
+
+    expect(trigger.getAttribute("aria-describedby")).toBe("stability-context");
+    expect(trigger.classList.contains("h-11")).toBe(true);
+    expect(trigger.classList.contains("w-11")).toBe(true);
+    expect(visualRing?.classList.contains("h-5")).toBe(true);
+    expect(visualRing?.classList.contains("w-5")).toBe(true);
+    expect(tooltip.getAttribute("data-tooltip-size")).toBe("supporting");
+    expect(tooltip.classList.contains("w-64")).toBe(true);
+    expect(tooltip.classList.contains("right-0")).toBe(true);
+    expect(tooltip.classList.contains("hidden")).toBe(true);
+
+    fireEvent.mouseEnter(trigger);
+    expect(tooltip.classList.contains("block")).toBe(true);
+
+    fireEvent.mouseLeave(trigger);
+    fireEvent.mouseEnter(tooltip);
+    act(() => vi.advanceTimersByTime(160));
+    expect(tooltip.classList.contains("block")).toBe(true);
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(tooltip.classList.contains("hidden")).toBe(true);
+
+    fireEvent.focus(trigger);
+    expect(tooltip.classList.contains("block")).toBe(true);
+    fireEvent.blur(trigger);
+    act(() => vi.advanceTimersByTime(160));
+    expect(tooltip.classList.contains("hidden")).toBe(true);
   });
 
   it("provides a named in-page return path for long research views", () => {

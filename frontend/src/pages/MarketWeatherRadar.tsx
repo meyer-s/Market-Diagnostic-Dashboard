@@ -602,8 +602,8 @@ export default function MarketWeatherRadar() {
             </div>
           </section>
 
-          <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-stealth-300">
-            <input type="checkbox" checked={autoRefresh} onChange={(event) => setAutoRefresh(event.target.checked)} className="accent-sky-400" />
+          <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 text-sm text-stealth-300">
+            <input type="checkbox" checked={autoRefresh} onChange={(event) => setAutoRefresh(event.target.checked)} className="h-4 min-h-4 w-4 min-w-4 accent-sky-400" />
             Refresh the applied field every minute
           </label>
         </div>

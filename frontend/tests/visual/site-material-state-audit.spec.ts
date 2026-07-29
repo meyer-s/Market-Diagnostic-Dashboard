@@ -819,6 +819,7 @@ test("capture materially distinct interactive states at full page height", async
       locale: "en-US",
       timezoneId: "America/New_York",
       deviceScaleFactor: 1,
+      hasTouch: viewport.name === "mobile",
     });
     await context.addInitScript(() => window.sessionStorage.clear());
     let activeFixture: SecretFixture | undefined;
@@ -898,10 +899,17 @@ test("capture materially distinct interactive states at full page height", async
           page.locator('[role="tab"][aria-selected="true"]:visible').count(),
           page
             .locator(
-              'button:visible, input:visible, select:visible, textarea:visible, summary:visible, [role="button"]:visible, .field-button:visible, .topbar a:visible, .section-nav-link:visible, [data-touch-target="priority"]:visible',
+              'button:visible, input:visible, select:visible, textarea:visible, summary:visible, [role="button"]:visible, .field-button:visible, .field-icon-button:visible, .topbar a:visible, .topbar button:visible, .section-nav-link:visible, [data-touch-target="priority"]:visible',
             )
             .evaluateAll((elements) =>
               elements.filter((element) => {
+                const explicitPriority = element.matches(
+                  'input, select, textarea, .field-button, .field-icon-button, .topbar a, .topbar button, .section-nav-link, [data-touch-target="priority"]',
+                );
+                const coarsePointerControl =
+                  window.matchMedia("(any-pointer: coarse)").matches &&
+                  element.matches('button, summary, [role="button"]');
+                if (!explicitPriority && !coarsePointerControl) return false;
                 const control = element as HTMLInputElement;
                 const labelTarget =
                   control.matches('input[type="checkbox"], input[type="radio"]') &&

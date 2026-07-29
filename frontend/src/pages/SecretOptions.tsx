@@ -4250,7 +4250,7 @@ export default function SecretOptions() {
               setSecretAuthRequired(true);
               setSecretAuthMessage("Enter a write-scoped credential to enable changes.");
             }}
-            className="rounded-md border border-sky-500/45 px-2.5 py-1 font-semibold hover:bg-sky-800/30"
+            className="min-h-11 rounded-md border border-sky-500/45 px-2.5 py-1 font-semibold hover:bg-sky-800/30"
           >
             Use write credential
           </button>
@@ -4740,7 +4740,7 @@ export default function SecretOptions() {
               onClick={() => void refreshPositionList()}
               disabled={loading || listRefreshPending}
               title={listRefreshPending ? "Fresh quotes and list updates are pending" : "Refresh all positions and review windows"}
-              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition disabled:cursor-wait ${
+              className={`inline-flex min-h-11 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition disabled:cursor-wait ${
                 listRefreshPending
                   ? "border-amber-400/35 bg-amber-500/10 text-amber-100"
                   : listRefreshSettled
@@ -4755,7 +4755,7 @@ export default function SecretOptions() {
               onClick={openAddTrade}
               disabled={secretMutationDisabled}
               title={secretOptionsReadOnly ? "A write-scoped credential is required to add a position" : undefined}
-              className="flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-45"
+              className="flex min-h-11 items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-45"
             >
               <span className="text-base leading-none">+</span> Add Trade
             </button>
@@ -4765,7 +4765,7 @@ export default function SecretOptions() {
                 loadLearningSummary();
                 setShowClosedLog(true);
               }}
-              className="rounded-lg bg-stealth-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-stealth-600"
+              className="min-h-11 rounded-lg bg-stealth-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-stealth-600"
             >
               P/L History
             </button>
@@ -5727,7 +5727,7 @@ export default function SecretOptions() {
                         type="button"
                         disabled={riskPolicySaving}
                         onClick={approveRiskPolicy}
-                        className="rounded border border-amber-600/50 bg-amber-900/35 px-2.5 py-1.5 font-semibold text-amber-100 hover:bg-amber-800/45 disabled:opacity-50"
+                        className="min-h-11 rounded border border-amber-600/50 bg-amber-900/35 px-2.5 py-1.5 font-semibold text-amber-100 hover:bg-amber-800/45 disabled:opacity-50"
                       >
                         {riskPolicySaving ? "Saving..." : "Approve draft guardrails"}
                       </button>
@@ -6446,7 +6446,7 @@ export default function SecretOptions() {
                         type="button"
                         disabled={!selectedThesisAssessment?.assessment}
                         onClick={applySuggestedDecisionWindow}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-amber-600/50 bg-amber-900/35 px-2.5 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-800/45 disabled:opacity-50"
+                        className="inline-flex min-h-11 items-center gap-1.5 rounded-md border border-amber-600/50 bg-amber-900/35 px-2.5 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-800/45 disabled:opacity-50"
                       >
                         <CalendarClock className="h-3.5 w-3.5" aria-hidden="true" />
                         Apply suggested dates
@@ -7693,7 +7693,7 @@ export default function SecretOptions() {
                     loadTrainingOutcomes();
                     setShowTrainingOutcomes(true);
                   }}
-                  className="rounded-full border border-indigo-400/45 bg-indigo-500/20 px-3 py-1.5 text-xs font-semibold text-indigo-100 hover:bg-indigo-500/30"
+                  className="min-h-11 rounded-full border border-indigo-400/45 bg-indigo-500/20 px-3 py-1.5 text-xs font-semibold text-indigo-100 hover:bg-indigo-500/30"
                 >
                   Open Scanner Outcomes
                 </button>

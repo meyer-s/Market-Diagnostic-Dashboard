@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -20,6 +20,7 @@ import {
 } from "recharts";
 import MarketLoading from "../components/ui/MarketLoading";
 import DataScroller from "../components/ui/DataScroller";
+import SupportingContextTooltip from "../components/ui/SupportingContextTooltip";
 import { useApi } from "../hooks/useApi";
 import {
   CHART_MARGIN,
@@ -252,35 +253,6 @@ const BIOFUEL_COLORS: Record<string, string> = {
   ZL: "#60a5fa",
 };
 
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-// Shared hover tooltip (replaces standalone InfoTooltip icon)
-// ---------------------------------------------------------------------------
-
-function HoverTooltip({ children, tip, width = "w-64" }: { children: React.ReactNode; tip: string; width?: string }) {
-  const tooltipId = useId();
-  return (
-    <div className="group/htip relative inline-flex max-w-full items-start gap-1">
-      {children}
-      <button
-        type="button"
-        aria-describedby={tooltipId}
-        aria-label="Show supporting context"
-        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-stealth-600 text-xs font-semibold text-stealth-300 transition-colors hover:border-stealth-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-      >
-        i
-      </button>
-      <span
-        id={tooltipId}
-        role="tooltip"
-        className={`pointer-events-none absolute bottom-full left-0 z-30 mb-1.5 hidden max-w-[min(20rem,calc(100vw-2rem))] ${width} rounded-lg border border-stealth-600 bg-stealth-950/98 px-3 py-2 text-xs font-normal text-stealth-100 shadow-[0_14px_44px_rgba(2,6,23,0.9)] backdrop-blur-xl group-hover/htip:block group-focus-within/htip:block`}
-      >
-        {tip}
-      </span>
-    </div>
-  );
-}
-
 // Shared primitives matching app design system
 // ---------------------------------------------------------------------------
 
@@ -312,11 +284,11 @@ function CardHeader({
       <Kicker>{kicker}</Kicker>
       <div className="flex items-start gap-2">
         {tooltipText ? (
-          <HoverTooltip tip={tooltipText} width="w-72">
-            <h2 className="text-base font-semibold text-stealth-100">{title}</h2>
-          </HoverTooltip>
+          <SupportingContextTooltip text={tooltipText}>
+            <h2 className="min-w-0 break-words text-base font-semibold text-stealth-100">{title}</h2>
+          </SupportingContextTooltip>
         ) : (
-          <h2 className="text-base font-semibold text-stealth-100">{title}</h2>
+          <h2 className="min-w-0 break-words text-base font-semibold text-stealth-100">{title}</h2>
         )}
       </div>
       {description ? <BodyHint>{description}</BodyHint> : null}
@@ -336,9 +308,9 @@ function SectionHeader({
   return (
     <div>
       <p className="page-kicker">{kicker}</p>
-      <HoverTooltip tip={tooltipText} width="w-80">
-        <h2 className="text-lg font-semibold text-stealth-100">{title}</h2>
-      </HoverTooltip>
+      <SupportingContextTooltip text={tooltipText}>
+        <h2 className="min-w-0 break-words text-lg font-semibold text-stealth-100">{title}</h2>
+      </SupportingContextTooltip>
     </div>
   );
 }
@@ -420,9 +392,9 @@ function GroupSummaryStrip({ groups }: { groups: GroupRow[] }) {
     <div className="mt-3 border-t border-stealth-800/60 pt-3">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <HoverTooltip tip="Grouped composite leadership compressed into one strip so the futures table remains the primary market-structure read.">
+          <SupportingContextTooltip text="Grouped composite leadership compressed into one strip so the futures table remains the primary market-structure read.">
             <LabelCaps className="mb-0">Group Leadership</LabelCaps>
-          </HoverTooltip>
+          </SupportingContextTooltip>
         </div>
       </div>
       <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
@@ -761,9 +733,9 @@ function RetailPricesChart({
         <div className="mt-4 border-t border-stealth-800/60 pt-3">
           <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
             <div className="flex items-center gap-2">
-              <HoverTooltip tip="Indexed to 100 so crude can be compared against retail catch-up without spending a separate card on pass-through timing.">
+              <SupportingContextTooltip text="Indexed to 100 so crude can be compared against retail catch-up without spending a separate card on pass-through timing.">
                 <LabelCaps className="mb-0">Pass-Through Lag</LabelCaps>
-              </HoverTooltip>
+              </SupportingContextTooltip>
             </div>
             <div className="flex flex-wrap gap-2">
               <LegendPill color="#f97316">WTI Crude</LegendPill>
@@ -1418,9 +1390,9 @@ function GenerationMixPanel({ mix }: { mix: GenerationMix }) {
       )}
       <div className="mt-3 flex justify-end">
         {summary.notes ? (
-          <HoverTooltip tip={summary.notes} width="w-72">
+          <SupportingContextTooltip text={summary.notes} align="end">
             <LabelCaps className="mb-0">Notes</LabelCaps>
-          </HoverTooltip>
+          </SupportingContextTooltip>
         ) : null}
       </div>
     </div>
@@ -1921,12 +1893,12 @@ export default function EnergyIndex() {
       )}
 
       <div className="flex items-center justify-end gap-2">
-        <HoverTooltip
-          tip={`Futures and biofuel-linked contracts via Yahoo Finance. Retail prices and inventory via FRED/EIA. Generation mix via ${mix?.source ?? "EIA annual data"}${mix?.latest_year ? ` (${mix.latest_year})` : ""}. ETFs via Yahoo Finance. As of ${overview.as_of.slice(0, 16).replace("T", " ")} UTC.`}
-          width="w-80"
+        <SupportingContextTooltip
+          text={`Futures and biofuel-linked contracts via Yahoo Finance. Retail prices and inventory via FRED/EIA. Generation mix via ${mix?.source ?? "EIA annual data"}${mix?.latest_year ? ` (${mix.latest_year})` : ""}. ETFs via Yahoo Finance. As of ${overview.as_of.slice(0, 16).replace("T", " ")} UTC.`}
+          align="end"
         >
           <LabelCaps className="mb-0">Sources</LabelCaps>
-        </HoverTooltip>
+        </SupportingContextTooltip>
       </div>
 
       <div id="energy-methodology" className="scroll-mt-32">
