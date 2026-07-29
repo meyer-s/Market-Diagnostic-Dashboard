@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { apiFetch } from "../utils/apiUtils";
+import { apiFetch, getErrorMessage } from "../utils/apiUtils";
 import { loadingStore } from "../utils/loadingStore";
+
+const DEFAULT_READ_TIMEOUT_MS = 20_000;
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException
@@ -11,13 +13,17 @@ function isAbortError(error: unknown): boolean {
       && error.name === "AbortError";
 }
 
-interface UseApiOptions {
+export interface UseApiOptions {
   retainPreviousData?: boolean;
+  timeoutMs?: number;
 }
 
 export function useApi<T>(
   endpoint: string,
-  { retainPreviousData = true }: UseApiOptions = {},
+  {
+    retainPreviousData = true,
+    timeoutMs = DEFAULT_READ_TIMEOUT_MS,
+  }: UseApiOptions = {},
 ) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
@@ -47,7 +53,7 @@ export function useApi<T>(
     setError(null);
     if (!retainPreviousData) setData(null);
     loadingStore.start();
-    void apiFetch<T>(endpoint, { signal: controller.signal })
+    void apiFetch<T>(endpoint, { signal: controller.signal, timeoutMs })
       .then((result) => {
         if (!active || generation !== requestGeneration.current) return;
         setData(result);
@@ -56,7 +62,7 @@ export function useApi<T>(
         if (!active || generation !== requestGeneration.current || controller.signal.aborted || isAbortError(err)) {
           return;
         }
-        const message = err instanceof Error ? err.message : String(err);
+        const message = getErrorMessage(err);
         console.error('Fetch error for', endpoint, ':', message);
         setError(message);
       })
@@ -72,7 +78,7 @@ export function useApi<T>(
       controller.abort();
       finishLoading();
     };
-  }, [endpoint, refetchTrigger, retainPreviousData]);
+  }, [endpoint, refetchTrigger, retainPreviousData, timeoutMs]);
 
   const refetch = useCallback(() => {
     setRefetchTrigger(prev => prev + 1);

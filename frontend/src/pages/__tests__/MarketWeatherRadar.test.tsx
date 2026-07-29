@@ -209,6 +209,19 @@ describe("MarketWeatherRadar report state", () => {
     expect(controls?.className).not.toContain("hidden");
   });
 
+  it("keeps settings directly discoverable from the collapsed mobile report", async () => {
+    renderPage("/market-weather?symbol=NVDA&comparison=pair&compare=QQQ&timeframe=1D&bars=750");
+
+    const settings = screen.getByRole("button", { name: "Open analysis settings" });
+    fireEvent.click(settings);
+
+    expect(screen.getByRole("dialog", { name: "Field settings" })).not.toBeNull();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Close field settings" })).toBe(document.activeElement));
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Field settings" })).toBeNull());
+    await waitFor(() => expect(settings).toBe(document.activeElement));
+  });
+
   it("exposes index, currency, sector, and custom competitor controls without silently replacing identity pairs", () => {
     renderPage("/market-weather?symbol=SPY&comparison=pair&compare=SPY");
 

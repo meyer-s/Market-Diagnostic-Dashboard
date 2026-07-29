@@ -19,13 +19,14 @@ import requests
 import time
 from datetime import datetime, timedelta
 from contextlib import contextmanager
+from app.core.config import settings
 from app.core.db import SessionLocal
 from app.models.precious_metals import MetalPrice
 from app.models.alternative_assets import CryptoPrice, MacroLiquidityData
 from sqlalchemy import func
 import statistics
 
-FRED_API_KEY = "6f12b75f50396346d15aa95aac7beaef"
+FRED_API_KEY = settings.FRED_API_KEY
 FRED_BASE_URL = "https://api.stlouisfed.org/fred"
 COINGECKO_BASE = "https://api.coingecko.com/api/v3"
 DEFILLAMA_BASE = "https://api.llama.fi"
@@ -41,6 +42,8 @@ def get_db_session():
 
 def fetch_fred_series(series_id: str, days_back: int = 365) -> dict:
     """Fetch data from FRED API"""
+    if not FRED_API_KEY:
+        raise RuntimeError("FRED_API_KEY is required to fetch component history")
     end_date = datetime.now()
     start_date = end_date - timedelta(days=days_back)
     

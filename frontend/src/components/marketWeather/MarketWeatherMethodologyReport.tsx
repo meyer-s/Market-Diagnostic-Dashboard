@@ -420,7 +420,12 @@ function formatAvailability(value: boolean | undefined): string {
 
 function Formula({ children }: { children: ReactNode }) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-sky-400/15 bg-slate-950/55 px-3 py-2.5 font-mono text-[11px] leading-5 text-sky-100 sm:text-xs">
+    <div
+      role="region"
+      aria-label="Formula"
+      tabIndex={0}
+      className="overflow-x-auto rounded-xl border border-sky-400/15 bg-stealth-950/55 px-3 py-2.5 font-mono text-xs leading-5 text-sky-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 sm:text-xs"
+    >
       {children}
     </div>
   );
@@ -445,17 +450,17 @@ function ReportCallout({
   return (
     <div className={`rounded-xl border p-3 ${tones[tone]}`}>
       <div className="text-xs font-semibold uppercase tracking-[0.14em]">{title}</div>
-      <div className="mt-1.5 text-xs leading-5 text-slate-300 sm:text-sm sm:leading-6">{children}</div>
+      <div className="mt-1.5 text-xs leading-5 text-stealth-300 sm:text-sm sm:leading-6">{children}</div>
     </div>
   );
 }
 
 function MethodBlock({ title, formula, children }: { title: string; formula?: ReactNode; children: ReactNode }) {
   return (
-    <article className="rounded-xl border border-stealth-700 bg-slate-950/25 p-3 sm:p-4">
+    <article className="rounded-xl border border-stealth-700 bg-stealth-950/25 p-3 sm:p-4">
       <h4 className="text-sm font-semibold text-white">{title}</h4>
       {formula ? <div className="mt-2"><Formula>{formula}</Formula></div> : null}
-      <div className="mt-2 text-xs leading-5 text-slate-400 sm:text-sm sm:leading-6">{children}</div>
+      <div className="mt-2 text-xs leading-5 text-stealth-400 sm:text-sm sm:leading-6">{children}</div>
     </article>
   );
 }
@@ -472,25 +477,25 @@ function Chapter({ number, title, synopsis, children }: { number: string; title:
   const contentId = useId();
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-stealth-700 bg-slate-950/20">
+    <section className="overflow-hidden rounded-2xl border border-stealth-700 bg-stealth-950/20">
       <button
         type="button"
         className="flex w-full items-start justify-between gap-4 p-3 text-left transition hover:bg-white/[0.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 sm:p-4"
         aria-expanded={open}
-        aria-controls={contentId}
+        aria-controls={open ? contentId : undefined}
         onClick={() => {
           if (accordion) accordion.setActiveChapter(open ? null : number);
           else setLocalOpen((current) => !current);
         }}
       >
         <span className="flex min-w-0 items-start gap-3">
-          <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-sky-400/20 bg-sky-400/[0.07] font-mono text-[10px] font-semibold text-sky-200">{number}</span>
+          <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-sky-400/20 bg-sky-400/[0.07] font-mono text-xs font-semibold text-sky-200">{number}</span>
           <span className="min-w-0">
             <span role="heading" aria-level={3} className="block text-sm font-semibold text-white sm:text-base">{title}</span>
-            <span className="mt-0.5 block text-xs leading-5 text-slate-400">{synopsis}</span>
+            <span className="mt-0.5 block text-xs leading-5 text-stealth-400">{synopsis}</span>
           </span>
         </span>
-        <ChevronDown className={`mt-1 h-4 w-4 shrink-0 text-slate-500 transition-transform ${open ? "rotate-180" : ""}`} />
+        <ChevronDown className={`mt-1 h-4 w-4 shrink-0 text-stealth-500 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open ? (
         <div id={contentId} className="border-t border-stealth-700 p-3 sm:p-4" style={{ contentVisibility: "auto" }}>
@@ -505,7 +510,7 @@ function EvolutionTrack({ title, steps }: { title: string; steps: EvolutionStep[
   const dispositionTone: Record<EvolutionStep["disposition"], string> = {
     Retained: "border-emerald-400/25 bg-emerald-400/[0.06] text-emerald-200",
     Adapted: "border-sky-400/25 bg-sky-400/[0.06] text-sky-200",
-    "Retired from primary view": "border-slate-500/35 bg-slate-500/[0.06] text-slate-300",
+    "Retired from primary view": "border-stealth-500/35 bg-stealth-500/[0.06] text-stealth-300",
     "Added on the web": "border-violet-400/25 bg-violet-400/[0.06] text-violet-200",
   };
 
@@ -514,13 +519,13 @@ function EvolutionTrack({ title, steps }: { title: string; steps: EvolutionStep[
       <h4 className="text-sm font-semibold text-white">{title}</h4>
       <div className="mt-3 grid gap-2 lg:grid-cols-2">
         {steps.map((step) => (
-          <article key={`${title}-${step.stage}`} className="relative rounded-xl border border-stealth-700 bg-slate-950/25 p-3 pl-12">
-            <span className="absolute left-3 top-3 inline-flex h-7 w-7 items-center justify-center rounded-lg border border-stealth-600 bg-slate-900 font-mono text-[10px] font-semibold text-slate-300">{step.stage}</span>
+          <article key={`${title}-${step.stage}`} className="relative rounded-xl border border-stealth-700 bg-stealth-950/25 p-3 pl-12">
+            <span className="absolute left-3 top-3 inline-flex h-7 w-7 items-center justify-center rounded-lg border border-stealth-600 bg-stealth-900 font-mono text-xs font-semibold text-stealth-300">{step.stage}</span>
             <div className="flex flex-wrap items-center gap-2">
               <h5 className="text-sm font-semibold text-white">{step.title}</h5>
-              <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${dispositionTone[step.disposition]}`}>{step.disposition}</span>
+              <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${dispositionTone[step.disposition]}`}>{step.disposition}</span>
             </div>
-            <p className="mt-1.5 text-xs leading-5 text-slate-400">{step.description}</p>
+            <p className="mt-1.5 text-xs leading-5 text-stealth-400">{step.description}</p>
           </article>
         ))}
       </div>
@@ -530,9 +535,9 @@ function EvolutionTrack({ title, steps }: { title: string; steps: EvolutionStep[
 
 function ReferenceSection({ group }: { group: ReferenceGroup }) {
   return (
-    <section className="rounded-xl border border-stealth-700 bg-slate-950/25 p-3 sm:p-4">
+    <section className="rounded-xl border border-stealth-700 bg-stealth-950/25 p-3 sm:p-4">
       <h4 className="text-sm font-semibold text-white">{group.title}</h4>
-      <p className="mt-1 text-xs leading-5 text-slate-400">{group.framing}</p>
+      <p className="mt-1 text-xs leading-5 text-stealth-400">{group.framing}</p>
       <div className="mt-3 divide-y divide-white/5">
         {group.references.map((reference) => (
           <div key={reference.href} className="grid gap-1 py-2.5 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] md:gap-4">
@@ -546,7 +551,7 @@ function ReferenceSection({ group }: { group: ReferenceGroup }) {
               <ExternalLink className="mt-1 h-3 w-3 shrink-0" aria-hidden="true" />
               <span className="sr-only"> (opens in a new tab)</span>
             </a>
-            <p className="text-xs leading-5 text-slate-400">{reference.contribution}</p>
+            <p className="text-xs leading-5 text-stealth-400">{reference.contribution}</p>
           </div>
         ))}
       </div>
@@ -557,7 +562,7 @@ function ReferenceSection({ group }: { group: ReferenceGroup }) {
 function SplitBar({ data }: { data: MarketWeatherResponse }) {
   const split = data.research?.lexicon?.training_split;
   if (!split) {
-    return <p className="text-xs leading-5 text-slate-400">This response did not include a learned Form split.</p>;
+    return <p className="text-xs leading-5 text-stealth-400">This response did not include a learned Form split.</p>;
   }
 
   const evaluationBars = split.evaluation_bars_total ?? split.evaluation_bars;
@@ -570,20 +575,20 @@ function SplitBar({ data }: { data: MarketWeatherResponse }) {
 
   return (
     <div>
-      <div className="flex h-3 overflow-hidden rounded-full bg-slate-950" role="img" aria-label={`Chronological split: ${parts.map((part) => `${part.label} ${part.value} bars`).join(", ")}`}>
+      <div className="flex h-3 overflow-hidden rounded-full bg-stealth-950" role="img" aria-label={`Chronological split: ${parts.map((part) => `${part.label} ${part.value} bars`).join(", ")}`}>
         {parts.map((part) => (
           <span key={part.label} className={part.color} style={{ width: `${total ? (part.value / total) * 100 : 0}%` }} />
         ))}
       </div>
       <div className="mt-2 grid gap-2 sm:grid-cols-3">
         {parts.map((part) => (
-          <div key={part.label} className="flex items-center justify-between gap-2 text-xs text-slate-400">
+          <div key={part.label} className="flex items-center justify-between gap-2 text-xs text-stealth-400">
             <span className="inline-flex items-center gap-1.5"><span className={`h-2 w-2 rounded-full ${part.color}`} />{part.label}</span>
-            <span className="font-mono text-slate-200">{formatInteger(part.value)}</span>
+            <span className="font-mono text-stealth-200">{formatInteger(part.value)}</span>
           </div>
         ))}
       </div>
-      <p className="mt-2 text-xs leading-5 text-slate-400">Denominator: n={formatInteger(total)} chronological bars reported for model fitting, calibration, and later evaluation. Segment widths encode bar counts, not model importance.</p>
+      <p className="mt-2 text-xs leading-5 text-stealth-400">Denominator: n={formatInteger(total)} chronological bars reported for model fitting, calibration, and later evaluation. Segment widths encode bar counts, not model importance.</p>
     </div>
   );
 }
@@ -647,46 +652,46 @@ function CurrentRunAudit({ data }: { data: MarketWeatherResponse }) {
   ];
 
   return (
-    <section className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-3 sm:p-4" aria-labelledby="current-run-audit-title">
+    <section className="rounded-2xl border border-stealth-700 bg-stealth-950/30 p-3 sm:p-4" aria-labelledby="current-run-audit-title">
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
           <span className="page-kicker">Current-run reproducibility</span>
           <h3 id="current-run-audit-title" className="mt-1 text-base font-semibold text-white">What this exact response contains</h3>
         </div>
-        <span className="rounded-full border border-stealth-600 px-2.5 py-1 text-[11px] text-slate-400">Generated {formatTimestamp(data.generated_at)}</span>
+        <span className="rounded-full border border-stealth-600 px-2.5 py-1 text-xs text-stealth-400">Generated {formatTimestamp(data.generated_at)}</span>
       </div>
       <div className="mt-3 grid grid-cols-1 gap-px overflow-hidden rounded-xl border border-stealth-700 bg-stealth-700 min-[360px]:grid-cols-2 sm:grid-cols-4 xl:grid-cols-8">
         {facts.map(([label, value, detail]) => (
-          <div key={label} className="min-w-0 bg-slate-950/75 p-2.5">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">{label}</div>
+          <div key={label} className="min-w-0 bg-stealth-950/75 p-2.5">
+            <div className="text-xs font-semibold uppercase tracking-[0.12em] text-stealth-400">{label}</div>
             <div className="mt-1 break-words text-xs font-semibold text-white" title={value}>{value}</div>
-            <div className="mt-0.5 line-clamp-2 text-xs leading-4 text-slate-400" title={detail}>{detail}</div>
+            <div className="mt-0.5 line-clamp-2 text-xs leading-4 text-stealth-400" title={detail}>{detail}</div>
           </div>
         ))}
       </div>
-      <div className="mt-3 rounded-xl border border-stealth-700 bg-slate-950/35 p-3">
+      <div className="mt-3 rounded-xl border border-stealth-700 bg-stealth-950/35 p-3">
         <div className="mb-2 flex items-center justify-between gap-3">
           <span className="text-xs font-semibold text-white">Chronological model split</span>
-          <span className="text-xs uppercase tracking-[0.1em] text-slate-400">earlier → later</span>
+          <span className="text-xs uppercase tracking-[0.1em] text-stealth-400">earlier → later</span>
         </div>
         <SplitBar data={data} />
       </div>
-      <div className="mt-3 rounded-xl border border-stealth-700 bg-slate-950/35 p-3">
+      <div className="mt-3 rounded-xl border border-stealth-700 bg-stealth-950/35 p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-xs font-semibold text-white">Applied analytical configuration</span>
-          <span className="font-mono text-xs text-slate-400" title={data.horizons.join(", ")}>horizons {horizonRange} · step {horizonStep}</span>
+          <span className="font-mono text-xs text-stealth-400" title={data.horizons.join(", ")}>horizons {horizonRange} · step {horizonStep}</span>
         </div>
         {appliedSettings.length ? (
           <div className="mt-2 grid gap-px overflow-hidden rounded-lg border border-stealth-700 bg-stealth-700 min-[360px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
             {appliedSettings.map(([label, value]) => (
-              <div key={label} className="flex items-center justify-between gap-2 bg-slate-950/70 px-2.5 py-2 text-[10px]">
-                <span className="text-slate-500">{label}</span>
-                <span className="font-mono text-slate-200">{Number.isInteger(value) ? value : formatDecimal(value, 2)}</span>
+              <div key={label} className="flex items-center justify-between gap-2 bg-stealth-950/70 px-2.5 py-2 text-xs">
+                <span className="text-stealth-500">{label}</span>
+                <span className="font-mono text-stealth-200">{Number.isInteger(value) ? value : formatDecimal(value, 2)}</span>
               </div>
             ))}
           </div>
-        ) : <p className="mt-2 text-xs text-slate-500">No applied settings were returned.</p>}
-        <p className="mt-2 text-xs leading-5 text-slate-400">
+        ) : <p className="mt-2 text-xs text-stealth-500">No applied settings were returned.</p>}
+        <p className="mt-2 text-xs leading-5 text-stealth-400">
           Carrier evidence: realized volatility {formatAvailability(carrierAvailability?.realized_volatility)}; participation {formatAvailability(carrierAvailability?.participation)}; liquidity stress {formatAvailability(carrierAvailability?.liquidity_stress)}. These are response values, not settings-dialog drafts.
         </p>
       </div>
@@ -711,7 +716,7 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
         type="button"
         className="flex w-full items-center justify-between gap-3 p-3 text-left transition hover:bg-white/[0.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 sm:p-4"
         aria-expanded={open}
-        aria-controls={`${reportId}-body`}
+        aria-controls={open ? `${reportId}-body` : undefined}
         onClick={() => {
           if (open) setActiveChapter(null);
           setOpen((current) => !current);
@@ -727,8 +732,8 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
           </span>
         </span>
         <span className="flex shrink-0 items-center gap-2">
-          <span className="hidden rounded-full border border-stealth-600 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 md:inline-flex">10 chapters · source-backed</span>
-          <ChevronDown className={`h-5 w-5 text-slate-500 transition-transform ${open ? "rotate-180" : ""}`} />
+          <span className="hidden rounded-full border border-stealth-600 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-stealth-400 md:inline-flex">10 chapters · source-backed</span>
+          <ChevronDown className={`h-5 w-5 text-stealth-500 transition-transform ${open ? "rotate-180" : ""}`} />
         </span>
       </button>
 
@@ -738,10 +743,10 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
             <div className="relative z-[1] max-w-4xl">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="page-kicker">Technical summary · working paper v0.2</span>
-                <span className="rounded-full border border-amber-400/25 bg-amber-400/[0.06] px-2 py-0.5 text-[10px] font-semibold text-amber-200">Descriptive research instrument</span>
+                <span className="rounded-full border border-amber-400/25 bg-amber-400/[0.06] px-2 py-0.5 text-xs font-semibold text-amber-200">Descriptive research instrument</span>
               </div>
               <h2 className="mt-2 text-xl font-semibold tracking-tight text-white sm:text-2xl">A translation layer for how market structure changes across time and horizon</h2>
-              <p className="mt-2 text-sm leading-6 text-slate-300">
+              <p className="mt-2 text-sm leading-6 text-stealth-300">
                 This page begins with one instrument's timestamped OHLCV bars, or two independently constructed same-recipe fields in Pair mode. Each field derives kinematic, geometric, informational, and carrier measurements and learns its own request-specific dictionary. The interface translates those measurements into a compact cloud, synchronized timelines, relationship scopes, plain-language definitions, and separately labeled context. Pair mode adds shared-support coordinate differences and relative price context without merging the fields or matching their Forms. Its purpose is to make multiscale structure inspectable and to generate testable hypotheses—not to hide a trading rule behind a visual metaphor.
               </p>
             </div>
@@ -759,45 +764,45 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
             </ReportCallout>
           </div>
 
-          <section className="rounded-2xl border border-stealth-700 bg-slate-950/25 p-3 sm:p-4" aria-labelledby={`${reportId}-pipeline-title`}>
+          <section className="rounded-2xl border border-stealth-700 bg-stealth-950/25 p-3 sm:p-4" aria-labelledby={`${reportId}-pipeline-title`}>
             <div className="flex items-start gap-3">
               <Workflow className="mt-0.5 h-4 w-4 shrink-0 text-sky-300" aria-hidden="true" />
               <div>
                 <span className="page-kicker">System map</span>
                 <h3 id={`${reportId}-pipeline-title`} className="mt-1 text-base font-semibold text-white">Independent field branch(es), one shadow-context branch</h3>
-                <p className="mt-1 text-xs leading-5 text-slate-400">The numbered stages are ordered transformations. Labels describe evidence status; color is only a secondary cue.</p>
+                <p className="mt-1 text-xs leading-5 text-stealth-400">The numbered stages are ordered transformations. Labels describe evidence status; color is only a secondary cue.</p>
               </div>
             </div>
             <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
               {PIPELINE_STAGES.map((stage, index) => (
                 <article key={stage.title} className={`relative rounded-xl border p-3 ${stage.tone}`}>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-[10px] font-semibold text-slate-300">{String(index + 1).padStart(2, "0")}</span>
-                    <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">{stage.label}</span>
+                    <span className="font-mono text-xs font-semibold text-stealth-300">{String(index + 1).padStart(2, "0")}</span>
+                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-stealth-400">{stage.label}</span>
                   </div>
                   <h4 className="mt-2 text-xs font-semibold text-white">{stage.title}</h4>
-                  <p className="mt-1 text-[11px] leading-4 text-slate-400">{stage.detail}</p>
+                  <p className="mt-1 text-xs leading-4 text-stealth-400">{stage.detail}</p>
                 </article>
               ))}
             </div>
             <div className="mt-2 grid gap-2 rounded-xl border border-dashed border-amber-400/25 bg-amber-400/[0.035] p-3 lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-center">
               <div className="inline-flex items-center gap-2 text-xs font-semibold text-amber-200"><GitBranch className="h-4 w-4" /> Parallel shadow branch</div>
-              <p className="text-xs leading-5 text-slate-400">Prior-bar technical structure + current/sparse options evidence + cached daily cross-market pressure relationships</p>
-              <span className="w-fit rounded-full border border-amber-400/25 px-2.5 py-1 font-mono text-[10px] text-amber-200">field_influence: none</span>
+              <p className="text-xs leading-5 text-stealth-400">Prior-bar technical structure + current/sparse options evidence + cached daily cross-market pressure relationships</p>
+              <span className="w-fit rounded-full border border-amber-400/25 px-2.5 py-1 font-mono text-xs text-amber-200">field_influence: none</span>
             </div>
           </section>
 
-          <section className="rounded-2xl border border-stealth-700 bg-slate-950/25 p-3 sm:p-4" aria-labelledby={`${reportId}-ladder-title`}>
+          <section className="rounded-2xl border border-stealth-700 bg-stealth-950/25 p-3 sm:p-4" aria-labelledby={`${reportId}-ladder-title`}>
             <div className="flex items-center gap-2">
               <ShieldCheck className="h-4 w-4 text-emerald-300" aria-hidden="true" />
               <h3 id={`${reportId}-ladder-title`} className="text-sm font-semibold text-white">Evidence ladder</h3>
             </div>
             <div className="mt-3 grid gap-px overflow-hidden rounded-xl border border-stealth-700 bg-stealth-700 sm:grid-cols-2 xl:grid-cols-6">
               {EVIDENCE_LADDER.map(([number, label, description]) => (
-                <div key={number} className="bg-slate-950/75 p-3">
-                  <div className="font-mono text-[9px] text-sky-300">{number}</div>
+                <div key={number} className="bg-stealth-950/75 p-3">
+                  <div className="font-mono text-xs text-sky-300">{number}</div>
                   <div className="mt-1 text-xs font-semibold text-white">{label}</div>
-                  <p className="mt-1 text-xs leading-5 text-slate-400">{description}</p>
+                  <p className="mt-1 text-xs leading-5 text-stealth-400">{description}</p>
                 </div>
               ))}
             </div>
@@ -1098,7 +1103,7 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
               </div>
               <div className="mt-3 flex items-start gap-3 rounded-xl border border-rose-400/25 bg-rose-400/[0.05] p-3">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-300" aria-hidden="true" />
-                <p className="text-xs leading-5 text-slate-300"><span className="font-semibold text-rose-200">Decision boundary:</span> this page is research context, not individualized investment advice or an autonomous trading signal. A visually coherent field can still be economically irrelevant, unstable, or too costly to trade.</p>
+                <p className="text-xs leading-5 text-stealth-300"><span className="font-semibold text-rose-200">Decision boundary:</span> this page is research context, not individualized investment advice or an autonomous trading signal. A visually coherent field can still be economically irrelevant, unstable, or too costly to trade.</p>
               </div>
             </Chapter>
 
@@ -1161,10 +1166,10 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
                     ["04", "Validate", "Use untouched holdout evidence with costs and uncertainty."],
                     ["05", "Promote", "Only then allow the feature to influence the learned field."],
                   ].map(([number, title, detail]) => (
-                    <div key={number} className="rounded-xl border border-emerald-400/15 bg-slate-950/35 p-3">
-                      <div className="font-mono text-[9px] text-emerald-300">{number}</div>
+                    <div key={number} className="rounded-xl border border-emerald-400/15 bg-stealth-950/35 p-3">
+                      <div className="font-mono text-xs text-emerald-300">{number}</div>
                       <div className="mt-1 text-xs font-semibold text-white">{title}</div>
-                      <p className="mt-1 text-xs leading-5 text-slate-400">{detail}</p>
+                      <p className="mt-1 text-xs leading-5 text-stealth-400">{detail}</p>
                     </div>
                   ))}
                 </div>
@@ -1173,7 +1178,7 @@ export default function MarketWeatherMethodologyReport({ data }: MarketWeatherMe
           </div>
           </ChapterAccordionContext.Provider>
 
-          <footer className="flex flex-col gap-2 rounded-xl border border-stealth-700 bg-slate-950/35 p-3 text-xs leading-5 text-slate-400 sm:flex-row sm:items-center sm:justify-between">
+          <footer className="flex flex-col gap-2 rounded-xl border border-stealth-700 bg-stealth-950/35 p-3 text-xs leading-5 text-stealth-400 sm:flex-row sm:items-center sm:justify-between">
             <span className="inline-flex items-center gap-2"><Database className="h-3.5 w-3.5" /> Current response: {data.symbol} · {data.bar_size} · {formatInteger(data.available_bars)} bars · {formatInteger(data.horizons.length)} horizons</span>
             <span>Working methodology · definitions should evolve only with versioned evidence</span>
           </footer>

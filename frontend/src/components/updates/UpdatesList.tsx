@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import type { UpdatePostListItem } from "../../types/updates";
 import { UPDATE_STATUS_STYLES, formatUpdateDate } from "./updateStyles";
 
@@ -77,14 +78,39 @@ export default function UpdatesList({
   onSelect,
   onPrefetch,
 }: UpdatesListProps) {
+  const scrollRegionRef = useRef<HTMLDivElement | null>(null);
+  const [isScrollable, setIsScrollable] = useState(false);
+  const [focusedPostId, setFocusedPostId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const updateScrollableState = () => {
+      const region = scrollRegionRef.current;
+      setIsScrollable(Boolean(region && region.scrollHeight > region.clientHeight + 1));
+    };
+    const frame = window.requestAnimationFrame(updateScrollableState);
+    window.addEventListener("resize", updateScrollableState);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", updateScrollableState);
+    };
+  }, [posts]);
+
   return (
     <div className="rounded-2xl border border-stealth-700 bg-stealth-800/90 shadow-[0_16px_40px_-28px_rgba(0,0,0,0.8)]">
       <div className="border-b border-stealth-700 px-4 py-3">
-        <h2 className="text-sm font-semibold text-stealth-100">Posts</h2>
+        <h2 className="text-sm font-semibold text-stealth-100">Recent posts</h2>
+        <p className="mt-1 text-xs text-stealth-400">{posts.length} available</p>
       </div>
-      <div className="max-h-[68vh] overflow-y-auto p-2">
+      <div
+        ref={scrollRegionRef}
+        className="max-h-[68vh] overflow-y-auto p-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pulse-400"
+        role="region"
+        aria-label="Recent recap posts"
+        tabIndex={isScrollable ? 0 : undefined}
+      >
         {posts.map((post, index) => {
           const isActive = post.id === selectedId;
+          const showFullTitle = isActive || post.id === focusedPostId;
           const isSpecialEventPost = post.tags.includes("event-summary") || post.tags.includes("jobs-day");
           const olderPost = posts[index + 1];
           const missingScheduledDates = olderPost
@@ -95,9 +121,16 @@ export default function UpdatesList({
             <div key={post.id}>
               <button
                 type="button"
+                aria-current={isActive ? "page" : undefined}
                 onClick={() => onSelect(post.id)}
                 onMouseEnter={() => onPrefetch?.(post.id)}
-                onFocus={() => onPrefetch?.(post.id)}
+                onFocus={() => {
+                  setFocusedPostId(post.id);
+                  onPrefetch?.(post.id);
+                }}
+                onBlur={() => {
+                  setFocusedPostId((current) => current === post.id ? null : current);
+                }}
                 className={`mb-2 w-full rounded-2xl border px-3 py-3 text-left transition ${
                   isActive
                     ? "border-stealth-500 bg-stealth-700/70"
@@ -107,24 +140,28 @@ export default function UpdatesList({
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5">
                     <div
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${UPDATE_STATUS_STYLES[post.status].pill}`}
+                      className={`rounded-full px-2 py-1 text-xs font-semibold ${UPDATE_STATUS_STYLES[post.status].pill}`}
                     >
                       {post.status}
                     </div>
                     {isSpecialEventPost && (
-                      <div className="rounded-full border border-cyan-300/60 bg-cyan-500/20 px-2 py-0.5 text-[10px] font-semibold text-cyan-100">
+                      <div className="rounded-full border border-cyan-300/60 bg-cyan-500/20 px-2 py-1 text-xs font-semibold text-cyan-100">
                         EVENT
                       </div>
                     )}
                   </div>
                   <div className="text-xs text-stealth-500">{formatUpdateDate(post.created_at)}</div>
                 </div>
-                <div className="line-clamp-2 text-sm font-semibold text-stealth-100">{post.title}</div>
-                {post.pinned && <div className="mt-2 text-[10px] font-semibold text-stealth-300">PINNED</div>}
+                <div
+                  className={`${showFullTitle ? "break-words" : "line-clamp-2"} text-sm font-semibold text-stealth-100`}
+                >
+                  {post.title}
+                </div>
+                {post.pinned && <div className="mt-2 text-xs font-semibold text-stealth-300">Pinned</div>}
               </button>
 
               {missingScheduledDates.length > 0 && (
-                <div className="mb-2 rounded-xl border border-amber-400/35 border-dashed bg-amber-500/5 px-3 py-1.5 text-[11px] text-amber-200">
+                <div className="mb-2 rounded-xl border border-amber-400/35 border-dashed bg-amber-500/5 px-3 py-2 text-xs text-amber-100">
                   <div className="font-semibold uppercase tracking-[0.12em] text-amber-300/90">Skipped Recap</div>
                   <div className="mt-0.5 text-amber-100/90">
                     {missingScheduledDates.length === 1

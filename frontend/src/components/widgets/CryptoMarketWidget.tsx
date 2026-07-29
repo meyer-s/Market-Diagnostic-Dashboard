@@ -55,7 +55,7 @@ export default function CryptoMarketWidget() {
     return (
       <div className="primary-card p-4 md:p-6">
         <h3 className="text-base sm:text-lg font-bold mb-3">Crypto</h3>
-        <div className="text-sm text-stealth-400">Loading...</div>
+        <div className="text-sm text-stealth-400">Loading crypto market data…</div>
       </div>
     );
   }
@@ -98,7 +98,7 @@ export default function CryptoMarketWidget() {
               <div className={`text-xs font-semibold ${(asset.change_24h ?? 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                 {formatPercent(asset.change_24h)}
               </div>
-              <div className={`text-[10px] ${(asset.change_30d ?? 0) >= 0 ? "text-emerald-300" : "text-red-300"}`}>
+              <div className={`text-xs ${(asset.change_30d ?? 0) >= 0 ? "text-emerald-300" : "text-red-300"}`}>
                 {formatPercent(asset.change_30d)} 30d
               </div>
             </div>

@@ -1,7 +1,7 @@
 import { IndicatorStatus, IndicatorHistoryPoint } from "../../types";
 import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { buildApiUrl } from "../../utils/apiUtils";
+import { apiFetch } from "../../utils/apiUtils";
 import { getBusinessDaysAgo, formatRelativeDate, formatValue } from "../../utils/componentUtils";
 import StateSparkline from "./StateSparkline";
 
@@ -33,7 +33,7 @@ const stateDotMap = {
   GREEN: "bg-accent-green",
   YELLOW: "bg-accent-yellow",
   RED: "bg-accent-red",
-  UNKNOWN: "bg-gray-500",
+  UNKNOWN: "bg-stealth-500",
 };
 
 function resolveIndicatorRoute(code: string) {
@@ -48,17 +48,43 @@ export default function IndicatorCard({ indicator }: Props) {
   const [history, setHistory] = useState<IndicatorHistoryPoint[]>([]);
 
   useEffect(() => {
-    // Use buildApiUrl to respect proxy configuration
-    // Fetch more history for monthly indicators to ensure we have enough data points
+    const controller = new AbortController();
     const metadata = DATA_FREQUENCY[indicator.code];
     const isMonthlyIndicator = metadata?.frequency === "Monthly";
-    const days = isMonthlyIndicator ? 365 : 60; // Monthly indicators need full year
-    
-    const url = buildApiUrl(`/indicators/${indicator.code}/history?days=${days}`);
-    fetch(url)
-      .then(res => res.json())
-      .then(data => setHistory(data))
-      .catch(() => setHistory([]));
+    const days = isMonthlyIndicator ? 365 : 60;
+
+    void apiFetch<unknown>(`/indicators/${indicator.code}/history?days=${days}`, {
+      signal: controller.signal,
+      timeoutMs: 15_000,
+    })
+      .then((data) => {
+        if (controller.signal.aborted) return;
+        if (!Array.isArray(data)) {
+          setHistory([]);
+          return;
+        }
+        const validHistory = data.filter(
+          (point): point is IndicatorHistoryPoint =>
+            typeof point === "object"
+            && point !== null
+            && typeof point.timestamp === "string"
+            && typeof point.raw_value === "number"
+            && typeof point.score === "number"
+            && ["GREEN", "YELLOW", "RED"].includes(String(point.state)),
+        );
+        setHistory(validHistory);
+      })
+      .catch((requestError: unknown) => {
+        if (
+          controller.signal.aborted
+          || requestError instanceof DOMException && requestError.name === "AbortError"
+        ) {
+          return;
+        }
+        setHistory([]);
+      });
+
+    return () => controller.abort();
   }, [indicator.code]);
 
   const lastUpdated = indicator.timestamp ? new Date(indicator.timestamp) : null;
@@ -79,7 +105,7 @@ export default function IndicatorCard({ indicator }: Props) {
     </svg>
   ) : businessDaysAgo > metadata.expectedLag ? (
     // Gray clock: Data is old but this is expected (e.g., monthly indicators, publishing delays)
-    <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20"><title>Waiting for source data</title>
+    <svg className="w-4 h-4 text-stealth-400" fill="currentColor" viewBox="0 0 20 20"><title>Waiting for source data</title>
       <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
     </svg>
   ) : (
@@ -96,7 +122,7 @@ export default function IndicatorCard({ indicator }: Props) {
   return (
     <Link to={routePath} className="block h-full">
       <div className="primary-card primary-card-hover flex h-full flex-col p-3.5">
-        <div className="text-sm leading-6 text-gray-300">{displayName}</div>
+        <div className="text-sm leading-6 text-stealth-300">{displayName}</div>
         <div className="mt-1 text-2xl font-semibold">
           {formatValue(indicator.raw_value, 2)}
         </div>
@@ -107,7 +133,7 @@ export default function IndicatorCard({ indicator }: Props) {
         </div>
         
         <div className="mt-2 flex items-center justify-between">
-          <span className="text-sm text-gray-400">Score: {indicator.score ?? "N/A"}</span>
+          <span className="text-sm text-stealth-400">Score: {formatValue(indicator.score, 1)}</span>
           <span className="inline-flex items-center" aria-label={`State ${indicator.state}`} title={indicator.state}>
             <span className={`h-2.5 w-2.5 rounded-full ${stateDotMap[indicator.state]}`}></span>
           </span>
@@ -115,28 +141,21 @@ export default function IndicatorCard({ indicator }: Props) {
         
         {/* Timestamp with tooltip */}
         <div className="mt-auto flex items-center justify-between pt-2.5 text-xs">
-          <div className="flex items-center gap-1.5 group relative">
+          <div className="flex items-center gap-1.5">
             {freshnessIcon}
-            <span className="text-gray-500">Last updated: {timeDisplay}</span>
-            
-            {/* Tooltip */}
-            <div className="invisible group-hover:visible absolute bottom-full left-0 mb-2 w-64 p-2 bg-stealth-900 border border-stealth-700 rounded shadow-lg text-xs z-10">
-              <div className="font-semibold text-stealth-100 mb-1">{metadata.frequency} Updates</div>
-              <div className="text-stealth-300">{metadata.description}</div>
-              {isStale && (
-                <div className="text-yellow-400 mt-1 font-medium">⚠ Data appears stale</div>
-              )}
-              {!isStale && businessDaysAgo > metadata.expectedLag && (
-                <div className="text-gray-400 mt-1">Waiting for new source data</div>
-              )}
-            </div>
+            <span className="text-stealth-500">Last updated: {timeDisplay}</span>
           </div>
           
           {/* Frequency badge */}
-          <span className="text-xs text-gray-600 bg-stealth-900 px-2 py-0.5 rounded">
+          <span className="text-xs text-stealth-600 bg-stealth-900 px-2 py-0.5 rounded">
             {metadata.frequency}
           </span>
         </div>
+        <p className="mt-1 text-xs leading-5 text-stealth-400">
+          {metadata.description}
+          {isStale ? " Data appears stale." : ""}
+          {!isStale && businessDaysAgo > metadata.expectedLag ? " Waiting for new source data." : ""}
+        </p>
       </div>
     </Link>
   );

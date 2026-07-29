@@ -174,7 +174,7 @@ function freshnessTone(value?: string): string {
 
 function compactSummary(context: AgricultureContextData): string {
   const catalyst = context.report_calendar.next_report?.report ?? "the next report";
-  return `${context.commodity} is ${properCase(String(context.context_score.net_bias))} with ${context.context_score.confidence_score} confidence points ahead of ${catalyst}. Open a driver below to see what is carrying the read.`;
+  return `${context.commodity} is ${properCase(String(context.context_score.net_bias))} with ${context.context_score.confidence_score.toFixed(1)} confidence points ahead of ${catalyst}. Open a driver below to see what is carrying the read.`;
 }
 
 function isHttpUrl(value?: string | null): value is string {
@@ -329,8 +329,8 @@ export function CompactContextDigest({
             </div>
             <p className="mt-3 text-xs leading-5 text-stealth-200">{compactSummary(context)}</p>
           </div>
-          <div className="rounded-2xl border border-white/8 bg-black/15 p-3">
-            <p className="text-[11px] uppercase tracking-[0.12em] text-stealth-500">Next Catalyst</p>
+          <div className="rounded-2xl border border-white/8 bg-stealth-950/40 p-3">
+            <p className="text-xs uppercase tracking-[0.12em] text-stealth-500">Next Catalyst</p>
             <p className="mt-1 text-sm font-semibold text-white">{context.report_calendar.next_report?.report ?? "No near-term report"}</p>
             <p className="mt-1 text-xs text-stealth-400">{formatDateTime(context.report_calendar.next_report?.release_at)}</p>
           </div>
@@ -338,17 +338,17 @@ export function CompactContextDigest({
 
         <div className="mt-4 grid gap-2 sm:grid-cols-3">
           <div className="rounded-2xl bg-stealth-900/65 px-4 py-3">
-            <p className="text-[11px] uppercase tracking-[0.12em] text-stealth-500">Why Now</p>
+            <p className="text-xs uppercase tracking-[0.12em] text-stealth-500">Why Now</p>
             <p className="mt-1 text-sm font-semibold text-white">{leadingDrivers.map((entry) => entry.label).join(" + ") || "Balanced inputs"}</p>
             <p className="mt-1 text-xs text-stealth-400">{properCase(context.context_score.confidence)} conviction</p>
           </div>
           <div className="rounded-2xl bg-stealth-900/65 px-4 py-3">
-            <p className="text-[11px] uppercase tracking-[0.12em] text-stealth-500">Validation</p>
+            <p className="text-xs uppercase tracking-[0.12em] text-stealth-500">Validation</p>
             <p className="mt-1 text-sm font-semibold text-white">{properCase(context.thesis_validation.validation_status)}</p>
             <p className="mt-1 text-xs text-stealth-400">{context.thesis_validation.confirmations?.[0] ?? "No strong confirmation yet."}</p>
           </div>
           <div className="rounded-2xl bg-stealth-900/65 px-4 py-3">
-            <p className="text-[11px] uppercase tracking-[0.12em] text-stealth-500">Market State</p>
+            <p className="text-xs uppercase tracking-[0.12em] text-stealth-500">Market State</p>
             <p className="mt-1 text-sm font-semibold text-white">{properCase(context.crop_stage.stage)}</p>
             <p className="mt-1 text-xs text-stealth-400">Session {properCase(context.session.status).toLowerCase()}</p>
           </div>
@@ -386,13 +386,13 @@ export function CompactContextDigest({
         </div>
 
         <div className="grid min-w-[220px] gap-3 sm:grid-cols-2">
-          <div className="rounded-2xl border border-white/8 bg-black/15 p-3">
-            <p className="text-[11px] uppercase tracking-[0.12em] text-stealth-500">Confidence</p>
-            <p className="mt-2 text-4xl font-semibold text-white">{context.context_score.confidence_score}</p>
+          <div className="rounded-2xl border border-white/8 bg-stealth-950/40 p-3">
+            <p className="text-xs uppercase tracking-[0.12em] text-stealth-500">Confidence</p>
+            <p className="mt-2 text-4xl font-semibold text-white">{context.context_score.confidence_score.toFixed(1)}</p>
             <p className="mt-1 text-xs text-stealth-400">{properCase(context.context_score.confidence)} conviction</p>
           </div>
-          <div className="rounded-2xl border border-white/8 bg-black/15 p-3">
-            <p className="text-[11px] uppercase tracking-[0.12em] text-stealth-500">Next Catalyst</p>
+          <div className="rounded-2xl border border-white/8 bg-stealth-950/40 p-3">
+            <p className="text-xs uppercase tracking-[0.12em] text-stealth-500">Next Catalyst</p>
             <p className="mt-1 text-sm font-semibold text-white">{context.report_calendar.next_report?.report ?? "No near-term report"}</p>
             <p className="mt-1 text-xs text-stealth-400">{formatDateTime(context.report_calendar.next_report?.release_at)}</p>
           </div>
@@ -401,24 +401,24 @@ export function CompactContextDigest({
 
       <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-2xl bg-stealth-900/65 px-4 py-3">
-          <p className="text-[11px] uppercase tracking-[0.12em] text-stealth-500">Session</p>
+          <p className="text-xs uppercase tracking-[0.12em] text-stealth-500">Session</p>
           <p className="mt-1 text-sm font-semibold text-white">{properCase(context.session.status)}</p>
           <p className="mt-1 text-xs text-stealth-400">{formatDateTime(context.session.next_close)}</p>
         </div>
         <div className="rounded-2xl bg-stealth-900/65 px-4 py-3">
-          <p className="text-[11px] uppercase tracking-[0.12em] text-stealth-500">Crop Stage</p>
+          <p className="text-xs uppercase tracking-[0.12em] text-stealth-500">Crop Stage</p>
           <p className="mt-1 text-sm font-semibold text-white">{properCase(context.crop_stage.stage)}</p>
           <p className="mt-1 text-xs text-stealth-400">{properCase(context.crop_stage.weather_sensitivity)} sensitivity</p>
         </div>
         <div className="rounded-2xl bg-stealth-900/65 px-4 py-3">
-          <p className="text-[11px] uppercase tracking-[0.12em] text-stealth-500">Validation</p>
+          <p className="text-xs uppercase tracking-[0.12em] text-stealth-500">Validation</p>
           <div className={`mt-1 inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${validationTone(context.thesis_validation.validation_status)}`}>
             {properCase(context.thesis_validation.validation_status)}
           </div>
           <p className="mt-2 text-xs text-stealth-400">{context.thesis_validation.confirmations?.length ?? 0} confirmations</p>
         </div>
         <div className="rounded-2xl bg-stealth-900/65 px-4 py-3">
-          <p className="text-[11px] uppercase tracking-[0.12em] text-stealth-500">Primary Driver</p>
+          <p className="text-xs uppercase tracking-[0.12em] text-stealth-500">Primary Driver</p>
           <p className="mt-1 text-sm font-semibold text-white">{modules.slice().sort((left, right) => (context.context_score.component_breakdown[right.breakdownKey] ?? 0) - (context.context_score.component_breakdown[left.breakdownKey] ?? 0))[0]?.label ?? "Balanced"}</p>
           <p className="mt-1 text-xs text-stealth-400">{properCase(context.context_score.confidence)} support</p>
         </div>
@@ -434,11 +434,11 @@ export function CompactContextDigest({
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <p className="text-xs font-semibold text-white">{entry.label}</p>
-                  <p className="mt-1 text-[11px] text-stealth-300">{properCase(String(badgeText))}</p>
+                  <p className="mt-1 text-xs text-stealth-300">{properCase(String(badgeText))}</p>
                 </div>
                 <div className="text-right">
                   <p className="text-xs font-semibold text-white">{contribution > 0 ? "+1" : contribution < 0 ? "-1" : "0"}</p>
-                  <p className={`text-[11px] ${freshnessTone(source?.freshness_status)}`}>{properCase(source?.freshness_status ?? entry.module.confidence ?? "mixed")}</p>
+                  <p className={`text-xs ${freshnessTone(source?.freshness_status)}`}>{properCase(source?.freshness_status ?? entry.module.confidence ?? "mixed")}</p>
                 </div>
               </div>
             </div>

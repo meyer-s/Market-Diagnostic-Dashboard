@@ -79,7 +79,7 @@ describe("Dashboard", () => {
     );
 
     await waitFor(() =>
-      expect(screen.getByText(/Dashboard data is partially unavailable/i)).not.toBeNull()
+      expect(screen.getByText(/Some dashboard evidence is unavailable/i)).not.toBeNull()
     );
     expect(screen.getByText(/Indicators failed/)).not.toBeNull();
   });

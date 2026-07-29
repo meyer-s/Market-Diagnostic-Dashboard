@@ -5,14 +5,16 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "tsc && vite build && node ./scripts/check-bundle-budget.mjs",
     "test": "vitest run",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
     "check:tailwind-tokens": "node ./scripts/check-tailwind-tokens.mjs",
+    "check:bundle-budget": "node ./scripts/check-bundle-budget.mjs",
     "playwright": "playwright test",
     "test:release-gate": "playwright test --grep @release",
-    "test:production-probe": "playwright test --grep @production-probe"
+    "test:production-probe": "playwright test --grep @production-probe",
+    "test:site-audit": "playwright test tests/visual/site-full-audit.spec.ts tests/visual/site-material-state-audit.spec.ts"
   },
   "dependencies": {
     "lucide-react": "^1.23.0",
@@ -28,6 +30,7 @@
     "@playwright/test": "^1.54.1",
     "@testing-library/react": "^16.0.0",
     "@testing-library/user-event": "^14.5.2",
+    "@types/node": "^22.20.1",
     "@types/react": "^18.2.43",
     "@types/react-dom": "^18.2.17",
     "@types/recharts": "^1.8.29",
@@ -36,6 +39,7 @@
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.16",
     "eslint": "^8.55.0",
+    "eslint-plugin-jsx-a11y": "6.10.2",
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.5",
     "jsdom": "^25.0.1",

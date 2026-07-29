@@ -10,6 +10,7 @@ import {
 } from "recharts";
 import { apiFetch } from "../utils/apiUtils";
 import MarketLoading from "../components/ui/MarketLoading";
+import InfoTooltip from "../components/ui/InfoTooltip";
 import { 
   getStateFromScore, 
   getStateColor, 
@@ -212,8 +213,8 @@ export default function SystemBreakdown() {
       <div className="page-shell page-stack">
         <div className="flex flex-col">
           <span className="page-kicker">Methodology</span>
-          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">System Breakdown</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300 md:text-[15px]">See how the composite state is built, how the indicators distribute over time, and where weight is concentrated.</p>
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">System Breakdown</h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-stealth-300 md:text-[15px]">See how the composite state is built, how the indicators distribute over time, and where weight is concentrated.</p>
         </div>
         <div className="flex justify-center py-6">
           <MarketLoading size={110} variant="scan" label="Loading system overview..." />
@@ -271,26 +272,31 @@ export default function SystemBreakdown() {
     <div className="page-shell page-stack">
       <div className="flex flex-col">
         <span className="page-kicker">Methodology</span>
-        <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">System Breakdown & Methodology</h2>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300 md:text-[15px]">Assess market regime with confidence, spot inflection points early, and align positioning with macroeconomic reality.</p>
-        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-300">
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">System Breakdown & Methodology</h1>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-stealth-300 md:text-[15px]">Assess market regime with confidence, spot inflection points early, and align positioning with macroeconomic reality.</p>
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-stealth-300">
           <span className="page-badge">{indicatorCount} live inputs</span>
           <span className="page-badge">Breadth {breadthTrend}</span>
         </div>
       </div>
 
       {/* Overview Section */}
-      <div className="surface-card-strong p-4 md:p-6">
+      <div id="system-overview" className="section-anchor surface-card-strong p-4 md:p-6">
         <div className="flex items-center gap-2 mb-3 md:mb-4">
-          <h3 className="text-lg md:text-xl font-semibold text-stealth-100">System Overview</h3>
-          <div className="group relative">
-            <svg className="w-4 h-4 text-stealth-400 hover:text-stealth-200 cursor-help" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-            </svg>
-            <div className="invisible group-hover:visible absolute left-6 top-0 w-80 bg-stealth-850 border border-stealth-500 rounded-lg p-3 text-xs text-stealth-100 shadow-2xl z-10">
+          <h2 className="text-lg md:text-xl font-semibold text-stealth-100">System Overview</h2>
+          <details className="relative">
+            <summary
+              className="flex h-11 w-11 cursor-pointer list-none items-center justify-center rounded-full border border-stealth-600 text-stealth-300 transition hover:border-stealth-400 hover:text-stealth-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-pulse-400"
+              aria-label="Explain indicator grouping and weights"
+            >
+              <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+              </svg>
+            </summary>
+            <div className="absolute left-0 top-12 z-10 w-72 max-w-[calc(100vw-3rem)] rounded-lg border border-stealth-500 bg-stealth-850 p-3 text-xs leading-5 text-stealth-100 shadow-2xl">
               Inputs are intentionally grouped by domain, but overlap is constrained with conservative weighting. Core composites still carry more influence, while the added Agriculture, Energy, and Real Estate page scores stay lighter so they broaden coverage without dominating the system read.
             </div>
-          </div>
+          </details>
         </div>
         <p className="text-xs sm:text-sm text-stealth-300 leading-relaxed mb-3 md:mb-4">
           This Market Diagnostic Dashboard provides a comprehensive, real-time assessment of market stability by monitoring 
@@ -394,12 +400,15 @@ export default function SystemBreakdown() {
       </div>
 
       {/* Current Distribution */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div id="system-distribution" className="section-anchor grid grid-cols-1 gap-6 lg:grid-cols-2">
         <div className="surface-card p-6">
-          <h3 className="text-xl font-semibold mb-4 text-stealth-100">Current State Distribution</h3>
+          <h2 className="text-xl font-semibold mb-4 text-stealth-100">Current State Distribution</h2>
           <div className="flex items-center justify-center" style={{ height: 300 }}>
             <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-              <PieChart>
+              <PieChart
+                accessibilityLayer
+                aria-label="Current indicator distribution across green, yellow, and red states"
+              >
                 <Pie
                   data={pieData}
                   cx="50%"
@@ -421,7 +430,7 @@ export default function SystemBreakdown() {
         </div>
 
         <div className="surface-card p-6">
-          <h3 className="text-xl font-semibold mb-4 text-stealth-100">State Ratios</h3>
+          <h2 className="text-xl font-semibold mb-4 text-stealth-100">State Ratios</h2>
           <div className="space-y-4 mt-8">
             <div>
               <div className="flex justify-between mb-2">
@@ -466,12 +475,18 @@ export default function SystemBreakdown() {
       </div>
 
       {/* Historical State Distribution Heatmap - Moved here */}
-      <div className="surface-card p-4 md:p-6">
-        <h3 className="text-lg md:text-xl font-semibold mb-3 md:mb-4 text-stealth-100">Historical State Distribution (1 Year)</h3>
-        <p className="text-xs sm:text-sm text-stealth-400 mb-3 md:mb-4">Each row represents an indicator. Color shows state: Green (healthy), Yellow (caution), Red (stress)</p>
+      <div id="system-history" className="section-anchor surface-card min-w-0 max-w-full overflow-hidden p-4 md:p-6">
+        <h2 id="historical-state-heading" className="text-lg md:text-xl font-semibold mb-3 md:mb-4 text-stealth-100">Historical State Distribution (1 Year)</h2>
+        <p id="historical-state-description" className="text-xs sm:text-sm text-stealth-300 mb-3 md:mb-4">Each row represents an indicator. Color shows state: Green (healthy), Yellow (caution), Red (stress).</p>
         
-        <div className="overflow-x-auto">
-          <div style={{ minWidth: '800px' }}>
+        <div
+          className="max-w-full overflow-x-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pulse-400"
+          role="region"
+          aria-labelledby="historical-state-heading"
+          aria-describedby="historical-state-description"
+          tabIndex={0}
+        >
+          <div className="w-[800px] max-w-none" aria-hidden="true">
             {/* Get unique indicator names */}
             {Array.from(new Set(heatmapData.map(d => d.indicator))).sort().map((indicatorName) => {
               // Get all data points for this indicator, sorted by date
@@ -486,19 +501,18 @@ export default function SystemBreakdown() {
               return (
                 <div key={indicatorName} className="mb-2">
                   <div className="flex items-center gap-2 mb-1">
-                    <div className="w-48 text-xs text-stealth-300 font-medium truncate" title={indicatorName}>
+                    <div className="w-48 pr-2 text-xs font-medium leading-4 text-stealth-300">
                       {indicatorName}
                     </div>
                     <div className="flex-1 flex gap-0.5">
                       {sampledPoints.map((point, idx) => (
                         <div
                           key={idx}
-                          className="flex-1 h-8 rounded-sm transition-opacity hover:opacity-75 cursor-pointer"
+                          className="h-8 flex-1 rounded-sm"
                           style={{ 
                             backgroundColor: getStateColor(point.state as StabilityState),
                             minWidth: '2px',
                           }}
-                          title={`${point.date}: ${point.state} (${point.score.toFixed(1)})`}
                         />
                       ))}
                     </div>
@@ -536,17 +550,58 @@ export default function SystemBreakdown() {
             </div>
           </div>
         </div>
+        <details className="mt-4 rounded-xl border border-stealth-700 bg-stealth-900/40">
+          <summary className="flex min-h-11 cursor-pointer items-center px-3 text-sm font-semibold text-stealth-100">
+            Read latest indicator states
+          </summary>
+          <div
+            className="max-w-full overflow-x-auto border-t border-stealth-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pulse-400"
+            role="region"
+            aria-label="Latest indicator state table"
+            tabIndex={0}
+          >
+            <table className="min-w-[560px] w-full border-collapse text-left text-xs text-stealth-200">
+              <thead className="bg-stealth-850">
+                <tr>
+                  <th className="px-3 py-2 font-semibold">Indicator</th>
+                  <th className="px-3 py-2 font-semibold">Latest date</th>
+                  <th className="px-3 py-2 font-semibold">State</th>
+                  <th className="px-3 py-2 font-semibold">Score</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from(new Set(heatmapData.map((point) => point.indicator)))
+                  .sort()
+                  .map((indicatorName) => {
+                    const latestPoint = heatmapData
+                      .filter((point) => point.indicator === indicatorName)
+                      .sort((left, right) => right.date.localeCompare(left.date))[0];
+                    return latestPoint ? (
+                      <tr key={indicatorName} className="border-t border-stealth-700">
+                        <th scope="row" className="px-3 py-2 font-medium text-stealth-100">
+                          {indicatorName}
+                        </th>
+                        <td className="px-3 py-2">{latestPoint.date}</td>
+                        <td className="px-3 py-2">{latestPoint.state}</td>
+                        <td className="px-3 py-2">{latestPoint.score.toFixed(1)}</td>
+                      </tr>
+                    ) : null;
+                  })}
+              </tbody>
+            </table>
+          </div>
+        </details>
       </div>
 
       {/* Composite Score Calculation */}
-      <div className="collapsible-section" data-section="methodology">
+      <div id="system-methodology" className="section-anchor collapsible-section" data-section="methodology">
         <button
           onClick={() => toggleSection('methodology')}
           className="collapsible-header"
           aria-expanded={expandedSections.has('methodology')}
         >
           <div className="flex items-center gap-2">
-            <h3 className="text-lg md:text-xl font-semibold text-stealth-100">Composite Score Calculation</h3>
+            <h2 className="text-lg md:text-xl font-semibold text-stealth-100">Composite Score Calculation</h2>
           </div>
           {renderDisclosureIcon(expandedSections.has('methodology'))}
         </button>
@@ -555,13 +610,11 @@ export default function SystemBreakdown() {
             <div className="collapsible-content">
             <div className="space-y-4">
               <div className="data-card relative">
-                <div className="group absolute top-4 right-4">
-                  <svg className="w-4 h-4 text-stealth-400 hover:text-stealth-200 cursor-help" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                  </svg>
-                  <div className="invisible group-hover:visible absolute right-6 top-0 w-80 bg-stealth-850 border border-stealth-600 rounded-lg p-3 text-xs text-stealth-100 shadow-xl z-10">
-                    Indicator state thresholds are derived from rolling historical distributions rather than fixed absolute levels, reducing sensitivity to long-term structural drift.
-                  </div>
+                <div className="absolute right-2 top-2">
+                  <InfoTooltip
+                    id="composite-score-threshold-context"
+                    text="Indicator state thresholds are derived from rolling historical distributions rather than fixed absolute levels, reducing sensitivity to long-term structural drift."
+                  />
                 </div>
                 <div className="text-sm font-mono text-cyan-400 mb-3">
                   Composite Score = Sum (Indicator Score x Weight) / Sum Weights
@@ -575,7 +628,7 @@ export default function SystemBreakdown() {
               </div>
               
               <div className="data-card">
-                <h4 className="text-sm font-semibold text-stealth-200 mb-2">Example Calculation</h4>
+                <h3 className="text-sm font-semibold text-stealth-200 mb-2">Example Calculation</h3>
                 <div className="text-xs font-mono text-stealth-300 space-y-1">
                   {weightedExampleRows.length > 0 ? (
                     <>
@@ -605,7 +658,7 @@ export default function SystemBreakdown() {
               </div>
               
               <div className="data-card">
-                <h4 className="text-sm font-semibold text-stealth-200 mb-2">Data Timing & Lag Note</h4>
+                <h3 className="text-sm font-semibold text-stealth-200 mb-2">Data Timing & Lag Note</h3>
                 <div className="text-xs text-stealth-300 leading-relaxed">
                   Several inputs (e.g., CPI, sentiment surveys) update with known reporting lags and revisions. 
                   The system reflects currently available information, not final historical values, and should be 
@@ -633,13 +686,13 @@ export default function SystemBreakdown() {
       </div>
 
       {/* Indicator Weights & Configuration */}
-      <div className="collapsible-section" data-section="weights">
+      <div id="system-weights" className="section-anchor collapsible-section" data-section="weights">
         <button
           onClick={() => toggleSection('weights')}
           className="collapsible-header"
           aria-expanded={expandedSections.has('weights')}
         >
-          <h3 className="text-lg md:text-xl font-semibold text-stealth-100">Indicator Weights & Configuration</h3>
+          <h2 className="text-lg md:text-xl font-semibold text-stealth-100">Indicator Weights & Configuration</h2>
           {renderDisclosureIcon(expandedSections.has('weights'))}
         </button>
         <div className={`collapsible-panel ${expandedSections.has('weights') ? 'collapsible-panel-open' : ''}`}>
@@ -679,13 +732,16 @@ export default function SystemBreakdown() {
                 
                 return (
                   <div key={meta.code} className="data-card">
-                    <div 
-                      className={`flex items-center justify-between mb-2 ${isComposite ? 'cursor-pointer hover:bg-stealth-800/50 -m-4 p-4 rounded-t' : ''}`}
+                    <button
+                      type="button"
+                      disabled={!isComposite}
+                      className={`mb-2 flex w-full flex-col gap-3 text-left sm:flex-row sm:items-center sm:justify-between ${isComposite ? 'cursor-pointer rounded-t p-4 -m-4 hover:bg-stealth-800/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-pulse-400' : 'cursor-default'}`}
                       onClick={isComposite ? () => toggleSection(`indicator_${meta.code}`) : undefined}
                       aria-expanded={isComposite ? isExpanded : undefined}
+                      aria-controls={isComposite ? `indicator-details-${meta.code}` : undefined}
                     >
-                      <div className="flex items-center gap-4">
-                        <div className="font-semibold text-stealth-100 min-w-[180px]">{meta.name}</div>
+                      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1">
+                        <div className="min-w-0 flex-1 font-semibold text-stealth-100">{meta.name}</div>
                         <div className="text-sm text-stealth-400">
                           Weight: <span className="text-stealth-200 font-mono">{meta.weight.toFixed(1)}</span> ({weightPercentage}%)
                         </div>
@@ -704,14 +760,14 @@ export default function SystemBreakdown() {
                           renderDisclosureIcon(isExpanded)
                         )}
                       </div>
-                    </div>
+                    </button>
                     <div className="text-xs text-stealth-400 mt-2">
                       {descriptions[meta.code] || "Market stability indicator"}
                     </div>
                     
                     {/* Expanded details for composite indicators */}
                     {isComposite && (
-                      <div className={`collapsible-panel ${isExpanded ? 'collapsible-panel-open' : ''}`}>
+                      <div id={`indicator-details-${meta.code}`} className={`collapsible-panel ${isExpanded ? 'collapsible-panel-open' : ''}`}>
                         <div className="collapsible-panel-inner">
                     {meta.code === 'BOND_MARKET_STABILITY' && (
                       <div className="mt-4 pt-4 border-t border-stealth-700 space-y-3 text-sm">
@@ -1023,12 +1079,12 @@ export default function SystemBreakdown() {
 
       {/* Known Limitations */}
       <div className="bg-gradient-to-br from-red-950/20 to-stealth-850 border border-red-900/30 rounded-lg p-4 md:p-6 mt-4 md:mt-6">
-        <h3 className="text-lg md:text-xl font-semibold mb-3 md:mb-4 text-stealth-100 flex items-center gap-2">
+        <h2 className="text-lg md:text-xl font-semibold mb-3 md:mb-4 text-stealth-100 flex items-center gap-2">
           <svg className="w-5 h-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
             <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
           </svg>
           Known Limitations
-        </h3>
+        </h2>
         <div className="space-y-3">
           <div className="bg-stealth-900/50 border border-stealth-700 rounded p-3">
             <div className="flex items-start gap-3">

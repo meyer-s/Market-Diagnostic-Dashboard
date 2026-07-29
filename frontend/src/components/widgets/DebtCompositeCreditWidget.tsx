@@ -165,7 +165,7 @@ export default function DebtCompositeCreditWidget({ trendPeriod = 90 }: DebtComp
             <div className="text-xs text-stealth-400 mt-1">Labeled stress mix + live onionskinned yield curve</div>
           </div>
           <div className="text-right">
-            <div className="text-[11px] text-stealth-500">Stability</div>
+            <div className="text-xs text-stealth-500">Stability</div>
             <div className={`text-lg font-semibold ${stabilityTone}`}>{stability.toFixed(1)}</div>
             <div className={`text-xs ${stabilityDelta >= 0 ? "text-green-300" : "text-red-300"}`}>
               {stabilityDelta >= 0 ? "+" : ""}{stabilityDelta.toFixed(1)} d/d
@@ -176,11 +176,16 @@ export default function DebtCompositeCreditWidget({ trendPeriod = 90 }: DebtComp
         {yieldChartData.length > 0 && (
           <div className="h-28 mb-3 border-b border-stealth-700/70 pb-3">
             <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-              <ComposedChart data={yieldChartData} margin={CHART_MARGIN}>
+              <ComposedChart
+                accessibilityLayer
+                aria-label="Current and prior Treasury yield curves for debt and credit stress"
+                data={yieldChartData}
+                margin={CHART_MARGIN}
+              >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-tooltip-border)" />
                 <XAxis
                   dataKey="maturity"
-                  tick={{ fill: "#94a3b8", fontSize: 10 }}
+                  tick={{ fill: "#94a3b8", fontSize: 12 }}
                   axisLine={{ stroke: "#475569" }}
                   tickLine={{ stroke: "#475569" }}
                 />
@@ -209,7 +214,7 @@ export default function DebtCompositeCreditWidget({ trendPeriod = 90 }: DebtComp
           <BondStressAttributionChart data={recent} />
         </div>
 
-        <div className="mb-3 flex flex-wrap gap-2 text-[11px]">
+        <div className="mb-3 flex flex-wrap gap-2 text-xs">
           <span className="inline-flex items-center gap-1 rounded border border-stealth-700/70 bg-stealth-900/40 px-2 py-1 text-stealth-300"><span className="h-2 w-2 rounded-full bg-orange-500" />Credit spreads</span>
           <span className="inline-flex items-center gap-1 rounded border border-stealth-700/70 bg-stealth-900/40 px-2 py-1 text-stealth-300"><span className="h-2 w-2 rounded-full bg-sky-400" />Yield curve</span>
           <span className="inline-flex items-center gap-1 rounded border border-stealth-700/70 bg-stealth-900/40 px-2 py-1 text-stealth-300"><span className="h-2 w-2 rounded-full bg-violet-400" />Rates momentum</span>
@@ -231,11 +236,11 @@ export default function DebtCompositeCreditWidget({ trendPeriod = 90 }: DebtComp
           </div>
         </div>
 
-        <div className={`mt-2 text-[11px] ${spreadGapDelta <= 0 ? "text-green-300" : "text-red-300"}`}>
+        <div className={`mt-2 text-xs ${spreadGapDelta <= 0 ? "text-green-300" : "text-red-300"}`}>
           Credit quality stress {spreadGapDelta <= 0 ? "eased" : "widened"} by {Math.abs(spreadGapDelta).toFixed(2)} vs prior session.
         </div>
-        <div className="mt-1 text-[11px] text-stealth-300">{curveInsight}</div>
-        <div className="mt-1 text-[11px] text-stealth-300">{stressDrivers}</div>
+        <div className="mt-1 text-xs text-stealth-300">{curveInsight}</div>
+        <div className="mt-1 text-xs text-stealth-300">{stressDrivers}</div>
       </div>
     </Link>
   );

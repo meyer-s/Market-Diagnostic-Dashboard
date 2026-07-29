@@ -11,6 +11,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../utils/apiUtils", () => ({
   apiFetch: mocks.apiFetch,
+  getErrorMessage: (error: unknown) => (
+    error instanceof Error ? error.message : "Unexpected error. Try again."
+  ),
 }));
 
 vi.mock("../utils/loadingStore", () => ({
@@ -143,6 +146,20 @@ describe("useApi", () => {
     expect(result.current.refetch).toBe(firstRefetch);
     expect(mocks.loadingStart).toHaveBeenCalledTimes(2);
     expect(mocks.loadingStop).toHaveBeenCalledTimes(2);
+  });
+
+  it("applies a bounded read timeout and allows an explicit override", async () => {
+    mocks.apiFetch.mockResolvedValue({ value: "ok" });
+    const { result } = renderHook(() => useApi<{ value: string }>(
+      "/bounded",
+      { timeoutMs: 4_500 },
+    ));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(mocks.apiFetch).toHaveBeenCalledWith(
+      "/bounded",
+      expect.objectContaining({ timeoutMs: 4_500, signal: expect.any(AbortSignal) }),
+    );
   });
 
   it("reports a current non-abort failure and still balances loading", async () => {

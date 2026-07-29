@@ -18,9 +18,14 @@ module.exports = {
       version: "detect",
     },
   },
-  plugins: ["react-refresh"],
+  extends: ["plugin:jsx-a11y/recommended"],
+  plugins: ["react-refresh", "jsx-a11y"],
   ignorePatterns: ["dist", "coverage", "playwright-report"],
   rules: {
     "react-refresh/only-export-components": "off",
+    "jsx-a11y/no-noninteractive-tabindex": [
+      "error",
+      { roles: ["region", "tabpanel", "navigation"], tags: ["nav"] },
+    ],
   },
 };

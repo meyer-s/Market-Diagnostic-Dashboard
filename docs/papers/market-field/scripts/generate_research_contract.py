@@ -232,7 +232,7 @@ def main() -> None:
         bbox_inches="tight",
         metadata={
             "Title": "Market Field research contract",
-            "Author": "Market Diagnostic Tool",
+            "Author": "Market Diagnostic Dashboard",
             "Creator": "generate_research_contract.py",
             "CreationDate": artifact_time,
             "ModDate": artifact_time,

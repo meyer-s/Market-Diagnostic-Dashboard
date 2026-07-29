@@ -62,7 +62,7 @@ export default function SectorAlertsWidget() {
     return (
       <div className="bg-stealth-800 rounded-lg p-6 shadow-lg border border-stealth-700">
         <h3 className="text-lg font-semibold mb-4">Sector Divergence Alerts</h3>
-        <div className="text-gray-400">Loading...</div>
+        <div className="text-stealth-400">Loading sector alerts…</div>
       </div>
     );
   }
@@ -71,7 +71,7 @@ export default function SectorAlertsWidget() {
     return (
       <div className="bg-stealth-800 rounded-lg p-6 shadow-lg border border-stealth-700">
         <h3 className="text-lg font-semibold mb-4">Sector Divergence Alerts</h3>
-        <div className="text-gray-400 text-sm">
+        <div className="text-stealth-400 text-sm">
           No divergence alerts. Sector positioning aligns with market regime.
         </div>
       </div>
@@ -105,13 +105,13 @@ export default function SectorAlertsWidget() {
               </div>
             </div>
             
-            <p className="text-xs text-gray-300 mb-3">
+            <p className="text-xs text-stealth-300 mb-3">
               {alert.message}
             </p>
             
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div className="bg-stealth-800 rounded p-2">
-                <div className="text-gray-500">System State</div>
+                <div className="text-stealth-500">System State</div>
                 <div className={`font-bold ${
                   alert.details.system_state === "RED" ? "text-red-400" :
                   alert.details.system_state === "GREEN" ? "text-green-400" :
@@ -122,21 +122,21 @@ export default function SectorAlertsWidget() {
               </div>
               
               <div className="bg-stealth-800 rounded p-2">
-                <div className="text-gray-500">Spread</div>
+                <div className="text-stealth-500">Spread</div>
                 <div className="font-bold text-stealth-200">
                   {(alert.details.spread ?? 0) > 0 ? "+" : ""}{alert.details.spread ?? 0} pts
                 </div>
               </div>
               
               <div className="bg-stealth-800 rounded p-2">
-                <div className="text-gray-500">Defensive Avg</div>
+                <div className="text-stealth-500">Defensive Avg</div>
                 <div className="font-bold text-blue-400">
                   {alert.details.defensive_avg}
                 </div>
               </div>
               
               <div className="bg-stealth-800 rounded p-2">
-                <div className="text-gray-500">Cyclical Avg</div>
+                <div className="text-stealth-500">Cyclical Avg</div>
                 <div className="font-bold text-orange-400">
                   {alert.details.cyclical_avg}
                 </div>

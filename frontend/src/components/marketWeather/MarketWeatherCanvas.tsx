@@ -128,7 +128,7 @@ export default function MarketWeatherCanvas({ data, mode, inspectorChannel, comp
       context.strokeStyle = "rgba(148, 163, 184, 0.18)";
       context.lineWidth = 1;
       context.fillStyle = "rgba(203, 213, 225, 0.78)";
-      context.font = "11px IBM Plex Sans, Segoe UI, sans-serif";
+      context.font = "12px IBM Plex Sans, Segoe UI, sans-serif";
       context.textAlign = "right";
       const horizonTicks = [0, Math.floor((data.horizons.length - 1) / 2), data.horizons.length - 1];
       horizonTicks.forEach((horizonIndex) => {
@@ -243,7 +243,7 @@ export default function MarketWeatherCanvas({ data, mode, inspectorChannel, comp
   }, [data.dates.length, data.horizons.length, hover, padding, size]);
 
   return (
-    <div ref={wrapperRef} className={`relative min-w-0 overflow-hidden border border-stealth-700 bg-slate-950/70 ${compact ? "rounded-xl shadow-[inset_0_0_28px_rgba(15,23,42,.72)]" : "rounded-2xl"}`}>
+    <div ref={wrapperRef} className={`relative min-w-0 overflow-hidden border border-stealth-700 bg-stealth-950/70 ${compact ? "rounded-xl shadow-[inset_0_0_28px_rgba(15,23,42,.72)]" : "rounded-2xl"}`}>
       <canvas
         ref={canvasRef}
         onPointerMove={onPointerMove}
@@ -267,15 +267,15 @@ export default function MarketWeatherCanvas({ data, mode, inspectorChannel, comp
       ) : null}
       {hover && hoveredCell ? (
         <div
-          className={`pointer-events-none absolute z-10 rounded-xl border border-slate-500/70 bg-slate-950/95 text-xs shadow-2xl ${compact ? "w-[210px] p-2" : "w-[230px] p-3"}`}
+          className={`pointer-events-none absolute z-10 rounded-xl border border-stealth-500/70 bg-stealth-950/95 text-xs shadow-2xl ${compact ? "w-[210px] p-2" : "w-[230px] p-3"}`}
           style={{
             left: Math.min(Math.max(8, hover.x + 12), Math.max(8, size.width - (compact ? 218 : 238))),
             top: Math.min(Math.max(8, hover.y + 12), Math.max(8, size.height - (compact ? 132 : 230))),
           }}
         >
           <div className="font-semibold text-white">{formatDate(data.dates[hover.dateIndex], !["1D", "1W"].includes(data.timeframe))}</div>
-          <div className="mt-0.5 text-slate-400">{data.horizons[hover.horizonIndex]}-bar horizon</div>
-          <div className={`${compact ? "mt-1.5" : "mt-2"} grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 text-slate-300`}>
+          <div className="mt-0.5 text-stealth-400">{data.horizons[hover.horizonIndex]}-bar horizon</div>
+          <div className={`${compact ? "mt-1.5" : "mt-2"} grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 text-stealth-300`}>
             <span>Pressure</span><span className="text-right font-mono text-white">{formatSigned(hoveredCell.pressure)}</span>
             <span>Change</span><span className="text-right font-mono text-white">{formatSigned(hoveredCell.velocity)}</span>
             <span>Renderer composite</span><span className="text-right font-mono text-white">{hoveredCell.confidence.toFixed(2)}</span>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type KeyboardEvent } from "react";
 import {
   CartesianGrid,
   Legend,
@@ -13,7 +13,6 @@ import {
 import { useApi } from "../hooks/useApi";
 import MarketLoading from "../components/ui/MarketLoading";
 import { CryptoSubsystemPanel } from "../components/aas/CryptoSubsystemPanel";
-import { MethodologyPanel } from "../components/aas/MethodologyPanel";
 import { CHART_NEUTRAL, CHART_MARGIN } from "../utils/chartUtils";
 import {
   buildTechnicalProjections,
@@ -219,17 +218,134 @@ const getClassificationColor = (classification: string) => {
   }
 };
 
+const getAssetTextColor = (symbol: string) => {
+  switch (symbol) {
+    case "BTC":
+      return "#fbbf24";
+    case "ETH":
+      return "#a5b4fc";
+    case "SOL":
+      return "#5eead4";
+    case "XRP":
+      return "#f9a8d4";
+    default:
+      return "#e2e8f0";
+  }
+};
+
+const formatTimestamp = (value: string | null | undefined) => {
+  if (!value) return "Timestamp unavailable";
+  const timestamp = new Date(value);
+  return Number.isNaN(timestamp.getTime())
+    ? value
+    : timestamp.toLocaleString(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      });
+};
+
+interface ChartReadRow {
+  observation: string;
+  date: string;
+  values: Array<{ label: string; value: string }>;
+}
+
+function buildChartReadRows<T extends { label?: string; date?: string }>(
+  data: T[],
+  series: Array<{ label: string; read: (row: T) => string }>,
+): ChartReadRow[] {
+  if (data.length === 0) return [];
+  const points = [
+    { observation: "First", row: data[0] },
+    { observation: "Latest", row: data[data.length - 1] },
+  ];
+  return points.map(({ observation, row }) => ({
+    observation,
+    date: row.label ?? row.date ?? "n/a",
+    values: series.map((item) => ({ label: item.label, value: item.read(row) })),
+  }));
+}
+
+function ChartDataDisclosure({
+  label,
+  description,
+  rows,
+}: {
+  label: string;
+  description: string;
+  rows: ChartReadRow[];
+}) {
+  if (rows.length === 0) return null;
+
+  return (
+    <details className="mt-3 rounded-xl border border-stealth-700 bg-stealth-950/35">
+      <summary className="min-h-11 cursor-pointer px-3 py-3 text-sm font-semibold text-stealth-200">
+        Read chart values
+      </summary>
+      <div className="border-t border-stealth-700 p-3">
+        <p className="mb-2 text-xs leading-5 text-stealth-300">{description}</p>
+        <div className="overflow-x-auto" role="region" aria-label={label} tabIndex={0}>
+          <table className="w-full min-w-[480px] text-left text-xs">
+            <thead className="text-stealth-400">
+              <tr>
+                <th className="px-2 py-2 font-semibold" scope="col">Observation</th>
+                <th className="px-2 py-2 font-semibold" scope="col">Date</th>
+                {rows[0].values.map((item) => (
+                  <th key={item.label} className="px-2 py-2 font-semibold" scope="col">{item.label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="text-stealth-100">
+              {rows.map((row) => (
+                <tr key={row.observation} className="border-t border-stealth-800">
+                  <th className="px-2 py-2 font-semibold" scope="row">{row.observation}</th>
+                  <td className="px-2 py-2">{row.date}</td>
+                  {row.values.map((item) => <td key={item.label} className="px-2 py-2">{item.value}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </details>
+  );
+}
+
 export default function CryptoDiagnostic({
   embedded = false,
   aasData,
   componentHistory,
 }: CryptoDiagnosticProps) {
-  const { data: marketData, loading, error } = useApi<CryptoMarketOverviewResponse>("/crypto/market-overview?days=365");
-  const { data: diagnosticContext } = useApi<CryptoDiagnosticContextResponse>("/crypto/diagnostic-context?days=365");
-  const { data: fallbackAasData } = useApi<AASBreakdownData>(aasData ? "" : "/aas/components/breakdown");
-  const { data: fallbackComponentHistory } = useApi<AASComponentHistoryResponse>(componentHistory ? "" : "/aas/components/history?days=365");
+  const {
+    data: marketData,
+    loading,
+    error,
+    refetch: refetchMarket,
+  } = useApi<CryptoMarketOverviewResponse>("/crypto/market-overview?days=365");
+  const {
+    data: diagnosticContext,
+    loading: diagnosticLoading,
+    error: diagnosticError,
+  } = useApi<CryptoDiagnosticContextResponse>("/crypto/diagnostic-context?days=365");
+  const {
+    data: fallbackAasData,
+    loading: aasLoading,
+    error: aasError,
+  } = useApi<AASBreakdownData>(aasData ? "" : "/aas/components/breakdown");
+  const {
+    data: fallbackComponentHistory,
+    loading: componentHistoryLoading,
+    error: componentHistoryError,
+  } = useApi<AASComponentHistoryResponse>(componentHistory ? "" : "/aas/components/history?days=365");
   const [selectedTab, setSelectedTab] = useState<"overview" | "deep-dive">("overview");
   const [timeframe, setTimeframe] = useState<30 | 90 | 180 | 365>(90);
+  const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const nextTab = selectedTab === "overview" ? "deep-dive" : "overview";
+    setSelectedTab(nextTab);
+    document.getElementById(`crypto-${nextTab}-tab`)?.focus();
+  };
 
   const resolvedAasData = aasData ?? fallbackAasData;
   const resolvedComponentHistory = componentHistory ?? fallbackComponentHistory;
@@ -337,6 +453,12 @@ export default function CryptoDiagnostic({
   const hasSecondaryChartData = secondaryChartData.length > 1;
   const hasMarketStructureData = marketStructureData.length > 1;
   const hasSignalPanelData = signalPanelData.length > 1;
+  const supportingAvailable = [diagnosticContext, resolvedAasData, resolvedComponentHistory]
+    .filter((source) => source !== null).length;
+  const supportingLoading = [diagnosticLoading, aasLoading, componentHistoryLoading]
+    .filter(Boolean).length;
+  const supportingErrors = [diagnosticError, aasError, componentHistoryError]
+    .filter(Boolean).length;
 
   if (loading) {
     return (
@@ -350,9 +472,17 @@ export default function CryptoDiagnostic({
 
   if (error || !marketData) {
     return (
-      <div className={embedded ? "py-8" : "p-6"}>
-        <div className="bg-red-900/20 border border-red-700 text-red-200 p-4 rounded">
-          Error loading crypto data: {error ?? "No data available."}
+      <div className={embedded ? "py-8" : "page-shell"}>
+        <div className="rounded-xl border border-red-700 bg-red-900/20 p-4 text-red-100" role="alert">
+          <p className="text-lg font-semibold">Crypto diagnostic could not load</p>
+          <p className="mt-1 text-sm text-red-200">{error ?? "The market overview returned no current observation."}</p>
+          <button
+            type="button"
+            onClick={refetchMarket}
+            className="mt-4 min-h-11 rounded-xl border border-red-400/60 bg-red-950/50 px-4 py-2 text-sm font-semibold text-white hover:bg-red-900/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-200"
+          >
+            Try again
+          </button>
         </div>
       </div>
     );
@@ -361,19 +491,30 @@ export default function CryptoDiagnostic({
   return (
     <div className={embedded ? "text-stealth-200" : "page-shell text-stealth-200"}>
       {!embedded && (
-        <>
-          <h1 className="text-2xl md:text-3xl font-bold mb-2">Crypto Diagnostic</h1>
-          <p className="text-stealth-400 mb-6 text-sm md:text-base">
+        <section className="page-hero mb-6">
+          <p className="page-kicker">Tools</p>
+          <h1 className="page-title">Crypto Diagnostic</h1>
+          <p className="page-subtitle">
             A compact market-structure view built around BTC, ETH, SOL, and XRP to track digital monetary leadership,
             platform beta, speculative breadth, and the payments and regulatory lane inside crypto.
           </p>
-        </>
+          <div className="page-meta">
+            <span className="page-badge">As of {formatTimestamp(marketData.as_of)}</span>
+            <span className="page-badge">{marketData.summary.monitored_assets} assets monitored</span>
+            <span className="page-badge">
+              {supportingAvailable}/3 supporting datasets available
+              {supportingLoading > 0 ? ` · ${supportingLoading} updating` : ""}
+              {supportingErrors > 0 ? ` · ${supportingErrors} unavailable` : ""}
+            </span>
+          </div>
+        </section>
       )}
 
-      <div className="mb-6 primary-card p-4 md:p-6">
+      <section id="crypto-now" className="section-anchor mb-6 primary-card p-4 md:p-6" aria-labelledby="crypto-now-heading">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h2 className="text-lg md:text-xl font-bold mb-1 text-white">Crypto Regime Snapshot</h2>
+            <p className="page-kicker">Now</p>
+            <h2 id="crypto-now-heading" className="mt-1 text-lg font-bold text-white md:text-xl">Crypto Regime Snapshot</h2>
             <p className="text-sm text-stealth-400 max-w-3xl">{regime.detail}</p>
           </div>
           <div className="rounded-full border border-blue-500/40 bg-blue-500/10 px-4 py-2 text-sm font-semibold text-blue-200">
@@ -403,25 +544,39 @@ export default function CryptoDiagnostic({
             </div>
           </div>
         </div>
-      </div>
+      </section>
 
-      <div className="mb-6 border-b border-stealth-700 flex gap-4">
+      <div id="crypto-views" className="section-anchor control-strip mb-6" role="tablist" aria-label="Crypto diagnostic view">
         <button
+          type="button"
+          id="crypto-overview-tab"
+          role="tab"
+          aria-selected={selectedTab === "overview"}
+          aria-controls="crypto-overview-panel"
+          tabIndex={selectedTab === "overview" ? 0 : -1}
           onClick={() => setSelectedTab("overview")}
-          className={`pb-3 px-2 font-semibold border-b-2 transition ${
+          onKeyDown={handleTabKeyDown}
+          className={`min-h-11 rounded-xl px-4 py-2 text-sm font-semibold transition ${
             selectedTab === "overview"
-              ? "border-blue-500 text-blue-300"
-              : "border-transparent text-stealth-400 hover:text-gray-300"
+              ? "bg-blue-500/15 text-blue-200 shadow-[inset_0_0_0_1px_rgba(96,165,250,0.28)]"
+              : "text-stealth-400 hover:bg-stealth-800/70 hover:text-stealth-200"
           }`}
         >
           Overview
         </button>
         <button
+          type="button"
+          id="crypto-deep-dive-tab"
+          role="tab"
+          aria-selected={selectedTab === "deep-dive"}
+          aria-controls="crypto-deep-dive-panel"
+          tabIndex={selectedTab === "deep-dive" ? 0 : -1}
           onClick={() => setSelectedTab("deep-dive")}
-          className={`pb-3 px-2 font-semibold border-b-2 transition ${
+          onKeyDown={handleTabKeyDown}
+          className={`min-h-11 rounded-xl px-4 py-2 text-sm font-semibold transition ${
             selectedTab === "deep-dive"
-              ? "border-blue-500 text-blue-300"
-              : "border-transparent text-stealth-400 hover:text-gray-300"
+              ? "bg-blue-500/15 text-blue-200 shadow-[inset_0_0_0_1px_rgba(96,165,250,0.28)]"
+              : "text-stealth-400 hover:bg-stealth-800/70 hover:text-stealth-200"
           }`}
         >
           Deep Dive
@@ -429,10 +584,11 @@ export default function CryptoDiagnostic({
       </div>
 
       {selectedTab === "overview" && (
-        <>
-          <div className="mb-6 rounded-lg border border-stealth-700 bg-stealth-800 p-4 md:p-6">
+        <div id="crypto-overview-panel" role="tabpanel" aria-labelledby="crypto-overview-tab" tabIndex={0}>
+          <div id="crypto-leaders" className="section-anchor mb-6 rounded-lg border border-stealth-700 bg-stealth-800 p-4 md:p-6">
             <div className="mb-4">
-              <h3 className="text-lg font-semibold text-stealth-100">Winners & Losers Right Now</h3>
+              <p className="page-kicker">Drivers</p>
+              <h2 className="mt-1 text-lg font-semibold text-stealth-100">Winners & Losers Right Now</h2>
               <p className="text-xs text-stealth-400">
                 Competitive ranking across this four-asset basket based on trend strength, momentum, and exhaustion risk.
               </p>
@@ -442,10 +598,10 @@ export default function CryptoDiagnostic({
               {cryptoProjections.map((asset) => (
                 <div key={asset.symbol} className={`rounded-lg border p-3 ${getRelativeClassColor(asset.relativeClassification)}`}>
                   <div className="mb-1 text-xs font-semibold">
-                    #{asset.rank} <span style={{ color: asset.color }}>{asset.name}</span>
+                    #{asset.rank} <span style={{ color: getAssetTextColor(asset.symbol) }}>{asset.name}</span>
                   </div>
                   <div className="text-lg font-bold text-stealth-100">{formatCurrency(asset.current_price)}</div>
-                  <div className="mt-1 text-xs">Score: {asset.score_total}/100</div>
+                  <div className="mt-1 text-xs">Score: {asset.score_total.toFixed(1)}/100</div>
                   <div className={`mt-1 text-xs font-semibold ${getClassificationColor(asset.classification)}`}>{asset.classification}</div>
                 </div>
               ))}
@@ -456,10 +612,10 @@ export default function CryptoDiagnostic({
                 <div key={`${asset.symbol}-detail`} className="secondary-card p-4">
                   <div className="mb-3 flex items-start justify-between gap-3">
                     <div>
-                      <h4 className="text-base font-semibold text-stealth-100">
-                        <span style={{ color: asset.color }}>{asset.name}</span> ({asset.symbol})
-                      </h4>
-                      <div className="text-xs" style={{ color: asset.color }}>{asset.coin_id.toUpperCase()}</div>
+                      <h3 className="text-base font-semibold text-stealth-100">
+                        <span style={{ color: getAssetTextColor(asset.symbol) }}>{asset.name}</span> ({asset.symbol})
+                      </h3>
+                      <div className="text-xs" style={{ color: getAssetTextColor(asset.symbol) }}>{asset.coin_id.toUpperCase()}</div>
                     </div>
                     <div className={`rounded border px-2 py-1 text-xs font-semibold ${getRelativeClassColor(asset.relativeClassification)}`}>
                       {asset.relativeClassification}
@@ -542,38 +698,41 @@ export default function CryptoDiagnostic({
                   <div className="mt-3 border-t border-stealth-600 pt-3">
                     <div className="mb-1 flex justify-between text-xs">
                       <span className="text-stealth-400">Trend Score:</span>
-                      <span className="font-semibold">{asset.score_trend}/100</span>
+                      <span className="font-semibold">{asset.score_trend.toFixed(1)}/100</span>
                     </div>
                     <div className="flex justify-between text-xs">
                       <span className="text-stealth-400">Momentum Score:</span>
-                      <span className="font-semibold">{asset.score_momentum}/100</span>
+                      <span className="font-semibold">{asset.score_momentum.toFixed(1)}/100</span>
                     </div>
                   </div>
                 </div>
               ))}
             </div>
 
-            <div className="mt-4 rounded border-l-2 border-blue-500 bg-stealth-900/50 p-3 text-xs text-stealth-400">
+            <div className="mt-4 rounded-xl border border-stealth-700 bg-stealth-900/50 p-3 text-xs text-stealth-400">
               <strong>Technical Analysis:</strong> Projections are based on SMA crossovers (20/50/200), RSI, momentum,
               and recent support/resistance. Winner/Loser classification is relative across BTC, ETH, SOL, and XRP only.
             </div>
           </div>
 
-          <div className="mb-6 rounded-lg border border-stealth-700 bg-stealth-800 p-4 md:p-6">
+          <div id="crypto-price-structure" className="section-anchor mb-6 rounded-lg border border-stealth-700 bg-stealth-800 p-4 md:p-6">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h3 className="text-lg font-semibold text-stealth-100">Price Structure</h3>
+                <p className="page-kicker">Evidence</p>
+                <h2 className="mt-1 text-lg font-semibold text-stealth-100">Price Structure</h2>
                 <p className="text-xs text-stealth-400">
                   Raw-price curves are separated by market tier so the leadership signal is readable without compressing BTC,
                   ETH, SOL, and XRP into one distorted axis.
                 </p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2" role="group" aria-label="Price history range">
                 {[30, 90, 180, 365].map((days) => (
                   <button
+                    type="button"
                     key={days}
                     onClick={() => setTimeframe(days as 30 | 90 | 180 | 365)}
-                    className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                    aria-pressed={timeframe === days}
+                    className={`min-h-11 rounded-full px-3 py-2 text-xs font-medium transition ${
                       timeframe === days
                         ? "border border-blue-500/40 bg-blue-500/20 text-blue-200"
                         : "border border-stealth-700 bg-stealth-900/60 text-stealth-400"
@@ -588,23 +747,29 @@ export default function CryptoDiagnostic({
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
               <div className="min-w-0 secondary-card p-4">
                 <div className="mb-3">
-                  <h4 className="text-sm font-semibold text-stealth-100">BTC vs ETH</h4>
+                  <h3 className="text-sm font-semibold text-stealth-100">BTC vs ETH</h3>
                   <p className="text-xs text-stealth-500">BTC stays on the left axis and ETH on the right so institutional leadership and smart-contract beta can diverge cleanly.</p>
+                  <p className="mt-1 text-xs text-stealth-300">Latest plotted: {largeCapChartData[largeCapChartData.length - 1]?.label ?? "unavailable"}</p>
                 </div>
                 <div className="h-80 min-w-0 w-full">
                   {hasLargeCapChartData ? (
                   <ResponsiveContainer width="100%" height="100%" minWidth={240} minHeight={240}>
-                    <LineChart data={largeCapChartData} margin={CHART_MARGIN}>
+                    <LineChart
+                      accessibilityLayer
+                      aria-label="Bitcoin and Ether price history"
+                      data={largeCapChartData}
+                      margin={CHART_MARGIN}
+                    >
                       <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                       <XAxis
                         dataKey="label"
                         minTickGap={28}
-                        tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }}
+                        tick={{ fontSize: 12, fill: CHART_NEUTRAL.tick }}
                         axisLine={{ stroke: CHART_NEUTRAL.axis }}
                       />
                       <YAxis
                         yAxisId="left"
-                        tick={{ fontSize: 11, fill: "#f59e0b" }}
+                        tick={{ fontSize: 12, fill: "#f59e0b" }}
                         axisLine={{ stroke: "#f59e0b" }}
                         tickLine={{ stroke: "#f59e0b" }}
                         tickFormatter={(value) => formatAxisCurrency(Number(value))}
@@ -613,7 +778,7 @@ export default function CryptoDiagnostic({
                       <YAxis
                         yAxisId="right"
                         orientation="right"
-                        tick={{ fontSize: 11, fill: "#60a5fa" }}
+                        tick={{ fontSize: 12, fill: "#60a5fa" }}
                         axisLine={{ stroke: "#60a5fa" }}
                         tickLine={{ stroke: "#60a5fa" }}
                         tickFormatter={(value) => formatAxisCurrency(Number(value))}
@@ -624,7 +789,7 @@ export default function CryptoDiagnostic({
                         labelStyle={{ color: CHART_NEUTRAL.label, fontWeight: 600 }}
                         formatter={(value: number, name: string) => [formatAxisCurrency(value), name]}
                       />
-                      <Legend wrapperStyle={{ fontSize: 11, color: CHART_NEUTRAL.text }} />
+                      <Legend wrapperStyle={{ fontSize: 12, color: CHART_NEUTRAL.text }} />
                       <Line yAxisId="left" type="monotone" dataKey="BTC" name="BTC" stroke="#f59e0b" strokeWidth={2.5} dot={false} connectNulls />
                       <Line yAxisId="right" type="monotone" dataKey="ETH" name="ETH" stroke="#60a5fa" strokeWidth={2.5} dot={false} connectNulls />
                     </LineChart>
@@ -635,27 +800,41 @@ export default function CryptoDiagnostic({
                     </div>
                   )}
                 </div>
+                <ChartDataDisclosure
+                  label="BTC and ETH price chart summary"
+                  description={`The chart spans ${timeframe} days and uses separate price axes. Values below show the first and latest plotted observations.`}
+                  rows={buildChartReadRows(largeCapChartData, [
+                    { label: "BTC", read: (row) => formatAxisCurrency(Number(row.BTC)) },
+                    { label: "ETH", read: (row) => formatAxisCurrency(Number(row.ETH)) },
+                  ])}
+                />
               </div>
 
               <div className="min-w-0 secondary-card p-4">
                 <div className="mb-3">
-                  <h4 className="text-sm font-semibold text-stealth-100">SOL vs XRP</h4>
+                  <h3 className="text-sm font-semibold text-stealth-100">SOL vs XRP</h3>
                   <p className="text-xs text-stealth-500">The higher-beta pair sits in a separate panel so alt rotation is visible without flattening the larger-cap leaders.</p>
+                  <p className="mt-1 text-xs text-stealth-300">Latest plotted: {secondaryChartData[secondaryChartData.length - 1]?.label ?? "unavailable"}</p>
                 </div>
                 <div className="h-80 min-w-0 w-full">
                   {hasSecondaryChartData ? (
                   <ResponsiveContainer width="100%" height="100%" minWidth={240} minHeight={240}>
-                    <LineChart data={secondaryChartData} margin={CHART_MARGIN}>
+                    <LineChart
+                      accessibilityLayer
+                      aria-label="Solana and XRP price history"
+                      data={secondaryChartData}
+                      margin={CHART_MARGIN}
+                    >
                       <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
                       <XAxis
                         dataKey="label"
                         minTickGap={24}
-                        tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }}
+                        tick={{ fontSize: 12, fill: CHART_NEUTRAL.tick }}
                         axisLine={{ stroke: CHART_NEUTRAL.axis }}
                       />
                       <YAxis
                         yAxisId="left"
-                        tick={{ fontSize: 11, fill: "#14b8a6" }}
+                        tick={{ fontSize: 12, fill: "#14b8a6" }}
                         axisLine={{ stroke: "#14b8a6" }}
                         tickLine={{ stroke: "#14b8a6" }}
                         tickFormatter={(value) => formatAxisCurrency(Number(value))}
@@ -664,7 +843,7 @@ export default function CryptoDiagnostic({
                       <YAxis
                         yAxisId="right"
                         orientation="right"
-                        tick={{ fontSize: 11, fill: "#f472b6" }}
+                        tick={{ fontSize: 12, fill: "#f472b6" }}
                         axisLine={{ stroke: "#f472b6" }}
                         tickLine={{ stroke: "#f472b6" }}
                         tickFormatter={(value) => formatAxisCurrency(Number(value))}
@@ -675,7 +854,7 @@ export default function CryptoDiagnostic({
                         labelStyle={{ color: CHART_NEUTRAL.label, fontWeight: 600 }}
                         formatter={(value: number, name: string) => [formatAxisCurrency(value), name]}
                       />
-                      <Legend wrapperStyle={{ fontSize: 11, color: CHART_NEUTRAL.text }} />
+                      <Legend wrapperStyle={{ fontSize: 12, color: CHART_NEUTRAL.text }} />
                       <Line yAxisId="left" type="monotone" dataKey="SOL" name="SOL" stroke="#14b8a6" strokeWidth={2.4} dot={false} connectNulls />
                       <Line yAxisId="right" type="monotone" dataKey="XRP" name="XRP" stroke="#f472b6" strokeWidth={2.4} dot={false} connectNulls />
                     </LineChart>
@@ -686,6 +865,14 @@ export default function CryptoDiagnostic({
                     </div>
                   )}
                 </div>
+                <ChartDataDisclosure
+                  label="SOL and XRP price chart summary"
+                  description={`The chart spans ${timeframe} days and uses separate price axes. Values below show the first and latest plotted observations.`}
+                  rows={buildChartReadRows(secondaryChartData, [
+                    { label: "SOL", read: (row) => formatAxisCurrency(Number(row.SOL)) },
+                    { label: "XRP", read: (row) => formatAxisCurrency(Number(row.XRP)) },
+                  ])}
+                />
               </div>
             </div>
           </div>
@@ -696,15 +883,21 @@ export default function CryptoDiagnostic({
                 <div className="mb-3">
                   <h3 className="text-lg font-semibold text-stealth-100">Leadership Concentration</h3>
                   <p className="text-xs text-stealth-400">BTC dominance versus total crypto market cap shows whether leadership is broadening out or collapsing back toward defensive concentration.</p>
+                  <p className="mt-1 text-xs text-stealth-300">Latest plotted: {marketStructureData[marketStructureData.length - 1]?.label ?? "unavailable"}</p>
                 </div>
                 <div className="h-72 min-w-0 w-full">
                   {hasMarketStructureData ? (
                   <ResponsiveContainer width="100%" height="100%" minWidth={240} minHeight={220}>
-                    <LineChart data={marketStructureData} margin={CHART_MARGIN}>
+                    <LineChart
+                      accessibilityLayer
+                      aria-label="Bitcoin dominance and total crypto market-capitalization history"
+                      data={marketStructureData}
+                      margin={CHART_MARGIN}
+                    >
                       <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
-                      <XAxis dataKey="label" tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }} axisLine={{ stroke: CHART_NEUTRAL.axis }} />
-                      <YAxis yAxisId="left" tick={{ fontSize: 11, fill: "#fbbf24" }} axisLine={{ stroke: "#fbbf24" }} tickLine={{ stroke: "#fbbf24" }} tickFormatter={(value) => `${Number(value).toFixed(0)}%`} width={56} />
-                      <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: "#60a5fa" }} axisLine={{ stroke: "#60a5fa" }} tickLine={{ stroke: "#60a5fa" }} tickFormatter={(value) => formatAxisCurrency(Number(value))} width={78} />
+                      <XAxis dataKey="label" tick={{ fontSize: 12, fill: CHART_NEUTRAL.tick }} axisLine={{ stroke: CHART_NEUTRAL.axis }} />
+                      <YAxis yAxisId="left" tick={{ fontSize: 12, fill: "#fbbf24" }} axisLine={{ stroke: "#fbbf24" }} tickLine={{ stroke: "#fbbf24" }} tickFormatter={(value) => `${Number(value).toFixed(0)}%`} width={56} />
+                      <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12, fill: "#60a5fa" }} axisLine={{ stroke: "#60a5fa" }} tickLine={{ stroke: "#60a5fa" }} tickFormatter={(value) => formatAxisCurrency(Number(value))} width={78} />
                       <Tooltip
                         contentStyle={{ backgroundColor: CHART_NEUTRAL.tooltipBg, border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`, borderRadius: 8 }}
                         labelStyle={{ color: CHART_NEUTRAL.label, fontWeight: 600 }}
@@ -715,7 +908,7 @@ export default function CryptoDiagnostic({
                           return [formatCurrency(value, true), name];
                         }}
                       />
-                      <Legend wrapperStyle={{ fontSize: 11, color: CHART_NEUTRAL.text }} />
+                      <Legend wrapperStyle={{ fontSize: 12, color: CHART_NEUTRAL.text }} />
                       <ReferenceLine yAxisId="left" y={60} stroke="#64748b" strokeDasharray="4 4" />
                       <Line yAxisId="left" type="monotone" dataKey="btc_dominance_pct" name="BTC Dominance" stroke="#fbbf24" strokeWidth={2.4} dot={false} connectNulls />
                       <Line yAxisId="right" type="monotone" dataKey="total_market_cap" name="Total Market Cap" stroke="#60a5fa" strokeWidth={2.2} dot={false} connectNulls />
@@ -727,6 +920,14 @@ export default function CryptoDiagnostic({
                     </div>
                   )}
                 </div>
+                <ChartDataDisclosure
+                  label="Leadership concentration chart summary"
+                  description="The chart compares BTC dominance with total crypto market capitalization. Values below show the first and latest plotted observations."
+                  rows={buildChartReadRows(marketStructureData, [
+                    { label: "BTC dominance", read: (row) => row.btc_dominance_pct !== null && Number.isFinite(row.btc_dominance_pct) ? `${row.btc_dominance_pct.toFixed(2)}%` : "n/a" },
+                    { label: "Market cap", read: (row) => formatCurrency(row.total_market_cap, true) },
+                  ])}
+                />
                 <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
                   <div className="rounded border border-stealth-700 bg-stealth-900/60 p-3">
                     <div className="text-xs text-stealth-500">Primary Driver</div>
@@ -746,21 +947,27 @@ export default function CryptoDiagnostic({
               <div className="min-w-0 rounded-lg border border-stealth-700 bg-stealth-800 p-4 md:p-6">
                 <div className="mb-3">
                   <h3 className="text-lg font-semibold text-stealth-100">Liquidity Plumbing & Alt Behavior</h3>
-                  <p className="text-xs text-stealth-400">AAS crypto signals on a normalized 0 to 1 scale. The reference bands help separate benign plumbing from a more defensive or stress-heavy tape.</p>
+                  <p className="text-xs text-stealth-400">Crypto subsystem signals on a normalized 0 to 1 scale. The reference bands help separate benign plumbing from a more defensive or stress-heavy tape.</p>
+                  <p className="mt-1 text-xs text-stealth-300">Latest plotted: {signalPanelData[signalPanelData.length - 1]?.label ?? "unavailable"}</p>
                 </div>
                 <div className="h-72 min-w-0 w-full">
                   {hasSignalPanelData ? (
                   <ResponsiveContainer width="100%" height="100%" minWidth={240} minHeight={220}>
-                    <LineChart data={signalPanelData} margin={CHART_MARGIN}>
+                    <LineChart
+                      accessibilityLayer
+                      aria-label="Crypto liquidity plumbing and alt-behavior signal history"
+                      data={signalPanelData}
+                      margin={CHART_MARGIN}
+                    >
                       <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
-                      <XAxis dataKey="label" tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }} axisLine={{ stroke: CHART_NEUTRAL.axis }} />
-                      <YAxis domain={[0, 1]} tick={{ fontSize: 11, fill: CHART_NEUTRAL.tick }} axisLine={{ stroke: CHART_NEUTRAL.axis }} />
+                      <XAxis dataKey="label" tick={{ fontSize: 12, fill: CHART_NEUTRAL.tick }} axisLine={{ stroke: CHART_NEUTRAL.axis }} />
+                      <YAxis domain={[0, 1]} tick={{ fontSize: 12, fill: CHART_NEUTRAL.tick }} axisLine={{ stroke: CHART_NEUTRAL.axis }} />
                       <Tooltip
                         contentStyle={{ backgroundColor: CHART_NEUTRAL.tooltipBg, border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`, borderRadius: 8 }}
                         labelStyle={{ color: CHART_NEUTRAL.label, fontWeight: 600 }}
                         formatter={(value: number, name: string) => [value?.toFixed(2), name]}
                       />
-                      <Legend wrapperStyle={{ fontSize: 11, color: CHART_NEUTRAL.text }} />
+                      <Legend wrapperStyle={{ fontSize: 12, color: CHART_NEUTRAL.text }} />
                       <ReferenceLine y={0.33} stroke="#1e293b" strokeDasharray="4 4" />
                       <ReferenceLine y={0.67} stroke="#1e293b" strokeDasharray="4 4" />
                       <Line type="monotone" dataKey="stablecoin_supply" name="Stablecoin Supply" stroke="#38bdf8" strokeWidth={2.2} dot={false} connectNulls />
@@ -775,17 +982,39 @@ export default function CryptoDiagnostic({
                     </div>
                   )}
                 </div>
+                <ChartDataDisclosure
+                  label="Crypto liquidity and breadth chart summary"
+                  description="Signals use a normalized zero-to-one scale. Values below show the first and latest plotted observations."
+                  rows={buildChartReadRows(signalPanelData, [
+                    { label: "Stablecoin supply", read: (row) => formatSignal(row.stablecoin_supply) },
+                    { label: "DeFi participation", read: (row) => formatSignal(row.defi_tvl) },
+                    { label: "BTC equity correlation", read: (row) => formatSignal(row.btc_spy_correlation) },
+                    { label: "Alt breadth stress", read: (row) => formatSignal(row.altcoin_weakness) },
+                  ])}
+                />
               </div>
             </div>
           )}
 
-        </>
+          {diagnosticError && (
+            <div className="mb-6 rounded-xl border border-amber-600/60 bg-amber-950/20 p-4 text-sm text-amber-100" role="status">
+              The market overview is current, but diagnostic-context evidence is unavailable: {diagnosticError}
+            </div>
+          )}
+        </div>
       )}
 
       {selectedTab === "deep-dive" && (
-        <div className="space-y-6">
-          <div className="rounded-lg border border-stealth-700 bg-stealth-800 p-4 md:p-6">
-            <h3 className="text-lg font-semibold text-stealth-100 mb-2">Basket Design</h3>
+        <div
+          id="crypto-deep-dive-panel"
+          role="tabpanel"
+          aria-labelledby="crypto-deep-dive-tab"
+          className="space-y-6"
+          tabIndex={0}
+        >
+          <div id="crypto-basket" className="section-anchor rounded-lg border border-stealth-700 bg-stealth-800 p-4 md:p-6">
+            <p className="page-kicker">Definition</p>
+            <h2 className="mb-2 mt-1 text-lg font-semibold text-stealth-100">Basket Design</h2>
             <p className="text-sm text-stealth-400 leading-relaxed">
               BTC anchors the monetary-store-of-value lane, ETH captures smart-contract core beta, SOL adds higher-beta speculative and throughput-sensitive behavior,
               and XRP adds a payments and regulatory-narrative lane. It is not a full ecosystem map, but it is a compact and defensible top-level market read.
@@ -833,7 +1062,41 @@ export default function CryptoDiagnostic({
             />
           )}
 
-          <MethodologyPanel />
+          {(diagnosticError || aasError || componentHistoryError) && (
+            <div className="rounded-xl border border-amber-600/60 bg-amber-950/20 p-4 text-sm text-amber-100" role="status">
+              This view is partial. Some supporting evidence is unavailable; the current market overview remains visible.
+            </div>
+          )}
+          <section id="crypto-method" className="section-anchor rounded-lg border border-stealth-700 bg-stealth-800 p-4 md:p-6" aria-labelledby="crypto-method-heading">
+            <p className="page-kicker">Method & audit</p>
+            <h2 id="crypto-method-heading" className="mb-2 mt-1 text-lg font-semibold text-stealth-100">
+              How to read the crypto diagnostic
+            </h2>
+            <div className="grid gap-4 text-sm leading-6 text-stealth-300 lg:grid-cols-3">
+              <div>
+                <h3 className="font-semibold text-stealth-100">Market basket</h3>
+                <p className="mt-1">
+                  Price, breadth, dominance, and market-cap evidence describe the current crypto tape.
+                  This is a diagnostic snapshot, not a forecast or trade signal.
+                </p>
+              </div>
+              <div>
+                <h3 className="font-semibold text-stealth-100">Subsystem evidence</h3>
+                <p className="mt-1">
+                  The shared backend still exposes crypto component data under the historical AAS API
+                  namespace. This page filters that payload to crypto-only components and does not
+                  recreate the retired combined AAS route.
+                </p>
+              </div>
+              <div>
+                <h3 className="font-semibold text-stealth-100">Interpretation limits</h3>
+                <p className="mt-1">
+                  Normalize signals within their stated scale, check freshness and missing coverage,
+                  and corroborate regime language with the disclosed chart values before acting.
+                </p>
+              </div>
+            </div>
+          </section>
         </div>
       )}
     </div>

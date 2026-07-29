@@ -155,6 +155,50 @@ describe("MarketWeatherComparisonLab", () => {
     expect(screen.queryByText(/leads/i)).toBeNull();
   });
 
+  it("keeps responsive selected semantics and aria-controls tied only to mounted panels", () => {
+    render(
+      <MarketWeatherComparisonLab
+        data={DATA}
+        basis="context"
+        view="difference"
+        selectedDimension="pressure"
+        onBasisChange={vi.fn()}
+        onViewChange={vi.fn()}
+        onDimensionChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByLabelText("Pair summary").textContent).toContain("NVDA ahead of QQQ");
+    const tabs = screen.getAllByRole("tab");
+    const assertMountedControls = () => {
+      tabs.forEach((tab) => {
+        const target = tab.getAttribute("aria-controls");
+        if (tab.getAttribute("aria-selected") === "true") {
+          expect(target).not.toBeNull();
+          expect(document.getElementById(String(target))).not.toBeNull();
+        } else {
+          expect(target).toBeNull();
+        }
+      });
+      const rail = screen.getByRole("complementary", { name: "Research next" });
+      ["Overview", "Field detail", "Audit receipt"].forEach((name) => {
+        const control = within(rail).getByRole("button", { name });
+        const target = control.getAttribute("aria-controls");
+        if (control.getAttribute("aria-pressed") === "true") {
+          expect(document.getElementById(String(target))).not.toBeNull();
+        } else {
+          expect(target).toBeNull();
+        }
+      });
+    };
+
+    assertMountedControls();
+    fireEvent.click(screen.getByRole("tab", { name: "Field detail" }));
+    assertMountedControls();
+    fireEvent.click(screen.getByRole("tab", { name: "Audit receipt" }));
+    assertMountedControls();
+  });
+
   it("moves focus to the destination tab when an Overview drilldown changes panels", () => {
     const onDimensionChange = vi.fn();
     render(

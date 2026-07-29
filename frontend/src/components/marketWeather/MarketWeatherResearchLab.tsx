@@ -216,21 +216,21 @@ function StateDeviationBars({
         const positive = deviation.robustDeviation >= 0;
         return (
           <div key={deviation.id} className="grid grid-cols-[minmax(86px,1fr)_minmax(90px,1.4fr)_52px] items-center gap-2 text-xs">
-            <span className="truncate text-slate-300">{deviation.label}</span>
-            <div className="relative h-2.5 overflow-hidden rounded-full bg-slate-800" aria-hidden="true">
-              <span className="absolute inset-y-0 left-1/2 w-px bg-slate-500" />
+            <span className="truncate text-stealth-300">{deviation.label}</span>
+            <div className="relative h-2.5 overflow-hidden rounded-full bg-stealth-800" aria-hidden="true">
+              <span className="absolute inset-y-0 left-1/2 w-px bg-stealth-500" />
               <span
                 className={`absolute inset-y-0 rounded-full ${positive ? "bg-sky-300" : "bg-violet-300"}`}
                 style={positive ? { left: "50%", width: `${magnitude}%` } : { right: "50%", width: `${magnitude}%` }}
               />
             </div>
-            <span className="text-right font-mono text-slate-300">
+            <span className="text-right font-mono text-stealth-300">
               {deviation.robustDeviation > 0 ? "+" : ""}{deviation.robustDeviation.toFixed(1)}
             </span>
           </div>
         );
       })}
-      {!compact ? <p className="text-xs leading-5 text-slate-400">The eight largest differences are shown. The center line is the model-fit median; numbers are fit-spread units (normally interquartile ranges), while bar lengths cap at three for display.</p> : null}
+      {!compact ? <p className="text-xs leading-5 text-stealth-400">The eight largest differences are shown. The center line is the model-fit median; numbers are fit-spread units (normally interquartile ranges), while bar lengths cap at three for display.</p> : null}
     </div>
   );
 }
@@ -289,18 +289,18 @@ function TimelineTrackHeader({
     <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
       <div>
         <h4 className="text-sm font-semibold text-white">{title}</h4>
-        <p className="mt-0.5 text-xs text-slate-400">{scale}</p>
+        <p className="mt-0.5 text-xs text-stealth-400">{scale}</p>
       </div>
-      {children ? <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-300">{children}</div> : null}
+      {children ? <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-stealth-300">{children}</div> : null}
     </div>
   );
 }
 
 const RELATIONSHIP_STATUS: Record<MarketWeatherContextRelationship["status"], { label: string; tone: string }> = {
   persistent: { label: "Persistent", tone: "text-sky-200" },
-  directionally_consistent: { label: "Sign held", tone: "text-slate-200" },
+  directionally_consistent: { label: "Sign held", tone: "text-stealth-200" },
   unstable: { label: "Sign changed", tone: "text-violet-200" },
-  insufficient: { label: "Building history", tone: "text-slate-500" },
+  insufficient: { label: "Building history", tone: "text-stealth-500" },
 };
 
 function associationColor(value: number): string {
@@ -323,7 +323,7 @@ function ContextEvidenceLens({
   const context = research.context;
   if (!context || context.error) {
     return (
-      <div className="rounded-xl border border-stealth-700 bg-slate-950/35 p-4 text-sm text-slate-400">
+      <div className="rounded-xl border border-stealth-700 bg-stealth-950/35 p-4 text-sm text-stealth-400">
         Cross-market context is unavailable. The price-derived field is unchanged.
       </div>
     );
@@ -348,27 +348,27 @@ function ContextEvidenceLens({
   return (
     <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(250px,.82fr)_minmax(0,1.55fr)]">
       <div className="order-2 space-y-3 lg:order-1">
-        <div className="rounded-xl border border-stealth-700 bg-slate-950/35 p-3">
+        <div className="rounded-xl border border-stealth-700 bg-stealth-950/35 p-3">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
               <h4 className="text-sm font-semibold text-white">Price structure</h4>
-              <p className="mt-0.5 text-xs text-slate-400">Prior 20 bars · causal boundaries</p>
+              <p className="mt-0.5 text-xs text-stealth-400">Prior 20 bars · causal boundaries</p>
             </div>
-            <span className="rounded-full border border-stealth-700 px-2 py-1 text-xs capitalize text-slate-300">{selected.priceActionState?.replace(/_/g, " ") ?? "Unavailable"}</span>
+            <span className="rounded-full border border-stealth-700 px-2 py-1 text-xs capitalize text-stealth-300">{selected.priceActionState?.replace(/_/g, " ") ?? "Unavailable"}</span>
           </div>
           <div className="mt-3 grid grid-cols-3 divide-x divide-stealth-700 rounded-lg border border-stealth-700">
-            <div className="min-w-0 p-2"><span className="block text-xs text-slate-500">Support</span><strong className="mt-1 block truncate font-mono text-sm text-white">{selected.support20 === null ? "—" : `$${selected.support20.toFixed(2)}`}</strong></div>
-            <div className="min-w-0 p-2"><span className="block text-xs text-slate-500">Range</span><strong className="mt-1 block truncate font-mono text-sm text-white">{selected.rangePosition20 === null ? "—" : `${selected.rangePosition20.toFixed(0)}%`}</strong></div>
-            <div className="min-w-0 p-2"><span className="block text-xs text-slate-500">Resistance</span><strong className="mt-1 block truncate font-mono text-sm text-white">{selected.resistance20 === null ? "—" : `$${selected.resistance20.toFixed(2)}`}</strong></div>
+            <div className="min-w-0 p-2"><span className="block text-xs text-stealth-500">Support</span><strong className="mt-1 block truncate font-mono text-sm text-white">{selected.support20 === null ? "—" : `$${selected.support20.toFixed(2)}`}</strong></div>
+            <div className="min-w-0 p-2"><span className="block text-xs text-stealth-500">Range</span><strong className="mt-1 block truncate font-mono text-sm text-white">{selected.rangePosition20 === null ? "—" : `${selected.rangePosition20.toFixed(0)}%`}</strong></div>
+            <div className="min-w-0 p-2"><span className="block text-xs text-stealth-500">Resistance</span><strong className="mt-1 block truncate font-mono text-sm text-white">{selected.resistance20 === null ? "—" : `$${selected.resistance20.toFixed(2)}`}</strong></div>
           </div>
-          <p className="mt-2 text-xs text-slate-400">{formatContextValue(selected.return5BarPct, "%")} over 5 bars · {formatContextValue(selected.trendGap20Pct, "%")} vs 20-bar mean</p>
+          <p className="mt-2 text-xs text-stealth-400">{formatContextValue(selected.return5BarPct, "%")} over 5 bars · {formatContextValue(selected.trendGap20Pct, "%")} vs 20-bar mean</p>
         </div>
 
-        <div className="rounded-xl border border-stealth-700 bg-slate-950/35 p-3">
+        <div className="rounded-xl border border-stealth-700 bg-stealth-950/35 p-3">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
               <h4 className="text-sm font-semibold text-white">Option-implied context</h4>
-              <p className="mt-0.5 text-xs text-slate-400">Current snapshot only · not stretched backward</p>
+              <p className="mt-0.5 text-xs text-stealth-400">Current snapshot only · not stretched backward</p>
             </div>
             <span className={`rounded-full border px-2 py-1 text-xs ${optionality?.freshness === "fresh" ? "border-sky-400/25 text-sky-200" : "border-amber-300/25 text-amber-200"}`}>{optionality?.freshness ?? "unavailable"}</span>
           </div>
@@ -376,28 +376,28 @@ function ContextEvidenceLens({
           {optionality?.available ? (
             <>
               <div className="mt-2 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-                <div><span className="block text-slate-500">IV / HV</span><span className="mt-0.5 block font-mono text-slate-200">{optionality.iv30_pct?.toFixed(1) ?? "—"} / {optionality.hv30_pct?.toFixed(1) ?? "—"}</span></div>
-                <div><span className="block text-slate-500">Spread</span><span className="mt-0.5 block font-mono text-slate-200">{formatContextValue(optionality.iv_hv_spread_points, " pts")}</span></div>
-                <div><span className="block text-slate-500">Chain IV pct</span><span className="mt-0.5 block font-mono text-slate-200">{optionality.iv_cross_section_percentile_pct?.toFixed(0) ?? "—"}%</span></div>
-                <div><span className="block text-slate-500">Extrinsic share</span><span className="mt-0.5 block font-mono text-slate-200">{optionality.avg_extrinsic_share_pct?.toFixed(1) ?? "—"}%</span></div>
+                <div><span className="block text-stealth-500">IV / HV</span><span className="mt-0.5 block font-mono text-stealth-200">{optionality.iv30_pct?.toFixed(1) ?? "—"} / {optionality.hv30_pct?.toFixed(1) ?? "—"}</span></div>
+                <div><span className="block text-stealth-500">Spread</span><span className="mt-0.5 block font-mono text-stealth-200">{formatContextValue(optionality.iv_hv_spread_points, " pts")}</span></div>
+                <div><span className="block text-stealth-500">Chain IV pct</span><span className="mt-0.5 block font-mono text-stealth-200">{optionality.iv_cross_section_percentile_pct?.toFixed(0) ?? "—"}%</span></div>
+                <div><span className="block text-stealth-500">Extrinsic share</span><span className="mt-0.5 block font-mono text-stealth-200">{optionality.avg_extrinsic_share_pct?.toFixed(1) ?? "—"}%</span></div>
               </div>
-              <p className="mt-2 text-xs leading-5 text-slate-500">IV/HV shows relative richness, not proven arbitrage. Chain IV percentile compares the current scan, not historical IV. {optionality.scanner_evidence ? `${optionality.scanner_evidence.events} dated Secret Options event${optionality.scanner_evidence.events === 1 ? "" : "s"} retained.` : "No Secret Options event history for this ticker."}</p>
+              <p className="mt-2 text-xs leading-5 text-stealth-500">IV/HV shows relative richness, not proven arbitrage. Chain IV percentile compares the current scan, not historical IV. {optionality.scanner_evidence ? `${optionality.scanner_evidence.events} dated Secret Options event${optionality.scanner_evidence.events === 1 ? "" : "s"} retained.` : "No Secret Options event history for this ticker."}</p>
             </>
           ) : (
-            <p className="mt-1 text-xs leading-5 text-slate-400">No current Stock Analysis options snapshot{optionality?.scanner_evidence ? `; ${optionality.scanner_evidence.events} dated Secret Options event${optionality.scanner_evidence.events === 1 ? " is" : "s are"} retained separately.` : " or dated Secret Options event is available for this ticker."}</p>
+            <p className="mt-1 text-xs leading-5 text-stealth-400">No current Stock Analysis options snapshot{optionality?.scanner_evidence ? `; ${optionality.scanner_evidence.events} dated Secret Options event${optionality.scanner_evidence.events === 1 ? " is" : "s are"} retained separately.` : " or dated Secret Options event is available for this ticker."}</p>
           )}
         </div>
       </div>
 
-      <div className="order-1 min-w-0 rounded-xl border border-stealth-700 bg-slate-950/35 p-3 lg:order-2">
+      <div className="order-1 min-w-0 rounded-xl border border-stealth-700 bg-stealth-950/35 p-3 lg:order-2">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
             <h4 className="text-sm font-semibold text-white">Cross-market relationship surface</h4>
-            <p className="mt-0.5 text-xs text-slate-400">How daily pressure changes have moved with later ticker returns</p>
+            <p className="mt-0.5 text-xs text-stealth-400">How daily pressure changes have moved with later ticker returns</p>
           </div>
           <span className="rounded-full border border-violet-300/20 bg-violet-300/5 px-2 py-1 text-xs text-violet-200">Research only</span>
         </div>
-        <p className="mt-3 rounded-lg border border-sky-400/15 bg-sky-400/5 px-3 py-2 text-xs leading-5 text-slate-300">{relationshipTakeaway}</p>
+        <p className="mt-3 rounded-lg border border-sky-400/15 bg-sky-400/5 px-3 py-2 text-xs leading-5 text-stealth-300">{relationshipTakeaway}</p>
         <div className="mt-3 space-y-2">
           {relationships.map((relationship) => {
             const status = RELATIONSHIP_STATUS[relationship.status];
@@ -405,15 +405,15 @@ function ContextEvidenceLens({
             const lastAssociation = relationship.rolling_association[relationship.rolling_association.length - 1];
             const associationLabel = `${relationship.label} rolling association${firstAssociation && lastAssociation ? ` from ${formatObservationDate(firstAssociation.date, "1D")} to ${formatObservationDate(lastAssociation.date, "1D")}` : ""}; validated relationship ${relationship.holdout_rho === null ? "unavailable" : relationship.holdout_rho.toFixed(2)}; ${status.label.toLowerCase()}`;
             return (
-              <div key={relationship.id} className="grid min-w-0 grid-cols-[minmax(0,1fr)_78px] items-center gap-2 rounded-lg border border-stealth-800 bg-slate-950/30 px-2 py-2 sm:grid-cols-[minmax(132px,.9fr)_minmax(120px,1.5fr)_92px]">
+              <div key={relationship.id} className="grid min-w-0 grid-cols-[minmax(0,1fr)_78px] items-center gap-2 rounded-lg border border-stealth-800 bg-stealth-950/30 px-2 py-2 sm:grid-cols-[minmax(132px,.9fr)_minmax(120px,1.5fr)_92px]">
                 <div className="min-w-0">
-                  <div className="flex min-w-0 items-center gap-2"><span className="truncate text-xs font-medium text-slate-200">{relationship.label}</span><span className={`shrink-0 text-[10px] ${relationship.freshness === "fresh" ? "text-sky-300" : "text-amber-300"}`}>●</span></div>
-                  <span className="mt-0.5 block truncate text-xs text-slate-400">Pressure {formatContextValue(relationship.current_pressure_change)} · {relationship.selected_lag_days ?? "—"}-day lag</span>
+                  <div className="flex min-w-0 items-center gap-2"><span className="truncate text-xs font-medium text-stealth-200">{relationship.label}</span><span className={`shrink-0 text-xs ${relationship.freshness === "fresh" ? "text-sky-300" : "text-amber-300"}`}>●</span></div>
+                  <span className="mt-0.5 block truncate text-xs text-stealth-400">Pressure {formatContextValue(relationship.current_pressure_change)} · {relationship.selected_lag_days ?? "—"}-day lag</span>
                 </div>
-                <div className="col-span-2 row-start-2 flex h-5 min-w-0 gap-px overflow-hidden rounded bg-slate-900 sm:col-span-1 sm:row-start-auto" role="img" aria-label={associationLabel}>
+                <div className="col-span-2 row-start-2 flex h-5 min-w-0 gap-px overflow-hidden rounded bg-stealth-900 sm:col-span-1 sm:row-start-auto" role="img" aria-label={associationLabel}>
                   {relationship.rolling_association.length ? relationship.rolling_association.map((point) => (
                     <span key={point.date} className="min-w-[2px] flex-1" style={{ backgroundColor: associationColor(point.rho) }} title={`${formatObservationDate(point.date, "1D")} · rho ${point.rho > 0 ? "+" : ""}${point.rho.toFixed(2)}`} />
-                  )) : <span className="m-auto text-[10px] text-slate-600">insufficient history</span>}
+                  )) : <span className="m-auto text-xs text-stealth-600">insufficient history</span>}
                 </div>
                 <div className="col-start-2 row-start-1 text-right sm:col-start-auto sm:row-start-auto">
                   <strong className="block font-mono text-xs text-white">ρ {relationship.holdout_rho === null ? "—" : `${relationship.holdout_rho > 0 ? "+" : ""}${relationship.holdout_rho.toFixed(2)}`}</strong>
@@ -422,9 +422,9 @@ function ContextEvidenceLens({
               </div>
             );
           })}
-          {!relationships.length ? <p className="rounded-lg border border-stealth-800 p-3 text-xs text-slate-500">No timestamp-aligned cached histories are available.</p> : null}
+          {!relationships.length ? <p className="rounded-lg border border-stealth-800 p-3 text-xs text-stealth-500">No timestamp-aligned cached histories are available.</p> : null}
         </div>
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-stealth-400">
           <span>Violet = inverse · blue = same direction · faint = weak</span>
           <span>Lag chosen on earlier data and checked on the final 30%; multiple tests adjusted.</span>
         </div>
@@ -555,22 +555,22 @@ function MarketStateTimeline({
   };
 
   return (
-    <article className="min-w-0 overflow-hidden rounded-2xl border border-stealth-700 bg-slate-950/30">
+    <article className="min-w-0 overflow-hidden rounded-2xl border border-stealth-700 bg-stealth-950/30">
       <header className="border-b border-stealth-700 p-3 sm:p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="max-w-3xl">
             <h3 className="text-lg font-semibold text-white">Market state through time</h3>
-            <p className="mt-1 text-xs leading-5 text-slate-400">One shared cursor connects price to the measurements that produced each description. Historical diagnostics, not forecasts.</p>
+            <p className="mt-1 text-xs leading-5 text-stealth-400">One shared cursor connects price to the measurements that produced each description. Historical diagnostics, not forecasts.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex rounded-xl border border-stealth-700 bg-slate-950/45 p-1" role="group" aria-label="Timeline window">
+            <div className="inline-flex rounded-xl border border-stealth-700 bg-stealth-950/45 p-1" role="group" aria-label="Timeline window">
               {TIMELINE_WINDOWS.map((option) => (
                 <button
                   key={option}
                   type="button"
                   aria-pressed={timelineWindow === option}
                   onClick={() => chooseTimelineWindow(option)}
-                  className={`min-h-11 rounded-lg px-3 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 sm:min-h-8 ${timelineWindow === option ? "bg-sky-400/15 text-sky-100 ring-1 ring-sky-400/25" : "text-slate-400 hover:text-white"}`}
+                  className={`min-h-11 rounded-lg px-3 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 sm:min-h-11 ${timelineWindow === option ? "bg-sky-400/15 text-sky-100 ring-1 ring-sky-400/25" : "text-stealth-400 hover:text-white"}`}
                 >
                   {option === "all" ? "All" : option}
                 </button>
@@ -579,28 +579,28 @@ function MarketStateTimeline({
             <button
               type="button"
               onClick={resetToLatest}
-              className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-stealth-700 px-3 text-xs text-slate-300 transition hover:border-stealth-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+              className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-stealth-700 px-3 text-xs text-stealth-300 transition hover:border-stealth-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
             >
               <RotateCcw className="h-3.5 w-3.5" />Latest
             </button>
           </div>
         </div>
 
-        <div className="mt-3 overflow-hidden rounded-xl border border-stealth-700 bg-slate-950/35">
+        <div className="mt-3 overflow-hidden rounded-xl border border-stealth-700 bg-stealth-950/35">
           <div className="grid md:grid-cols-[1.15fr_.45fr_1.6fr] md:divide-x md:divide-stealth-700">
             <div className="p-3">
-              <span className="text-xs uppercase tracking-[0.12em] text-slate-500">Inspected bar</span>
+              <span className="text-xs uppercase tracking-[0.12em] text-stealth-500">Inspected bar</span>
               <strong className="mt-1 block text-base text-white">{PHASE_STYLES[selected.directionalPhase].label}</strong>
-              <span className="mt-1 block text-xs text-slate-400">{formatObservationDate(selected.date, timeframe)} · {selectedStateNumber ? `Form ${selectedStateNumber}` : "before learned evaluation"}</span>
+              <span className="mt-1 block text-xs text-stealth-400">{formatObservationDate(selected.date, timeframe)} · {selectedStateNumber ? `Form ${selectedStateNumber}` : "before learned evaluation"}</span>
             </div>
             <div className="border-t border-stealth-700 p-3 md:border-t-0">
-              <span className="text-xs text-slate-400">Close</span>
+              <span className="text-xs text-stealth-400">Close</span>
               <strong className="mt-1 block font-mono text-base text-white">${selected.close.toFixed(2)}</strong>
             </div>
             <div className="border-t border-stealth-700 p-3 md:border-t-0">
-              <span className="text-xs text-slate-400">{lensReadout.label}</span>
+              <span className="text-xs text-stealth-400">{lensReadout.label}</span>
               <strong className={`mt-1 block font-mono text-sm ${lensReadout.warning ? "text-amber-200" : "text-white"}`}>{lensReadout.value}</strong>
-              {lensReadout.detail ? <span className="mt-1 block text-xs text-slate-400">{lensReadout.detail}</span> : null}
+              {lensReadout.detail ? <span className="mt-1 block text-xs text-stealth-400">{lensReadout.detail}</span> : null}
             </div>
           </div>
         </div>
@@ -616,9 +616,11 @@ function MarketStateTimeline({
               </>
             ) : null}
           </TimelineTrackHeader>
-          <div className="h-[165px] min-w-0 sm:h-[180px]" role="img" aria-label="Closing price over the selected window with measured directional phases">
+          <div className="h-[165px] min-w-0 sm:h-[180px]">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart
+                accessibilityLayer
+                aria-label="Closing price over the selected window with measured directional phases"
                 data={visible}
                 margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
                 onMouseMove={inspect}
@@ -626,7 +628,7 @@ function MarketStateTimeline({
               >
                 <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 5" vertical={false} />
                 <XAxis dataKey="date" hide />
-                <YAxis domain={["auto", "auto"]} width={58} tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} tickFormatter={(value: number) => `$${Number(value).toFixed(0)}`} axisLine={false} tickLine={false} />
+                <YAxis domain={["auto", "auto"]} width={58} tick={{ fill: "var(--chart-axis-tick)", fontSize: 12 }} tickFormatter={(value: number) => `$${Number(value).toFixed(0)}`} axisLine={false} tickLine={false} />
                 <TimelineCursor selectedDate={selected.date} />
                 <Tooltip content={<EmptyTimelineTooltip />} cursor={false} />
                 {activeLens === "context" ? <Line type="stepAfter" dataKey="support20" stroke="#c4b5fd" strokeWidth={1.5} strokeDasharray="6 4" dot={false} connectNulls={false} isAnimationActive={false} /> : null}
@@ -638,12 +640,12 @@ function MarketStateTimeline({
 
           <div className="mt-2 space-y-2 pl-[58px] pr-2">
             <div>
-              <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400"><span>Measured directional phase</span><span>{Math.max(0, directionalRuns.length - 1)} phase changes</span></div>
-              <div className="flex h-6 min-w-0 overflow-hidden rounded-md border border-stealth-700 bg-slate-900" role="img" aria-label={`${directionalRuns.length} measured directional phase runs; amber underline marks an extreme calibration-distance tail`}>
+              <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-xs text-stealth-400"><span>Measured directional phase</span><span>{Math.max(0, directionalRuns.length - 1)} phase changes</span></div>
+              <div className="flex h-6 min-w-0 overflow-hidden rounded-md border border-stealth-700 bg-stealth-900" role="img" aria-label={`${directionalRuns.length} measured directional phase runs; amber underline marks an extreme calibration-distance tail`}>
                 {directionalRuns.map((run) => (
                   <span
                     key={run.key}
-                    className="min-w-[3px] border-r border-slate-950/80 last:border-r-0"
+                    className="min-w-[3px] border-r border-stealth-950/80 last:border-r-0"
                     style={{ flexGrow: run.duration, backgroundColor: PHASE_STYLES[run.phase].color, borderBottom: run.inExtremeCalibrationTail ? "3px solid #fbbf24" : undefined }}
                     title={`${PHASE_STYLES[run.phase].label}; ${run.duration} bars; ${formatObservationDate(run.start, timeframe)} to ${formatObservationDate(run.end, timeframe)}${run.inExtremeCalibrationTail ? "; extreme calibration-distance tail" : ""}`}
                   />
@@ -651,19 +653,19 @@ function MarketStateTimeline({
               </div>
             </div>
             <div>
-              <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400"><span>Learned Form identity</span><span>{lexicon.archetypes.length} supported · {learnedTransitions} transitions{learnedFormRuns.some((run) => run.stateId === null) ? " · gray before evaluation" : ""}</span></div>
-              <div className="flex h-3 min-w-0 overflow-hidden rounded-sm bg-slate-900" role="img" aria-label={`Learned Form identity over the evaluation window; ${lexicon.archetypes.length} supported Forms and ${learnedTransitions} transitions`}>
+              <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-xs text-stealth-400"><span>Learned Form identity</span><span>{lexicon.archetypes.length} supported · {learnedTransitions} transitions{learnedFormRuns.some((run) => run.stateId === null) ? " · gray before evaluation" : ""}</span></div>
+              <div className="flex h-3 min-w-0 overflow-hidden rounded-sm bg-stealth-900" role="img" aria-label={`Learned Form identity over the evaluation window; ${lexicon.archetypes.length} supported Forms and ${learnedTransitions} transitions`}>
                 {learnedFormRuns.map((run) => (
                   <span
                     key={run.key}
-                    className="min-w-[3px] border-r border-slate-950/80 last:border-r-0"
+                    className="min-w-[3px] border-r border-stealth-950/80 last:border-r-0"
                     style={{ flexGrow: run.duration, backgroundColor: run.stateId ? marketStateColor(run.stateId) : "#334155" }}
                     title={`${run.stateId ? `Form ${stateNumberById.get(run.stateId) ?? 1}` : "Before learned evaluation"}; ${run.duration} bars; ${formatObservationDate(run.start, timeframe)} to ${formatObservationDate(run.end, timeframe)}`}
                   />
                 ))}
               </div>
             </div>
-            <label className="flex items-center gap-3 text-xs text-slate-400">
+            <label className="flex items-center gap-3 text-xs text-stealth-400">
               <span className="shrink-0">Inspect bar</span>
               <input
                 type="range"
@@ -674,22 +676,22 @@ function MarketStateTimeline({
                 aria-valuetext={`${formatObservationDate(selected.date, timeframe)}, ${PHASE_STYLES[selected.directionalPhase].label}`}
                 className="min-w-0 flex-1 accent-sky-300"
               />
-              <span className="shrink-0 font-mono text-slate-500">{selectedIndex + 1}/{visible.length}</span>
+              <span className="shrink-0 font-mono text-stealth-500">{selectedIndex + 1}/{visible.length}</span>
             </label>
           </div>
         </section>
 
         <section className="p-3 sm:p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs text-slate-400">Choose one diagnostic lens; price and the inspected bar stay synchronized.</p>
-            <div className="grid w-full grid-cols-3 rounded-xl border border-stealth-700 bg-slate-950/45 p-1 sm:w-auto sm:grid-cols-5" role="group" aria-label="Timeline diagnostic lens">
+            <p className="text-xs text-stealth-400">Choose one diagnostic lens; price and the inspected bar stay synchronized.</p>
+            <div className="grid w-full grid-cols-3 rounded-xl border border-stealth-700 bg-stealth-950/45 p-1 sm:w-auto sm:grid-cols-5" role="group" aria-label="Timeline diagnostic lens">
               {TIMELINE_LENSES.map((lens) => (
                 <button
                   key={lens.id}
                   type="button"
                   aria-pressed={activeLens === lens.id}
                   onClick={() => chooseTimelineLens(lens.id)}
-                  className={`min-h-11 rounded-lg px-3 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 sm:min-h-9 ${activeLens === lens.id ? "bg-sky-400/15 text-sky-100 ring-1 ring-sky-400/25" : "text-slate-400 hover:text-white"}`}
+                  className={`min-h-11 rounded-lg px-3 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 sm:min-h-11 ${activeLens === lens.id ? "bg-sky-400/15 text-sky-100 ring-1 ring-sky-400/25" : "text-stealth-400 hover:text-white"}`}
                 >
                   {lens.label}
                 </button>
@@ -704,12 +706,19 @@ function MarketStateTimeline({
                   <span><span className="mr-1.5 inline-block h-0.5 w-5 bg-sky-300 align-middle" />Pressure</span>
                   <span><span className="mr-1.5 inline-block w-5 border-t-2 border-dashed border-violet-300 align-middle" />Pressure change</span>
                 </TimelineTrackHeader>
-                <div className="h-[142px] min-w-0" role="img" aria-label="Directional pressure and pressure change over the selected window">
+                <div className="h-[142px] min-w-0">
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={visible} margin={{ top: 5, right: 8, left: 0, bottom: 4 }} onMouseMove={inspect} onClick={inspect}>
+                    <ComposedChart
+                      accessibilityLayer
+                      aria-label="Directional pressure and pressure-change history"
+                      data={visible}
+                      margin={{ top: 5, right: 8, left: 0, bottom: 4 }}
+                      onMouseMove={inspect}
+                      onClick={inspect}
+                    >
                       <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 5" vertical={false} />
-                      <XAxis dataKey="date" minTickGap={42} tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} tickFormatter={(value: string) => formatDate(value, timeframe)} axisLine={{ stroke: "var(--chart-axis-line)" }} tickLine={false} />
-                      <YAxis domain={[-100, 100]} ticks={[-100, 0, 100]} width={58} tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} axisLine={false} tickLine={false} />
+                      <XAxis dataKey="date" minTickGap={42} tick={{ fill: "var(--chart-axis-tick)", fontSize: 12 }} tickFormatter={(value: string) => formatDate(value, timeframe)} axisLine={{ stroke: "var(--chart-axis-line)" }} tickLine={false} />
+                      <YAxis domain={[-100, 100]} ticks={[-100, 0, 100]} width={58} tick={{ fill: "var(--chart-axis-tick)", fontSize: 12 }} axisLine={false} tickLine={false} />
                       <ReferenceLine y={0} stroke="#64748b" />
                       <TimelineCursor selectedDate={selected.date} />
                       <Tooltip content={<EmptyTimelineTooltip />} cursor={false} />
@@ -728,12 +737,19 @@ function MarketStateTimeline({
                   <span><span className="mr-1.5 inline-block w-5 border-t-2 border-dashed border-violet-300 align-middle" />Information</span>
                   <span><span className="mr-1.5 inline-block w-5 border-t-2 border-dotted border-amber-300 align-middle" />Propagation</span>
                 </TimelineTrackHeader>
-                <div className="h-[142px] min-w-0" role="img" aria-label="Trend-and-horizon-agreement composite, information and ordinal disorder, and cross-horizon propagation over the selected window">
+                <div className="h-[142px] min-w-0">
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={visible} margin={{ top: 5, right: 8, left: 0, bottom: 4 }} onMouseMove={inspect} onClick={inspect}>
+                    <ComposedChart
+                      accessibilityLayer
+                      aria-label="Trend agreement, disorder, and cross-horizon propagation history"
+                      data={visible}
+                      margin={{ top: 5, right: 8, left: 0, bottom: 4 }}
+                      onMouseMove={inspect}
+                      onClick={inspect}
+                    >
                       <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 5" vertical={false} />
-                      <XAxis dataKey="date" minTickGap={42} tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} tickFormatter={(value: string) => formatDate(value, timeframe)} axisLine={{ stroke: "var(--chart-axis-line)" }} tickLine={false} />
-                      <YAxis domain={[0, 100]} ticks={[0, 50, 100]} width={58} tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} axisLine={false} tickLine={false} />
+                      <XAxis dataKey="date" minTickGap={42} tick={{ fill: "var(--chart-axis-tick)", fontSize: 12 }} tickFormatter={(value: string) => formatDate(value, timeframe)} axisLine={{ stroke: "var(--chart-axis-line)" }} tickLine={false} />
+                      <YAxis domain={[0, 100]} ticks={[0, 50, 100]} width={58} tick={{ fill: "var(--chart-axis-tick)", fontSize: 12 }} axisLine={false} tickLine={false} />
                       <ReferenceLine y={50} stroke="#475569" strokeDasharray="3 4" />
                       <ReferenceLine y={42} stroke="#7dd3fc" strokeOpacity={0.38} strokeDasharray="2 5" />
                       <TimelineCursor selectedDate={selected.date} />
@@ -754,12 +770,19 @@ function MarketStateTimeline({
                   <span><span className="mr-1.5 inline-block w-5 border-t-2 border-dashed border-violet-300 align-middle" />Participation</span>
                   <span><span className="mr-1.5 inline-block w-5 border-t-2 border-dotted border-amber-300 align-middle" />Liquidity</span>
                 </TimelineTrackHeader>
-                <div className="h-[142px] min-w-0" role="img" aria-label="Market carrier ratios relative to their own causal trailing baselines over the selected window">
+                <div className="h-[142px] min-w-0">
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={visible} margin={{ top: 5, right: 8, left: 0, bottom: 4 }} onMouseMove={inspect} onClick={inspect}>
+                    <ComposedChart
+                      accessibilityLayer
+                      aria-label="Market carrier ratios relative to their trailing baselines"
+                      data={visible}
+                      margin={{ top: 5, right: 8, left: 0, bottom: 4 }}
+                      onMouseMove={inspect}
+                      onClick={inspect}
+                    >
                       <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 5" vertical={false} />
-                      <XAxis dataKey="date" minTickGap={42} tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} tickFormatter={(value: string) => formatDate(value, timeframe)} axisLine={{ stroke: "var(--chart-axis-line)" }} tickLine={false} />
-                      <YAxis domain={carrierDomain} width={58} tickCount={3} tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} tickFormatter={(value: number) => Number(value).toFixed(carrierDomain[1] - carrierDomain[0] < 0.5 ? 2 : 1)} axisLine={false} tickLine={false} />
+                      <XAxis dataKey="date" minTickGap={42} tick={{ fill: "var(--chart-axis-tick)", fontSize: 12 }} tickFormatter={(value: string) => formatDate(value, timeframe)} axisLine={{ stroke: "var(--chart-axis-line)" }} tickLine={false} />
+                      <YAxis domain={carrierDomain} width={58} tickCount={3} tick={{ fill: "var(--chart-axis-tick)", fontSize: 12 }} tickFormatter={(value: number) => Number(value).toFixed(carrierDomain[1] - carrierDomain[0] < 0.5 ? 2 : 1)} axisLine={false} tickLine={false} />
                       <ReferenceLine y={1} stroke="#64748b" strokeDasharray="3 4" />
                       <TimelineCursor selectedDate={selected.date} />
                       <Tooltip content={<EmptyTimelineTooltip />} cursor={false} />
@@ -777,12 +800,19 @@ function MarketStateTimeline({
                 <TimelineTrackHeader title="Calibration-distance evidence" scale={`Same-Form upper-tail rank · lower means farther · extreme below ${cutoff.toFixed(2)}`}>
                   <span><span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-amber-300/30 ring-1 ring-amber-300/60" />Extreme-distance zone</span>
                 </TimelineTrackHeader>
-                <div className="h-[142px] min-w-0" role="img" aria-label="Same-state distance-tail rank over the learned evaluation window; lower values are farther from the learned Form">
+                <div className="h-[142px] min-w-0">
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={visible} margin={{ top: 5, right: 8, left: 0, bottom: 4 }} onMouseMove={inspect} onClick={inspect}>
+                    <ComposedChart
+                      accessibilityLayer
+                      aria-label="Same-Form calibration-distance tail-rank history"
+                      data={visible}
+                      margin={{ top: 5, right: 8, left: 0, bottom: 4 }}
+                      onMouseMove={inspect}
+                      onClick={inspect}
+                    >
                       <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 5" vertical={false} />
-                      <XAxis dataKey="date" minTickGap={42} tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} tickFormatter={(value: string) => formatDate(value, timeframe)} axisLine={{ stroke: "var(--chart-axis-line)" }} tickLine={false} />
-                      <YAxis domain={[0, 1]} ticks={[0, 0.5, 1]} width={58} tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} tickFormatter={(value: number) => Number(value).toFixed(1)} axisLine={false} tickLine={false} />
+                      <XAxis dataKey="date" minTickGap={42} tick={{ fill: "var(--chart-axis-tick)", fontSize: 12 }} tickFormatter={(value: string) => formatDate(value, timeframe)} axisLine={{ stroke: "var(--chart-axis-line)" }} tickLine={false} />
+                      <YAxis domain={[0, 1]} ticks={[0, 0.5, 1]} width={58} tick={{ fill: "var(--chart-axis-tick)", fontSize: 12 }} tickFormatter={(value: number) => Number(value).toFixed(1)} axisLine={false} tickLine={false} />
                       <ReferenceArea y1={0} y2={cutoff} fill="#fbbf24" fillOpacity={0.13} strokeOpacity={0} />
                       <ReferenceLine y={cutoff} stroke="#fbbf24" strokeDasharray="4 4" />
                       <TimelineCursor selectedDate={selected.date} />
@@ -875,53 +905,53 @@ function CurrentStateView({
 
   return (
     <div className="space-y-3">
-      <section className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-3 sm:p-4">
+      <section className="rounded-2xl border border-stealth-700 bg-stealth-950/30 p-3 sm:p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="max-w-3xl">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-300">{symbol} · {barSize} · {currentDate ? formatObservationDate(currentDate, timeframe) : "Latest bar"}</p>
             <h3 className={`mt-1.5 text-xl font-semibold tracking-tight sm:text-2xl ${analog.withhold ? "text-amber-200" : "text-white"}`}>
               {analog.headline ?? profile.headline}
             </h3>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-stealth-300">
               {analog.withhold
                 ? `The current measurements read ${profile.headline.toLowerCase()}. ${analog.summary}`
                 : profile.summary}
             </p>
           </div>
-          <div className="min-w-[250px] rounded-xl border border-stealth-600 bg-slate-950/45 px-4 py-3 text-sm text-slate-300">
-            <span className="text-xs uppercase tracking-wider text-slate-400">Calibration-distance check</span>
+          <div className="min-w-[250px] rounded-xl border border-stealth-600 bg-stealth-950/45 px-4 py-3 text-sm text-stealth-300">
+            <span className="text-xs uppercase tracking-wider text-stealth-400">Calibration-distance check</span>
             <span className={`mt-1 block text-base font-semibold ${analog.withhold ? "text-amber-200" : "text-white"}`}>{analog.calibrationLabel}</span>
-            <span className="mt-1 block font-mono text-xs text-slate-400">distance-tail rank {canonicalTailRank?.toFixed(3) ?? "—"}{distanceTailCutoff !== undefined ? ` · cutoff ${distanceTailCutoff.toFixed(2)}` : ""} · n={canonicalTailSupport}</span>
+            <span className="mt-1 block font-mono text-xs text-stealth-400">distance-tail rank {canonicalTailRank?.toFixed(3) ?? "—"}{distanceTailCutoff !== undefined ? ` · cutoff ${distanceTailCutoff.toFixed(2)}` : ""} · n={canonicalTailSupport}</span>
           </div>
         </div>
-        <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 border-t border-white/10 pt-2.5 text-xs text-slate-400">
-          <span>Current Form run <strong className="font-medium text-slate-200">{current.age_bars} bars{current.age_truncated ? "+" : ""}</strong></span>
-          <span>Typical learned run <strong className="font-medium text-slate-200">{archetype.typical_duration_bars} bars</strong></span>
-          <span>Window frequency <strong className="font-medium text-slate-200">{formatRate(archetype.window_frequency)}</strong></span>
-          <span>Evidence <strong className="font-medium text-slate-200">{archetype.fit_count} fit · {archetype.calibration_count} range-check · {archetype.evaluation_count} holdout</strong></span>
-          <span>Same-Form support minimum <strong className="font-medium text-slate-200">{minimumTailSupport}</strong></span>
+        <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 border-t border-white/10 pt-2.5 text-xs text-stealth-400">
+          <span>Current Form run <strong className="font-medium text-stealth-200">{current.age_bars} bars{current.age_truncated ? "+" : ""}</strong></span>
+          <span>Typical learned run <strong className="font-medium text-stealth-200">{archetype.typical_duration_bars} bars</strong></span>
+          <span>Window frequency <strong className="font-medium text-stealth-200">{formatRate(archetype.window_frequency)}</strong></span>
+          <span>Evidence <strong className="font-medium text-stealth-200">{archetype.fit_count} fit · {archetype.calibration_count} range-check · {archetype.evaluation_count} holdout</strong></span>
+          <span>Same-Form support minimum <strong className="font-medium text-stealth-200">{minimumTailSupport}</strong></span>
         </div>
         {structureComponents || scalingReference ? (
-          <div className="mt-3 grid overflow-hidden rounded-xl border border-white/10 bg-slate-950/35 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-3 grid overflow-hidden rounded-xl border border-white/10 bg-stealth-950/35 sm:grid-cols-2 lg:grid-cols-4">
             <div className="p-3">
-              <span className="block text-[10px] uppercase tracking-wider text-slate-500">Directional activity</span>
+              <span className="block text-xs uppercase tracking-wider text-stealth-500">Directional activity</span>
               <strong className="mt-1 block font-mono text-base text-sky-200">{structureComponents ? Math.round(structureComponents.activity * 100) : "—"}</strong>
-              <span className="text-[11px] text-slate-400">Pressure magnitude, 0–100</span>
+              <span className="text-xs text-stealth-400">Pressure magnitude, 0–100</span>
             </div>
             <div className="border-t border-white/10 p-3 sm:border-l sm:border-t-0">
-              <span className="block text-[10px] uppercase tracking-wider text-slate-500">Horizon agreement</span>
+              <span className="block text-xs uppercase tracking-wider text-stealth-500">Horizon agreement</span>
               <strong className="mt-1 block font-mono text-base text-violet-200">{structureComponents ? Math.round(structureComponents.horizon_agreement * 100) : "—"}</strong>
-              <span className="text-[11px] text-slate-400">Effective range (7/27, 1]; contributes &gt;49/450 to Structure</span>
+              <span className="text-xs text-stealth-400">Effective range (7/27, 1]; contributes &gt;49/450 to Structure</span>
             </div>
             <div className="border-t border-white/10 p-3 lg:border-l lg:border-t-0">
-              <span className="block text-[10px] uppercase tracking-wider text-slate-500">Trend + agreement</span>
+              <span className="block text-xs uppercase tracking-wider text-stealth-500">Trend + agreement</span>
               <strong className="mt-1 block font-mono text-base text-white">{structureComponents ? Math.round(structureComponents.trend_agreement_composite * 100) : Math.round(latestStrata.structure * 100)}</strong>
-              <span className="text-[11px] text-slate-400">Flat coherent formula reference: 42</span>
+              <span className="text-xs text-stealth-400">Flat coherent formula reference: 42</span>
             </div>
             <div className="border-t border-white/10 p-3 sm:border-l lg:border-t-0">
-              <span className="block text-[10px] uppercase tracking-wider text-slate-500">Volatility scaling</span>
+              <span className="block text-xs uppercase tracking-wider text-stealth-500">Volatility scaling</span>
               <strong className={`mt-1 block font-mono text-base ${scalingQualityViolation ? "text-rose-200" : "text-amber-200"}`}>{displayedScalingExponent !== null ? displayedScalingExponent.toFixed(2) : scalingQualityViolation ? "Quality flag · withheld" : "Unavailable"}</strong>
-              <span className="text-[11px] text-slate-400">{displayedScalingExponent !== null && typeof scalingReference?.latest_excess === "number" ? `${scalingReference.latest_excess >= 0 ? "+" : ""}${scalingReference.latest_excess.toFixed(2)} vs 0.50 reference` : scalingQualityViolation ? "Negative violates the nonnegative exact-arithmetic contract; not a market signal" : "Degenerate or unsupported path"}</span>
+              <span className="text-xs text-stealth-400">{displayedScalingExponent !== null && typeof scalingReference?.latest_excess === "number" ? `${scalingReference.latest_excess >= 0 ? "+" : ""}${scalingReference.latest_excess.toFixed(2)} vs 0.50 reference` : scalingQualityViolation ? "Negative violates the nonnegative exact-arithmetic contract; not a market signal" : "Degenerate or unsupported path"}</span>
             </div>
           </div>
         ) : null}
@@ -938,11 +968,11 @@ function CurrentStateView({
         onTimelineLensChange={onTimelineLensChange}
       />
 
-      <section className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-3 sm:p-4">
+      <section className="rounded-2xl border border-stealth-700 bg-stealth-950/30 p-3 sm:p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h3 className="text-base font-semibold text-white">{analog.holdoutTitle}</h3>
-            <p className="mt-1 text-xs leading-5 text-slate-400">{analog.withhold ? "Similarity is gated by independent same-Form calibration evidence." : "Every evaluation bar assigned to the nearest state; forward windows overlap and are serially dependent."}</p>
+            <p className="mt-1 text-xs leading-5 text-stealth-400">{analog.withhold ? "Similarity is gated by independent same-Form calibration evidence." : "Every evaluation bar assigned to the nearest state; forward windows overlap and are serially dependent."}</p>
           </div>
           <span className={`rounded-full border px-3 py-1 text-xs ${analog.withhold || outcome.sample_size < 20 ? "border-amber-400/30 bg-amber-400/10 text-amber-200" : "border-sky-400/30 bg-sky-400/10 text-sky-200"}`}>
             {analog.status === "insufficient_calibration_support" ? `${canonicalTailSupport}/${minimumTailSupport} calibration support` : analog.status === "withheld_extreme_calibration_tail" ? "Extreme distance tail" : sampleLabel(outcome.sample_size)}
@@ -956,14 +986,14 @@ function CurrentStateView({
             </div>
           ) : (
             <div className="grid sm:grid-cols-2 xl:grid-cols-4 xl:divide-x xl:divide-white/10">
-              <div className="p-3"><span className="text-xs text-slate-400">Forward window</span><strong className="ml-2 font-mono text-sm text-white sm:ml-0 sm:mt-1 sm:block">{outcome.forward_bars} bars</strong></div>
-              <div className="border-t border-white/10 p-3 sm:border-t-0"><span className="text-xs text-slate-400">Median return</span><strong className="ml-2 font-mono text-sm text-white sm:ml-0 sm:mt-1 sm:block">{formatReturn(outcome.median_return)}</strong></div>
-              <div className="border-t border-white/10 p-3 xl:border-t-0"><span className="text-xs text-slate-400">Positive observations</span><strong className="ml-2 font-mono text-sm text-white sm:ml-0 sm:mt-1 sm:block">{formatRate(outcome.positive_rate)}</strong></div>
-              <div className="border-t border-white/10 p-3 xl:border-t-0"><span className="text-xs text-slate-400">Holdout sample</span><strong className="ml-2 font-mono text-sm text-white sm:ml-0 sm:mt-1 sm:block">n={outcome.sample_size}</strong></div>
+              <div className="p-3"><span className="text-xs text-stealth-400">Forward window</span><strong className="ml-2 font-mono text-sm text-white sm:ml-0 sm:mt-1 sm:block">{outcome.forward_bars} bars</strong></div>
+              <div className="border-t border-white/10 p-3 sm:border-t-0"><span className="text-xs text-stealth-400">Median return</span><strong className="ml-2 font-mono text-sm text-white sm:ml-0 sm:mt-1 sm:block">{formatReturn(outcome.median_return)}</strong></div>
+              <div className="border-t border-white/10 p-3 xl:border-t-0"><span className="text-xs text-stealth-400">Positive observations</span><strong className="ml-2 font-mono text-sm text-white sm:ml-0 sm:mt-1 sm:block">{formatRate(outcome.positive_rate)}</strong></div>
+              <div className="border-t border-white/10 p-3 xl:border-t-0"><span className="text-xs text-stealth-400">Holdout sample</span><strong className="ml-2 font-mono text-sm text-white sm:ml-0 sm:mt-1 sm:block">n={outcome.sample_size}</strong></div>
             </div>
           )}
         </div>
-        <p className="mt-3 flex items-start gap-2 text-xs leading-5 text-slate-400"><Info className="mt-0.5 h-4 w-4 shrink-0" />{analog.withhold ? "No forward-outcome values are being transmitted for this current bar." : "Descriptive historical context only, not a forecast or trading signal."}</p>
+        <p className="mt-3 flex items-start gap-2 text-xs leading-5 text-stealth-400"><Info className="mt-0.5 h-4 w-4 shrink-0" />{analog.withhold ? "No forward-outcome values are being transmitted for this current bar." : "Descriptive historical context only, not a forecast or trading signal."}</p>
       </section>
     </div>
   );
@@ -986,10 +1016,10 @@ function TransitionEvidence({
     .sort((left, right) => right.count - left.count);
 
   return (
-    <details className="rounded-xl border border-stealth-700 bg-slate-950/30 p-4">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-medium text-slate-200">
+    <details className="rounded-xl border border-stealth-700 bg-stealth-950/30 p-4">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-medium text-stealth-200">
         <span>Observed state exits ({support})</span>
-        <ChevronDown className="h-4 w-4 text-slate-400" />
+        <ChevronDown className="h-4 w-4 text-stealth-400" />
       </summary>
       <div className="mt-4 space-y-3">
         {support < lexicon.grammar.minimum_transition_support ? (
@@ -1004,14 +1034,14 @@ function TransitionEvidence({
             : null;
           return (
             <div key={destination.stateId} className="flex items-start justify-between gap-3 rounded-lg border border-white/10 px-3 py-2.5 text-xs">
-              <span className="text-slate-300">{destinationProfile?.headline ?? "Another learned state"}</span>
-              <span className="shrink-0 font-mono text-slate-300">
+              <span className="text-stealth-300">{destinationProfile?.headline ?? "Another learned state"}</span>
+              <span className="shrink-0 font-mono text-stealth-300">
                 {destination.count} of {support}{support >= lexicon.grammar.minimum_transition_support ? ` · ${Math.round(destination.count / support * 100)}%` : ""}
               </span>
             </div>
           );
-        }) : <p className="text-xs text-slate-400">No run-collapsed exits were observed in calibration.</p>}
-        <p className="text-xs leading-5 text-slate-400">Raw calibration counts only. Self-persistence is excluded, and these are not forecast probabilities.</p>
+        }) : <p className="text-xs text-stealth-400">No run-collapsed exits were observed in calibration.</p>}
+        <p className="text-xs leading-5 text-stealth-400">Raw calibration counts only. Self-persistence is excluded, and these are not forecast probabilities.</p>
       </div>
     </details>
   );
@@ -1036,15 +1066,15 @@ function LearnedStateCard({
       type="button"
       onClick={onSelect}
       aria-pressed={selected}
-      className={`w-full rounded-xl border p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${selected ? "border-sky-300/55 bg-sky-950/25" : "border-stealth-700 bg-slate-950/25 hover:border-stealth-500"}`}
+      className={`w-full rounded-xl border p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${selected ? "border-sky-300/55 bg-sky-950/25" : "border-stealth-700 bg-stealth-950/25 hover:border-stealth-500"}`}
     >
-      <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
-        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/15 font-mono text-[10px] text-white" style={{ backgroundColor: `${marketStateColor(archetype.id)}24` }}>F{index + 1}</span>
+      <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-stealth-400">
+        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/15 font-mono text-xs text-white" style={{ backgroundColor: `${marketStateColor(archetype.id)}24` }}>F{index + 1}</span>
         Learned state {index + 1}
       </span>
       <strong className="mt-2 block text-sm leading-5 text-white">{profile.headline}</strong>
-      <span className="mt-1 block text-xs leading-5 text-slate-400">{profile.characteristic}</span>
-      <span className="mt-2 flex flex-wrap gap-x-3 gap-y-1 border-t border-white/10 pt-2 text-xs text-slate-300">
+      <span className="mt-1 block text-xs leading-5 text-stealth-400">{profile.characteristic}</span>
+      <span className="mt-2 flex flex-wrap gap-x-3 gap-y-1 border-t border-white/10 pt-2 text-xs text-stealth-300">
         <span>{formatRate(archetype.window_frequency)} of window</span>
         <span>Typical run {archetype.typical_duration_bars} bars</span>
         <span>Holdout n={archetype.evaluation_outcome.sample_size}</span>
@@ -1265,7 +1295,7 @@ function RelationshipScopeCanvas({
     context.stroke();
     context.setLineDash([]);
 
-    context.font = "9px IBM Plex Sans, Segoe UI, sans-serif";
+    context.font = "12px IBM Plex Sans, Segoe UI, sans-serif";
     context.fillStyle = "rgba(148, 163, 184, .56)";
     context.textAlign = "left";
     context.fillText(spec.cornerLabels[0].toUpperCase(), layout.padding.left + 5, layout.padding.top + 11);
@@ -1364,7 +1394,7 @@ function RelationshipScopeCanvas({
     }
 
     context.fillStyle = "rgba(148, 163, 184, .82)";
-    context.font = "10px IBM Plex Sans, Segoe UI, sans-serif";
+    context.font = "12px IBM Plex Sans, Segoe UI, sans-serif";
     context.textAlign = "center";
     context.fillText(`${spec.xLabel} →`, layout.padding.left + layout.plotWidth / 2, size.height - 8);
     context.save();
@@ -1377,15 +1407,15 @@ function RelationshipScopeCanvas({
   const current = series[series.length - 1];
   const currentStyle = fitRelativeTraceStyle(current?.z ?? 0, lexicon.features.find((feature) => feature.id === spec.zKey));
   return (
-    <article className="min-w-[min(84vw,340px)] snap-start overflow-hidden rounded-xl border border-stealth-700 bg-slate-950/45 md:min-w-0">
+    <article className="min-w-[min(84vw,340px)] snap-start overflow-hidden rounded-xl border border-stealth-700 bg-stealth-950/45 md:min-w-0">
       <header className="flex min-h-[74px] items-start justify-between gap-3 border-b border-stealth-700 px-3 py-2.5">
         <div className="min-w-0">
           <h4 className="text-sm font-semibold text-white">{spec.title}</h4>
-          <p className="mt-0.5 text-xs text-slate-400">{spec.description}</p>
+          <p className="mt-0.5 text-xs text-stealth-400">{spec.description}</p>
         </div>
-        <span className="shrink-0 rounded-full border border-white/10 px-2 py-1 text-[10px] text-slate-300" title={`Trace color and width encode ${spec.zLabel.toLowerCase()} relative to the model-fit baseline.`}>{spec.zLabel}</span>
+        <span className="shrink-0 rounded-full border border-white/10 px-2 py-1 text-xs text-stealth-300" title={`Trace color and width encode ${spec.zLabel.toLowerCase()} relative to the model-fit baseline.`}>{spec.zLabel}</span>
       </header>
-      <div ref={wrapperRef} className="relative min-w-0 overflow-hidden bg-slate-950/70">
+      <div ref={wrapperRef} className="relative min-w-0 overflow-hidden bg-stealth-950/70">
         <canvas ref={canvasRef} className="block w-full" aria-label={`${spec.title}: ${spec.xLabel} by ${spec.yLabel}. Trace color and width encode ${spec.zLabel} relative to fit. Numbered markers are learned Form centroids and the diamond is the exact current measurement.`} />
         {size.width > 0 ? markers.map((marker) => {
           const profile = buildGroundedStateProfile(marker.archetype.centroid, lexicon.features);
@@ -1401,14 +1431,14 @@ function RelationshipScopeCanvas({
               className="absolute grid h-11 w-11 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-200"
               style={{ left: marker.labelX, top: marker.labelY }}
             >
-              <span className={`grid h-7 w-7 place-items-center rounded-full border font-mono text-[9px] font-semibold text-white shadow-lg ${selected ? "border-white bg-slate-700" : "border-white/35 bg-slate-900/90"}`}>F{marker.index + 1}</span>
+              <span className={`grid h-7 w-7 place-items-center rounded-full border font-mono text-xs font-semibold text-white shadow-lg ${selected ? "border-white bg-stealth-700" : "border-white/35 bg-stealth-900/90"}`}>F{marker.index + 1}</span>
             </button>
           );
         }) : null}
       </div>
-      <div className="flex items-center justify-between gap-3 border-t border-stealth-700 px-3 py-2 text-xs text-slate-400">
+      <div className="flex items-center justify-between gap-3 border-t border-stealth-700 px-3 py-2 text-xs text-stealth-400">
         <span>Latest {spec.zLabel.toLowerCase()}</span>
-        <span className={currentStyle.label === "elevated" ? "text-amber-200" : currentStyle.label === "typical" ? "text-sky-200" : "text-slate-300"}>{currentStyle.label}</span>
+        <span className={currentStyle.label === "elevated" ? "text-amber-200" : currentStyle.label === "typical" ? "text-sky-200" : "text-stealth-300"}>{currentStyle.label}</span>
       </div>
       <p className="sr-only">Current exact coordinates are {current ? `${current.x.toFixed(3)} on ${spec.xLabel} and ${current.y.toFixed(3)} on ${spec.yLabel}` : "not available"}.</p>
     </article>
@@ -1426,18 +1456,18 @@ function DefinitionScopeDeck({
 }) {
   return (
     <div>
-      <div className="grid auto-cols-[84vw] grid-flow-col gap-3 overflow-x-auto pb-2 [scrollbar-width:thin] snap-x snap-mandatory sm:auto-cols-[360px] lg:auto-cols-auto lg:grid-flow-row lg:grid-cols-3 lg:overflow-visible lg:pb-0" role="group" aria-label="Three measured relationship scopes">
+      <div className="grid auto-cols-[84vw] grid-flow-col gap-3 overflow-x-auto pb-2 [scrollbar-width:thin] snap-x snap-mandatory focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 sm:auto-cols-[360px] lg:auto-cols-auto lg:grid-flow-row lg:grid-cols-3 lg:overflow-visible lg:pb-0" role="region" aria-label="Three measured relationship scopes" tabIndex={0}>
         {RELATIONSHIP_SCOPES.map((spec) => (
           <RelationshipScopeCanvas key={spec.id} research={research} spec={spec} selectedId={selectedId} onSelect={onSelect} />
         ))}
       </div>
-      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
-        <span><span className="mr-1.5 inline-block w-5 border-t border-dashed border-slate-400 align-middle" />Exact raw trace</span>
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stealth-400">
+        <span><span className="mr-1.5 inline-block w-5 border-t border-dashed border-stealth-400 align-middle" />Exact raw trace</span>
         <span><span className="mr-1.5 inline-block h-0.5 w-5 bg-sky-300 align-middle" />Causal display EWM · α 0.5 (span 3)</span>
         <span><span className="mr-1.5 inline-block h-0.5 w-5 bg-amber-300 align-middle" />Third measure elevated vs fit</span>
         <span><span className="mr-1.5 text-sky-100">◆</span>Exact current measurement</span>
       </div>
-      <p className="mt-1 text-xs leading-5 text-slate-400">Color and width encode each panel’s named third measure in low, typical, or elevated fit-relative bands. Direction auto-fits while the two bounded scopes use fixed axes. These are 2D projections—not correlations, detected cycles, causal flows, or forecasts.</p>
+      <p className="mt-1 text-xs leading-5 text-stealth-400">Color and width encode each panel’s named third measure in low, typical, or elevated fit-relative bands. Direction auto-fits while the two bounded scopes use fixed axes. These are 2D projections—not correlations, detected cycles, causal flows, or forecasts.</p>
     </div>
   );
 }
@@ -1447,18 +1477,18 @@ function MeasurementGlossary() {
   const carrierMetrics = MARKET_FIELD_METRICS.filter((metric) => metric.family === "carrier");
 
   return (
-    <details className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-4 sm:p-5">
+    <details className="rounded-2xl border border-stealth-700 bg-stealth-950/30 p-4 sm:p-5">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-white">
         <span className="inline-flex items-center gap-2"><BookOpen className="h-4 w-4 text-sky-300" />Measurement glossary</span>
-        <span className="inline-flex items-center gap-2 text-xs font-normal text-slate-400">{MARKET_FIELD_METRICS.length} definitions <ChevronDown className="h-4 w-4" /></span>
+        <span className="inline-flex items-center gap-2 text-xs font-normal text-stealth-400">{MARKET_FIELD_METRICS.length} definitions <ChevronDown className="h-4 w-4" /></span>
       </summary>
-      <p className="mt-3 max-w-3xl text-xs leading-5 text-slate-400">Every learned state is a cluster over these measurements. The labels below state the actual scale and construction; none is a probability or a trading recommendation.</p>
+      <p className="mt-3 max-w-3xl text-xs leading-5 text-stealth-400">Every learned state is a cluster over these measurements. The labels below state the actual scale and construction; none is a probability or a trading recommendation.</p>
       {[
         { title: "Price-field measurements", metrics: fieldMetrics },
         { title: "OHLCV context", metrics: carrierMetrics },
       ].map((group) => (
         <section key={group.title} className="mt-5">
-          <h4 className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-300">{group.title}</h4>
+          <h4 className="text-xs font-semibold uppercase tracking-[0.14em] text-stealth-300">{group.title}</h4>
           <div className="mt-3 grid gap-3 lg:grid-cols-2">
             {group.metrics.map((metric) => (
               <article key={metric.id} className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
@@ -1466,7 +1496,7 @@ function MeasurementGlossary() {
                   <h5 className="text-sm font-medium text-white">{metric.label}</h5>
                   <span className="text-xs text-sky-200">{metric.scale}</span>
                 </div>
-                <p className="mt-2 text-xs leading-5 text-slate-400">{metric.definition}</p>
+                <p className="mt-2 text-xs leading-5 text-stealth-400">{metric.definition}</p>
               </article>
             ))}
           </div>
@@ -1489,14 +1519,14 @@ function DictionaryView({ research }: { research: MarketWeatherResearch }) {
 
   return (
     <div className="space-y-4">
-      <section className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-3 sm:p-4">
+      <section className="rounded-2xl border border-stealth-700 bg-stealth-950/30 p-3 sm:p-4">
         <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
           <div>
             <span className="page-kicker">State scope</span>
             <h3 className="mt-1 text-base font-semibold text-white">Where the learned definitions live</h3>
-            <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-400">Three linked scopes project the same learned Forms through direction, trend agreement versus disorder, and cross-horizon propagation. Scroll the deck on smaller screens.</p>
+            <p className="mt-1 max-w-3xl text-xs leading-5 text-stealth-400">Three linked scopes project the same learned Forms through direction, trend agreement versus disorder, and cross-horizon propagation. Scroll the deck on smaller screens.</p>
           </div>
-          <span className="rounded-full border border-stealth-600 px-3 py-1 text-xs text-slate-300">F{selectedIndex + 1} selected</span>
+          <span className="rounded-full border border-stealth-600 px-3 py-1 text-xs text-stealth-300">F{selectedIndex + 1} selected</span>
         </div>
         <DefinitionScopeDeck research={research} selectedId={selected.id} onSelect={setSelectedId} />
       </section>
@@ -1505,7 +1535,7 @@ function DictionaryView({ research }: { research: MarketWeatherResearch }) {
       <section className="min-w-0">
         <div className="mb-4">
           <h3 className="text-base font-semibold text-white">Learned states in this window</h3>
-          <p className="mt-1 text-xs leading-5 text-slate-400">Names come from the sign of directional pressure and whether its first change reinforces or opposes that sign. Profiles show measured differences from the earlier model-fit baseline.</p>
+          <p className="mt-1 text-xs leading-5 text-stealth-400">Names come from the sign of directional pressure and whether its first change reinforces or opposes that sign. Profiles show measured differences from the earlier model-fit baseline.</p>
           {lexicon.archetypes.length === 1 ? <p className="mt-3 rounded-xl border border-sky-400/20 bg-sky-400/10 px-3 py-2 text-xs leading-5 text-sky-100">This window supports one state. Additional divisions did not meet the model’s minimum fit support and separation requirements.</p> : null}
         </div>
         <div className="space-y-2">
@@ -1522,37 +1552,37 @@ function DictionaryView({ research }: { research: MarketWeatherResearch }) {
         </div>
       </section>
 
-      <section className="min-w-0 rounded-2xl border border-stealth-700 bg-slate-950/30 p-4 sm:p-5 lg:sticky lg:top-4 lg:self-start">
+      <section className="min-w-0 rounded-2xl border border-stealth-700 bg-stealth-950/30 p-4 sm:p-5 lg:sticky lg:top-4 lg:self-start">
         <span className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-300">Learned state {selectedIndex + 1}</span>
         <h3 className="mt-2 text-2xl font-semibold tracking-tight text-white">{profile.headline}</h3>
-        <p className="mt-3 text-sm leading-6 text-slate-300">{profile.summary}</p>
+        <p className="mt-3 text-sm leading-6 text-stealth-300">{profile.summary}</p>
 
         <div className="mt-5 rounded-xl border border-white/10 bg-white/[0.025] p-4">
           <h4 className="text-sm font-semibold text-white">Measured definition</h4>
-          <p className="mt-1 text-xs leading-5 text-slate-400">Deviation from the model-fit median in fit-spread units; these are measured comparisons, not hand-set category scores.</p>
+          <p className="mt-1 text-xs leading-5 text-stealth-400">Deviation from the model-fit median in fit-spread units; these are measured comparisons, not hand-set category scores.</p>
           <div className="mt-4"><StateDeviationBars archetype={selected} research={research} /></div>
         </div>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-xl border border-white/10 p-3"><span className="text-xs text-slate-400">Window frequency</span><strong className="mt-1 block text-lg text-white">{formatRate(selected.window_frequency)}</strong></div>
-          <div className="rounded-xl border border-white/10 p-3"><span className="text-xs text-slate-400">Typical run</span><strong className="mt-1 block text-lg text-white">{selected.typical_duration_bars} bars</strong></div>
-          <div className="rounded-xl border border-white/10 p-3"><span className="text-xs text-slate-400">Holdout sample</span><strong className="mt-1 block text-lg text-white">{outcome.sample_size}</strong></div>
+          <div className="rounded-xl border border-white/10 p-3"><span className="text-xs text-stealth-400">Window frequency</span><strong className="mt-1 block text-lg text-white">{formatRate(selected.window_frequency)}</strong></div>
+          <div className="rounded-xl border border-white/10 p-3"><span className="text-xs text-stealth-400">Typical run</span><strong className="mt-1 block text-lg text-white">{selected.typical_duration_bars} bars</strong></div>
+          <div className="rounded-xl border border-white/10 p-3"><span className="text-xs text-stealth-400">Holdout sample</span><strong className="mt-1 block text-lg text-white">{outcome.sample_size}</strong></div>
         </div>
 
         <div className="mt-4 rounded-xl border border-white/10 p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h4 className="text-sm font-semibold text-white">Holdout behavior</h4>
-              <p className="mt-1 text-xs leading-5 text-slate-400">What followed assigned evaluation bars over the next {outcome.forward_bars} bars.</p>
+              <p className="mt-1 text-xs leading-5 text-stealth-400">What followed assigned evaluation bars over the next {outcome.forward_bars} bars.</p>
             </div>
             <span className={`rounded-full border px-3 py-1 text-xs ${outcome.sample_size < 20 ? "border-amber-400/30 bg-amber-400/10 text-amber-200" : "border-sky-400/30 bg-sky-400/10 text-sky-200"}`}>{sampleLabel(outcome.sample_size)}</span>
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            <div><span className="text-xs text-slate-400">Median return</span><strong className="mt-1 block text-base text-white">{formatReturn(outcome.median_return)}</strong></div>
-            <div><span className="text-xs text-slate-400">Positive observations</span><strong className="mt-1 block text-base text-white">{formatRate(outcome.positive_rate)}</strong></div>
-            <div><span className="text-xs text-slate-400">Mean absolute move</span><strong className="mt-1 block text-base text-white">{formatReturn(outcome.mean_absolute_return)}</strong></div>
+            <div><span className="text-xs text-stealth-400">Median return</span><strong className="mt-1 block text-base text-white">{formatReturn(outcome.median_return)}</strong></div>
+            <div><span className="text-xs text-stealth-400">Positive observations</span><strong className="mt-1 block text-base text-white">{formatRate(outcome.positive_rate)}</strong></div>
+            <div><span className="text-xs text-stealth-400">Mean absolute move</span><strong className="mt-1 block text-base text-white">{formatReturn(outcome.mean_absolute_return)}</strong></div>
           </div>
-          <p className="mt-3 text-xs leading-5 text-slate-400">Overlapping, serially dependent observations; descriptive only and not corrected for state search.</p>
+          <p className="mt-3 text-xs leading-5 text-stealth-400">Overlapping, serially dependent observations; descriptive only and not corrected for state search.</p>
         </div>
 
         <div className="mt-4"><TransitionEvidence archetype={selected} research={research} /></div>
@@ -1636,66 +1666,71 @@ function MethodsView({ research, symbol, timeframe, barSize }: Omit<MarketWeathe
 
   return (
     <div className="space-y-4">
-      <section className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-4 sm:p-5">
+      <section className="rounded-2xl border border-stealth-700 bg-stealth-950/30 p-4 sm:p-5">
         <div className="mb-4 flex items-center gap-2"><Layers className="h-4 w-4 text-violet-300" /><h3 className="text-base font-semibold text-white">Causal derivative layers</h3></div>
-        <p className="mb-4 max-w-3xl text-xs leading-5 text-slate-400">Successive changes in the pressure field. This visualization is diagnostic; higher orders are more noise-sensitive.</p>
+        <p className="mb-4 max-w-3xl text-xs leading-5 text-stealth-400">Successive changes in the pressure field. This visualization is diagnostic; higher orders are more noise-sensitive.</p>
         <DerivativeHeatmap series={research.derivative_series} timeframe={timeframe} />
-        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400"><span><span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-sky-400" />Positive</span><span><span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-amber-400" />Negative</span></div>
+        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-stealth-400"><span><span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-sky-400" />Positive</span><span><span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-amber-400" />Negative</span></div>
       </section>
 
-      <section className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-4 sm:p-5">
+      <section className="rounded-2xl border border-stealth-700 bg-stealth-950/30 p-4 sm:p-5">
         <h3 className="text-base font-semibold text-white">Latest field layers</h3>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           {STRATA.map((stratum) => (
             <article key={stratum.key} className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
-              <div className="flex items-center justify-between gap-2 text-xs"><span className="text-slate-300">{stratum.label}</span><strong className="font-mono text-white">{Math.round(latest[stratum.key] * 100)}</strong></div>
-              <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800"><div className="h-full rounded-full bg-violet-300" style={{ width: `${Math.max(0, Math.min(100, latest[stratum.key] * 100))}%` }} /></div>
-              <p className="mt-2 text-xs text-slate-400">0 to 100 model scale</p>
+              <div className="flex items-center justify-between gap-2 text-xs"><span className="text-stealth-300">{stratum.label}</span><strong className="font-mono text-white">{Math.round(latest[stratum.key] * 100)}</strong></div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-stealth-800"><div className="h-full rounded-full bg-violet-300" style={{ width: `${Math.max(0, Math.min(100, latest[stratum.key] * 100))}%` }} /></div>
+              <p className="mt-2 text-xs text-stealth-400">0 to 100 model scale</p>
             </article>
           ))}
         </div>
       </section>
 
-      <section className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-4 sm:p-5">
+      <section className="rounded-2xl border border-stealth-700 bg-stealth-950/30 p-4 sm:p-5">
         <h3 className="text-base font-semibold text-white">Experimental repeated sequences</h3>
-        <p className="mt-1 text-xs leading-5 text-slate-400">Run-collapsed sequences translated into measured state definitions. They remain descriptive and uncorrected for search.</p>
+        <p className="mt-1 text-xs leading-5 text-stealth-400">Run-collapsed sequences translated into measured state definitions. They remain descriptive and uncorrected for search.</p>
         {motifs.length ? (
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
             {motifs.map((motif) => {
               const states = translatedMotif(motif, research);
               return (
                 <article key={motif.id} className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
-                  <div className="flex flex-wrap items-center gap-2 text-xs leading-5 text-slate-300">
-                    {states.map((state, index) => <span key={`${state}-${index}`} className="inline-flex items-center gap-2"><span>{state}</span>{index < states.length - 1 ? <ArrowRight className="h-3.5 w-3.5 text-slate-500" /> : null}</span>)}
+                  <div className="flex flex-wrap items-center gap-2 text-xs leading-5 text-stealth-300">
+                    {states.map((state, index) => <span key={`${state}-${index}`} className="inline-flex items-center gap-2"><span>{state}</span>{index < states.length - 1 ? <ArrowRight className="h-3.5 w-3.5 text-stealth-500" /> : null}</span>)}
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-white/10 pt-3 text-xs text-slate-400">
+                  <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-white/10 pt-3 text-xs text-stealth-400">
                     <span>{motif.count} occurrences</span><span>Typical span {motif.typical_span_bars} bars</span><span>Next {motif.outcome.forward_bars} bars: {formatReturn(motif.outcome.median_return)}</span><span>n={motif.outcome.sample_size}</span>
                   </div>
                 </article>
               );
             })}
           </div>
-        ) : <p className="mt-4 rounded-xl border border-dashed border-stealth-700 p-5 text-center text-xs text-slate-400">No repeated sequence has enough occurrences in the visible evaluation window.</p>}
+        ) : <p className="mt-4 rounded-xl border border-dashed border-stealth-700 p-5 text-center text-xs text-stealth-400">No repeated sequence has enough occurrences in the visible evaluation window.</p>}
       </section>
 
-      <section className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-4 sm:p-5">
+      <section className="rounded-2xl border border-stealth-700 bg-stealth-950/30 p-4 sm:p-5">
         <h3 className="text-base font-semibold text-white">Chronological relationship checks</h3>
-        <div className="mt-4 overflow-x-auto rounded-xl border border-stealth-700">
+        <div
+          role="region"
+          aria-label="Repeated field sequences table"
+          tabIndex={0}
+          className="mt-4 overflow-x-auto rounded-xl border border-stealth-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+        >
           <table className="w-full min-w-[720px] text-left text-xs">
-            <thead className="bg-slate-950/60 uppercase tracking-[0.12em] text-slate-400"><tr><th className="px-3 py-3">Test</th><th className="px-3 py-3">Sample</th><th className="px-3 py-3">Event</th><th className="px-3 py-3">Baseline</th><th className="px-3 py-3">Difference</th><th className="px-3 py-3">Status</th></tr></thead>
+            <thead className="bg-stealth-950/60 uppercase tracking-[0.12em] text-stealth-400"><tr><th className="px-3 py-3">Test</th><th className="px-3 py-3">Sample</th><th className="px-3 py-3">Event</th><th className="px-3 py-3">Baseline</th><th className="px-3 py-3">Difference</th><th className="px-3 py-3">Status</th></tr></thead>
             <tbody className="divide-y divide-white/10">
-              {research.relationship_atlas.map((result) => <tr key={result.id}><td className="px-3 py-3 text-slate-200">{result.label}</td><td className="px-3 py-3 font-mono text-slate-300">{result.sample_size}</td><td className="px-3 py-3 font-mono text-slate-300">{formatReturn(result.event_mean)}</td><td className="px-3 py-3 font-mono text-slate-400">{formatReturn(result.baseline_mean)}</td><td className="px-3 py-3 font-mono text-sky-300">{formatReturn(result.uplift)}</td><td className="px-3 py-3 text-slate-400">{result.status}</td></tr>)}
+              {research.relationship_atlas.map((result) => <tr key={result.id}><td className="px-3 py-3 text-stealth-200">{result.label}</td><td className="px-3 py-3 font-mono text-stealth-300">{result.sample_size}</td><td className="px-3 py-3 font-mono text-stealth-300">{formatReturn(result.event_mean)}</td><td className="px-3 py-3 font-mono text-stealth-400">{formatReturn(result.baseline_mean)}</td><td className="px-3 py-3 font-mono text-sky-300">{formatReturn(result.uplift)}</td><td className="px-3 py-3 text-stealth-400">{result.status}</td></tr>)}
             </tbody>
           </table>
         </div>
       </section>
 
-      <details className="rounded-2xl border border-stealth-700 bg-slate-950/30 p-4 sm:p-5">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-white"><span className="inline-flex items-center gap-2"><BookOpen className="h-4 w-4 text-violet-300" />Published foundations and limits</span><ChevronDown className="h-4 w-4 text-slate-400" /></summary>
+      <details className="rounded-2xl border border-stealth-700 bg-stealth-950/30 p-4 sm:p-5">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-white"><span className="inline-flex items-center gap-2"><BookOpen className="h-4 w-4 text-violet-300" />Published foundations and limits</span><ChevronDown className="h-4 w-4 text-stealth-400" /></summary>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {FOUNDATIONS.map(([title, authors, url]) => <a key={title} href={url} target="_blank" rel="noreferrer" className="rounded-xl border border-white/10 px-3 py-3 text-xs text-slate-300 hover:border-violet-400/40 hover:text-white"><span className="block font-medium text-slate-100">{title}</span><span className="mt-1 block text-slate-400">{authors}</span></a>)}
+          {FOUNDATIONS.map(([title, authors, url]) => <a key={title} href={url} target="_blank" rel="noreferrer" className="rounded-xl border border-white/10 px-3 py-3 text-xs text-stealth-300 hover:border-violet-400/40 hover:text-white"><span className="block font-medium text-stealth-100">{title}</span><span className="mt-1 block text-stealth-400">{authors}</span></a>)}
         </div>
-        <div className="mt-4 space-y-2 text-xs leading-5 text-slate-400">
+        <div className="mt-4 space-y-2 text-xs leading-5 text-stealth-400">
           {research.notes.map((note) => <p key={note}>{note}</p>)}
           <p>{symbol} · {barSize} · chronological evaluation · overlapping outcomes · no multiple-test adjustment</p>
         </div>
@@ -1727,16 +1762,16 @@ export default function MarketWeatherResearchLab(props: MarketWeatherResearchLab
           <div className="max-w-3xl">
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-violet-300"><FlaskConical className="h-4 w-4" />Field language · {lexicon?.version ?? "learning"}</div>
             <h2 className="mt-1.5 text-xl font-semibold text-white sm:text-2xl">{labels[view].title}</h2>
-            <p className="mt-1 text-xs leading-5 text-slate-400 sm:text-sm">{labels[view].description}</p>
+            <p className="mt-1 text-xs leading-5 text-stealth-400 sm:text-sm">{labels[view].description}</p>
           </div>
-          <div className="grid min-h-11 w-full grid-cols-3 rounded-xl border border-stealth-700 bg-slate-950/45 p-1 sm:w-auto" role="tablist" aria-label="Field language view">
+          <div className="grid min-h-11 w-full grid-cols-3 rounded-xl border border-stealth-700 bg-stealth-950/45 p-1 sm:w-auto" role="tablist" aria-label="Field language view">
             {viewOptions.map((option) => (
               <button
                 key={option}
                 type="button"
                 role="tab"
                 id={`field-language-${option}-tab`}
-                aria-controls={`field-language-${option}-panel`}
+                aria-controls={lexicon?.archetypes.length && view === option ? `field-language-${option}-panel` : undefined}
                 aria-selected={view === option}
                 tabIndex={view === option ? 0 : -1}
                 onClick={() => chooseView(option)}
@@ -1757,7 +1792,7 @@ export default function MarketWeatherResearchLab(props: MarketWeatherResearchLab
                   chooseView(nextView);
                   window.requestAnimationFrame(() => document.getElementById(`field-language-${nextView}-tab`)?.focus());
                 }}
-                className={`min-h-10 min-w-0 rounded-lg px-3 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 sm:min-w-[96px] ${view === option ? "bg-violet-500/20 text-violet-100 ring-1 ring-violet-400/30" : "text-slate-400 hover:text-white"}`}
+                className={`min-h-11 min-w-0 rounded-lg px-3 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 sm:min-w-[96px] ${view === option ? "bg-violet-500/20 text-violet-100 ring-1 ring-violet-400/30" : "text-stealth-400 hover:text-white"}`}
               >
                 {labels[option].tab}
               </button>
@@ -1774,7 +1809,7 @@ export default function MarketWeatherResearchLab(props: MarketWeatherResearchLab
         </div>
       ) : (
         <div className="grid min-h-[260px] place-items-center p-8 text-center">
-          <div><Activity className="mx-auto h-7 w-7 text-violet-300" /><div className="mt-3 text-sm font-medium text-slate-200">Learning measured states</div><div className="mt-1 text-xs text-slate-400">More eligible history is required before the state dictionary can be calibrated.</div></div>
+          <div><Activity className="mx-auto h-7 w-7 text-violet-300" /><div className="mt-3 text-sm font-medium text-stealth-200">Learning measured states</div><div className="mt-1 text-xs text-stealth-400">More eligible history is required before the state dictionary can be calibrated.</div></div>
         </div>
       )}
     </section>

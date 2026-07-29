@@ -35,10 +35,65 @@ import MarketLoading from "../components/ui/MarketLoading";
 import "../index.css";
 import { CHART_NEUTRAL } from "../utils/chartUtils";
 import { getFamilyColor } from "../theme/metricColors";
-import { apiFetch, buildApiUrl } from "../utils/apiUtils";
+import { ApiError, apiFetch, getErrorMessage } from "../utils/apiUtils";
 import { buildHolisticSummary } from "../utils/holisticSummary";
 import { buildSummaryInputFromSnapshot } from "../utils/summaryInput";
 import InfoTooltip from "../components/ui/InfoTooltip";
+
+type ChartDataColumn = {
+  key: string;
+  label: string;
+  format?: (value: string | number | null | undefined) => string;
+};
+
+function ChartDataDisclosure({
+  title,
+  rows,
+  columns,
+}: {
+  title: string;
+  rows: Array<Record<string, string | number | null | undefined>>;
+  columns: ChartDataColumn[];
+}) {
+  return (
+    <details className="mt-3 border-t border-stealth-700 pt-2 text-xs">
+      <summary className="flex min-h-11 cursor-pointer items-center rounded-lg px-2 font-semibold text-stealth-300 hover:bg-stealth-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
+        View {title.toLowerCase()} data
+      </summary>
+      <div
+        className="max-w-full overflow-x-auto rounded-lg border border-stealth-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+        role="region"
+        aria-label={`${title} values`}
+        tabIndex={0}
+      >
+        <table className="w-full min-w-[26rem] text-left">
+          <caption className="sr-only">{title} chart values</caption>
+          <thead className="bg-stealth-900 text-stealth-300">
+            <tr>
+              {columns.map((column) => (
+                <th key={column.key} scope="col" className="px-3 py-2 font-semibold">{column.label}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, rowIndex) => (
+              <tr key={`${String(row.date ?? rowIndex)}-${rowIndex}`} className="border-t border-stealth-800">
+                {columns.map((column) => {
+                  const value = row[column.key];
+                  return (
+                    <td key={column.key} className="px-3 py-2 font-mono tabular-nums text-stealth-200">
+                      {column.format ? column.format(value) : value ?? "—"}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  );
+}
 
 interface StockProjection {
   ticker: string;
@@ -236,7 +291,7 @@ function getSignalClasses(signal: "accumulation" | "distribution" | "neutral"): 
 function getConfidenceStrokeClass(signal: "accumulation" | "distribution" | "neutral"): string {
   if (signal === "accumulation") return "stroke-emerald-300/75 drop-shadow-[0_0_5px_rgba(74,222,128,0.2)]";
   if (signal === "distribution") return "stroke-rose-300/75 drop-shadow-[0_0_5px_rgba(251,113,133,0.2)]";
-  return "stroke-slate-300/70 drop-shadow-[0_0_4px_rgba(148,163,184,0.16)]";
+  return "stroke-stealth-300/70 drop-shadow-[0_0_4px_rgba(148,163,184,0.16)]";
 }
 
 function ConfidenceArc({ confidence, signal }: { confidence: number; signal: "accumulation" | "distribution" | "neutral" }) {
@@ -247,7 +302,11 @@ function ConfidenceArc({ confidence, signal }: { confidence: number; signal: "ac
   const dashOffset = circumference * (1 - normalizedConfidence / 100);
 
   return (
-    <div className="inline-flex items-center h-4 w-4" aria-label={`Confidence ${normalizedConfidence.toFixed(0)} out of 100`}>
+    <div
+      className="inline-flex h-4 w-4 items-center"
+      role="img"
+      aria-label={`Confidence ${normalizedConfidence.toFixed(0)} out of 100`}
+    >
       <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90" aria-hidden="true">
         <circle cx="50" cy="50" r={radius} className="fill-none stroke-white/8" strokeWidth={strokeWidth} />
         <circle
@@ -275,7 +334,7 @@ function GroupBadge({ label, value, tone = "default" }: { label: string; value: 
 
   return (
     <div className={`rounded-xl border px-2.5 py-1.5 ${toneClass}`}>
-      <div className="text-[10px] uppercase tracking-[0.18em] opacity-70">{label}</div>
+      <div className="text-xs uppercase tracking-[0.18em] opacity-70">{label}</div>
       <div className="mt-0.5 text-sm font-semibold">{value}</div>
     </div>
   );
@@ -284,13 +343,13 @@ function GroupBadge({ label, value, tone = "default" }: { label: string; value: 
 function CenteredFlowBar({ value, scale }: { value: number | null; scale: number }) {
   const numericValue = value ?? 0;
   const magnitude = scale > 0 ? Math.max(5, Math.min(50, (Math.abs(numericValue) / scale) * 50)) : 0;
-  const toneClass = numericValue > 0 ? "bg-emerald-400/85" : numericValue < 0 ? "bg-rose-400/85" : "bg-slate-400/60";
+  const toneClass = numericValue > 0 ? "bg-emerald-400/85" : numericValue < 0 ? "bg-rose-400/85" : "bg-stealth-400/60";
 
   return (
     <div className="relative h-3 overflow-hidden rounded-full border border-stealth-700 bg-stealth-950/90">
       <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-stealth-400/80" />
       {numericValue === 0 ? (
-        <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-300/80" />
+        <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-stealth-300/80" />
       ) : (
         <div
           className={`absolute inset-y-0 ${toneClass}`}
@@ -335,15 +394,15 @@ function TrendZoneBar({ value, scale, certainty }: { value: number | null; scale
       : direction === "negative"
       ? "bg-[linear-gradient(90deg,rgba(251,113,133,0.12),rgba(251,113,133,0.16),rgba(148,163,184,0.12))]"
       : "bg-[linear-gradient(90deg,rgba(148,163,184,0.12),rgba(148,163,184,0.18),rgba(148,163,184,0.12))]";
-  const glowClass = direction === "positive" ? "bg-emerald-400/25" : direction === "negative" ? "bg-rose-400/25" : "bg-slate-400/20";
-  const bodyClass = direction === "positive" ? "bg-emerald-300/90" : direction === "negative" ? "bg-rose-300/90" : "bg-slate-300/75";
+  const glowClass = direction === "positive" ? "bg-emerald-400/25" : direction === "negative" ? "bg-rose-400/25" : "bg-stealth-400/20";
+  const bodyClass = direction === "positive" ? "bg-emerald-300/90" : direction === "negative" ? "bg-rose-300/90" : "bg-stealth-300/75";
 
   return (
     <div className="relative h-6 overflow-hidden rounded-full border border-stealth-800 bg-stealth-950/90">
       <div className="absolute inset-y-1 left-1/2 w-px -translate-x-1/2 bg-stealth-500/80" />
       <div className={`absolute top-1/2 h-3.5 -translate-y-1/2 rounded-full ${straddleClass}`} style={{ left: `${50 - totalReach}%`, width: `${totalReach * 2}%` }} />
       {direction === "neutral" ? (
-        <div className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-300/80 shadow-[0_0_12px_rgba(148,163,184,0.25)]" />
+        <div className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-stealth-300/80 shadow-[0_0_12px_rgba(148,163,184,0.25)]" />
       ) : (
         <>
           <div className={`absolute top-1/2 h-2 -translate-y-1/2 rounded-full ${direction === "positive" ? "bg-emerald-200/28" : "bg-rose-200/28"}`} style={direction === "positive" ? { right: "50%", width: `${counterReach}%` } : { left: "50%", width: `${counterReach}%` }} />
@@ -369,7 +428,7 @@ function TimelineCluster({ timeline }: { timeline: FlowTimelineBucket[] }) {
     <div className="rounded-2xl border border-stealth-700 bg-stealth-950/55 p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <div className="text-[11px] uppercase tracking-[0.22em] text-stealth-500">Flow Over Time</div>
+          <div className="text-xs uppercase tracking-[0.22em] text-stealth-500">Flow Over Time</div>
           <div className="mt-1 text-xs text-stealth-300">{dominantCluster} across the latest weekly buckets.</div>
         </div>
         <div className="flex gap-2 text-xs">
@@ -383,11 +442,11 @@ function TimelineCluster({ timeline }: { timeline: FlowTimelineBucket[] }) {
           const certainty = bucket.total_notional_usd / maxVolume;
           return (
             <div key={bucket.bucket} className="grid grid-cols-[54px_minmax(0,1fr)_88px] items-center gap-2 rounded-xl border border-stealth-800 bg-stealth-900/55 px-2.5 py-2">
-              <div className="text-[10px] uppercase tracking-[0.16em] text-stealth-500">{formatBucket(bucket.bucket)}</div>
+              <div className="text-xs uppercase tracking-[0.16em] text-stealth-500">{formatBucket(bucket.bucket)}</div>
               <TrendZoneBar value={bucket.net_flow_usd} scale={scale} certainty={certainty} />
               <div className="text-right">
-                <div className="text-[11px] font-semibold text-stealth-100">{formatCompactCurrency(bucket.net_flow_usd)}</div>
-                <div className="mt-0.5 text-[9px] uppercase tracking-[0.16em] text-stealth-500">{bucket.buy_events + bucket.sell_events + bucket.neutral_events} events</div>
+                <div className="text-xs font-semibold text-stealth-100">{formatCompactCurrency(bucket.net_flow_usd)}</div>
+                <div className="mt-0.5 text-xs uppercase tracking-[0.16em] text-stealth-500">{bucket.buy_events + bucket.sell_events + bucket.neutral_events} events</div>
               </div>
             </div>
           );
@@ -396,19 +455,19 @@ function TimelineCluster({ timeline }: { timeline: FlowTimelineBucket[] }) {
 
       <div className="mt-2.5 grid grid-cols-4 gap-2 text-xs text-stealth-300">
         <div className="rounded-xl border border-stealth-700 bg-stealth-900/60 px-2.5 py-2">
-          <div className="text-[9px] uppercase tracking-[0.16em] text-stealth-500">Up Streak</div>
+          <div className="text-xs uppercase tracking-[0.16em] text-stealth-500">Up Streak</div>
           <div className="mt-1 font-semibold text-emerald-300">{positiveStreak}</div>
         </div>
         <div className="rounded-xl border border-stealth-700 bg-stealth-900/60 px-2.5 py-2">
-          <div className="text-[9px] uppercase tracking-[0.16em] text-stealth-500">Down Streak</div>
+          <div className="text-xs uppercase tracking-[0.16em] text-stealth-500">Down Streak</div>
           <div className="mt-1 font-semibold text-rose-300">{negativeStreak}</div>
         </div>
         <div className="rounded-xl border border-stealth-700 bg-stealth-900/60 px-2.5 py-2">
-          <div className="text-[9px] uppercase tracking-[0.16em] text-stealth-500">Net</div>
+          <div className="text-xs uppercase tracking-[0.16em] text-stealth-500">Net</div>
           <div className="mt-1 font-semibold text-stealth-100">{formatCompactCurrency(recentTimeline.reduce((sum, bucket) => sum + bucket.net_flow_usd, 0))}</div>
         </div>
         <div className="rounded-xl border border-stealth-700 bg-stealth-900/60 px-2.5 py-2">
-          <div className="text-[9px] uppercase tracking-[0.16em] text-stealth-500">Volume</div>
+          <div className="text-xs uppercase tracking-[0.16em] text-stealth-500">Volume</div>
           <div className="mt-1 font-semibold text-stealth-100">{formatCompactCurrency(recentTimeline.reduce((sum, bucket) => sum + bucket.total_notional_usd, 0))}</div>
         </div>
       </div>
@@ -487,10 +546,10 @@ function FlowFocusCard({ flow, events, ticker, currentPrice }: { flow: Instituti
     <div className="surface-card-strong space-y-3 p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <div className="text-[11px] uppercase tracking-[0.22em] text-stealth-500">Institutional Flow Focus</div>
+          <div className="text-xs uppercase tracking-[0.22em] text-stealth-500">Institutional Flow Focus</div>
           <div className="mt-1 text-sm font-semibold text-stealth-100">{ticker} regime</div>
         </div>
-        <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${toneClasses}`}>
+        <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${toneClasses}`}>
           {signalLabel}
         </span>
       </div>
@@ -498,7 +557,7 @@ function FlowFocusCard({ flow, events, ticker, currentPrice }: { flow: Instituti
       <div className="rounded-2xl border border-stealth-700 bg-stealth-950/55 p-3">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <div className="text-[11px] uppercase tracking-[0.22em] text-stealth-500">Net Flow Bias</div>
+            <div className="text-xs uppercase tracking-[0.22em] text-stealth-500">Net Flow Bias</div>
             <div className={`mt-1 text-base font-semibold ${summary.net_flow_usd >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
               {formatCompactCurrency(summary.net_flow_usd)}
             </div>
@@ -511,7 +570,7 @@ function FlowFocusCard({ flow, events, ticker, currentPrice }: { flow: Instituti
           </div>
         </div>
 
-        <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-end gap-2 text-[10px] uppercase tracking-[0.16em] text-stealth-500">
+        <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-end gap-2 text-xs uppercase tracking-[0.16em] text-stealth-500">
           <div>
             <div>Sell Cluster</div>
             <div className="mt-0.5 text-sm font-semibold normal-case tracking-normal text-rose-300">{formatFlowCurrency(summary.sell_cluster_level)}</div>
@@ -539,7 +598,7 @@ function FlowFocusCard({ flow, events, ticker, currentPrice }: { flow: Instituti
                   style={currentMarkerStyle}
                 />
                 <div
-                  className={`absolute top-1/2 z-10 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border ${currentIsInsideCluster ? "border-white/70 shadow-[0_0_0_1px_rgba(241,245,249,0.14),0_0_16px_rgba(226,232,240,0.24)]" : "border-white/55 shadow-[0_0_0_1px_rgba(226,232,240,0.1),0_0_14px_rgba(226,232,240,0.18)]"} bg-slate-100/90`}
+                  className={`absolute top-1/2 z-10 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border ${currentIsInsideCluster ? "border-white/70 shadow-[0_0_0_1px_rgba(241,245,249,0.14),0_0_16px_rgba(226,232,240,0.24)]" : "border-white/55 shadow-[0_0_0_1px_rgba(226,232,240,0.1),0_0_14px_rgba(226,232,240,0.18)]"} bg-stealth-100/90`}
                   style={currentMarkerStyle}
                 />
               </>
@@ -550,7 +609,7 @@ function FlowFocusCard({ flow, events, ticker, currentPrice }: { flow: Instituti
         <div className="mt-3">
           <CenteredFlowBar value={summary.net_flow_usd} scale={directionalDenominator} />
         </div>
-        <div className="mt-2 text-right text-[10px] uppercase tracking-[0.16em] text-stealth-500">
+        <div className="mt-2 text-right text-xs uppercase tracking-[0.16em] text-stealth-500">
           {formatFlowPercent(normalizedSignal)}
         </div>
       </div>
@@ -560,7 +619,7 @@ function FlowFocusCard({ flow, events, ticker, currentPrice }: { flow: Instituti
         <GroupBadge label="Notional" value={formatCompactCurrency(summary.buy_notional_usd + summary.sell_notional_usd)} />
         <GroupBadge label="Events" value={summary.event_count} />
         <div className="rounded-xl border border-stealth-700 bg-stealth-900/70 px-2.5 py-1.5">
-          <div className="text-[10px] uppercase tracking-[0.18em] text-stealth-500">Confidence</div>
+          <div className="text-xs uppercase tracking-[0.18em] text-stealth-500">Confidence</div>
           <div className="mt-0.5 flex items-center gap-2 text-sm font-semibold text-stealth-100">
             <ConfidenceArc confidence={confidencePercent} signal={signal} />
             <span>{formatFlowPercent(summary.confidence)}</span>
@@ -690,23 +749,21 @@ export default function StockAnalysis() {
 
     if (!projectionsPayload) {
       try {
-        const response = await fetch(
-          buildApiUrl(`/stocks/${normalizedTicker}/projections?history_window=${window}`)
+        const parsedPayload = await apiFetch<ProjectionsPayload>(
+          `/stocks/${normalizedTicker}/projections?history_window=${window}`,
+          { timeoutMs: 30_000 },
         );
-        if (response.status === 404) {
-          setProjectionUnavailable(true);
-        } else if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        } else {
-          const parsedPayload = (await response.json()) as ProjectionsPayload;
-          projectionsPayload = parsedPayload;
-          projectionCacheRef.current.set(cacheKey, {
-            payload: parsedPayload,
-            fetchedAt: now,
-          });
-        }
+        projectionsPayload = parsedPayload;
+        projectionCacheRef.current.set(cacheKey, {
+          payload: parsedPayload,
+          fetchedAt: now,
+        });
       } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : "Failed to fetch stock data");
+        if (err instanceof ApiError && err.status === 404) {
+          setProjectionUnavailable(true);
+        } else {
+          setError(getErrorMessage(err));
+        }
       }
     }
 
@@ -866,9 +923,9 @@ export default function StockAnalysis() {
     <div className="page-shell-narrow page-stack">
       <div className="flex flex-col">
         <span className="page-kicker">Single Name Lens</span>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">Stock Analysis</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300 md:text-[15px]">Analyze individual stocks across multiple time horizons with quantified confidence levels.</p>
-        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-300">
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-4xl">Stock Analysis</h1>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-stealth-300 md:text-[15px]">Analyze individual stocks across multiple time horizons with quantified confidence levels.</p>
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-stealth-300">
           <span className="page-badge">Projection horizons T, 3M, 6M, 12M</span>
           {searchTicker && <span className="page-badge">Tracking {searchTicker}</span>}
         </div>
@@ -876,19 +933,28 @@ export default function StockAnalysis() {
       
       {/* Stock Search */}
       <div className="surface-card-strong p-4 sm:p-6">
-        <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-3">
-          <input
-            type="text"
-            value={ticker}
-            onChange={(e) => setTicker(e.target.value.toUpperCase())}
-            placeholder="e.g., AAPL, MSFT, TSLA"
-            className="flex-1 rounded-2xl border border-stealth-700 bg-stealth-950/85 px-4 py-3 text-sm text-white placeholder-stealth-500 transition focus:border-sky-500 focus:outline-none sm:py-2 sm:text-base"
-            disabled={loading}
-          />
+        <form onSubmit={handleSearch} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="flex-1">
+            <label htmlFor="stock-symbol" className="block text-sm font-semibold text-stealth-200">
+              Stock symbol
+            </label>
+            <input
+              id="stock-symbol"
+              name="symbol"
+              type="text"
+              value={ticker}
+              onChange={(e) => setTicker(e.target.value.toUpperCase())}
+              placeholder="e.g., AAPL, MSFT, TSLA"
+              autoComplete="off"
+              spellCheck={false}
+              className="mt-2 min-h-11 w-full rounded-xl border border-stealth-700 bg-stealth-950/85 px-4 text-base text-white placeholder-stealth-400 transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
+              disabled={loading}
+            />
+          </div>
           <button
             type="submit"
             disabled={loading || !ticker.trim()}
-            className="whitespace-nowrap rounded-full bg-white px-6 py-3 font-semibold text-stealth-900 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-stealth-700 disabled:text-stealth-400"
+            className="min-h-11 whitespace-nowrap rounded-xl bg-white px-6 font-semibold text-stealth-900 transition hover:bg-stealth-100 disabled:cursor-not-allowed disabled:bg-stealth-700 disabled:text-stealth-300"
           >
             {loading ? "Analyzing..." : "Analyze"}
           </button>
@@ -897,7 +963,7 @@ export default function StockAnalysis() {
 
       {/* Error State */}
       {error && (
-        <div className="rounded-2xl border border-red-700 bg-red-900/20 p-4">
+        <div className="rounded-2xl border border-red-700 bg-red-900/20 p-4" role="alert">
           <p className="text-red-300">{error}</p>
           <p className="text-sm text-red-400 mt-2">
             Please check the ticker symbol and try again. The stock must have sufficient historical data available.
@@ -916,7 +982,7 @@ export default function StockAnalysis() {
         <>
           {/* Fundamentals Summary */}
           {projections["T"] && (
-            <div className="surface-card-strong p-4 sm:p-6">
+            <section id="stock-current-read" aria-label="Current stock read" className="surface-card-strong scroll-mt-32 p-4 sm:p-6">
               {(() => {
                 const projectionNow = projections["T"];
                 const tradeTarget = projectionNow.trade_target ?? projectionNow.take_profit;
@@ -931,7 +997,7 @@ export default function StockAnalysis() {
                   <div className="flex items-center gap-3 mb-1">
                     <h2 className="text-xl font-bold">{chartData.ticker}</h2>
                     {lastUpdated && (
-                      <span className="rounded-full bg-stealth-950/90 px-2 py-0.5 text-[10px] text-stealth-500">
+                      <span className="rounded-full bg-stealth-950/90 px-2 py-0.5 text-xs text-stealth-500">
                         Updated {new Date(lastUpdated).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     )}
@@ -997,7 +1063,7 @@ export default function StockAnalysis() {
                   <p className="text-stealth-400 mb-1" title="Actionable target after sanity checks">Trade Target</p>
                   <p className="font-semibold text-green-400">${tradeTarget.toFixed(2)}</p>
                   {hasSpeculativeGap && (
-                    <p className="mt-1 text-[10px] text-amber-300">Raw ext ${rawUpper.toFixed(2)}</p>
+                    <p className="mt-1 text-xs text-amber-300">Raw ext ${rawUpper.toFixed(2)}</p>
                   )}
                 </div>
                 <div className="surface-card-muted p-3">
@@ -1016,12 +1082,12 @@ export default function StockAnalysis() {
                   </>
                 );
               })()}
-            </div>
+            </section>
           )}
 
           {/* Price Analysis & Conviction Grid */}
           {projections[selectedHorizon] && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+            <section id="stock-price-evidence" aria-label="Price evidence and conviction" className="scroll-mt-32 grid grid-cols-1 gap-4 lg:grid-cols-2">
               {(() => {
                 const selectedProjection = projections[selectedHorizon];
                 const tradeTarget = selectedProjection.trade_target ?? selectedProjection.take_profit;
@@ -1047,7 +1113,7 @@ export default function StockAnalysis() {
                 volatility={projections[selectedHorizon].volatility}
                 horizon={selectedHorizon.toUpperCase()}
               />
-            </div>
+            </section>
           )}
 
           {/* Technical Indicators */}
@@ -1073,7 +1139,7 @@ export default function StockAnalysis() {
                     <h3 className="text-sm sm:text-base font-semibold text-stealth-100">Optionality and Structure</h3>
                     <p className="mt-1 text-xs text-stealth-400">Consolidated options mispricing with resistance and support context.</p>
                   </div>
-                  <span className="rounded-full border border-stealth-700 bg-stealth-900/70 px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-stealth-300">{searchTicker}</span>
+                  <span className="rounded-full border border-stealth-700 bg-stealth-900/70 px-2.5 py-1 text-xs uppercase tracking-[0.18em] text-stealth-300">{searchTicker}</span>
                 </div>
 
                 <div className="mt-3">
@@ -1104,7 +1170,7 @@ export default function StockAnalysis() {
                 />
               ) : (
                 <div className="surface-card-strong p-4 sm:p-5">
-                  <div className="text-[11px] uppercase tracking-[0.2em] text-stealth-500">Institutional Flow Focus</div>
+                  <div className="text-xs uppercase tracking-[0.2em] text-stealth-500">Institutional Flow Focus</div>
                   <div className="mt-2 rounded-xl border border-dashed border-stealth-700 bg-stealth-900/35 px-3 py-2 text-xs text-stealth-400">
                     Institutional flow events are not available for this symbol.
                   </div>
@@ -1136,12 +1202,12 @@ export default function StockAnalysis() {
             };
 
             const snapMetrics = [
-              { label: "EPS", value: latest(epsSeries), fmt: (v: number) => formatDollars(v, 2), delta: qoqDelta(epsSeries), color: getFamilyColor("equity") },
-              { label: "ROE", value: latest(roeSeries), fmt: (v: number) => formatPercent(v, 1), delta: qoqDelta(roeSeries), color: getFamilyColor("growth") },
-              { label: "FCF", value: latest(fcfSeries), fmt: (v: number) => `$${formatCompact(v, 1)}`, delta: qoqDelta(fcfSeries), color: getFamilyColor("liquidity") },
-              { label: "Rev", value: latest(revSeries), fmt: (v: number) => `$${formatCompact(v, 1)}`, delta: qoqDelta(revSeries), color: getFamilyColor("equity") },
-              { label: "P/E", value: latest(peSeries), fmt: (v: number) => v.toFixed(1), delta: qoqDelta(peSeries), color: getFamilyColor("sentiment") },
-              { label: "MCap", value: latest(mcapSeries), fmt: (v: number) => `$${formatCompact(v, 1)}`, delta: qoqDelta(mcapSeries), color: getFamilyColor("financials") },
+              { label: "EPS", value: latest(epsSeries), fmt: (v: number) => formatDollars(v, 2), delta: qoqDelta(epsSeries) },
+              { label: "ROE", value: latest(roeSeries), fmt: (v: number) => formatPercent(v, 1), delta: qoqDelta(roeSeries) },
+              { label: "FCF", value: latest(fcfSeries), fmt: (v: number) => `$${formatCompact(v, 1)}`, delta: qoqDelta(fcfSeries) },
+              { label: "Rev", value: latest(revSeries), fmt: (v: number) => `$${formatCompact(v, 1)}`, delta: qoqDelta(revSeries) },
+              { label: "P/E", value: latest(peSeries), fmt: (v: number) => v.toFixed(1), delta: qoqDelta(peSeries) },
+              { label: "MCap", value: latest(mcapSeries), fmt: (v: number) => `$${formatCompact(v, 1)}`, delta: qoqDelta(mcapSeries) },
             ];
 
             // Merge series by date for dual-axis charts
@@ -1177,15 +1243,17 @@ export default function StockAnalysis() {
             };
 
             return (
-              <div className="surface-card-strong p-4 sm:p-6">
+              <section id="stock-fundamentals" className="surface-card-strong scroll-mt-32 p-4 sm:p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-base sm:text-lg font-semibold">Fundamental Analysis</h3>
                   <div className="flex items-center gap-1 rounded-full border border-stealth-700 bg-stealth-900/60 p-0.5">
                     {(["1Y", "5Y"] as const).map((v) => (
                       <button
                         key={v}
+                        type="button"
+                        aria-pressed={fundView === v}
                         onClick={() => setFundView(v)}
-                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors ${fundView === v ? "bg-stealth-700 text-white" : "text-stealth-400 hover:text-stealth-200"}`}
+                        className={`min-h-11 rounded-full px-3 text-xs font-semibold uppercase tracking-[0.12em] transition-colors ${fundView === v ? "bg-stealth-700 text-white" : "text-stealth-300 hover:text-white"}`}
                       >
                         {v}
                       </button>
@@ -1197,12 +1265,12 @@ export default function StockAnalysis() {
                 <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-5">
                   {snapMetrics.map((m) => (
                     <div key={m.label} className="secondary-card px-3 py-2 text-center">
-                      <div className="text-[10px] uppercase tracking-wider text-stealth-500 mb-1">{m.label}</div>
-                      <div className="text-sm font-semibold" style={{ color: m.color }}>
+                      <div className="mb-1 text-xs uppercase tracking-wider text-stealth-400">{m.label}</div>
+                      <div className="text-sm font-semibold text-stealth-100">
                         {m.value !== null ? m.fmt(m.value) : "—"}
                       </div>
                       {m.delta !== null && (
-                        <div className={`text-[10px] mt-0.5 ${m.delta >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                        <div className={`mt-0.5 text-xs ${m.delta >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
                           {m.delta >= 0 ? "▲" : "▼"} {Math.abs(m.delta).toFixed(1)}% {isAnnual ? "YoY" : "QoQ"}
                         </div>
                       )}
@@ -1210,7 +1278,7 @@ export default function StockAnalysis() {
                   ))}
                 </div>
 
-                <div className="text-[11px] text-stealth-500 mb-4">
+                <div className="mb-4 text-xs text-stealth-400">
                   Source: Yahoo Finance filings via yfinance. Cadence: {isAnnual ? "annual" : "quarterly"}.
                 </div>
 
@@ -1225,17 +1293,21 @@ export default function StockAnalysis() {
                           <span>Revenue &amp; Earnings</span>
                           <InfoTooltip id="fund-rev-eps" text="Revenue bars (left axis) overlaid with EPS line (right axis) to show top-line growth alongside per-share profitability." />
                         </div>
-                        <div className="flex items-center gap-3 text-[10px] text-stealth-500">
+                        <div className="flex items-center gap-3 text-xs text-stealth-500">
                           <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm" style={{ background: getFamilyColor("equity"), opacity: 0.35 }} /> Rev</span>
                           <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full" style={{ background: getFamilyColor("growth") }} /> EPS</span>
                         </div>
                       </div>
                       <div className="h-44" style={{ minWidth: 0, minHeight: 0 }}>
                         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                          <ComposedChart data={revEpsData}>
-                            <XAxis dataKey="date" tickFormatter={(v) => formatDateLabel(String(v))} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }} tickLine={false} axisLine={false} />
-                            <YAxis yAxisId="left" tickFormatter={(v) => formatCompact(v, 0)} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }} tickLine={false} axisLine={false} />
-                            <YAxis yAxisId="right" orientation="right" tickFormatter={(v) => formatDollars(v, 0)} tick={{ fill: getFamilyColor("growth"), fontSize: 10 }} tickLine={false} axisLine={false} />
+                          <ComposedChart
+                            accessibilityLayer
+                            aria-label={`${searchTicker} revenue and earnings history`}
+                            data={revEpsData}
+                          >
+                            <XAxis dataKey="date" tickFormatter={(v) => formatDateLabel(String(v))} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }} tickLine={false} axisLine={false} />
+                            <YAxis yAxisId="left" tickFormatter={(v) => formatCompact(v, 0)} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }} tickLine={false} axisLine={false} />
+                            <YAxis yAxisId="right" orientation="right" tickFormatter={(v) => formatDollars(v, 0)} tick={{ fill: getFamilyColor("growth"), fontSize: 12 }} tickLine={false} axisLine={false} />
                             <Tooltip
                               formatter={(value: number, name: string) =>
                                 name === "revenue" ? [`$${formatCompact(value, 2)}`, "Revenue"] : [formatDollars(value, 2), "EPS"]
@@ -1248,6 +1320,15 @@ export default function StockAnalysis() {
                           </ComposedChart>
                         </ResponsiveContainer>
                       </div>
+                      <ChartDataDisclosure
+                        title="Revenue and earnings"
+                        rows={revEpsData}
+                        columns={[
+                          { key: "date", label: "Period", format: (value) => formatDateLabel(String(value ?? "")) },
+                          { key: "revenue", label: "Revenue", format: (value) => typeof value === "number" ? `$${formatCompact(value, 2)}` : "—" },
+                          { key: "eps", label: "EPS", format: (value) => typeof value === "number" ? formatDollars(value, 2) : "—" },
+                        ]}
+                      />
                     </div>
                   )}
 
@@ -1259,17 +1340,21 @@ export default function StockAnalysis() {
                           <span>Profitability</span>
                           <InfoTooltip id="fund-roe-fcf" text="ROE line (left axis, %) and FCF bars (right axis, $) show how efficiently equity is deployed and how much cash the business generates." />
                         </div>
-                        <div className="flex items-center gap-3 text-[10px] text-stealth-500">
+                        <div className="flex items-center gap-3 text-xs text-stealth-500">
                           <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full" style={{ background: getFamilyColor("growth") }} /> ROE</span>
                           <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm" style={{ background: getFamilyColor("liquidity"), opacity: 0.35 }} /> FCF</span>
                         </div>
                       </div>
                       <div className="h-44" style={{ minWidth: 0, minHeight: 0 }}>
                         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                          <ComposedChart data={roeFcfData}>
-                            <XAxis dataKey="date" tickFormatter={(v) => formatDateLabel(String(v))} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }} tickLine={false} axisLine={false} />
-                            <YAxis yAxisId="left" tickFormatter={(v) => `${v.toFixed(0)}%`} tick={{ fill: getFamilyColor("growth"), fontSize: 10 }} tickLine={false} axisLine={false} />
-                            <YAxis yAxisId="right" orientation="right" tickFormatter={(v) => formatCompact(v, 0)} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }} tickLine={false} axisLine={false} />
+                          <ComposedChart
+                            accessibilityLayer
+                            aria-label={`${searchTicker} return on equity and free-cash-flow history`}
+                            data={roeFcfData}
+                          >
+                            <XAxis dataKey="date" tickFormatter={(v) => formatDateLabel(String(v))} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }} tickLine={false} axisLine={false} />
+                            <YAxis yAxisId="left" tickFormatter={(v) => `${v.toFixed(0)}%`} tick={{ fill: getFamilyColor("growth"), fontSize: 12 }} tickLine={false} axisLine={false} />
+                            <YAxis yAxisId="right" orientation="right" tickFormatter={(v) => formatCompact(v, 0)} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }} tickLine={false} axisLine={false} />
                             <Tooltip
                               formatter={(value: number, name: string) =>
                                 name === "roe" ? [formatPercent(value, 1), "ROE"] : [`$${formatCompact(value, 2)}`, "FCF"]
@@ -1282,6 +1367,15 @@ export default function StockAnalysis() {
                           </ComposedChart>
                         </ResponsiveContainer>
                       </div>
+                      <ChartDataDisclosure
+                        title="Profitability"
+                        rows={roeFcfData}
+                        columns={[
+                          { key: "date", label: "Period", format: (value) => formatDateLabel(String(value ?? "")) },
+                          { key: "roe", label: "ROE", format: (value) => typeof value === "number" ? formatPercent(value, 1) : "—" },
+                          { key: "fcf", label: "Free cash flow", format: (value) => typeof value === "number" ? `$${formatCompact(value, 2)}` : "—" },
+                        ]}
+                      />
                     </div>
                   )}
 
@@ -1293,17 +1387,21 @@ export default function StockAnalysis() {
                           <span>Valuation &amp; Scale</span>
                           <InfoTooltip id="fund-pe-mcap" text="P/E ratio (left axis) over market cap area (right axis) shows how valuation multiples move against total company size." />
                         </div>
-                        <div className="flex items-center gap-3 text-[10px] text-stealth-500">
+                        <div className="flex items-center gap-3 text-xs text-stealth-500">
                           <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full" style={{ background: getFamilyColor("sentiment") }} /> P/E</span>
                           <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm" style={{ background: getFamilyColor("financials"), opacity: 0.2 }} /> MCap</span>
                         </div>
                       </div>
                       <div className="h-44" style={{ minWidth: 0, minHeight: 0 }}>
                         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                          <ComposedChart data={peMcapData}>
-                            <XAxis dataKey="date" tickFormatter={(v) => formatDateLabel(String(v))} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }} tickLine={false} axisLine={false} />
-                            <YAxis yAxisId="left" tickFormatter={(v) => v.toFixed(0)} tick={{ fill: getFamilyColor("sentiment"), fontSize: 10 }} tickLine={false} axisLine={false} />
-                            <YAxis yAxisId="right" orientation="right" tickFormatter={(v) => formatCompact(v, 0)} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }} tickLine={false} axisLine={false} />
+                          <ComposedChart
+                            accessibilityLayer
+                            aria-label={`${searchTicker} price-to-earnings ratio and market-capitalization history`}
+                            data={peMcapData}
+                          >
+                            <XAxis dataKey="date" tickFormatter={(v) => formatDateLabel(String(v))} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }} tickLine={false} axisLine={false} />
+                            <YAxis yAxisId="left" tickFormatter={(v) => v.toFixed(0)} tick={{ fill: getFamilyColor("sentiment"), fontSize: 12 }} tickLine={false} axisLine={false} />
+                            <YAxis yAxisId="right" orientation="right" tickFormatter={(v) => formatCompact(v, 0)} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }} tickLine={false} axisLine={false} />
                             <Tooltip
                               formatter={(value: number, name: string) =>
                                 name === "pe" ? [value.toFixed(1), "P/E"] : [`$${formatCompact(value, 2)}`, "Market Cap"]
@@ -1316,6 +1414,15 @@ export default function StockAnalysis() {
                           </ComposedChart>
                         </ResponsiveContainer>
                       </div>
+                      <ChartDataDisclosure
+                        title="Valuation and scale"
+                        rows={peMcapData}
+                        columns={[
+                          { key: "date", label: "Period", format: (value) => formatDateLabel(String(value ?? "")) },
+                          { key: "pe", label: "P/E", format: (value) => typeof value === "number" ? value.toFixed(1) : "—" },
+                          { key: "mcap", label: "Market cap", format: (value) => typeof value === "number" ? `$${formatCompact(value, 2)}` : "—" },
+                        ]}
+                      />
                     </div>
                   )}
 
@@ -1330,9 +1437,13 @@ export default function StockAnalysis() {
                       </div>
                       <div className="h-44" style={{ minWidth: 0, minHeight: 0 }}>
                         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                          <ComposedChart data={yoySeries}>
-                            <XAxis dataKey="date" tickFormatter={(v) => formatDateLabel(String(v))} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }} tickLine={false} axisLine={false} />
-                            <YAxis tickFormatter={(v) => `${v.toFixed(0)}%`} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }} tickLine={false} axisLine={false} />
+                          <ComposedChart
+                            accessibilityLayer
+                            aria-label={`${searchTicker} year-over-year revenue growth history`}
+                            data={yoySeries}
+                          >
+                            <XAxis dataKey="date" tickFormatter={(v) => formatDateLabel(String(v))} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }} tickLine={false} axisLine={false} />
+                            <YAxis tickFormatter={(v) => `${v.toFixed(0)}%`} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }} tickLine={false} axisLine={false} />
                             <Tooltip
                               formatter={(value: number) => [formatPercent(value, 1), "YoY Growth"]}
                               labelFormatter={(l) => `${isAnnual ? "FY" : "Q"} ${formatDateLabel(String(l))}`}
@@ -1349,10 +1460,18 @@ export default function StockAnalysis() {
                           </ComposedChart>
                         </ResponsiveContainer>
                       </div>
+                      <ChartDataDisclosure
+                        title="Revenue growth"
+                        rows={yoySeries.map((point) => ({ date: point.date, value: point.value }))}
+                        columns={[
+                          { key: "date", label: "Period", format: (value) => formatDateLabel(String(value ?? "")) },
+                          { key: "value", label: "Year-over-year growth", format: (value) => typeof value === "number" ? formatPercent(value, 1) : "—" },
+                        ]}
+                      />
                     </div>
                   )}
                 </div>
-              </div>
+              </section>
             );
           })()}
 
@@ -1361,7 +1480,7 @@ export default function StockAnalysis() {
             <div className="surface-card-strong p-4 sm:p-6">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-base sm:text-lg font-semibold">Holistic Summary</h3>
-                <span className="text-[10px] sm:text-xs text-stealth-200 bg-stealth-900/70 border border-stealth-700 px-2 py-1 rounded-full">
+                <span className="text-xs sm:text-xs text-stealth-200 bg-stealth-900/70 border border-stealth-700 px-2 py-1 rounded-full">
                   {holisticSummary.regime}
                 </span>
               </div>
@@ -1381,14 +1500,16 @@ export default function StockAnalysis() {
               {holisticSummary.debug && (
                 <button
                   type="button"
+                  aria-expanded={showSummaryDebug}
+                  aria-controls="stock-summary-debug"
                   onClick={() => setShowSummaryDebug((prev) => !prev)}
-                  className="mt-3 text-xs text-blue-300 hover:text-blue-200 transition"
+                  className="mt-3 min-h-11 rounded-lg px-3 text-xs font-semibold text-blue-300 transition hover:bg-stealth-800 hover:text-blue-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
                 >
                   {showSummaryDebug ? "Hide debug" : "Show debug"}
                 </button>
               )}
               {showSummaryDebug && holisticSummary.debug && (
-                <div className="mt-3 secondary-card p-3 text-xs text-stealth-400 space-y-2">
+                <div id="stock-summary-debug" className="mt-3 secondary-card p-3 text-xs text-stealth-400 space-y-2">
                   {[
                     holisticSummary.debug.technical,
                     holisticSummary.debug.fundamental,
@@ -1396,7 +1517,7 @@ export default function StockAnalysis() {
                   ].map((axis) => (
                     <div key={axis.label}>
                       <span className="text-stealth-500">{axis.label}:</span>{" "}
-                      {axis.bias} · score {axis.score} · confidence {axis.confidence} · rules{" "}
+                      {axis.bias} · score {axis.score.toFixed(1)} · confidence {axis.confidence.toFixed(1)} · rules{" "}
                       {Array.isArray(axis.debug?.rules) ? axis.debug?.rules.join(", ") : "n/a"}
                     </div>
                   ))}
@@ -1420,16 +1541,16 @@ export default function StockAnalysis() {
                 {[0, 25, 50, 75, 100].map((y) => (
                   <g key={y}>
                     <line x1="50" y1={260 - (y * 2.4)} x2="960" y2={260 - (y * 2.4)} stroke={CHART_NEUTRAL.grid} strokeWidth="1" strokeDasharray="4 4" />
-                    <text x="40" y={264 - (y * 2.4)} fill={CHART_NEUTRAL.tick} fontSize="10" textAnchor="end">{y}</text>
+                    <text x="40" y={264 - (y * 2.4)} fill={CHART_NEUTRAL.tick} fontSize="12" textAnchor="end">{y}</text>
                   </g>
                 ))}
                 
                 {/* X-axis labels - simplified */}
-                <text x="150" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">-3M</text>
-                <text x="375" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">T</text>
-                <text x="575" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">3M</text>
-                <text x="750" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">6M</text>
-                <text x="925" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">12M</text>
+                <text x="150" y="285" fill={CHART_NEUTRAL.tick} fontSize="12" textAnchor="middle" fontWeight="500">-3M</text>
+                <text x="375" y="285" fill={CHART_NEUTRAL.tick} fontSize="12" textAnchor="middle" fontWeight="500">T</text>
+                <text x="575" y="285" fill={CHART_NEUTRAL.tick} fontSize="12" textAnchor="middle" fontWeight="500">3M</text>
+                <text x="750" y="285" fill={CHART_NEUTRAL.tick} fontSize="12" textAnchor="middle" fontWeight="500">6M</text>
+                <text x="925" y="285" fill={CHART_NEUTRAL.tick} fontSize="12" textAnchor="middle" fontWeight="500">12M</text>
                 
                 {(() => {
                   const color = getFamilyColor("equity");
@@ -1602,7 +1723,7 @@ export default function StockAnalysis() {
           </div>
 
           {/* Score Breakdown Tables - Conditional based on selected horizon */}
-          <div className="space-y-6">
+          <section id="stock-outlook" aria-label="Projection outlook" className="scroll-mt-32 space-y-6">
             {selectedHorizon === "T" && projections["3m"] && (
               <div className="surface-card-strong p-6">
                 <div className="flex items-center justify-between mb-4">
@@ -1611,41 +1732,49 @@ export default function StockAnalysis() {
                   {/* Horizon Selector */}
                   <div className="flex gap-2">
                     <button
+                      type="button"
+                      aria-pressed={isSelectedHorizon("T")}
                       onClick={() => setSelectedHorizon("T")}
-                      className={`px-4 py-2 rounded text-xs sm:text-sm font-medium transition min-h-10 ${
+                      className={`min-h-11 rounded px-4 py-2 text-xs font-medium transition sm:text-sm ${
                         isSelectedHorizon("T")
                           ? "bg-stealth-700 text-white"
-                          : "bg-stealth-800 text-slate-300 hover:bg-stealth-700"
+                          : "bg-stealth-800 text-stealth-300 hover:bg-stealth-700"
                       }`}
                     >
                       Now
                     </button>
                     <button
+                      type="button"
+                      aria-pressed={isSelectedHorizon("3m")}
                       onClick={() => setSelectedHorizon("3m")}
-                      className={`px-4 py-2 rounded text-xs sm:text-sm font-medium transition min-h-10 ${
+                      className={`min-h-11 rounded px-4 py-2 text-xs font-medium transition sm:text-sm ${
                         isSelectedHorizon("3m")
                           ? "bg-stealth-700 text-white"
-                          : "bg-stealth-800 text-slate-300 hover:bg-stealth-700"
+                          : "bg-stealth-800 text-stealth-300 hover:bg-stealth-700"
                       }`}
                     >
                       T+3M
                     </button>
                     <button
+                      type="button"
+                      aria-pressed={isSelectedHorizon("6m")}
                       onClick={() => setSelectedHorizon("6m")}
-                      className={`px-4 py-2 rounded text-xs sm:text-sm font-medium transition min-h-10 ${
+                      className={`min-h-11 rounded px-4 py-2 text-xs font-medium transition sm:text-sm ${
                         isSelectedHorizon("6m")
                           ? "bg-stealth-700 text-white"
-                          : "bg-stealth-800 text-slate-300 hover:bg-stealth-700"
+                          : "bg-stealth-800 text-stealth-300 hover:bg-stealth-700"
                       }`}
                     >
                       T+6M
                     </button>
                     <button
+                      type="button"
+                      aria-pressed={isSelectedHorizon("12m")}
                       onClick={() => setSelectedHorizon("12m")}
-                      className={`px-4 py-2 rounded text-xs sm:text-sm font-medium transition min-h-10 ${
+                      className={`min-h-11 rounded px-4 py-2 text-xs font-medium transition sm:text-sm ${
                         isSelectedHorizon("12m")
                           ? "bg-stealth-700 text-white"
-                          : "bg-stealth-800 text-slate-300 hover:bg-stealth-700"
+                          : "bg-stealth-800 text-stealth-300 hover:bg-stealth-700"
                       }`}
                     >
                       T+12M
@@ -1670,41 +1799,49 @@ export default function StockAnalysis() {
                     {/* Horizon Selector */}
                     <div className="flex gap-2">
                       <button
+                        type="button"
+                        aria-pressed={isSelectedHorizon("T")}
                         onClick={() => setSelectedHorizon("T")}
-                        className={`px-4 py-2 rounded text-xs sm:text-sm font-medium transition min-h-10 ${
+                        className={`min-h-11 rounded px-4 py-2 text-xs font-medium transition sm:text-sm ${
                           isSelectedHorizon("T")
                             ? "bg-stealth-700 text-white"
-                            : "bg-stealth-800 text-slate-300 hover:bg-stealth-700"
+                            : "bg-stealth-800 text-stealth-300 hover:bg-stealth-700"
                         }`}
                       >
                         Now
                       </button>
                       <button
+                        type="button"
+                        aria-pressed={isSelectedHorizon("3m")}
                         onClick={() => setSelectedHorizon("3m")}
-                        className={`px-4 py-2 rounded text-xs sm:text-sm font-medium transition min-h-10 ${
+                        className={`min-h-11 rounded px-4 py-2 text-xs font-medium transition sm:text-sm ${
                           isSelectedHorizon("3m")
                             ? "bg-stealth-700 text-white"
-                            : "bg-stealth-800 text-slate-300 hover:bg-stealth-700"
+                            : "bg-stealth-800 text-stealth-300 hover:bg-stealth-700"
                         }`}
                       >
                         T+3M
                       </button>
                       <button
+                        type="button"
+                        aria-pressed={isSelectedHorizon("6m")}
                         onClick={() => setSelectedHorizon("6m")}
-                        className={`px-4 py-2 rounded text-xs sm:text-sm font-medium transition min-h-10 ${
+                        className={`min-h-11 rounded px-4 py-2 text-xs font-medium transition sm:text-sm ${
                           isSelectedHorizon("6m")
                             ? "bg-stealth-700 text-white"
-                            : "bg-stealth-800 text-slate-300 hover:bg-stealth-700"
+                            : "bg-stealth-800 text-stealth-300 hover:bg-stealth-700"
                         }`}
                       >
                         T+6M
                       </button>
                       <button
+                        type="button"
+                        aria-pressed={isSelectedHorizon("12m")}
                         onClick={() => setSelectedHorizon("12m")}
-                        className={`px-4 py-2 rounded text-xs sm:text-sm font-medium transition min-h-10 ${
+                        className={`min-h-11 rounded px-4 py-2 text-xs font-medium transition sm:text-sm ${
                           isSelectedHorizon("12m")
                             ? "bg-stealth-700 text-white"
-                            : "bg-stealth-800 text-slate-300 hover:bg-stealth-700"
+                            : "bg-stealth-800 text-stealth-300 hover:bg-stealth-700"
                         }`}
                       >
                         T+12M
@@ -1787,7 +1924,7 @@ export default function StockAnalysis() {
                 </div>
               );
             })()}
-          </div>
+          </section>
 
           {/* Understanding the Analysis */}
           <div className="mt-6 bg-blue-900/20 border border-blue-700/50 rounded-lg p-3 sm:p-4">
@@ -1815,11 +1952,13 @@ export default function StockAnalysis() {
         )}
 
           {/* Methodology */}
-          <div className="mt-6 surface-card-strong">
+          <div id="stock-methodology" className="mt-6 scroll-mt-32 surface-card-strong">
             <button
+              type="button"
               onClick={() => setMethodologyOpen(!methodologyOpen)}
-              className="w-full px-6 py-4 flex items-center justify-between hover:bg-stealth-800/40 transition-colors rounded-lg"
+              className="flex min-h-11 w-full items-center justify-between rounded-lg px-6 py-4 transition-colors hover:bg-stealth-800/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
               aria-expanded={methodologyOpen}
+              aria-controls="stock-methodology-content"
             >
               <h2 className="text-lg font-semibold">Methodology & Scoring Details</h2>
               <span className={`collapsible-icon ${methodologyOpen ? 'collapsible-icon-open' : ''}`} aria-hidden="true">
@@ -1828,7 +1967,7 @@ export default function StockAnalysis() {
                 </svg>
               </span>
             </button>
-            <div className={`collapsible-panel ${methodologyOpen ? 'collapsible-panel-open' : ''}`}>
+            <div id="stock-methodology-content" className={`collapsible-panel ${methodologyOpen ? 'collapsible-panel-open' : ''}`}>
               <div className="collapsible-panel-inner">
                 <div className="px-6 pb-6 text-sm text-stealth-200 space-y-4">
                 <p>
@@ -1901,7 +2040,7 @@ export default function StockAnalysis() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-base sm:text-lg font-semibold">Recent News for {searchTicker}</h2>
             {lastUpdated && (
-              <span className="text-[10px] text-stealth-500">
+              <span className="text-xs text-stealth-500">
                 Updated {getRelativeTime(lastUpdated)}
               </span>
             )}

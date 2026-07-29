@@ -106,7 +106,7 @@ const SECTOR_BENCHMARKS = [
   { symbol: "XLY", label: "Discretionary", category: "Sector reference" },
 ] as const;
 
-const inputClass = "min-h-11 rounded-xl border border-stealth-600 bg-slate-950/70 px-3 py-2 text-sm text-white outline-none transition focus:border-sky-400/70 focus:ring-2 focus:ring-sky-400/10 sm:min-h-10";
+const inputClass = "min-h-11 rounded-xl border border-stealth-600 bg-stealth-950/70 px-3 py-2 text-sm text-white outline-none transition focus:border-sky-400/70 focus:ring-2 focus:ring-sky-400/10 sm:min-h-11";
 
 function formatPercent(value: number): string {
   return `${Math.round(value * 100)}%`;
@@ -291,6 +291,11 @@ export default function MarketWeatherRadar() {
     const appRoot = document.getElementById("root");
     document.body.style.overflow = "hidden";
     appRoot?.setAttribute("inert", "");
+    const focusFrame = window.requestAnimationFrame(() => {
+      settingsDialogRef.current
+        ?.querySelector<HTMLElement>("[data-dialog-initial-focus]")
+        ?.focus();
+    });
     const handleDialogKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setSettingsOpen(false);
@@ -316,6 +321,7 @@ export default function MarketWeatherRadar() {
     };
     document.addEventListener("keydown", handleDialogKey);
     return () => {
+      window.cancelAnimationFrame(focusFrame);
       document.body.style.overflow = previousOverflow;
       appRoot?.removeAttribute("inert");
       document.removeEventListener("keydown", handleDialogKey);
@@ -487,7 +493,7 @@ export default function MarketWeatherRadar() {
     : 0;
   const settingsDialog = settingsOpen ? createPortal(
     <div
-      className="fixed inset-0 z-[320] flex items-end justify-center bg-slate-950/78 p-0 backdrop-blur-sm sm:items-center sm:p-6"
+      className="fixed inset-0 z-[320] flex items-end justify-center bg-stealth-950/78 p-0 backdrop-blur-sm sm:items-center sm:p-6"
       role="presentation"
       onMouseDown={(event) => {
         if (event.currentTarget !== event.target) return;
@@ -504,21 +510,21 @@ export default function MarketWeatherRadar() {
           event.preventDefault();
           applySettings();
         }}
-        className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-t-[28px] border border-stealth-600 bg-slate-900 shadow-[0_32px_120px_-24px_rgba(0,0,0,0.95)] sm:rounded-[28px]"
+        className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-t-[28px] border border-stealth-600 bg-stealth-900 shadow-[0_32px_120px_-24px_rgba(0,0,0,0.95)] sm:rounded-[28px]"
       >
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/8 bg-slate-900/95 px-5 py-4 backdrop-blur-xl sm:px-6">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/8 bg-stealth-900/95 px-5 py-4 backdrop-blur-xl sm:px-6">
           <div>
             <div className="page-kicker">One control surface</div>
             <h2 id="field-settings-title" className="mt-1 text-lg font-semibold text-white">Field settings</h2>
           </div>
           <button
             type="button"
-            autoFocus
+            data-dialog-initial-focus
             onClick={() => {
               setSettingsOpen(false);
               window.requestAnimationFrame(() => settingsButtonRef.current?.focus());
             }}
-            className="grid h-11 w-11 place-items-center rounded-full border border-stealth-600 text-slate-300 transition hover:border-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+            className="grid h-11 w-11 place-items-center rounded-full border border-stealth-600 text-stealth-300 transition hover:border-stealth-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
             aria-label="Close field settings"
           >
             <X className="h-4 w-4" />
@@ -527,14 +533,14 @@ export default function MarketWeatherRadar() {
 
         <div className="space-y-6 p-5 sm:p-6">
           <section>
-            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Analysis shape</div>
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-stealth-400">Analysis shape</div>
             <div className="mt-3 flex flex-wrap gap-2">
               {(["balanced", "tactical", "structural"] as const).map((preset) => (
                 <button
                   key={preset}
                   type="button"
                   onClick={() => applyPreset(preset)}
-                  className="min-h-11 rounded-xl border border-stealth-600 px-3 py-2 text-xs capitalize text-slate-300 transition hover:border-sky-400/50 hover:text-white sm:min-h-10"
+                  className="min-h-11 rounded-xl border border-stealth-600 px-3 py-2 text-xs capitalize text-stealth-300 transition hover:border-sky-400/50 hover:text-white sm:min-h-11"
                 >
                   {preset}
                 </button>
@@ -544,20 +550,20 @@ export default function MarketWeatherRadar() {
 
           <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <label className="flex flex-col gap-1.5">
-              <span className="text-xs uppercase tracking-[0.12em] text-slate-400">History</span>
+              <span className="text-xs uppercase tracking-[0.12em] text-stealth-400">History</span>
               <select value={draft.bars} onChange={(event) => setDraft((current) => ({ ...current, bars: Number(event.target.value) }))} className={inputClass}>
                 {historyOptions.map((value) => <option key={value} value={value}>{value.toLocaleString()} bars</option>)}
               </select>
             </label>
             <label className="flex flex-col gap-1.5">
-              <span className="text-xs uppercase tracking-[0.12em] text-slate-400">Field lens</span>
+              <span className="text-xs uppercase tracking-[0.12em] text-stealth-400">Field lens</span>
                 <select value={draftMode} onChange={(event) => setDraftMode(event.target.value as MarketWeatherMode)} className={inputClass}>
                 {MODES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
               </select>
             </label>
             {draftMode === "inspector" ? (
               <label className="flex flex-col gap-1.5">
-                <span className="text-xs uppercase tracking-[0.12em] text-slate-400">Inspector channel</span>
+                <span className="text-xs uppercase tracking-[0.12em] text-stealth-400">Inspector channel</span>
                 <select value={draftInspectorChannel} onChange={(event) => setDraftInspectorChannel(event.target.value)} className={inputClass}>
                   {INSPECTOR_CHANNELS.map((channel) => <option key={channel} value={channel}>{channelLabel(channel)}</option>)}
                 </select>
@@ -566,7 +572,7 @@ export default function MarketWeatherRadar() {
           </section>
 
           <section>
-            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Field construction</div>
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-stealth-400">Field construction</div>
             <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
               {[
                 ["Min horizon", "horizonMin", 4, 100, 1],
@@ -581,7 +587,7 @@ export default function MarketWeatherRadar() {
                 ["Contour bands", "contourBands", 3, 16, 1],
               ].map(([label, key, min, max, step]) => (
                 <label key={String(key)} className="flex flex-col gap-1.5">
-                  <span className="text-xs uppercase tracking-[0.12em] text-slate-400">{String(label)}</span>
+                  <span className="text-xs uppercase tracking-[0.12em] text-stealth-400">{String(label)}</span>
                   <input
                     type="number"
                     min={Number(min)}
@@ -596,17 +602,17 @@ export default function MarketWeatherRadar() {
             </div>
           </section>
 
-          <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-300">
-            <input type="checkbox" checked={autoRefresh} onChange={(event) => setAutoRefresh(event.target.checked)} className="accent-sky-400" />
+          <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 text-sm text-stealth-300">
+            <input type="checkbox" checked={autoRefresh} onChange={(event) => setAutoRefresh(event.target.checked)} className="h-4 min-h-4 w-4 min-w-4 accent-sky-400" />
             Refresh the applied field every minute
           </label>
         </div>
 
-        <div className="sticky bottom-0 flex flex-wrap items-center justify-end gap-2 border-t border-white/8 bg-slate-900/95 px-5 py-4 backdrop-blur-xl sm:px-6">
-          <button type="button" onClick={refetch} disabled={loading} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-stealth-600 px-3 py-2 text-sm text-slate-200 transition hover:border-sky-400/50 disabled:opacity-50">
+        <div className="sticky bottom-0 flex flex-wrap items-center justify-end gap-2 border-t border-white/8 bg-stealth-900/95 px-5 py-4 backdrop-blur-xl sm:px-6">
+          <button type="button" onClick={refetch} disabled={loading} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-stealth-600 px-3 py-2 text-sm text-stealth-200 transition hover:border-sky-400/50 disabled:opacity-50">
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Refresh current
           </button>
-          <button type="submit" disabled={loading} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-sky-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-sky-300 disabled:opacity-60">
+          <button type="submit" disabled={loading} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-sky-400 px-4 py-2 text-sm font-semibold text-stealth-950 transition hover:bg-sky-300 disabled:opacity-60">
             <Activity className="h-4 w-4" /> Apply & analyze
           </button>
         </div>
@@ -629,7 +635,7 @@ export default function MarketWeatherRadar() {
             <p className="page-subtitle hidden max-w-3xl sm:block">Direction, activity, horizon agreement, disorder, and cross-horizon movement are shown as separate measurements. Request-local Forms summarize calibration-relative profiles.</p>
           </div>
           {data || (comparisonMode === "pair" && comparisonData) ? (
-            <div className="flex flex-wrap gap-2 text-xs text-slate-300">
+            <div className="flex flex-wrap gap-2 text-xs text-stealth-300">
               {data ? <span className="page-badge"><Activity className="h-3.5 w-3.5 text-emerald-300" /> {data.data_source.toUpperCase()} · {data.bar_size} bars</span> : null}
               {comparisonMode === "pair" && comparisonData ? <span className="page-badge"><ArrowRightLeft className="h-3.5 w-3.5 text-teal-300" /> {comparisonData.target.symbol} / {comparisonData.benchmark.symbol} · {comparisonData.timeframe}</span> : null}
               {data && cacheLabel(data) ? (
@@ -657,20 +663,36 @@ export default function MarketWeatherRadar() {
                 {comparisonMode === "pair" && comparisonData
                   ? `${comparisonData.target.symbol} vs ${comparisonData.benchmark.symbol}`
                   : data?.symbol}
-                <span className="font-normal text-slate-400"> · {comparisonMode === "pair" && comparisonData ? comparisonData.timeframe : data?.timeframe} · {applied.bars.toLocaleString()} bars</span>
+                <span className="font-normal text-stealth-400"> · {comparisonMode === "pair" && comparisonData ? comparisonData.timeframe : data?.timeframe} · {applied.bars.toLocaleString()} bars</span>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => setMobileRecipeOpen((current) => !current)}
-              aria-expanded={mobileRecipeOpen}
-              aria-controls="market-field-recipe-controls"
-              aria-label={mobileRecipeOpen ? "Close analysis inputs" : "Change analysis inputs"}
-              className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl border border-stealth-600 px-3 text-xs text-sky-100"
-            >
-              {mobileRecipeOpen ? "Close" : "Change"}
-              <ChevronDown className={`h-3.5 w-3.5 transition ${mobileRecipeOpen ? "rotate-180" : ""}`} />
-            </button>
+            <div className="flex shrink-0 gap-2">
+              <button
+                type="button"
+                onClick={(event) => {
+                  settingsButtonRef.current = event.currentTarget;
+                  setDraftMode(mode);
+                  setDraftInspectorChannel(inspectorChannel);
+                  setSettingsOpen(true);
+                }}
+                aria-label="Open analysis settings"
+                className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-stealth-600 px-3 text-xs text-stealth-200"
+              >
+                <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+                Settings
+              </button>
+              <button
+                type="button"
+                onClick={() => setMobileRecipeOpen((current) => !current)}
+                aria-expanded={mobileRecipeOpen}
+                aria-controls="market-field-recipe-controls"
+                aria-label={mobileRecipeOpen ? "Close analysis inputs" : "Change analysis inputs"}
+                className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-stealth-600 px-3 text-xs text-sky-100"
+              >
+                {mobileRecipeOpen ? "Close" : "Inputs"}
+                <ChevronDown className={`h-3.5 w-3.5 transition ${mobileRecipeOpen ? "rotate-180" : ""}`} aria-hidden="true" />
+              </button>
+            </div>
           </div>
         ) : null}
         <div
@@ -681,15 +703,15 @@ export default function MarketWeatherRadar() {
         <form onSubmit={runAnalysis} className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
             <div className="flex flex-col gap-1.5">
-              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Analysis</span>
-              <div className="inline-flex min-h-11 rounded-xl border border-stealth-600 bg-slate-950/60 p-1">
+              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-stealth-400">Analysis</span>
+              <div className="inline-flex min-h-11 rounded-xl border border-stealth-600 bg-stealth-950/60 p-1">
                 {(["single", "pair"] as const).map((option) => (
                   <button
                     key={option}
                     type="button"
                     onClick={() => setDraftComparisonMode(option)}
                     aria-pressed={draftComparisonMode === option}
-                    className={`rounded-lg px-3 text-xs font-semibold capitalize transition ${draftComparisonMode === option ? "bg-sky-400/15 text-sky-200 ring-1 ring-sky-400/25" : "text-slate-400 hover:text-white"}`}
+                    className={`rounded-lg px-3 text-xs font-semibold capitalize transition ${draftComparisonMode === option ? "bg-sky-400/15 text-sky-200 ring-1 ring-sky-400/25" : "text-stealth-400 hover:text-white"}`}
                   >
                     {option}
                   </button>
@@ -697,9 +719,9 @@ export default function MarketWeatherRadar() {
               </div>
             </div>
             <label className="flex min-w-0 flex-1 flex-col gap-1.5 sm:max-w-[260px]">
-              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">{draftComparisonMode === "pair" ? "Target" : "Ticker"}</span>
+              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-stealth-400">{draftComparisonMode === "pair" ? "Target" : "Ticker"}</span>
               <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stealth-500" />
                 <input
                   value={draft.symbol}
                   onChange={(event) => setDraft((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))}
@@ -718,16 +740,16 @@ export default function MarketWeatherRadar() {
                     setDraft((current) => ({ ...current, symbol: draftCompareSymbol }));
                     setDraftCompareSymbol(currentTarget);
                   }}
-                  className="inline-flex min-h-11 items-center justify-center rounded-xl border border-stealth-600 px-3 text-slate-300 transition hover:border-teal-400/50 hover:text-white"
+                  className="inline-flex min-h-11 items-center justify-center rounded-xl border border-stealth-600 px-3 text-stealth-300 transition hover:border-teal-400/50 hover:text-white"
                   aria-label="Swap target and benchmark"
                   title="Swap target and benchmark; the sign of every difference will reverse."
                 >
                   <ArrowRightLeft className="h-4 w-4" />
                 </button>
                 <label className="flex min-w-0 flex-1 flex-col gap-1.5 sm:max-w-[260px]">
-                  <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Benchmark or comparison symbol</span>
+                  <span className="text-xs font-semibold uppercase tracking-[0.16em] text-stealth-400">Benchmark or comparison symbol</span>
                   <div className="relative">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stealth-500" />
                     <input
                       value={draftCompareSymbol}
                       onChange={(event) => setDraftCompareSymbol(event.target.value.toUpperCase())}
@@ -740,7 +762,7 @@ export default function MarketWeatherRadar() {
               </>
             ) : null}
             <label className="flex flex-col gap-1.5">
-              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Timeframe</span>
+              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-stealth-400">Timeframe</span>
               <select
                 value={draft.timeframe}
                 onChange={(event) => {
@@ -754,7 +776,7 @@ export default function MarketWeatherRadar() {
               </select>
             </label>
             <label className="flex flex-col gap-1.5">
-              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">{draftComparisonMode === "pair" ? "Shared history" : "History"}</span>
+              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-stealth-400">{draftComparisonMode === "pair" ? "Shared history" : "History"}</span>
               <select value={draft.bars} onChange={(event) => setDraft((current) => ({ ...current, bars: Number(event.target.value) }))} className={inputClass}>
                 {historyOptions.map((value) => <option key={value} value={value}>{value.toLocaleString()} bars</option>)}
               </select>
@@ -769,7 +791,7 @@ export default function MarketWeatherRadar() {
                 setDraftInspectorChannel(inspectorChannel);
                 setSettingsOpen(true);
               }}
-              className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-stealth-600 px-3 py-2 text-sm text-slate-200 transition hover:border-sky-400/50 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+              className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-stealth-600 px-3 py-2 text-sm text-stealth-200 transition hover:border-sky-400/50 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
             >
               <SlidersHorizontal className="h-4 w-4" /> Settings
             </button>
@@ -777,20 +799,25 @@ export default function MarketWeatherRadar() {
               type="button"
               onClick={() => void copyReportLink()}
               title="Copies the field recipe and visible controls. Current provider data is loaded when opened."
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-stealth-600 px-3 py-2 text-sm text-slate-200 transition hover:border-sky-400/50 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-stealth-600 px-3 py-2 text-sm text-stealth-200 transition hover:border-sky-400/50 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
             >
               {shareStatus === "copied" ? <Check className="h-4 w-4 text-emerald-300" /> : <Link2 className="h-4 w-4" />}
               <span>{shareStatus === "copied" ? "Copied" : "Copy live recipe"}</span>
             </button>
-            <button type="submit" disabled={loading || pairAlignmentUnsupported} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-sky-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-sky-300 disabled:opacity-60 sm:flex-none">
+            <button type="submit" disabled={loading || pairAlignmentUnsupported} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-sky-400 px-4 py-2 text-sm font-semibold text-stealth-950 transition hover:bg-sky-300 disabled:opacity-60 sm:flex-none">
               <Activity className="h-4 w-4" /> Analyze
             </button>
           </div>
         </form>
         {draftComparisonMode === "pair" ? (
           <div className="mt-3 flex flex-col gap-2 border-t border-stealth-700 pt-3 sm:flex-row sm:items-center">
-            <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Compare with</span>
-            <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
+            <span className="shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-stealth-500">Compare with</span>
+            <div
+              role="region"
+              aria-label="Quick comparison symbols"
+              tabIndex={0}
+              className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0"
+            >
               {CORE_BENCHMARKS.map((benchmark) => (
                 <button
                   key={benchmark.symbol}
@@ -798,7 +825,7 @@ export default function MarketWeatherRadar() {
                   onClick={() => setDraftCompareSymbol(benchmark.symbol)}
                   aria-pressed={draftCompareSymbol === benchmark.symbol}
                   title={`${benchmark.symbol} — ${benchmark.label}`}
-                  className={`shrink-0 rounded-full border px-3 py-1.5 text-xs transition ${draftCompareSymbol === benchmark.symbol ? "border-teal-400/45 bg-teal-400/10 text-teal-200" : "border-stealth-600 text-slate-400 hover:border-slate-400 hover:text-white"}`}
+                  className={`shrink-0 rounded-full border px-3 py-1.5 text-xs transition ${draftCompareSymbol === benchmark.symbol ? "border-teal-400/45 bg-teal-400/10 text-teal-200" : "border-stealth-600 text-stealth-400 hover:border-stealth-400 hover:text-white"}`}
                 >
                   {benchmark.symbol}
                 </button>
@@ -809,30 +836,30 @@ export default function MarketWeatherRadar() {
                   if (event.target.value) setDraftCompareSymbol(event.target.value);
                 }}
                 aria-label="Select Sector SPDR benchmark"
-                className="min-h-8 shrink-0 rounded-full border border-stealth-600 bg-slate-950/70 px-3 text-xs text-slate-300 outline-none transition hover:border-slate-400 focus:border-teal-400"
+                className="min-h-11 shrink-0 rounded-full border border-stealth-600 bg-stealth-950/70 px-3 text-xs text-stealth-300 outline-none transition hover:border-stealth-400 focus:border-teal-400"
               >
                 <option value="">Sector SPDR…</option>
                 {SECTOR_BENCHMARKS.map((benchmark) => (
                   <option key={benchmark.symbol} value={benchmark.symbol}>{benchmark.symbol} — {benchmark.label} sector reference</option>
                 ))}
               </select>
-              <span className="inline-flex min-h-8 shrink-0 items-center rounded-full border border-dashed border-stealth-600 px-3 text-[10px] text-slate-500">
+              <span className="inline-flex min-h-11 shrink-0 items-center rounded-full border border-dashed border-stealth-600 px-3 text-xs text-stealth-500">
                 Or enter a custom comparison
               </span>
             </div>
-            <span className="text-[10px] text-slate-500 sm:hidden" aria-hidden="true">Swipe →</span>
+            <span className="text-xs text-stealth-500 sm:hidden" aria-hidden="true">Swipe →</span>
             {pairAlignmentUnsupported ? (
-              <span className="text-[10px] leading-4 text-amber-300">
+              <span className="text-xs leading-4 text-amber-300">
                 DXY cannot be aligned safely at 1h, 2h, or 4h. Use 30m or shorter, daily, or weekly.
               </span>
             ) : null}
           </div>
         ) : null}
         {draftComparisonMode === "pair" ? (
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] leading-4 text-slate-500">
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs leading-4 text-stealth-500">
             <span>
-              <span className="font-semibold text-slate-400">Next analysis comparator:</span>{" "}
-              <strong className="text-slate-300">{draftCompareSymbol}</strong> · {comparatorMeta?.category ?? "Custom comparison"} · User selected · suitability not evaluated
+              <span className="font-semibold text-stealth-400">Next analysis comparator:</span>{" "}
+              <strong className="text-stealth-300">{draftCompareSymbol}</strong> · {comparatorMeta?.category ?? "Custom comparison"} · User selected · suitability not evaluated
             </span>
             {comparisonMode === "pair" && comparisonData && hasCurrentPairResult ? (
               <span className={comparisonSessionStatus === "compatible" ? "text-emerald-300" : "text-amber-300"}>
@@ -844,7 +871,7 @@ export default function MarketWeatherRadar() {
             ) : null}
           </div>
         ) : null}
-        <p className="mt-2 text-xs leading-5 text-slate-400">
+        <p className="mt-2 text-xs leading-5 text-stealth-400">
           {shareStatus === "error"
               ? <span className="text-rose-300">Clipboard access failed. Allow clipboard access and try again.</span>
               : "Report links preserve the analysis recipe and visible lenses; current provider data is loaded when opened."}
@@ -889,7 +916,7 @@ export default function MarketWeatherRadar() {
                 <span className="page-kicker">Horizon cloud</span>
                 <h2 className="text-sm font-semibold text-white">{data.symbol} field surface</h2>
               </div>
-              <p className="mt-0.5 text-xs text-slate-400">{data.horizons.length} horizons × {data.available_bars.toLocaleString()} bars · time runs left to right · longer horizons rise</p>
+              <p className="mt-0.5 text-xs text-stealth-400">{data.horizons.length} horizons × {data.available_bars.toLocaleString()} bars · time runs left to right · longer horizons rise</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {data.history_context && requestedHistoryShortfall > 0 ? (
@@ -916,11 +943,11 @@ export default function MarketWeatherRadar() {
                   Stored fallback · {formatCacheAge(data.cache.history.age_seconds)}
                 </span>
               ) : null}
-              <span className="rounded-full border border-stealth-600 bg-slate-950/45 px-3 py-1 text-xs text-slate-300">{activeMode.label}</span>
+              <span className="rounded-full border border-stealth-600 bg-stealth-950/45 px-3 py-1 text-xs text-stealth-300">{activeMode.label}</span>
             </div>
           </div>
           <MarketWeatherCanvas data={data} mode={mode} inspectorChannel={inspectorChannel} compact />
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-slate-400" aria-label="Field cloud color key">
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-stealth-400" aria-label="Field cloud color key">
             <span>Older ← time → newer</span>
             <span>Color encodes {activeMode.label.toLowerCase()} · hover for timestamp and core measurements</span>
           </div>
@@ -989,7 +1016,7 @@ export default function MarketWeatherRadar() {
                 <span className="page-kicker">Raw data</span>
                 <h2 className="mt-1 text-base font-semibold text-white">Horizon field, outcomes, and provenance</h2>
               </div>
-              <ChevronDown className="h-5 w-5 shrink-0 text-slate-500 transition-transform group-open:rotate-180" />
+              <ChevronDown className="h-5 w-5 shrink-0 text-stealth-500 transition-transform group-open:rotate-180" />
             </summary>
 
             {rawDataOpen ? <div className="space-y-6 border-t border-stealth-700 p-4 sm:p-5">
@@ -1000,7 +1027,12 @@ export default function MarketWeatherRadar() {
                 </div>
                 <div className="h-[300px] min-w-0">
                   <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                    <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <ComposedChart
+                      accessibilityLayer
+                      aria-label={`${data.symbol} price versus aggregate market-field pressure`}
+                      data={chartData}
+                      margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                    >
                       <defs>
                         <linearGradient id="weatherPriceFill" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="0%" stopColor="#60a5fa" stopOpacity={0.3} />
@@ -1008,9 +1040,9 @@ export default function MarketWeatherRadar() {
                         </linearGradient>
                       </defs>
                       <CartesianGrid stroke="rgba(100,116,139,0.18)" strokeDasharray="3 4" vertical={false} />
-                      <XAxis dataKey="date" minTickGap={64} tick={{ fill: "#94a3b8", fontSize: 11 }} tickFormatter={(value) => formatChartTick(String(value), data.timeframe)} />
-                      <YAxis yAxisId="price" tick={{ fill: "#94a3b8", fontSize: 11 }} width={54} domain={["auto", "auto"]} tickFormatter={(value) => `$${Number(value).toFixed(0)}`} />
-                      <YAxis yAxisId="field" orientation="right" domain={[-1, 1]} ticks={[-1, -0.5, 0, 0.5, 1]} tick={{ fill: "#94a3b8", fontSize: 11 }} width={40} />
+                      <XAxis dataKey="date" minTickGap={64} tick={{ fill: "#94a3b8", fontSize: 12 }} tickFormatter={(value) => formatChartTick(String(value), data.timeframe)} />
+                      <YAxis yAxisId="price" tick={{ fill: "#94a3b8", fontSize: 12 }} width={54} domain={["auto", "auto"]} tickFormatter={(value) => `$${Number(value).toFixed(0)}`} />
+                      <YAxis yAxisId="field" orientation="right" domain={[-1, 1]} ticks={[-1, -0.5, 0, 0.5, 1]} tick={{ fill: "#94a3b8", fontSize: 12 }} width={40} />
                       <Tooltip contentStyle={{ background: "var(--chart-tooltip-bg)", border: "1px solid var(--chart-tooltip-border)", borderRadius: 12 }} labelStyle={{ color: "var(--chart-tooltip-label)" }} formatter={(value, name) => name === "close" ? [formatPrice(Number(value)), "Close"] : [formatSigned(Number(value)), "Field pressure"]} />
                       <ReferenceLine yAxisId="field" y={0} stroke="rgba(226,232,240,0.32)" strokeDasharray="4 4" />
                       <Area yAxisId="price" type="monotone" dataKey="close" stroke="#60a5fa" strokeWidth={2} fill="url(#weatherPriceFill)" dot={false} isAnimationActive={false} />
@@ -1024,17 +1056,22 @@ export default function MarketWeatherRadar() {
                 <div className="border-b border-stealth-700 px-4 py-3 sm:px-5">
                   <h3 className="font-semibold text-white">Current horizon profile</h3>
                 </div>
-                <div className="max-h-[620px] overflow-auto">
+                <div
+                  role="region"
+                  aria-label="Current horizon profile table"
+                  tabIndex={0}
+                  className="max-h-[620px] overflow-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300"
+                >
                   <table className="w-full min-w-[760px] text-left text-sm">
-                    <thead className="sticky top-0 z-[1] bg-slate-950 text-xs uppercase tracking-[0.12em] text-slate-400 shadow-[0_1px_0_rgba(71,85,105,0.45)]">
+                    <thead className="sticky top-0 z-[1] bg-stealth-950 text-xs uppercase tracking-[0.12em] text-stealth-400 shadow-[0_1px_0_rgba(71,85,105,0.45)]">
                       <tr>
                         <th className="px-5 py-3">Horizon</th><th className="px-4 py-3">Pressure</th><th className="px-4 py-3">Renderer composite</th><th className="px-4 py-3">Horizon agreement</th><th className="px-4 py-3">Legacy disorder</th><th className="px-4 py-3">Permutation entropy</th><th className="px-4 py-3">Expansion</th><th className="px-4 py-3">Convection</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-white/5">
                       {data.latest_profile.map((row) => (
-                        <tr key={row.horizon} className="text-slate-300 hover:bg-white/[0.025]">
-                          <td className="px-5 py-3 font-semibold text-white">{row.horizon} bars <span className="ml-1 font-normal text-slate-500">({formatHorizon(row.horizon, data.timeframe)})</span></td>
+                        <tr key={row.horizon} className="text-stealth-300 hover:bg-white/[0.025]">
+                          <td className="px-5 py-3 font-semibold text-white">{row.horizon} bars <span className="ml-1 font-normal text-stealth-500">({formatHorizon(row.horizon, data.timeframe)})</span></td>
                           <td className={`px-4 py-3 font-mono ${directionTone(row.pressure)}`}>{formatSigned(row.pressure)}</td>
                           <td className="px-4 py-3 font-mono">{formatPercent(row.confidence)}</td>
                           <td className="px-4 py-3 font-mono">{formatPercent(row.coherence)}</td>
@@ -1055,11 +1092,11 @@ export default function MarketWeatherRadar() {
                     <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-300" />
                     <div>
                       <h3 className="font-semibold text-white">Data provenance</h3>
-                      <div className="mt-2 space-y-1 text-xs leading-5 text-slate-400">
-                        <p>Bars: <span className="text-slate-200">{data.data_source.toUpperCase()} · {data.bar_size} · {data.available_bars}/{data.requested_bars} observations</span></p>
-                        <p>Quote: <span className="text-slate-200">{formatPrice(data.quote.price)} · {data.quote.source.toUpperCase()}{data.quote.quote_source ? ` (${data.quote.quote_source})` : ""}</span></p>
-                        <p>Observed: <span className="text-slate-200">{formatTimestamp(data.quote.observed_at)}</span></p>
-                        <p>Generated: <span className="text-slate-200">{formatTimestamp(data.generated_at)}</span></p>
+                      <div className="mt-2 space-y-1 text-xs leading-5 text-stealth-400">
+                        <p>Bars: <span className="text-stealth-200">{data.data_source.toUpperCase()} · {data.bar_size} · {data.available_bars}/{data.requested_bars} observations</span></p>
+                        <p>Quote: <span className="text-stealth-200">{formatPrice(data.quote.price)} · {data.quote.source.toUpperCase()}{data.quote.quote_source ? ` (${data.quote.quote_source})` : ""}</span></p>
+                        <p>Observed: <span className="text-stealth-200">{formatTimestamp(data.quote.observed_at)}</span></p>
+                        <p>Generated: <span className="text-stealth-200">{formatTimestamp(data.generated_at)}</span></p>
                         {data.provenance ? (
                           <>
                             <p>
@@ -1067,21 +1104,21 @@ export default function MarketWeatherRadar() {
                               <code className="text-sky-200" title={data.provenance.analysis_hash}>
                                 {data.provenance.analysis_hash.slice(0, 12)}
                               </code>
-                              <span className="text-slate-500"> · recipe </span>
-                              <code className="text-slate-200" title={data.provenance.recipe_hash}>
+                              <span className="text-stealth-500"> · recipe </span>
+                              <code className="text-stealth-200" title={data.provenance.recipe_hash}>
                                 {data.provenance.recipe_hash.slice(0, 10)}
                               </code>
-                              <span className="text-slate-500"> · input </span>
-                              <code className="text-slate-200" title={data.provenance.input_hash}>
+                              <span className="text-stealth-500"> · input </span>
+                              <code className="text-stealth-200" title={data.provenance.input_hash}>
                                 {data.provenance.input_hash.slice(0, 10)}
                               </code>
                             </p>
-                            <p className="text-slate-500">{data.provenance.note}</p>
+                            <p className="text-stealth-500">{data.provenance.note}</p>
                           </>
                         ) : null}
                         {data.history_context?.state_vector_coverage ? (
                           <p>
-                            Form dependency support: <span className="text-slate-200">
+                            Form dependency support: <span className="text-stealth-200">
                               {data.history_context.state_vector_coverage.features.filter((feature) => feature.latest_measured).length}
                               /{data.history_context.state_vector_coverage.coordinate_count} coordinates fully supported and measured now
                               {data.history_context.state_vector_coverage.all_latest_measured ? "" : " · finite startup or neutral values remain explicitly unmeasured"}
@@ -1090,7 +1127,7 @@ export default function MarketWeatherRadar() {
                         ) : null}
                         {data.cache?.history ? (
                           <p>
-                            History origin: <span className="text-slate-200">
+                            History origin: <span className="text-stealth-200">
                               {data.cache.history.status.replace(/_/g, " ")} · {data.cache.history.returned_rows.toLocaleString()} rows · {formatCacheAge(data.cache.history.age_seconds)}
                               {data.cache.history.provider_called ? " · provider checked when computed" : " · read from storage"}
                             </span>
@@ -1098,7 +1135,7 @@ export default function MarketWeatherRadar() {
                         ) : null}
                         {data.cache?.request ? (
                           <p>
-                            This request: <span className="text-slate-200">
+                            This request: <span className="text-stealth-200">
                               history {data.cache.request.history_access.replace(/_/g, " ")}
                               {data.cache.request.provider_called ? " · provider called" : " · no provider call"}
                             </span>
@@ -1106,7 +1143,7 @@ export default function MarketWeatherRadar() {
                         ) : null}
                         {data.cache?.analysis ? (
                           <p>
-                            Analysis cache: <span className="text-slate-200">
+                            Analysis cache: <span className="text-stealth-200">
                               {data.cache.analysis.status} · {data.cache.analysis.scope.replace(/_/g, " ")} · {data.cache.analysis.ttl_seconds}s TTL · {data.cache.analysis.retained ? "retained" : "not retained"}
                             </span>
                           </p>
@@ -1120,7 +1157,7 @@ export default function MarketWeatherRadar() {
                     <FlaskConical className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
                     <div>
                       <h3 className="font-semibold text-white">Verification guardrails</h3>
-                      <div className="mt-2 space-y-1 text-xs leading-5 text-slate-400">
+                      <div className="mt-2 space-y-1 text-xs leading-5 text-stealth-400">
                         <p>{data.methodology.research_status}</p>
                         <p>Forms and Motions are learned without evaluation outcomes. Treat attached returns as hypotheses until they repeat out of sample.</p>
                         {data.provenance?.bar_completion_rule ? (

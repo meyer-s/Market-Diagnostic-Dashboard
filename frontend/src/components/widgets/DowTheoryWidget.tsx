@@ -84,7 +84,7 @@ const getStabilityColor = (level: StabilityLevel) =>
     MODERATE: "text-yellow-400",
     LOW: "text-orange-400",
     "VERY LOW": "text-red-500",
-    UNKNOWN: "text-gray-500",
+    UNKNOWN: "text-stealth-500",
   }[level]);
 
 const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) => {
@@ -242,8 +242,8 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
   const directionColor = {
     UP: "text-green-400",
     DOWN: "text-red-400",
-    NEUTRAL: "text-gray-400",
-    UNKNOWN: "text-gray-500",
+    NEUTRAL: "text-stealth-400",
+    UNKNOWN: "text-stealth-500",
   }[data.direction_state];
 
   const confirmColor = {
@@ -254,35 +254,35 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
 
   const signalColor = {
     STRONG: "text-cyan-400",
-    MODERATE: "text-gray-300",
-    WEAK: "text-gray-500",
+    MODERATE: "text-stealth-300",
+    WEAK: "text-stealth-500",
   }[data.signal_strength];
 
   const modernDirectionColor = {
     UP: "text-green-400",
     DOWN: "text-red-400",
-    NEUTRAL: "text-gray-400",
-    UNKNOWN: "text-gray-500",
+    NEUTRAL: "text-stealth-400",
+    UNKNOWN: "text-stealth-500",
   }[data.modern_direction_state];
 
   const modernSignalColor = {
     STRONG: "text-cyan-400",
-    MODERATE: "text-gray-300",
-    WEAK: "text-gray-500",
+    MODERATE: "text-stealth-300",
+    WEAK: "text-stealth-500",
   }[data.modern_signal_strength];
 
   const alignmentColor = {
     ALIGNED: "text-green-400",
     MIXED: "text-yellow-400",
     DIVERGENT: "text-red-500",
-    UNKNOWN: "text-gray-500",
+    UNKNOWN: "text-stealth-500",
   }[data.theory_alignment_state];
 
   const alignmentBarColor = {
     ALIGNED: "bg-green-500",
     MIXED: "bg-yellow-500",
     DIVERGENT: "bg-red-500",
-    UNKNOWN: "bg-gray-600",
+    UNKNOWN: "bg-stealth-600",
   }[data.theory_alignment_state];
 
   const stabilityScore = Math.max(0, Math.min(100, 100 - data.strain_score));
@@ -355,7 +355,7 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
 
     return (
       <div className="bg-stealth-900 border border-stealth-700 rounded-md px-2 py-2 text-xs text-stealth-100 shadow-lg">
-        <div className="text-[11px] text-stealth-400 mb-1">
+        <div className="text-xs text-stealth-400 mb-1">
           {label ? new Date(label).toLocaleDateString() : ""}
         </div>
         <div className="flex items-center justify-between gap-3">
@@ -406,7 +406,7 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
           </div>
           <div className="text-right">
             <div className={`text-2xl font-bold ${alignmentColor}`}>
-              {data.theory_alignment_score}
+              {data.theory_alignment_score.toFixed(1)}
             </div>
             <div className={`text-xs font-semibold ${alignmentColor}`}>
               {data.theory_alignment_state}
@@ -434,7 +434,12 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
           </h4>
           <div className="h-44">
             <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-              <LineChart data={chartHistory} margin={CHART_MARGIN}>
+              <LineChart
+                accessibilityLayer
+                aria-label="Dow Theory classic and modern market-direction history"
+                data={chartHistory}
+                margin={CHART_MARGIN}
+              >
                 <CartesianGrid strokeDasharray="3 3" stroke="#333338" />
                 <XAxis
                   dataKey="timestamp"
@@ -444,12 +449,12 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
                       day: "numeric",
                     })
                   }
-                  tick={{ fill: "#6b7280", fontSize: 10 }}
+                  tick={{ fill: "#6b7280", fontSize: 12 }}
                   stroke="#555560"
                 />
                 <YAxis
                   yAxisId="primary"
-                  tick={{ fill: "#6b7280", fontSize: 10 }}
+                  tick={{ fill: "#6b7280", fontSize: 12 }}
                   stroke="#555560"
                   domain={["auto", "auto"]}
                 />
@@ -487,7 +492,7 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
       <div className="pt-2 border-t border-stealth-700">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="secondary-card p-3 text-xs text-stealth-300">
-            <div className="text-[11px] uppercase tracking-wide text-stealth-500">Classic snapshot</div>
+            <div className="text-xs uppercase tracking-wide text-stealth-500">Classic snapshot</div>
             <div className="mt-2 space-y-1">
               <div>
                 Direction: <span className={`font-semibold ${directionColor}`}>{data.direction_state}</span>
@@ -508,7 +513,7 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
             </div>
           </div>
           <div className="secondary-card p-3 text-xs text-stealth-300">
-            <div className="text-[11px] uppercase tracking-wide text-stealth-500">Modern snapshot</div>
+            <div className="text-xs uppercase tracking-wide text-stealth-500">Modern snapshot</div>
             <div className="mt-2 space-y-1">
               <div>
                 Direction: <span className={`font-semibold ${modernDirectionColor}`}>{data.modern_direction_state}</span>

@@ -73,7 +73,7 @@ export default function PreciousMetalsWidget() {
     return (
       <div className="primary-card p-4 md:p-6">
         <h3 className="text-base sm:text-lg font-bold mb-3">Precious Metals</h3>
-        <div className="text-sm text-stealth-400">Loading...</div>
+        <div className="text-sm text-stealth-400">Loading metals market data…</div>
       </div>
     );
   }
@@ -97,15 +97,19 @@ export default function PreciousMetalsWidget() {
         <div className="mb-4">
           <div className="text-xs text-stealth-400 mb-2">Technical Scores (0-100)</div>
           <ResponsiveContainer width="100%" height={80}>
-            <BarChart data={chartData}>
+            <BarChart
+              accessibilityLayer
+              aria-label="Precious metals technical scores"
+              data={chartData}
+            >
               <XAxis 
                 dataKey="metal" 
-                tick={{ fill: CHART_NEUTRAL.tick, fontSize: 11 }}
+                tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
                 axisLine={false}
               />
               <YAxis 
                 domain={[0, 100]}
-                tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
                 axisLine={false}
                 width={30}
               />

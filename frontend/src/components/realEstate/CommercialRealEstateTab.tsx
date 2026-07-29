@@ -10,6 +10,7 @@ import {
   YAxis,
 } from "recharts";
 import MarketLoading from "../ui/MarketLoading";
+import DataScroller from "../ui/DataScroller";
 import { useApi } from "../../hooks/useApi";
 import {
   CHART_MARGIN,
@@ -28,6 +29,11 @@ import {
   rebaseSeriesToWindow,
   type RealEstateHorizon,
 } from "../../utils/realEstateHorizon";
+import {
+  dataQualityEvidenceState,
+  describeDataQuality,
+  type DataQualityMetadata,
+} from "../../utils/dataQuality";
 
 type DataPoint = { date: string; value: number };
 
@@ -114,6 +120,7 @@ type CommercialSectorContext = {
 
 type CommercialPayload = {
   as_of: string;
+  data_quality?: DataQualityMetadata;
   regime_label: string;
   pressure_score: number;
   stability_score: number;
@@ -241,7 +248,7 @@ function formatSeriesCoverage(points: DataPoint[]) {
 function SectionHeader({ kicker, title, detail }: { kicker: string; title: string; detail: string }) {
   return (
     <div>
-      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stealth-500">{kicker}</p>
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stealth-500">{kicker}</p>
       <h2 className="mt-1 text-lg font-semibold text-stealth-100">{title}</h2>
       <p className="mt-1 max-w-3xl text-xs leading-5 text-stealth-400">{detail}</p>
     </div>
@@ -261,9 +268,9 @@ function StatTile({
 }) {
   return (
     <div className="rounded-xl border border-stealth-700 bg-stealth-900/40 p-3">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stealth-500">{label}</p>
+      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stealth-500">{label}</p>
       <p className={`mt-1.5 text-lg font-semibold ${tone}`}>{value}</p>
-      <p className="mt-1 text-[11px] leading-4 text-stealth-400">{detail}</p>
+      <p className="mt-1 text-xs leading-4 text-stealth-400">{detail}</p>
     </div>
   );
 }
@@ -279,7 +286,12 @@ function PropertyTypeChart({ data, groups }: { data: CommercialPayload["property
       />
       <div className="mt-4 h-72">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <LineChart data={data} margin={CHART_MARGIN}>
+          <LineChart
+            accessibilityLayer
+            aria-label="Commercial real estate property-type performance history"
+            data={data}
+            margin={CHART_MARGIN}
+          >
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(date: string) => date.slice(0, 7)} />
             <YAxis {...commonYAxisProps} domain={["auto", "auto"]} />
@@ -305,7 +317,7 @@ function PropertyTypeChart({ data, groups }: { data: CommercialPayload["property
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
         {groups.map((group) => (
-          <span key={group.group} className="inline-flex items-center gap-1.5 rounded-full border border-stealth-700 px-2 py-1 text-[11px] text-stealth-300">
+          <span key={group.group} className="inline-flex items-center gap-1.5 rounded-full border border-stealth-700 px-2 py-1 text-xs text-stealth-300">
             <span className="h-2 w-2 rounded-full" style={{ backgroundColor: GROUP_COLORS[group.group] ?? "#94a3b8" }} />
             {group.label}
           </span>
@@ -335,7 +347,12 @@ function CreditCycleChart({ price, delinquency }: { price: DataPoint[]; delinque
       />
       <div className="mt-4 h-64">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <LineChart data={data} margin={CHART_MARGIN}>
+          <LineChart
+            accessibilityLayer
+            aria-label="Commercial real estate prices and bank delinquency history"
+            data={data}
+            margin={CHART_MARGIN}
+          >
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(date: string) => date.slice(0, 7)} />
             <YAxis {...commonYAxisProps} yAxisId="price" tickFormatter={(value: number) => `${value}%`} />
@@ -365,7 +382,12 @@ function LendingChart({ loans }: { loans: DataPoint[] }) {
       />
       <div className="mt-4 h-64">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <LineChart data={loans} margin={CHART_MARGIN}>
+          <LineChart
+            accessibilityLayer
+            aria-label="Commercial-bank commercial real estate loan balance history"
+            data={loans}
+            margin={CHART_MARGIN}
+          >
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(date: string) => date.slice(0, 7)} />
             <YAxis {...commonYAxisProps} domain={["auto", "auto"]} tickFormatter={(value: number) => `$${(value / 1000).toFixed(1)}T`} />
@@ -434,7 +456,12 @@ function SectorSupplyCard({
       {chartData.length > 0 && (
         <div className="mt-4 h-56">
           <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-            <LineChart data={chartData} margin={CHART_MARGIN}>
+            <LineChart
+              accessibilityLayer
+              aria-label={`${context.supply.title} history`}
+              data={chartData}
+              margin={CHART_MARGIN}
+            >
               <CartesianGrid {...commonGridProps} />
               <XAxis
                 {...commonXAxisProps}
@@ -474,13 +501,13 @@ function SectorSupplyCard({
       )}
       <div className="mt-3 flex flex-wrap gap-2">
         {context.supply.series.map((series, index) => (
-          <span key={series.key} className="inline-flex items-center gap-1.5 rounded-full border border-stealth-700 px-2 py-1 text-[10px] text-stealth-300">
+          <span key={series.key} className="inline-flex items-center gap-1.5 rounded-full border border-stealth-700 px-2 py-1 text-xs text-stealth-300">
             <span className="h-2 w-2 rounded-full" style={{ backgroundColor: seriesColors[index] ?? "#94a3b8" }} />
             {series.label}
           </span>
         ))}
       </div>
-      <p className="mt-3 text-[11px] leading-5 text-stealth-500">{context.supply.note}</p>
+      <p className="mt-3 text-xs leading-5 text-stealth-500">{context.supply.note}</p>
     </div>
   );
 }
@@ -537,7 +564,12 @@ function SectorDemandSupplyCard({
       {chartData.length > 0 && (
         <div className="mt-4 h-56">
           <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-            <LineChart data={chartData} margin={CHART_MARGIN}>
+            <LineChart
+              accessibilityLayer
+              aria-label={`${context.label} operating balance history`}
+              data={chartData}
+              margin={CHART_MARGIN}
+            >
               <CartesianGrid {...commonGridProps} />
               <XAxis
                 {...commonXAxisProps}
@@ -563,11 +595,11 @@ function SectorDemandSupplyCard({
           </ResponsiveContainer>
         </div>
       )}
-      <div className="mt-3 flex flex-wrap gap-2 text-[10px] text-stealth-300">
+      <div className="mt-3 flex flex-wrap gap-2 text-xs text-stealth-300">
         <span className="inline-flex items-center gap-1.5 rounded-full border border-stealth-700 px-2 py-1"><span className="h-2 w-2 rounded-full bg-sky-400" />{demand.demand_label}</span>
         <span className="inline-flex items-center gap-1.5 rounded-full border border-stealth-700 px-2 py-1"><span className="h-2 w-2 rounded-full bg-amber-500" />{demand.supply_label}</span>
       </div>
-      <p className="mt-3 text-[11px] leading-5 text-stealth-500">{demand.note}</p>
+      <p className="mt-3 text-xs leading-5 text-stealth-500">{demand.note}</p>
     </div>
   );
 }
@@ -628,7 +660,12 @@ function SectorPriceCard({
       {chartData.length > 0 && (
         <div className="mt-4 h-56">
           <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-            <LineChart data={chartData} margin={CHART_MARGIN}>
+            <LineChart
+              accessibilityLayer
+              aria-label={`${context.label} pricing-layer history`}
+              data={chartData}
+              margin={CHART_MARGIN}
+            >
               <CartesianGrid {...commonGridProps} />
               <XAxis
                 {...commonXAxisProps}
@@ -662,7 +699,7 @@ function SectorPriceCard({
           </ResponsiveContainer>
         </div>
       )}
-      <div className="mt-3 flex flex-wrap gap-2 text-[10px] text-stealth-300">
+      <div className="mt-3 flex flex-wrap gap-2 text-xs text-stealth-300">
         {[
           [price.listed_label, color],
           [price.property_price_label, "#94a3b8"],
@@ -673,8 +710,8 @@ function SectorPriceCard({
           </span>
         ))}
       </div>
-      <p className="mt-3 text-[11px] leading-5 text-stealth-400">Coverage: {coverage}</p>
-      <p className="mt-3 text-[11px] leading-5 text-stealth-500">{price.note}</p>
+      <p className="mt-3 text-xs leading-5 text-stealth-400">Coverage: {coverage}</p>
+      <p className="mt-3 text-xs leading-5 text-stealth-500">{price.note}</p>
     </div>
   );
 }
@@ -697,6 +734,11 @@ export default function CommercialRealEstateTab({ days }: { days: number }) {
   }
 
   const data = api.data;
+  const qualityState = dataQualityEvidenceState(data.data_quality);
+  const provenanceMessage = describeDataQuality(
+    "commercial real-estate",
+    data.data_quality,
+  );
   const metrics = data.metrics;
   const orderedGroups = [...data.groups].sort((left, right) => right.score - left.score);
   const loanBalance = metrics.cre_loan_balance_bil;
@@ -707,6 +749,30 @@ export default function CommercialRealEstateTab({ days }: { days: number }) {
 
   return (
     <div className="space-y-5 md:space-y-6">
+      {(qualityState === "stale" || qualityState === "partial") && (
+        <div
+          className="rounded-xl border border-amber-500/40 bg-amber-950/25 p-4"
+          role="status"
+          data-evidence-panel="commercial-real-estate"
+          data-evidence-state={qualityState}
+        >
+          <h2 className="text-sm font-semibold text-amber-200">
+            {qualityState === "stale"
+              ? "Commercial real-estate evidence is not current"
+              : "Partial commercial real-estate update"}
+          </h2>
+          <p className="mt-1 text-sm leading-6 text-amber-100">
+            {provenanceMessage}
+          </p>
+          <button
+            type="button"
+            onClick={api.refetch}
+            className="mt-3 inline-flex min-h-11 items-center rounded-lg border border-amber-600 px-4 text-sm font-semibold text-amber-100 hover:bg-amber-900/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+          >
+            Refresh commercial evidence
+          </button>
+        </div>
+      )}
       <div className="surface-card-strong p-4 md:p-5">
         <div className="grid gap-5 xl:grid-cols-[1.05fr_1fr]">
           <div>
@@ -767,7 +833,7 @@ export default function CommercialRealEstateTab({ days }: { days: number }) {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-semibold text-stealth-200">{factor.label}</p>
-                  <p className="mt-1 text-[11px] text-stealth-500">{factor.weight.toFixed(0)}% of CRE pressure</p>
+                  <p className="mt-1 text-xs text-stealth-500">{factor.weight.toFixed(0)}% of CRE pressure</p>
                 </div>
                 <p className={`text-xl font-semibold ${pressureTone(factor.score)}`}>{factor.score.toFixed(0)}</p>
               </div>
@@ -805,7 +871,7 @@ export default function CommercialRealEstateTab({ days }: { days: number }) {
                   <p className={`mt-0.5 font-mono ${changeTone(group.changes["60d"])}`}>{formatChange(group.changes["60d"])}</p>
                 </div>
               </div>
-              <p className="mt-3 text-[10px] leading-4 text-stealth-500">{group.components.join(" · ")}</p>
+              <p className="mt-3 text-xs leading-4 text-stealth-500">{group.components.join(" · ")}</p>
             </div>
           ))}
         </div>
@@ -820,12 +886,17 @@ export default function CommercialRealEstateTab({ days }: { days: number }) {
               title="Commercial supply, demand, and pricing context"
               detail="One window controls all three sector diagnostics. Labels distinguish direct sector data from broader public-market proxies."
             />
-            <span className="rounded-full border border-stealth-700 bg-stealth-900/50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-stealth-400">
+            <span className="rounded-full border border-stealth-700 bg-stealth-900/50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.1em] text-stealth-400">
               {selectedContext.coverage}
             </span>
           </div>
           <div className="mt-4 grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto]">
-            <div className="flex w-full max-w-full gap-1 overflow-x-auto rounded-xl border border-stealth-700 bg-stealth-900/50 p-1" role="tablist" aria-label="Commercial property type context">
+            <div
+              className="flex w-full max-w-full gap-1 overflow-x-auto rounded-xl border border-stealth-700 bg-stealth-900/50 p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400"
+              role="tablist"
+              aria-label="Commercial property type context"
+              tabIndex={0}
+            >
               {sectorContexts.map((context) => {
                 const active = context.group === selectedContext.group;
                 return (
@@ -865,7 +936,7 @@ export default function CommercialRealEstateTab({ days }: { days: number }) {
             <SectorDemandSupplyCard context={selectedContext} horizonYears={horizonYears} />
             <SectorPriceCard context={selectedContext} color={GROUP_COLORS[selectedContext.group] ?? "#a78bfa"} horizonYears={horizonYears} />
           </div>
-          <p className="text-[10px] leading-5 text-stealth-500">
+          <p className="text-xs leading-5 text-stealth-500">
             {selectedContext.label} public-data series: {selectedContext.sources.map((source) => `${source.series_id} (${source.label})`).join(" · ")}
           </p>
         </div>
@@ -889,9 +960,12 @@ export default function CommercialRealEstateTab({ days }: { days: number }) {
           title="Listed commercial real-estate proxies"
           detail="Price action is a timely market signal, not a direct appraisal or property-level valuation. Use the table to see which names are driving each property-type basket."
         />
-        <div className="surface-card-strong overflow-x-auto">
+        <DataScroller
+          label="Listed commercial real-estate proxy performance"
+          className="surface-card-strong"
+        >
           <table className="w-full min-w-[760px] text-left text-xs">
-            <thead className="border-b border-stealth-700 text-[10px] uppercase tracking-[0.12em] text-stealth-500">
+            <thead className="border-b border-stealth-700 text-xs uppercase tracking-[0.12em] text-stealth-500">
               <tr>
                 <th className="px-4 py-3">Property Type</th>
                 <th className="px-3 py-3">Proxy</th>
@@ -910,7 +984,7 @@ export default function CommercialRealEstateTab({ days }: { days: number }) {
                     <td className="px-4 py-3 text-stealth-300">{data.groups.find((group) => group.group === symbol.group)?.label ?? symbol.group}</td>
                     <td className="px-3 py-3">
                       <p className="font-semibold text-stealth-100">{symbol.ticker}</p>
-                      <p className="mt-0.5 text-[10px] text-stealth-500">{symbol.name}</p>
+                      <p className="mt-0.5 text-xs text-stealth-500">{symbol.name}</p>
                     </td>
                     <td className="px-3 py-3 text-right font-mono text-stealth-200">{symbol.current_price != null ? `$${symbol.current_price.toFixed(2)}` : "—"}</td>
                     <td className={`px-3 py-3 text-right font-mono ${changeTone(symbol.changes["20d"])}`}>{formatChange(symbol.changes["20d"])}</td>
@@ -921,7 +995,7 @@ export default function CommercialRealEstateTab({ days }: { days: number }) {
                 ))}
             </tbody>
           </table>
-        </div>
+        </DataScroller>
       </div>
 
       {data.warnings.length > 0 && (
@@ -930,7 +1004,7 @@ export default function CommercialRealEstateTab({ days }: { days: number }) {
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] leading-5 text-stealth-500">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs leading-5 text-stealth-500">
         <p>{data.availability.available_count}/{data.availability.total_configured} listed proxies available.</p>
         <p className="max-w-4xl text-right">
           Sources: Yahoo Finance listed proxies; FRED BOGZ1FL010000386Q, CREACBM027NBOG, DRCRELEXFACBS, DGS10, and BAMLH0A0HYM2.

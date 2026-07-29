@@ -47,17 +47,22 @@ export default function BondStressAttributionChart({
 
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <ComposedChart data={chartData} margin={CHART_MARGIN}>
+      <ComposedChart
+        accessibilityLayer
+        aria-label="Bond stress contribution history by driver"
+        data={chartData}
+        margin={CHART_MARGIN}
+      >
         <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-tooltip-border)" />
         <XAxis
           dataKey="label"
           minTickGap={24}
-          tick={{ fill: "#94a3b8", fontSize: 10 }}
+          tick={{ fill: "#94a3b8", fontSize: 12 }}
           axisLine={{ stroke: "#475569" }}
           tickLine={{ stroke: "#475569" }}
         />
         <YAxis
-          tick={{ fill: "#94a3b8", fontSize: 10 }}
+          tick={{ fill: "#94a3b8", fontSize: 12 }}
           axisLine={{ stroke: "#475569" }}
           tickLine={{ stroke: "#475569" }}
           width={30}

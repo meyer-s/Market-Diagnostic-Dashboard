@@ -287,7 +287,7 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
         <div className="flex items-start justify-between gap-4">
           <div>
             <h3 className="text-lg font-semibold">Sector Rotation</h3>
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-stealth-500">
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-stealth-500">
               <span>{latest.system_state} regime</span>
               <span aria-hidden="true">·</span>
               <span>As of {new Date(`${latest.as_of_date}T00:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
@@ -315,7 +315,7 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
               <div className="mt-1 text-xs leading-relaxed text-stealth-400">{interpretation.description}</div>
             </div>
             <div className="shrink-0 text-right tabular-nums">
-              <div className="text-[10px] uppercase tracking-wide text-stealth-500">Cyclical − defensive</div>
+              <div className="text-xs uppercase tracking-wide text-stealth-500">Cyclical − defensive</div>
               <div className="mt-1 text-2xl font-semibold text-stealth-100">
                 {latestOscillator !== null && latestOscillator > 0 ? "+" : ""}{latestOscillator?.toFixed(1) ?? "—"}
               </div>
@@ -323,14 +323,14 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
           </div>
           <div className="mt-4 grid grid-cols-2 gap-2 border-t border-stealth-700/70 pt-3 text-xs">
             <div>
-              <div className="text-[10px] uppercase tracking-wide text-stealth-500">20-run shift</div>
+              <div className="text-xs uppercase tracking-wide text-stealth-500">20-run shift</div>
               <div className="mt-1 font-semibold text-stealth-200">{shiftLeader}</div>
-              <div className="mt-0.5 text-[10px] text-stealth-500">{oscillatorShift === null ? "—" : `${Math.abs(oscillatorShift).toFixed(1)} pts`}</div>
+              <div className="mt-0.5 text-xs text-stealth-500">{oscillatorShift === null ? "—" : `${Math.abs(oscillatorShift).toFixed(1)} pts`}</div>
             </div>
             <div>
-              <div className="text-[10px] uppercase tracking-wide text-stealth-500">Clear signal</div>
+              <div className="text-xs uppercase tracking-wide text-stealth-500">Clear signal</div>
               <div className="mt-1 font-semibold text-stealth-200">Beyond ±{leadershipBand}</div>
-              <div className="mt-0.5 text-[10px] text-stealth-500">Smoothed basket spread</div>
+              <div className="mt-0.5 text-xs text-stealth-500">Smoothed basket spread</div>
             </div>
           </div>
         </div>
@@ -340,7 +340,7 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
             <div className="text-xs text-stealth-400">3M leadership</div>
             <div className="mt-3 flex flex-wrap gap-2">
               {leaders.map((sector) => (
-                <span key={sector.sector_symbol} className="rounded-md border border-stealth-700 bg-stealth-950/30 px-2 py-1 text-[11px] text-stealth-200">
+                <span key={sector.sector_symbol} className="rounded-md border border-stealth-700 bg-stealth-950/30 px-2 py-1 text-xs text-stealth-200">
                   <strong>#{sector.horizons["3m"].stable_rank} {sector.sector_symbol}</strong>
                   <span className="ml-1 text-stealth-500">{sector.horizons["3m"].stable_score.toFixed(0)}</span>
                 </span>
@@ -350,9 +350,9 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
           <div className="secondary-card p-4">
             <div className="text-xs text-stealth-400">Rank persistence</div>
             <div className="mt-3 grid grid-cols-3 gap-2 text-center tabular-nums">
-              <div><div className="text-xl font-semibold text-green-400">{persistenceCounts.improving}</div><div className="text-[10px] text-stealth-500">Improving</div></div>
-              <div><div className="text-xl font-semibold text-stealth-300">{persistenceCounts.stable}</div><div className="text-[10px] text-stealth-500">Stable</div></div>
-              <div><div className="text-xl font-semibold text-red-400">{persistenceCounts.weakening}</div><div className="text-[10px] text-stealth-500">Weakening</div></div>
+              <div><div className="text-xl font-semibold text-green-400">{persistenceCounts.improving}</div><div className="text-xs text-stealth-500">Improving</div></div>
+              <div><div className="text-xl font-semibold text-stealth-300">{persistenceCounts.stable}</div><div className="text-xs text-stealth-500">Stable</div></div>
+              <div><div className="text-xl font-semibold text-red-400">{persistenceCounts.weakening}</div><div className="text-xs text-stealth-500">Weakening</div></div>
             </div>
           </div>
         </div>
@@ -361,14 +361,19 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="text-sm font-semibold text-stealth-200">Cyclical vs defensive oscillator</div>
-              <div className="mt-0.5 text-[10px] text-stealth-500">Native score-point spread · 25% EWMA</div>
+              <div className="mt-0.5 text-xs text-stealth-500">Native score-point spread · 25% EWMA</div>
             </div>
             <div className="text-xs text-stealth-500">{periodLabel}</div>
           </div>
           {chartData.length > 0 ? (
             <div className="mt-3 h-44">
               <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                <AreaChart data={chartData} margin={{ ...CHART_MARGIN, left: 12, right: 4 }}>
+                <AreaChart
+                  accessibilityLayer
+                  aria-label="Cyclical versus defensive sector leadership oscillator history"
+                  data={chartData}
+                  margin={{ ...CHART_MARGIN, left: 12, right: 4 }}
+                >
                   <CartesianGrid {...commonGridProps} />
                   <ReferenceArea y1={leadershipBand} y2={oscillatorDomain} fill={getFamilyColor("market")} fillOpacity={0.035} />
                   <ReferenceArea y1={-oscillatorDomain} y2={-leadershipBand} fill={getFamilyColor("volatility")} fillOpacity={0.035} />
@@ -380,7 +385,7 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
                     type="number"
                     domain={[minTime, maxTime]}
                     ticks={tickPositions}
-                    tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                    tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
                     stroke={CHART_NEUTRAL.axis}
                     tickFormatter={(value: number) => new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
                   />
@@ -390,7 +395,7 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
                     tickLine={false}
                     domain={[-oscillatorDomain, oscillatorDomain]}
                     ticks={[-oscillatorDomain, 0, oscillatorDomain]}
-                    tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                    tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
                     tickFormatter={(value: number) => value > 0 ? "Cyclical" : value < 0 ? "Defensive" : "Balanced"}
                   />
                   <Tooltip
@@ -423,7 +428,7 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
         </div>
 
         <div className="mt-4">
-          <div className="text-[10px] uppercase tracking-wide text-stealth-500">Other rotation lenses</div>
+          <div className="text-xs uppercase tracking-wide text-stealth-500">Other rotation lenses</div>
           <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
             {analytics.leadership_comparisons
               .filter((comparison) => comparison.key !== PRIMARY_COMPARISON)
@@ -431,7 +436,7 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
                 const value = latestComparisonValue(comparison);
                 return (
                   <div key={comparison.key} className="rounded-lg border border-stealth-700 bg-stealth-950/20 px-3 py-2">
-                    <div className="truncate text-[10px] text-stealth-500">{comparison.title}</div>
+                    <div className="truncate text-xs text-stealth-500">{comparison.title}</div>
                     <div className="mt-1 text-xs font-semibold text-stealth-200">{formatLeadershipValue(value, comparison)}</div>
                   </div>
                 );

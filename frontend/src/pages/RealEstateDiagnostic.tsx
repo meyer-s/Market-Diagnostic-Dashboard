@@ -14,6 +14,8 @@ import {
   ReferenceLine,
 } from "recharts";
 import MarketLoading from "../components/ui/MarketLoading";
+import DataScroller from "../components/ui/DataScroller";
+import SupportingContextTooltip from "../components/ui/SupportingContextTooltip";
 import CommercialRealEstateTab from "../components/realEstate/CommercialRealEstateTab";
 import { useApi } from "../hooks/useApi";
 import {
@@ -30,6 +32,11 @@ import {
   REAL_ESTATE_HORIZONS,
   type RealEstateHorizon,
 } from "../utils/realEstateHorizon";
+import {
+  dataQualityEvidenceState,
+  describeDataQuality,
+  type DataQualityMetadata,
+} from "../utils/dataQuality";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -89,6 +96,7 @@ type MetricSnapshot = {
 
 type RealEstateOverview = {
   as_of: string;
+  data_quality?: DataQualityMetadata;
   composite_score: number;
   stability_score: number;
   regime_label: string;
@@ -103,6 +111,7 @@ type RealEstateOverview = {
 
 type RealEstateHistory = {
   as_of: string;
+  data_quality?: DataQualityMetadata;
   composite_history: DataPoint[];
   stability_history: DataPoint[];
   factor_history: Array<{
@@ -116,6 +125,7 @@ type RealEstateHistory = {
 
 type RealEstateTransmission = {
   as_of: string;
+  data_quality?: DataQualityMetadata;
   mortgage_rate_30y: DataPoint[];
   treasury_10y: DataPoint[];
   indexed_xhb: DataPoint[];
@@ -125,6 +135,7 @@ type RealEstateTransmission = {
 
 type RealEstateContext = {
   as_of: string;
+  data_quality?: DataQualityMetadata;
   housing_starts: DataPoint[];
   building_permits: DataPoint[];
   completions: DataPoint[];
@@ -293,19 +304,6 @@ const Kicker = ({ children }: { children: React.ReactNode }) => (
   <p className="page-kicker mb-3">{children}</p>
 );
 
-function HoverTooltip({ children, tip, width = "w-64" }: { children: React.ReactNode; tip: string; width?: string }) {
-  return (
-    <span className="group/htip relative inline-block cursor-default">
-      {children}
-      <span
-        className={`pointer-events-none absolute bottom-full left-0 z-30 mb-1.5 hidden ${width} rounded-lg border border-stealth-600 bg-stealth-950/98 px-2.5 py-2 text-xs font-normal text-stealth-100 shadow-[0_14px_44px_rgba(2,6,23,0.9)] backdrop-blur-xl group-hover/htip:block`}
-      >
-        {tip}
-      </span>
-    </span>
-  );
-}
-
 function LabelCaps({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return <p className={`text-xs uppercase tracking-[0.14em] text-stealth-500 ${className}`.trim()}>{children}</p>;
 }
@@ -330,11 +328,11 @@ function CardHeader({
       <Kicker>{kicker}</Kicker>
       <div className="flex items-start gap-2">
         {tooltipText ? (
-          <HoverTooltip tip={tooltipText} width="w-72">
-            <h2 className="text-base font-semibold text-stealth-100">{title}</h2>
-          </HoverTooltip>
+          <SupportingContextTooltip text={tooltipText}>
+            <h2 className="min-w-0 break-words text-base font-semibold text-stealth-100">{title}</h2>
+          </SupportingContextTooltip>
         ) : (
-          <h2 className="text-base font-semibold text-stealth-100">{title}</h2>
+          <h2 className="min-w-0 break-words text-base font-semibold text-stealth-100">{title}</h2>
         )}
       </div>
       {description ? <BodyHint>{description}</BodyHint> : null}
@@ -354,9 +352,9 @@ function SectionHeader({
   return (
     <div>
       <p className="page-kicker">{kicker}</p>
-      <HoverTooltip tip={tooltipText} width="w-80">
-        <h2 className="text-lg font-semibold text-stealth-100">{title}</h2>
-      </HoverTooltip>
+      <SupportingContextTooltip text={tooltipText}>
+        <h2 className="min-w-0 break-words text-lg font-semibold text-stealth-100">{title}</h2>
+      </SupportingContextTooltip>
     </div>
   );
 }
@@ -375,9 +373,9 @@ function StatTile({
   return (
     <div className="surface-card-muted px-2.5 py-2">
       {detail ? (
-        <HoverTooltip tip={String(detail)} width="w-64">
+        <SupportingContextTooltip text={String(detail)}>
           <LabelCaps>{label}</LabelCaps>
-        </HoverTooltip>
+        </SupportingContextTooltip>
       ) : (
         <LabelCaps>{label}</LabelCaps>
       )}
@@ -399,9 +397,9 @@ function SignalTile({
 }) {
   return (
     <div className="surface-card-muted px-3 py-2.5">
-      <HoverTooltip tip={String(detail)} width="w-72">
+      <SupportingContextTooltip text={String(detail)}>
         <LabelCaps>{label}</LabelCaps>
-      </HoverTooltip>
+      </SupportingContextTooltip>
       <p className={`mt-1 text-sm font-semibold ${tone}`}>{title}</p>
     </div>
   );
@@ -433,21 +431,20 @@ function GroupSummaryStrip({ groups }: { groups: GroupCard[] }) {
     <div className="mt-3 border-t border-stealth-800/60 pt-3">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <HoverTooltip
-            tip="Grouped pressure scores: higher means more stress in that segment. Financing and REIT scores confirm whether listed-market and credit channels are amplifying the residential read."
-            width="w-80"
+          <SupportingContextTooltip
+            text="Grouped pressure scores: higher means more stress in that segment. Financing and REIT scores confirm whether listed-market and credit channels are amplifying the residential read."
           >
             <LabelCaps className="mb-0">Segment Pressure by Group</LabelCaps>
-          </HoverTooltip>
+          </SupportingContextTooltip>
         </div>
       </div>
       <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
         {groups.map((group) => (
           <div key={group.group} className="surface-card-muted px-3 py-2.5">
             <div className="flex items-center justify-between gap-2">
-              <HoverTooltip tip={`Members: ${group.components.join(" · ")}`} width="w-64">
+              <SupportingContextTooltip text={`Members: ${group.components.join(" · ")}`}>
                 <LabelCaps className="mb-0">{group.label}</LabelCaps>
-              </HoverTooltip>
+              </SupportingContextTooltip>
               <BodyHint>{group.weight.toFixed(0)}% wt</BodyHint>
             </div>
             <div className="mt-1 flex items-end justify-between gap-3">
@@ -484,7 +481,7 @@ function ProxyTable({
   return (
     <div className={`${surfaceClassName} self-start p-3 sm:p-4`}>
       <Kicker>Real Estate Proxies</Kicker>
-      <div className="overflow-x-auto">
+      <DataScroller label="Real-estate proxy performance">
         <table className="w-full min-w-[580px] text-xs sm:text-sm">
           <thead>
             <tr className="border-b border-stealth-700/50">
@@ -503,7 +500,7 @@ function ProxyTable({
                 <td className="py-2">
                   <span className="font-semibold text-stealth-100">{sym.ticker}</span>
                   <span className="ml-2 text-xs text-stealth-500">{sym.name}</span>
-                  <span className="ml-1.5 text-[10px] uppercase tracking-wide text-stealth-600">{sym.group}</span>
+                  <span className="ml-1.5 text-xs uppercase tracking-wide text-stealth-600">{sym.group}</span>
                 </td>
                 <td className="py-2 text-right font-mono text-stealth-200">
                   {sym.current_price != null ? `$${sym.current_price.toFixed(2)}` : "—"}
@@ -518,7 +515,7 @@ function ProxyTable({
             ))}
           </tbody>
         </table>
-      </div>
+      </DataScroller>
       {groups?.length ? <GroupSummaryStrip groups={groups} /> : null}
     </div>
   );
@@ -548,7 +545,12 @@ function CompositeHistoryChart({
       />
       <div className="h-44">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <LineChart data={decimated} margin={CHART_MARGIN}>
+          <LineChart
+            accessibilityLayer
+            aria-label="Real estate composite stability score history"
+            data={decimated}
+            margin={CHART_MARGIN}
+          >
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(5, 10)} />
             <YAxis {...commonYAxisProps} domain={[20, 80]} />
@@ -597,9 +599,14 @@ function FactorPanel({
       />
       <div className="h-44">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <BarChart data={data} margin={CHART_MARGIN}>
+          <BarChart
+            accessibilityLayer
+            aria-label="Real estate stability pressure by segment"
+            data={data}
+            margin={CHART_MARGIN}
+          >
             <CartesianGrid {...commonGridProps} />
-            <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 11 }} />
+            <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 12 }} />
             <YAxis {...commonYAxisProps} domain={[0, 100]} />
             <ReferenceLine y={60} stroke="#f87171" strokeDasharray="2 4" strokeOpacity={0.5} />
             <ReferenceLine y={40} stroke="#34d399" strokeDasharray="2 4" strokeOpacity={0.5} />
@@ -694,7 +701,12 @@ function MortgagePressureChart({
 
       <div className="h-64">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <ComposedChart data={merged} margin={CHART_MARGIN}>
+          <ComposedChart
+            accessibilityLayer
+            aria-label="Mortgage and Treasury rates versus indexed homebuilder demand"
+            data={merged}
+            margin={CHART_MARGIN}
+          >
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
             <YAxis
@@ -780,7 +792,12 @@ function TransmissionChart({
       />
       <div className="h-52">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <ComposedChart data={merged} margin={CHART_MARGIN}>
+          <ComposedChart
+            accessibilityLayer
+            aria-label="Rate transmission to indexed REIT and homebuilder equities"
+            data={merged}
+            margin={CHART_MARGIN}
+          >
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
             <YAxis yAxisId="idx"  {...commonYAxisProps} domain={["auto", "auto"]} tickFormatter={(v) => v.toFixed(0)} />
@@ -855,7 +872,12 @@ function CreditSpreadChart({
       />
       <div className="h-48">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <LineChart data={merged} margin={CHART_MARGIN}>
+          <LineChart
+            accessibilityLayer
+            aria-label="Indexed REIT performance versus the credit-spread backdrop"
+            data={merged}
+            margin={CHART_MARGIN}
+          >
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
             <YAxis {...commonYAxisProps} domain={["auto", "auto"]} />
@@ -943,7 +965,12 @@ function SupplyContextChart({
       </div>
       <div className="h-48">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <LineChart data={merged} margin={CHART_MARGIN}>
+          <LineChart
+            accessibilityLayer
+            aria-label="Housing starts, permits, and completions history"
+            data={merged}
+            margin={CHART_MARGIN}
+          >
             <CartesianGrid {...commonGridProps} />
             <XAxis
               {...commonXAxisProps}
@@ -1092,7 +1119,12 @@ function BuyerSellerDivergenceChart({
       </div>
       <div className="h-52">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <ComposedChart data={merged} margin={CHART_MARGIN}>
+          <ComposedChart
+            accessibilityLayer
+            aria-label="Indexed home-buyer demand versus seller-supply history"
+            data={merged}
+            margin={CHART_MARGIN}
+          >
             <CartesianGrid {...commonGridProps} />
             <XAxis
               {...commonXAxisProps}
@@ -1292,7 +1324,14 @@ function AffordabilityChart({
       </div>
       <div className="h-52">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <LineChart data={merged} margin={CHART_MARGIN}>
+          <LineChart
+            accessibilityLayer
+            aria-label={newHomeSales.length > 0
+              ? "Housing inflation layers and new-home buyer-demand history"
+              : "Housing inflation-layer history"}
+            data={merged}
+            margin={CHART_MARGIN}
+          >
             <CartesianGrid {...commonGridProps} />
             <XAxis
               {...commonXAxisProps}
@@ -1499,13 +1538,36 @@ export default function RealEstateDiagnostic() {
 
   const primaryDataPending = !overviewApi.data;
   if (overviewApi.loading && primaryDataPending) {
-    return <MarketLoading label="Loading real estate market data..." />;
+    return (
+      <div className="page-shell-wide page-stack" aria-busy="true">
+        <div>
+          <p className="page-kicker">Tools</p>
+          <h1 className="page-title">Real Estate Markets</h1>
+          <p className="page-subtitle">Preparing the current stability, financing, and supply evidence.</p>
+        </div>
+        <MarketLoading label="Loading real estate market evidence…" />
+      </div>
+    );
   }
 
   if (!overviewApi.data) {
     return (
-      <div className="page-shell">
-        <p className="text-stealth-400">Real estate data unavailable. {overviewApi.error}</p>
+      <div className="page-shell page-stack">
+        <div>
+          <p className="page-kicker">Tools</p>
+          <h1 className="page-title">Real Estate Markets</h1>
+        </div>
+        <div className="surface-card border-red-800/70 p-5" role="alert">
+          <h2 className="text-lg font-semibold text-red-200">Real estate evidence is unavailable</h2>
+          <p className="mt-2 text-sm text-red-300">{overviewApi.error}</p>
+          <button
+            type="button"
+            onClick={overviewApi.refetch}
+            className="mt-4 inline-flex min-h-11 items-center rounded-lg border border-red-700 bg-red-950/50 px-4 text-sm font-semibold text-red-100 hover:bg-red-900/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
+          >
+            Retry real estate evidence
+          </button>
+        </div>
       </div>
     );
   }
@@ -1554,6 +1616,65 @@ export default function RealEstateDiagnostic() {
   );
   const primarySidePanelCount = Number(hasCompositePanel) + Number(hasFactorPanel);
   const longerHorizonCardCount = Number(hasSupplyPanel) + Number(hasBuyerSeller) + Number(hasAffordability);
+  const evidenceSources = [
+    {
+      label: "Headline overview",
+      quality: overview.data_quality,
+      error: overviewApi.error,
+      refetch: overviewApi.refetch,
+    },
+    {
+      label: "Composite history",
+      quality: history?.data_quality,
+      error: historyApi.error,
+      refetch: historyApi.refetch,
+    },
+    {
+      label: "Rate and credit transmission",
+      quality: transmission?.data_quality,
+      error: transmissionApi.error,
+      refetch: transmissionApi.refetch,
+    },
+    {
+      label: "Longer-horizon supply and affordability context",
+      quality: context?.data_quality,
+      error: longContextApi.error,
+      refetch: longContextApi.refetch,
+    },
+  ];
+  const evidenceConcerns = evidenceSources.reduce<
+    Array<{
+      label: string;
+      refetch: () => void;
+      state: "error" | "stale" | "partial";
+      message: string;
+    }>
+  >((concerns, source) => {
+      const state = dataQualityEvidenceState(source.quality);
+      if (source.error) {
+        concerns.push({
+          label: source.label,
+          refetch: source.refetch,
+          state: "error" as const,
+          message: `${source.label} is unavailable: ${source.error}`,
+        });
+      } else if (state === "stale" || state === "partial") {
+        concerns.push({
+          label: source.label,
+          refetch: source.refetch,
+          state,
+          message:
+            describeDataQuality(source.label.toLowerCase(), source.quality) ??
+            `${source.label} is ${state}.`,
+        });
+      }
+      return concerns;
+    }, []);
+  const realEstateEvidenceState = evidenceConcerns.some(
+    (source) => source.state === "stale",
+  )
+    ? "stale"
+    : "partial";
 
   return (
     <div className="page-shell-wide page-stack space-y-5 md:space-y-6">
@@ -1569,8 +1690,10 @@ export default function RealEstateDiagnostic() {
           {TIMEFRAME_OPTIONS.map(({ key, label }) => (
             <button
               key={key}
+              type="button"
+              aria-pressed={timeframe === key}
               onClick={() => setTimeframe(key)}
-              className={`rounded-xl px-3 py-1.5 text-xs font-medium transition-all ${
+              className={`min-h-11 rounded-xl px-3 text-xs font-medium transition-all ${
                 timeframe === key
                   ? "bg-sky-500/20 text-sky-300"
                   : "text-stealth-400 hover:text-stealth-200"
@@ -1590,11 +1713,13 @@ export default function RealEstateDiagnostic() {
           ] as const).map((tab) => (
             <button
               key={tab.key}
+              id={`real-estate-${tab.key}-tab`}
               type="button"
               role="tab"
               aria-selected={activeTab === tab.key}
+              aria-controls={activeTab === tab.key ? "real-estate-active-panel" : undefined}
               onClick={() => setActiveTab(tab.key)}
-              className={`border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ${
+              className={`min-h-11 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ${
                 activeTab === tab.key
                   ? "border-sky-400 text-sky-300"
                   : "border-transparent text-stealth-400 hover:text-stealth-200"
@@ -1604,16 +1729,53 @@ export default function RealEstateDiagnostic() {
             </button>
           ))}
         </div>
-        <p className="pb-2 text-[11px] text-stealth-500">
+        <p className="pb-2 text-xs text-stealth-400">
           {activeTab === "commercial" ? "Property types, credit fundamentals, and bank exposure" : "Housing, listed REITs, financing, and supply"}
         </p>
       </div>
 
+      {evidenceConcerns.length > 0 && activeTab === "overview" && (
+        <div
+          className="rounded-xl border border-amber-500/40 bg-amber-950/25 p-4"
+          role="status"
+          data-evidence-panel="real-estate-overview"
+          data-evidence-state={realEstateEvidenceState}
+        >
+          <h2 className="text-sm font-semibold text-amber-200">
+            {realEstateEvidenceState === "stale"
+              ? "Real estate evidence is not fully current"
+              : "Partial real estate update"}
+          </h2>
+          <ul className="mt-2 space-y-1 text-sm leading-6 text-amber-100">
+            {evidenceConcerns.map((source) => (
+              <li key={source.label}>{source.message}</li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            onClick={() => {
+              evidenceConcerns.forEach((source) => source.refetch());
+            }}
+            className="mt-3 inline-flex min-h-11 items-center rounded-lg border border-amber-600 px-4 text-sm font-semibold text-amber-100 hover:bg-amber-900/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+          >
+            Refresh affected evidence
+          </button>
+        </div>
+      )}
+
+      <div
+        id="real-estate-active-panel"
+        role="tabpanel"
+        aria-labelledby={`real-estate-${activeTab}-tab`}
+        tabIndex={0}
+        className="scroll-mt-32 page-stack focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+      >
       {activeTab === "overview" ? (
         <>
 
       {/* ── Hero snapshot ─────────────────────────────────────── */}
-      <div className="surface-card-strong p-4 md:p-5">
+      <section id="real-estate-now" aria-labelledby="real-estate-now-title" className="surface-card-strong scroll-mt-32 p-4 md:p-5">
+        <h2 id="real-estate-now-title" className="sr-only">Current real estate market read</h2>
         <div className="grid items-start gap-4 xl:grid-cols-[1.1fr_0.95fr]">
           <div className="space-y-4">
             <div>
@@ -1621,7 +1783,14 @@ export default function RealEstateDiagnostic() {
               <p className={`mt-2 text-4xl font-semibold ${stabilityTone(headlineStability)}`}>
                 {headlineStability.toFixed(0)}
               </p>
-              <div className="mt-2 h-2 w-56 max-w-full rounded-full bg-stealth-700">
+              <div
+                aria-label={`Real estate stability ${headlineStability.toFixed(0)} out of 100`}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={headlineStability}
+                className="mt-2 h-2 w-56 max-w-full rounded-full bg-stealth-700"
+                role="progressbar"
+              >
                 <div
                   className={`h-2 rounded-full ${stabilityFill(headlineStability)}`}
                   style={{ width: `${headlineStability}%` }}
@@ -1691,11 +1860,13 @@ export default function RealEstateDiagnostic() {
             />
           </div>
         </div>
-      </div>
+      </section>
 
       {/* ── Primary relationship band ──────────────────────────── */}
       {(hasMortgagePressure || primarySidePanelCount > 0) && (
-        <div
+        <section
+          id="real-estate-evidence"
+          aria-label="Real estate market evidence"
           className={`grid items-start gap-3 md:gap-4 ${
             hasMortgagePressure && primarySidePanelCount > 0
               ? "xl:grid-cols-[1.45fr_0.95fr]"
@@ -1720,11 +1891,11 @@ export default function RealEstateDiagnostic() {
               ) : null}
             </div>
           )}
-        </div>
+        </section>
       )}
 
       {/* ── Market structure band ──────────────────────────────── */}
-      <div className="space-y-2.5">
+      <section id="real-estate-structure" className="scroll-mt-32 space-y-2.5">
         <div className="flex flex-wrap items-end justify-between gap-2.5">
           <SectionHeader
             kicker="Market Structure"
@@ -1737,7 +1908,7 @@ export default function RealEstateDiagnostic() {
           groups={overview.groups}
           surfaceClassName="surface-card-strong"
         />
-      </div>
+      </section>
 
       {/* ── Transmission band ─────────────────────────────────── */}
       {(hasTransmission || hasCreditPanel) && transmission && (
@@ -1774,7 +1945,7 @@ export default function RealEstateDiagnostic() {
 
       {/* ── Longer-horizon context band ────────────────────────── */}
       {(hasSupplyPanel || hasBuyerSeller || hasAffordability) && context && (
-        <div className="surface-card-strong p-3 sm:p-4">
+        <section id="real-estate-longer-horizon" className="surface-card-strong scroll-mt-32 p-3 sm:p-4">
           <div className="flex flex-wrap items-end justify-between gap-2.5">
             <SectionHeader
               kicker="Longer Horizon"
@@ -1788,7 +1959,7 @@ export default function RealEstateDiagnostic() {
                   type="button"
                   aria-pressed={longHorizonYears === years}
                   onClick={() => setLongHorizonYears(years)}
-                  className={`rounded-xl px-3 py-1.5 text-xs font-medium transition-all ${
+                  className={`min-h-11 rounded-xl px-3 text-xs font-medium transition-all ${
                     longHorizonYears === years
                       ? "bg-sky-500/20 text-sky-300"
                       : "text-stealth-400 hover:text-stealth-200"
@@ -1835,7 +2006,7 @@ export default function RealEstateDiagnostic() {
               />
             ) : null}
           </div>
-        </div>
+        </section>
       )}
 
       {/* Warnings */}
@@ -1847,20 +2018,23 @@ export default function RealEstateDiagnostic() {
 
       {/* Sources footer */}
       <div className="flex items-center justify-end gap-2">
-        <HoverTooltip
-          tip={`Listed real-estate proxies via Yahoo Finance. Mortgage rates, Treasury yields, HY OAS, housing supply, new home sales, rent CPI, housing CPI, median housing CPI, and shelter CPI via FRED. As of ${overview.as_of.slice(0, 16).replace("T", " ")} UTC.`}
-          width="w-80"
+        <SupportingContextTooltip
+          text={`Listed real-estate proxies via Yahoo Finance. Mortgage rates, Treasury yields, HY OAS, housing supply, new home sales, rent CPI, housing CPI, median housing CPI, and shelter CPI via FRED. As of ${overview.as_of.slice(0, 16).replace("T", " ")} UTC.`}
+          align="end"
         >
           <LabelCaps className="mb-0">Sources</LabelCaps>
-        </HoverTooltip>
+        </SupportingContextTooltip>
       </div>
 
-      <RealEstateMethodologyPanel />
+      <div id="real-estate-methodology" className="scroll-mt-32">
+        <RealEstateMethodologyPanel />
+      </div>
 
         </>
       ) : (
         <CommercialRealEstateTab days={days} />
       )}
+      </div>
 
     </div>
   );

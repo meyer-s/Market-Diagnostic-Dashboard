@@ -66,7 +66,7 @@ export function getStateBadgeClasses(state: StabilityState): string {
     case "RED":
       return "bg-red-500/20 text-red-400 border-red-500/30";
     default:
-      return "bg-gray-500/20 text-gray-400 border-gray-500/30";
+      return "bg-stealth-500/20 text-stealth-400 border-stealth-500/30";
   }
 }
 

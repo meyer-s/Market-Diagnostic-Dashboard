@@ -12,6 +12,7 @@ RUN npm install -g pnpm@10.28.2 --quiet && pnpm install --frozen-lockfile
 
 COPY src ./src
 COPY public ./public
+COPY scripts ./scripts
 COPY index.html tsconfig.json tsconfig.node.json vite.config.ts ./
 COPY tailwind.config.js postcss.config.js ./
 RUN pnpm build

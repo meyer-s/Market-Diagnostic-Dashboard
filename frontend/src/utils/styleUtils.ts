@@ -83,10 +83,10 @@ export const STATE_COLORS = {
     full: "bg-red-900/20 border-red-700 text-red-400",
   },
   UNKNOWN: {
-    bg: "bg-gray-900/20",
-    border: "border-gray-700",
-    text: "text-gray-400",
-    full: "bg-gray-900/20 border-gray-700 text-gray-400",
+    bg: "bg-stealth-900/20",
+    border: "border-stealth-700",
+    text: "text-stealth-400",
+    full: "bg-stealth-900/20 border-stealth-700 text-stealth-400",
   },
 } as const;
 

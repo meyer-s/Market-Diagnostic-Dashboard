@@ -51,6 +51,90 @@ const emptyReadWorkspaceResponse = (endpoint: string) => {
   return Promise.reject(new Error(`Unexpected Secret Options test endpoint: ${endpoint}`));
 };
 
+const ACTIVE_SCANNER_RUN = {
+  id: 92,
+  universe_key: "SP500",
+  universe_label: "S&P 500",
+  threshold: 30,
+  trigger_source: "dashboard",
+  status: "running",
+  total_symbols: 500,
+  scanned_symbols: 125,
+  hits: 0,
+  errors: 0,
+  rate_limit_errors: 0,
+  hit_symbols: [],
+  notes: null,
+  last_event: "Scanning",
+  last_symbol: "MSFT",
+  last_error: null,
+  started_at: "2026-07-29T12:00:00",
+  completed_at: null,
+  updated_at: "2026-07-29T12:02:00",
+};
+
+const readWorkspaceWithActiveScanner = (endpoint: string) => {
+  if (endpoint.startsWith("/secret/options/scanner-summary")) {
+    return Promise.resolve({
+      lookback_days: 45,
+      generated_at: "2026-07-29T12:02:00",
+      summary: {
+        event_count: 0,
+        symbol_count: 0,
+        delivered: 0,
+        failed: 0,
+        latest_event_at: null,
+        runs_returned: 1,
+        active_runs: 1,
+        avg_hit_rate: 0,
+      },
+      top_symbols: [],
+      ranked_opportunities: [],
+      runs: [ACTIVE_SCANNER_RUN],
+      supported_universes: [{ key: "SP500", label: "S&P 500" }],
+    });
+  }
+  return emptyReadWorkspaceResponse(endpoint);
+};
+
+const writeWorkspaceWithoutScannerRun = (endpoint: string, options?: RequestInit) => {
+  if (endpoint === "/secret/options/access") {
+    return Promise.resolve({
+      actor: "writer",
+      scope: "write",
+      auth_mode: "bearer",
+      request_id: "req-write",
+    });
+  }
+  if (endpoint.startsWith("/secret/options/scanner-summary")) {
+    return Promise.resolve({
+      lookback_days: 45,
+      generated_at: "2026-07-29T12:02:00",
+      summary: {
+        event_count: 0,
+        symbol_count: 0,
+        delivered: 0,
+        failed: 0,
+        latest_event_at: null,
+        runs_returned: 0,
+        active_runs: 0,
+        avg_hit_rate: 0,
+      },
+      top_symbols: [],
+      ranked_opportunities: [],
+      runs: [],
+      supported_universes: [{ key: "SP500", label: "S&P 500" }],
+    });
+  }
+  if (endpoint === "/secret/options/scanner-run" && options?.method === "POST") {
+    return Promise.resolve({
+      status: "queued",
+      run: { ...ACTIVE_SCANNER_RUN, status: "queued", scanned_symbols: 0 },
+    });
+  }
+  return emptyReadWorkspaceResponse(endpoint);
+};
+
 describe("Secret Options authorization gate", () => {
   beforeEach(() => {
     apiFetchMock.mockReset();
@@ -160,6 +244,89 @@ describe("Secret Options authorization gate", () => {
     const add = screen.getByRole("button", { name: "Add" });
     expect(add.hasAttribute("disabled")).toBe(true);
     expect(screen.getByText(/mutations are blocked before an API request is sent/i)).not.toBeNull();
+  });
+
+  it("disables every mobile scanner write control in read scope without sending a scanner POST", async () => {
+    setSecretOptionsToken("read-token");
+    setSecretOptionsScope("read");
+    apiFetchMock.mockImplementation(readWorkspaceWithActiveScanner);
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "scanner" }));
+
+    expect((await screen.findByRole("button", { name: "Running" })).hasAttribute("disabled")).toBe(true);
+    expect((screen.getByRole("button", { name: "Stop scan" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByLabelText("Universe") as HTMLSelectElement).disabled).toBe(true);
+    expect((screen.getByLabelText("IV threshold") as HTMLInputElement).disabled).toBe(true);
+    expect(screen.getByText(/Scanner controls require write scope/i)).not.toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Running" }));
+    await user.click(screen.getByRole("button", { name: "Stop scan" }));
+    expect(
+      apiFetchMock.mock.calls.filter(([endpoint, options]) => (
+        String(endpoint).startsWith("/secret/options/scanner-run")
+        && options?.method === "POST"
+      )),
+    ).toHaveLength(0);
+  });
+
+  it("disables every desktop scanner write control in read scope", async () => {
+    setSecretOptionsToken("read-token");
+    setSecretOptionsScope("read");
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: query === "(min-width: 1280px)",
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+    apiFetchMock.mockImplementation(readWorkspaceWithActiveScanner);
+    renderPage();
+
+    expect((await screen.findByRole("button", { name: "Running" })).hasAttribute("disabled")).toBe(true);
+    expect((screen.getByRole("button", { name: "Stop" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByLabelText("Universe") as HTMLSelectElement).disabled).toBe(true);
+    expect((screen.getByLabelText("IV threshold") as HTMLInputElement).disabled).toBe(true);
+    expect(screen.getByText(/Scanner controls require write scope/i)).not.toBeNull();
+  });
+
+  it("enables scanner inputs and sends the bounded run request in write scope", async () => {
+    setSecretOptionsToken("write-token");
+    setSecretOptionsScope("write");
+    apiFetchMock.mockImplementation(writeWorkspaceWithoutScannerRun);
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "scanner" }));
+
+    const run = await screen.findByRole("button", { name: /^Run$/ });
+    expect((run as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByLabelText("Universe") as HTMLSelectElement).disabled).toBe(false);
+    expect((screen.getByLabelText("IV threshold") as HTMLInputElement).disabled).toBe(false);
+
+    await user.click(run);
+    await waitFor(() => {
+      const request = apiFetchMock.mock.calls.find(
+        ([endpoint, options]) =>
+          endpoint === "/secret/options/scanner-run" && options?.method === "POST",
+      );
+      expect(request?.[1]).toMatchObject({
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      expect(JSON.parse(String(request?.[1]?.body))).toEqual({
+        universe_key: "SP500",
+        threshold: 30,
+      });
+    });
   });
 
   it("records authenticated rank, visibility, and detail impressions for a frozen scanner ranking", async () => {

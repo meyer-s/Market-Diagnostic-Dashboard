@@ -6,6 +6,7 @@ from app.models.update_post import UpdateStatus
 from app.services.market_diagnostic_validation import (
     validate_allowed_emojis,
     validate_chart_urls,
+    validate_markdown_image_alt_text,
     validate_market_diagnostic_structure,
     validate_required_tags,
     validate_slug,
@@ -48,6 +49,7 @@ class GPTActionPublishUpdatePayload(BaseModel):
     def validate_content_markdown(cls, value: str) -> str:
         validate_market_diagnostic_structure(value or "")
         validate_allowed_emojis(value or "")
+        validate_markdown_image_alt_text(value or "")
         return value
 
 

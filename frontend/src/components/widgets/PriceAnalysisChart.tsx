@@ -63,7 +63,7 @@ export function PriceAnalysisChart({
     ? ((modelTarget - analystTarget) / analystTarget) * 100
     : null;
   let analystAlignment = "n/a";
-  let analystColor = "text-gray-400";
+  let analystColor = "text-stealth-400";
   if (analystDiffPct !== null) {
     if (Math.abs(analystDiffPct) <= 5) {
       analystAlignment = "Aligned";
@@ -78,24 +78,24 @@ export function PriceAnalysisChart({
   }
 
   return (
-    <div className="bg-gray-900 rounded-lg p-3 sm:p-4 border border-gray-700">
+    <div className="bg-stealth-900 rounded-lg p-3 sm:p-4 border border-stealth-700">
       {/* Header */}
       <div className="mb-3">
-        <p className="text-xs text-gray-400 mb-1">Price Analysis for {horizon}</p>
+        <p className="text-xs text-stealth-400 mb-1">Price Analysis for {horizon}</p>
         <div className="flex items-end justify-between">
           <div>
-            <p className="text-xs text-gray-400">Current Price</p>
+            <p className="text-xs text-stealth-400">Current Price</p>
             <p className="text-xl font-bold text-white">${currentPrice.toFixed(2)}</p>
           </div>
           <div className={`text-right px-2 py-1 rounded text-xs ${returnBg} border ${returnBorder}`}>
-            <p className="text-xs text-gray-300 mb-0.5">Trailing Return</p>
+            <p className="text-xs text-stealth-300 mb-0.5">Trailing Return</p>
             <p className={`text-base font-bold ${returnColor}`}>
               {trailingReturn > 0 ? "+" : ""}{trailingPercent.toFixed(1)}%
             </p>
           </div>
         </div>
         {hasAnalystTarget && (
-          <div className="mt-2 flex items-center justify-between text-xs text-gray-400">
+          <div className="mt-2 flex items-center justify-between text-xs text-stealth-400">
             <span>
               Analyst target: ${analystTarget!.toFixed(2)}
               {analystCount ? ` (${analystCount})` : ""}
@@ -105,10 +105,10 @@ export function PriceAnalysisChart({
             </span>
           </div>
         )}
-        <div className="mt-2 flex items-center justify-between text-xs text-gray-400">
-          <span>Target Regime: <span className="text-gray-200 capitalize">{normalizedTargetRegime}</span></span>
+        <div className="mt-2 flex items-center justify-between text-xs text-stealth-400">
+          <span>Target Regime: <span className="text-stealth-200 capitalize">{normalizedTargetRegime}</span></span>
           {highSeverityFlags.length > 0 && (
-            <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-amber-300">
+            <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-xs uppercase tracking-wide text-amber-300">
               valuation caution
             </span>
           )}
@@ -143,7 +143,7 @@ export function PriceAnalysisChart({
               <p className="text-xs text-green-300">${takeProfit.toFixed(2)}</p>
               <p className="text-xs text-green-200">+{tpUpside.toFixed(1)}%</p>
               {hasRawExtensionGap && (
-                <p className="mt-0.5 text-[10px] text-amber-300">
+                <p className="mt-0.5 text-xs text-amber-300">
                   Raw ext ${rawUpper.toFixed(2)} (+{rawUpside.toFixed(1)}%)
                 </p>
               )}
@@ -153,14 +153,14 @@ export function PriceAnalysisChart({
       </div>
 
       {hasRawExtensionGap && (
-        <div className="mb-3 rounded border border-amber-500/35 bg-amber-500/10 px-2.5 py-2 text-[11px] text-amber-200">
+        <div className="mb-3 rounded border border-amber-500/35 bg-amber-500/10 px-2.5 py-2 text-xs text-amber-200">
           Raw extension is shown for signal context and may not be valuation-adjusted.
         </div>
       )}
 
       {sanityFlags && sanityFlags.length > 0 && (
         <div className="mb-3 rounded border border-amber-500/35 bg-amber-500/10 px-2.5 py-2">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-300">Sanity Flags</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-amber-300">Sanity Flags</p>
           <p className="mt-1 text-xs text-amber-200">
             {sanityFlags.map((flag) => flag.message || flag.type.replace(/_/g, " ")).join("; ")}
           </p>

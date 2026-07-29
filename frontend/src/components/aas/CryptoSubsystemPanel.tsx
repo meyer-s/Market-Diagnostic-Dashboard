@@ -119,7 +119,11 @@ export function CryptoSubsystemPanel({
 
                   return (
                     <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                      <LineChart data={chartData}>
+                      <LineChart
+                        accessibilityLayer
+                        aria-label={`${component.name} 52-week raw and smoothed trend`}
+                        data={chartData}
+                      >
                         <YAxis type="number" domain={[domainMin, domainMax]} hide />
                         <Line
                           type={isStepped ? "stepAfter" : "monotone"}

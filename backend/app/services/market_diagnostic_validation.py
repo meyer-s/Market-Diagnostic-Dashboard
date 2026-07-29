@@ -16,6 +16,114 @@ REQUIRED_H2_HEADINGS: tuple[str, ...] = (
 
 SLUG_RE = re.compile(r"^market-diagnostic-\d{4}-\d{2}-\d{2}$")
 SOURCE_CITATION_RE = re.compile(r"\(Source:\s*([^)]+)\)\s*$")
+DECORATIVE_MARKDOWN_IMAGE_ALT = "decorative"
+
+# Match inline (`![alt](url)`) and reference (`![alt][id]`) Markdown images.
+# The destination is intentionally treated as opaque: publishing accessibility
+# validation only needs the author-provided text alternative.
+_MARKDOWN_IMAGE_RE = re.compile(
+    r"(?<!\\)!\[((?:\\.|[^\]\\])*)\]\s*(?:\([^)\n]*\)|\[[^\]\n]*\])"
+)
+_GENERIC_MARKDOWN_IMAGE_ALTS = {
+    "a chart",
+    "a diagram",
+    "a figure",
+    "a graphic",
+    "a photo",
+    "a picture",
+    "a screenshot",
+    "an image",
+    "chart",
+    "diagram",
+    "figure",
+    "graphic",
+    "icon",
+    "illustration",
+    "image",
+    "logo",
+    "photo",
+    "picture",
+    "screenshot",
+    "supporting figure",
+    "supporting image",
+    "the chart",
+    "the diagram",
+    "the figure",
+    "the image",
+    "thumbnail",
+}
+_GENERIC_MARKDOWN_IMAGE_ALT_RE = re.compile(
+    r"^(?:chart|diagram|figure|graphic|icon|illustration|image|logo|photo|picture|"
+    r"screenshot|thumbnail)(?:\s*[-#:]?\s*(?:\d+|[a-z]))?$"
+)
+_IMAGE_FILENAME_ALT_RE = re.compile(
+    r"^[^\s]+\.(?:avif|gif|jpe?g|png|svg|webp)$",
+    re.IGNORECASE,
+)
+
+
+def _markdown_outside_code_blocks(content_markdown: str) -> str:
+    """Return Markdown text with fenced and inline code removed."""
+    visible_lines: list[str] = []
+    fence_marker: str | None = None
+
+    for line in (content_markdown or "").splitlines():
+        stripped = line.lstrip()
+        fence_match = re.match(r"^(`{3,}|~{3,})", stripped)
+        if fence_match:
+            marker = fence_match.group(1)
+            marker_char = marker[0]
+            if fence_marker is None:
+                fence_marker = marker_char
+            elif fence_marker == marker_char:
+                fence_marker = None
+            visible_lines.append("")
+            continue
+        if fence_marker is not None:
+            visible_lines.append("")
+            continue
+
+        # An image example inside inline code is documentation, not rendered content.
+        visible_lines.append(re.sub(r"`+[^`\n]*`+", "", line))
+
+    return "\n".join(visible_lines)
+
+
+def _normalize_markdown_image_alt(value: str) -> str:
+    unescaped = re.sub(r"\\([\\`*{}\[\]()#+\-.!_>])", r"\1", value or "")
+    without_formatting = re.sub(r"[*_~`]+", " ", unescaped)
+    collapsed = re.sub(r"\s+", " ", without_formatting).strip().casefold()
+    return collapsed.strip(" \t.,:;!?-–—()[]{}")
+
+
+def validate_markdown_image_alt_text(content_markdown: str) -> None:
+    """
+    Require meaningful alternatives for rendered Markdown images.
+
+    Authors can explicitly mark a purely decorative image with the convention
+    `![decorative](URL)`. UpdatesViewer maps that sentinel to the semantic
+    decorative alternative `alt=""`. Existing stored posts are not revalidated
+    on read, so legacy content remains renderable.
+    """
+    rendered_markdown = _markdown_outside_code_blocks(content_markdown or "")
+    for image_index, match in enumerate(_MARKDOWN_IMAGE_RE.finditer(rendered_markdown), start=1):
+        raw_alt = match.group(1) or ""
+        normalized_alt = _normalize_markdown_image_alt(raw_alt)
+        if normalized_alt == DECORATIVE_MARKDOWN_IMAGE_ALT:
+            continue
+
+        is_generic = (
+            not normalized_alt
+            or normalized_alt in _GENERIC_MARKDOWN_IMAGE_ALTS
+            or _GENERIC_MARKDOWN_IMAGE_ALT_RE.fullmatch(normalized_alt) is not None
+            or _IMAGE_FILENAME_ALT_RE.fullmatch(normalized_alt) is not None
+        )
+        if is_generic:
+            raise ValueError(
+                f"content_markdown image {image_index} must include meaningful alt text; "
+                "describe the image's information with ![description](URL), or mark a "
+                "purely decorative image with ![decorative](URL)"
+            )
 
 
 def validate_required_tags(tags: list[str]) -> None:

@@ -8,13 +8,91 @@ import pandas as pd
 import yfinance as yf
 from fastapi import APIRouter, Query
 
+from app.services.endpoint_response_cache import (
+    load_response_snapshot,
+    mark_stale_snapshot,
+    response_refresh_lock,
+    store_response_snapshot,
+)
+
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _CACHE_TTL_SECONDS = 4 * 60 * 60
+_MAX_STALE_AGE_SECONDS = 48 * 60 * 60
+_YAHOO_TIMEOUT_SECONDS = 8
+_LISTING_TIMEOUT_SECONDS = 8
+_MAX_MEMORY_CACHE_ENTRIES = 6
+_MIN_REPRESENTATIVE_PARTICIPATION_PCT = 20.0
 _cached_by_days: dict[int, dict[str, object]] = {}
 _LISTING_CACHE_TTL_SECONDS = 24 * 60 * 60
 _listing_cache: dict[str, object] = {"fetched_at": None, "data": None}
+
+
+def _set_memory_snapshot(days: int, cached_at: datetime, payload: dict) -> None:
+    _cached_by_days[days] = {"cached_at": cached_at, "payload": payload}
+    if len(_cached_by_days) <= _MAX_MEMORY_CACHE_ENTRIES:
+        return
+    oldest_days = min(
+        _cached_by_days,
+        key=lambda key: _cached_by_days[key].get("cached_at") or datetime.min.replace(tzinfo=timezone.utc),
+    )
+    _cached_by_days.pop(oldest_days, None)
+
+
+def _breadth_quality_rank(payload: object) -> tuple[int, float, int, int, int]:
+    """Rank breadth evidence without confusing cacheability with completeness.
+
+    Representative exchange coverage is the strongest signal, followed by the
+    weakest exchange participation and then history coverage/depth. This keeps
+    a transient sparse batch from overwriting materially stronger evidence
+    while still allowing a sparse cold response to seed the shared cache.
+    """
+
+    if not isinstance(payload, dict):
+        return (0, 0.0, 0, 0, 0)
+    exchanges = payload.get("exchanges")
+    if not isinstance(exchanges, dict):
+        return (0, 0.0, 0, 0, 0)
+
+    buckets = [
+        exchanges.get(exchange_key)
+        for exchange_key in ("amex", "nsdq", "nyse")
+    ]
+    valid_buckets = [bucket for bucket in buckets if isinstance(bucket, dict)]
+    representative_coverage = sum(
+        bucket.get("source") == "exchange-universe-full"
+        and float(bucket.get("participation_pct") or 0.0)
+        >= _MIN_REPRESENTATIVE_PARTICIPATION_PCT
+        for bucket in valid_buckets
+    )
+    participation = [
+        max(float(bucket.get("participation_pct") or 0.0), 0.0)
+        for bucket in valid_buckets
+    ]
+    weakest_participation = min(participation) if len(participation) == 3 else 0.0
+    history_lengths = [
+        len(bucket.get("history"))
+        if isinstance(bucket.get("history"), list)
+        else 0
+        for bucket in valid_buckets
+    ]
+    history_coverage = sum(length > 0 for length in history_lengths)
+    weakest_history_depth = (
+        min(history_lengths) if len(history_lengths) == 3 else 0
+    )
+    combined_history = payload.get("history")
+    combined_history_depth = (
+        len(combined_history) if isinstance(combined_history, list) else 0
+    )
+    return (
+        representative_coverage,
+        round(weakest_participation, 6),
+        history_coverage,
+        weakest_history_depth,
+        combined_history_depth,
+    )
+
 
 BREADTH_SYMBOL_CANDIDATES = {
     "nyse": {
@@ -142,9 +220,17 @@ def _fetch_exchange_universe() -> dict[str, list[str]]:
     amex: set[str] = set()
 
     try:
-        with httpx.Client(timeout=20) as client:
-            nasdaq_text = client.get("https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt").text
-            other_text = client.get("https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt").text
+        with httpx.Client(timeout=_LISTING_TIMEOUT_SECONDS) as client:
+            nasdaq_response = client.get(
+                "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt"
+            )
+            other_response = client.get(
+                "https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt"
+            )
+            nasdaq_response.raise_for_status()
+            other_response.raise_for_status()
+            nasdaq_text = nasdaq_response.text
+            other_text = other_response.text
 
         nasdaq_rows = _parse_pipe_table(nasdaq_text)
         for row in nasdaq_rows:
@@ -203,6 +289,7 @@ def _download_price_volume(symbols: list[str], period: str = "1y") -> tuple[pd.D
                 progress=False,
                 threads=True,
                 group_by="column",
+                timeout=_YAHOO_TIMEOUT_SECONDS,
             )
         except Exception as exc:
             logger.warning("yf.download failed for chunk of %d symbols: %s", len(chunk), exc)
@@ -230,7 +317,65 @@ def _download_price_volume(symbols: list[str], period: str = "1y") -> tuple[pd.D
     return close_all, volume_all
 
 
-def _fetch_breadth_metric_series(candidates: list[str]) -> dict[str, float]:
+def _extract_close_frame(downloaded: pd.DataFrame) -> pd.DataFrame | None:
+    if downloaded is None or downloaded.empty:
+        return None
+
+    if isinstance(downloaded.columns, pd.MultiIndex):
+        level0 = downloaded.columns.get_level_values(0)
+        level1 = downloaded.columns.get_level_values(1)
+        if "Close" in level0:
+            close = downloaded["Close"]
+        elif "Close" in level1:
+            close = downloaded.swaplevel(axis=1)["Close"]
+        else:
+            return None
+        if isinstance(close, pd.Series):
+            close = close.to_frame()
+        return close
+
+    if "Close" not in downloaded.columns:
+        return None
+    return pd.DataFrame({"SINGLE": downloaded["Close"]})
+
+
+def _download_breadth_close(symbols: list[str]) -> pd.DataFrame | None:
+    if not symbols:
+        return None
+    try:
+        frame = yf.download(
+            tickers=" ".join(symbols),
+            period="1y",
+            interval="1d",
+            auto_adjust=False,
+            progress=False,
+            threads=True,
+            group_by="column",
+            timeout=_YAHOO_TIMEOUT_SECONDS,
+        )
+    except Exception as exc:
+        logger.warning("Batch breadth-symbol download failed: %s", exc)
+        return None
+    return _extract_close_frame(frame)
+
+
+def _fetch_breadth_metric_series(
+    candidates: list[str],
+    close_frame: pd.DataFrame | None = None,
+) -> dict[str, float]:
+    if close_frame is not None:
+        for symbol in candidates:
+            if symbol not in close_frame.columns:
+                continue
+            clean = close_frame[symbol].dropna()
+            if clean.empty:
+                continue
+            return {
+                pd.Timestamp(idx).strftime("%Y-%m-%d"): float(value)
+                for idx, value in clean.items()
+            }
+        return {}
+
     for symbol in candidates:
         try:
             frame = yf.download(
@@ -240,6 +385,7 @@ def _fetch_breadth_metric_series(candidates: list[str]) -> dict[str, float]:
                 auto_adjust=False,
                 progress=False,
                 threads=True,
+                timeout=_YAHOO_TIMEOUT_SECONDS,
             )
         except Exception as exc:
             logger.debug("yf.download failed for breadth symbol %s: %s", symbol, exc)
@@ -283,18 +429,22 @@ def _fetch_breadth_metric_series(candidates: list[str]) -> dict[str, float]:
 
 
 def _build_bucket_from_breadth_symbols(
-    exchange_key: str, label: str, lookback_days: int, universe_size: int = 0
+    exchange_key: str,
+    label: str,
+    lookback_days: int,
+    universe_size: int = 0,
+    close_frame: pd.DataFrame | None = None,
 ) -> dict[str, object] | None:
     candidates = BREADTH_SYMBOL_CANDIDATES.get(exchange_key)
     if not candidates:
         return None
 
-    adv = _fetch_breadth_metric_series(candidates["advancing"])
-    dec = _fetch_breadth_metric_series(candidates["declining"])
-    uvol = _fetch_breadth_metric_series(candidates["volume_advancing"])
-    dvol = _fetch_breadth_metric_series(candidates["volume_declining"])
-    highs = _fetch_breadth_metric_series(candidates["new_highs"])
-    lows = _fetch_breadth_metric_series(candidates["new_lows"])
+    adv = _fetch_breadth_metric_series(candidates["advancing"], close_frame)
+    dec = _fetch_breadth_metric_series(candidates["declining"], close_frame)
+    uvol = _fetch_breadth_metric_series(candidates["volume_advancing"], close_frame)
+    dvol = _fetch_breadth_metric_series(candidates["volume_declining"], close_frame)
+    highs = _fetch_breadth_metric_series(candidates["new_highs"], close_frame)
+    lows = _fetch_breadth_metric_series(candidates["new_lows"], close_frame)
 
     if not adv or not dec or not uvol or not dvol:
         return None
@@ -446,9 +596,12 @@ def _compute_bucket(symbols: list[str], label: str, lookback_days: int) -> dict[
     }
 
 
-@router.get("/market-internals/overview")
-def get_market_internals_overview(days: int = Query(90, ge=30, le=365)) -> dict[str, object]:
+def _build_market_internals_overview(
+    days: int,
+    shared_snapshot,
+) -> dict[str, object]:
     now = datetime.now(timezone.utc)
+    cache_key = f"market-internals:overview:{days}"
     cached = _cached_by_days.get(days)
     if cached:
         cached_at = cached.get("cached_at")
@@ -457,9 +610,39 @@ def get_market_internals_overview(days: int = Query(90, ge=30, le=365)) -> dict[
             return payload  # type: ignore[return-value]
 
     exchange_universe = _fetch_exchange_universe()
-    amex = _resolve_exchange_bucket("amex", "AMEX", exchange_universe["amex"], lookback_days=days)
-    nasdaq = _resolve_exchange_bucket("nsdq", "NSDQ", exchange_universe["nsdq"], lookback_days=days)
-    nyse = _resolve_exchange_bucket("nyse", "NYSE", exchange_universe["nyse"], lookback_days=days)
+    breadth_symbols = sorted({
+        symbol
+        for exchange in BREADTH_SYMBOL_CANDIDATES.values()
+        for metric_symbols in exchange.values()
+        for symbol in metric_symbols
+    })
+    breadth_close = _download_breadth_close(breadth_symbols)
+    bounded_close = breadth_close if breadth_close is not None else pd.DataFrame()
+
+    # The page should be bounded by a single provider batch. Falling through
+    # to thousands of per-listing downloads made cold requests exceed the
+    # reverse proxy timeout and amplified Yahoo throttling.
+    amex = _build_bucket_from_breadth_symbols(
+        "amex",
+        "AMEX",
+        days,
+        universe_size=len(exchange_universe["amex"]),
+        close_frame=bounded_close,
+    ) or _empty_bucket("AMEX", len(exchange_universe["amex"]), "unavailable")
+    nasdaq = _build_bucket_from_breadth_symbols(
+        "nsdq",
+        "NSDQ",
+        days,
+        universe_size=len(exchange_universe["nsdq"]),
+        close_frame=bounded_close,
+    ) or _empty_bucket("NSDQ", len(exchange_universe["nsdq"]), "unavailable")
+    nyse = _build_bucket_from_breadth_symbols(
+        "nyse",
+        "NYSE",
+        days,
+        universe_size=len(exchange_universe["nyse"]),
+        close_frame=bounded_close,
+    ) or _empty_bucket("NYSE", len(exchange_universe["nyse"]), "unavailable")
 
     combined_adv = int(amex["advancing"] + nasdaq["advancing"] + nyse["advancing"])
     combined_dec = int(amex["declining"] + nasdaq["declining"] + nyse["declining"])
@@ -515,5 +698,96 @@ def get_market_internals_overview(days: int = Query(90, ge=30, le=365)) -> dict[
         },
     }
 
-    _cached_by_days[days] = {"cached_at": now, "payload": payload}
+    exchange_history_count = sum(
+        bool(exchange.get("history"))
+        for exchange in (amex, nasdaq, nyse)
+    )
+    is_cacheable = exchange_history_count == 3 and bool(combined_history)
+    representative_exchange_count = sum(
+        exchange.get("source") == "exchange-universe-full"
+        and float(exchange.get("participation_pct") or 0.0)
+        >= _MIN_REPRESENTATIVE_PARTICIPATION_PCT
+        for exchange in (amex, nasdaq, nyse)
+    )
+    is_representative = representative_exchange_count == 3
+    payload["data_quality"] = {
+        "status": "complete" if is_representative else "partial",
+        "stale": False,
+        "exchange_history_coverage": exchange_history_count,
+        "exchange_history_total": 3,
+        "representative_exchange_coverage": representative_exchange_count,
+        "representative_exchange_total": 3,
+        "minimum_representative_participation_pct": _MIN_REPRESENTATIVE_PARTICIPATION_PCT,
+        "cacheable": is_cacheable,
+        "representative": is_representative,
+        "provider_request_shape": "single_batched_breadth_download",
+        "cache_ttl_seconds": _CACHE_TTL_SECONDS,
+        "max_stale_age_seconds": _MAX_STALE_AGE_SECONDS,
+    }
+
+    if is_cacheable:
+        if (
+            shared_snapshot is not None
+            and _breadth_quality_rank(payload)
+            < _breadth_quality_rank(shared_snapshot.payload)
+        ):
+            logger.warning(
+                "Breadth refresh for %s was lower quality than the prior "
+                "snapshot; retaining snapshot aged %.1fs",
+                cache_key,
+                shared_snapshot.age_seconds,
+            )
+            return mark_stale_snapshot(
+                shared_snapshot.payload,
+                shared_snapshot,
+                reason="breadth_refresh_degraded",
+                ttl_seconds=_CACHE_TTL_SECONDS,
+                max_stale_age_seconds=_MAX_STALE_AGE_SECONDS,
+            )
+        _set_memory_snapshot(days, now, payload)
+        store_response_snapshot(cache_key, payload, cached_at=now.replace(tzinfo=None))
+    elif shared_snapshot is not None:
+        logger.warning(
+            "Breadth refresh for %s was incomplete; reusing snapshot aged %.1fs",
+            cache_key,
+            shared_snapshot.age_seconds,
+        )
+        return mark_stale_snapshot(
+            shared_snapshot.payload,
+            shared_snapshot,
+            reason="breadth_refresh_incomplete",
+            ttl_seconds=_CACHE_TTL_SECONDS,
+            max_stale_age_seconds=_MAX_STALE_AGE_SECONDS,
+        )
+
     return payload
+
+
+@router.get("/market-internals/overview")
+def get_market_internals_overview(
+    days: int = Query(90, ge=30, le=365),
+) -> dict[str, object]:
+    cache_key = f"market-internals:overview:{days}"
+    shared_snapshot = load_response_snapshot(cache_key)
+    if (
+        shared_snapshot is not None
+        and not shared_snapshot.is_within_stale_limit(_MAX_STALE_AGE_SECONDS)
+    ):
+        shared_snapshot = None
+    if shared_snapshot and shared_snapshot.is_fresh(_CACHE_TTL_SECONDS):
+        return shared_snapshot.payload  # type: ignore[return-value]
+
+    with response_refresh_lock(cache_key):
+        # The lock holder may have populated the shared snapshot while this
+        # request was waiting. Re-read before touching any provider.
+        shared_snapshot = load_response_snapshot(cache_key)
+        if (
+            shared_snapshot is not None
+            and not shared_snapshot.is_within_stale_limit(
+                _MAX_STALE_AGE_SECONDS
+            )
+        ):
+            shared_snapshot = None
+        if shared_snapshot and shared_snapshot.is_fresh(_CACHE_TTL_SECONDS):
+            return shared_snapshot.payload  # type: ignore[return-value]
+        return _build_market_internals_overview(days, shared_snapshot)

@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 import requests
+import yfinance as yf
 
 try:
     from curl_cffi import requests as curl_requests
@@ -26,7 +27,12 @@ except ImportError:  # pragma: no cover - fallback dependency is present in depl
     curl_requests = None
 
 from app.core.config import settings
-from app.services.ingestion.yahoo_client import YahooClient, YahooClientError
+from app.services.endpoint_response_cache import (
+    load_response_snapshot,
+    mark_stale_snapshot,
+    response_refresh_lock,
+    store_response_snapshot,
+)
 
 
 LOOKBACK_WINDOWS: Tuple[int, ...] = (5, 20, 60, 120)
@@ -93,12 +99,15 @@ HTTP_HEADERS = {
 }
 
 FRED_TIMEOUT_SECONDS = 8
+YAHOO_BATCH_TIMEOUT_SECONDS = 8
 COMMERCIAL_LONG_CONTEXT_DAYS = 30 * 365
 
 _CACHE: Dict[int, Dict[str, Any]] = {}
 _CACHE_LOCK = Lock()
 _COMPUTE_LOCK = Lock()
 _CACHE_TTL_SECONDS = 20 * 60
+_MAX_STALE_AGE_SECONDS = 48 * 60 * 60
+_MAX_MEMORY_CACHE_ENTRIES = 6
 
 _CONTEXT_CACHE: Dict[int, Dict[str, Any]] = {}
 _CONTEXT_CACHE_LOCK = Lock()
@@ -107,6 +116,32 @@ _CONTEXT_COMPUTE_LOCK = Lock()
 _COMMERCIAL_CACHE: Dict[int, Dict[str, Any]] = {}
 _COMMERCIAL_CACHE_LOCK = Lock()
 _COMMERCIAL_COMPUTE_LOCK = Lock()
+
+
+def _set_bounded_memory_cache(
+    cache: Dict[int, Dict[str, Any]],
+    key: int,
+    timestamp: datetime,
+    data: Dict[str, Any],
+) -> None:
+    cache[key] = {"timestamp": timestamp, "data": data}
+    if len(cache) <= _MAX_MEMORY_CACHE_ENTRIES:
+        return
+    oldest_key = min(
+        cache,
+        key=lambda item: cache[item].get("timestamp") or datetime.min,
+    )
+    cache.pop(oldest_key, None)
+
+
+def _load_usable_shared_snapshot(cache_key: str):
+    snapshot = load_response_snapshot(cache_key)
+    if (
+        snapshot is not None
+        and not snapshot.is_within_stale_limit(_MAX_STALE_AGE_SECONDS)
+    ):
+        return None
+    return snapshot
 
 
 @dataclass(frozen=True)
@@ -523,28 +558,50 @@ def _volatility(series: pd.Series, lookback: int = 60) -> Optional[float]:
     return float(returns.std(ddof=0) * (252.0 ** 0.5) * 100.0)
 
 
-def fetch_real_estate_proxy_data(days: int) -> Tuple[Dict[str, pd.Series], List[Dict[str, Any]], List[Dict[str, Any]]]:
-    client = YahooClient()
+def _fetch_proxy_batch(
+    proxies: Tuple[RealEstateProxy, ...],
+    days: int,
+) -> Tuple[Dict[str, pd.Series], List[Dict[str, Any]], List[Dict[str, Any]]]:
     start = (datetime.utcnow() - timedelta(days=days + 260)).strftime("%Y-%m-%d")
     end = (datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d")
-
     resolved: Dict[str, pd.Series] = {}
     availability: List[Dict[str, Any]] = []
     missing: List[Dict[str, Any]] = []
 
-    for proxy in REAL_ESTATE_PROXIES:
+    close_frame: pd.DataFrame | None = None
+    try:
+        downloaded = yf.download(
+            tickers=" ".join(proxy.ticker for proxy in proxies),
+            start=start,
+            end=end,
+            interval="1d",
+            progress=False,
+            auto_adjust=True,
+            group_by="column",
+            threads=True,
+            timeout=YAHOO_BATCH_TIMEOUT_SECONDS,
+        )
+        if downloaded is not None and not downloaded.empty:
+            if isinstance(downloaded.columns, pd.MultiIndex):
+                level0 = downloaded.columns.get_level_values(0)
+                level1 = downloaded.columns.get_level_values(1)
+                if "Close" in level0:
+                    close_frame = downloaded["Close"]
+                elif "Close" in level1:
+                    close_frame = downloaded.swaplevel(axis=1)["Close"]
+            elif "Close" in downloaded.columns and len(proxies) == 1:
+                close_frame = pd.DataFrame(
+                    {proxies[0].ticker: downloaded["Close"]}
+                )
+    except Exception:
+        close_frame = None
+
+    for proxy in proxies:
         chosen_series = pd.Series(dtype="float64")
-        try:
-            for _attempt in range(3):
-                try:
-                    rows = client.fetch_series(ticker=proxy.ticker, start_date=start, end_date=end, interval="1d")
-                    chosen_series = _series_from_rows(rows)
-                except Exception:
-                    chosen_series = pd.Series(dtype="float64")
-                if len(chosen_series) >= 30:
-                    break
-            if len(chosen_series) < 30:
-                raise YahooClientError(f"Insufficient data returned for {proxy.ticker}")
+        if close_frame is not None and proxy.ticker in close_frame.columns:
+            chosen_series = close_frame[proxy.ticker].dropna().astype("float64")
+
+        if len(chosen_series) >= 30:
             resolved[proxy.code] = chosen_series
             availability.append({
                 "code": proxy.code,
@@ -554,23 +611,28 @@ def fetch_real_estate_proxy_data(days: int) -> Tuple[Dict[str, pd.Series], List[
                 "ticker": proxy.ticker,
                 "points": int(len(chosen_series)),
             })
-        except Exception:
-            missing.append({
-                "code": proxy.code,
-                "name": proxy.name,
-                "group": proxy.group,
-                "attempted_tickers": [proxy.ticker],
-            })
-            availability.append({
-                "code": proxy.code,
-                "name": proxy.name,
-                "group": proxy.group,
-                "status": "missing",
-                "ticker": None,
-                "points": 0,
-            })
+            continue
+
+        missing.append({
+            "code": proxy.code,
+            "name": proxy.name,
+            "group": proxy.group,
+            "attempted_tickers": [proxy.ticker],
+        })
+        availability.append({
+            "code": proxy.code,
+            "name": proxy.name,
+            "group": proxy.group,
+            "status": "missing",
+            "ticker": None,
+            "points": 0,
+        })
 
     return resolved, availability, missing
+
+
+def fetch_real_estate_proxy_data(days: int) -> Tuple[Dict[str, pd.Series], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    return _fetch_proxy_batch(REAL_ESTATE_PROXIES, days)
 
 
 def fetch_fred_context(days: int) -> Tuple[Dict[str, pd.Series], List[str]]:
@@ -619,60 +681,7 @@ def fetch_commercial_proxy_data(
     days: int,
 ) -> Tuple[Dict[str, pd.Series], List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Fetch the listed CRE property-type universe without changing the broad page score."""
-    start = (datetime.utcnow() - timedelta(days=days + 260)).strftime("%Y-%m-%d")
-    end = (datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d")
-    resolved: Dict[str, pd.Series] = {}
-    availability: List[Dict[str, Any]] = []
-    missing: List[Dict[str, Any]] = []
-
-    # yfinance maintains shared cookie/crumb state, so this universe is fetched
-    # sequentially. Parallel single-ticker calls can occasionally cross results
-    # and silently attach one REIT's history to another ticker.
-    client = YahooClient()
-    for proxy in COMMERCIAL_REAL_ESTATE_PROXIES:
-        chosen_series = pd.Series(dtype="float64")
-        for _attempt in range(3):
-            try:
-                rows = client.fetch_series(
-                    ticker=proxy.ticker,
-                    start_date=start,
-                    end_date=end,
-                    interval="1d",
-                )
-                chosen_series = _series_from_rows(rows)
-            except Exception:
-                chosen_series = pd.Series(dtype="float64")
-            if len(chosen_series) >= 30:
-                break
-
-        if len(chosen_series) >= 30:
-            resolved[proxy.code] = chosen_series
-            availability.append({
-                "code": proxy.code,
-                "name": proxy.name,
-                "group": proxy.group,
-                "status": "ok",
-                "ticker": proxy.ticker,
-                "points": int(len(chosen_series)),
-            })
-            continue
-
-        missing.append({
-            "code": proxy.code,
-            "name": proxy.name,
-            "group": proxy.group,
-            "attempted_tickers": [proxy.ticker],
-        })
-        availability.append({
-            "code": proxy.code,
-            "name": proxy.name,
-            "group": proxy.group,
-            "status": "missing",
-            "ticker": None,
-            "points": 0,
-        })
-
-    return resolved, availability, missing
+    return _fetch_proxy_batch(COMMERCIAL_REAL_ESTATE_PROXIES, days)
 
 
 def fetch_commercial_fred_context(days: int) -> Tuple[Dict[str, pd.Series], List[str]]:
@@ -726,7 +735,7 @@ def _build_context_payload(fred_series: Dict[str, pd.Series]) -> Dict[str, Any]:
     }
 
 
-def get_real_estate_context_payload(days: int = 1095) -> Dict[str, Any]:
+def _build_real_estate_context_payload(days: int = 1095) -> Dict[str, Any]:
     now = datetime.utcnow()
     with _CONTEXT_CACHE_LOCK:
         cached = _CONTEXT_CACHE.get(days)
@@ -746,8 +755,86 @@ def get_real_estate_context_payload(days: int = 1095) -> Dict[str, Any]:
             **_build_context_payload(fred_series),
         }
         with _CONTEXT_CACHE_LOCK:
-            _CONTEXT_CACHE[days] = {"timestamp": now, "data": payload}
+            _set_bounded_memory_cache(
+                _CONTEXT_CACHE,
+                days,
+                now,
+                payload,
+            )
         return payload
+
+
+def _resolve_real_estate_context_payload(
+    days: int,
+    shared_snapshot,
+) -> Dict[str, Any]:
+    cache_key = f"real-estate:context:{days}"
+    try:
+        payload = _build_real_estate_context_payload(days=days)
+    except Exception:
+        if shared_snapshot is None:
+            raise
+        return mark_stale_snapshot(
+            shared_snapshot.payload,
+            shared_snapshot,
+            reason="real_estate_context_refresh_failed",
+            ttl_seconds=_CACHE_TTL_SECONDS,
+            max_stale_age_seconds=_MAX_STALE_AGE_SECONDS,
+        )
+
+    context_keys = [
+        key
+        for key in payload.keys()
+        if key not in {"as_of", "data_quality", "warnings"}
+    ]
+    coverage = sum(bool(payload.get(key)) for key in context_keys)
+    prior_coverage = (
+        sum(
+            bool(shared_snapshot.payload.get(key))
+            for key in context_keys
+        )
+        if shared_snapshot is not None
+        and isinstance(shared_snapshot.payload, dict)
+        else 0
+    )
+    payload["data_quality"] = {
+        "status": (
+            "complete"
+            if coverage == len(context_keys)
+            else "partial"
+            if coverage
+            else "unavailable"
+        ),
+        "stale": False,
+        "coverage_live": coverage,
+        "coverage_total": len(context_keys),
+        "cache_ttl_seconds": _CACHE_TTL_SECONDS,
+        "max_stale_age_seconds": _MAX_STALE_AGE_SECONDS,
+    }
+    if shared_snapshot is not None and coverage < prior_coverage:
+        return mark_stale_snapshot(
+            shared_snapshot.payload,
+            shared_snapshot,
+            reason="real_estate_context_refresh_incomplete",
+            ttl_seconds=_CACHE_TTL_SECONDS,
+            max_stale_age_seconds=_MAX_STALE_AGE_SECONDS,
+        )
+    if coverage:
+        store_response_snapshot(cache_key, payload)
+    return payload
+
+
+def get_real_estate_context_payload(days: int = 1095) -> Dict[str, Any]:
+    cache_key = f"real-estate:context:{days}"
+    shared_snapshot = _load_usable_shared_snapshot(cache_key)
+    if shared_snapshot and shared_snapshot.is_fresh(_CACHE_TTL_SECONDS):
+        return shared_snapshot.payload
+
+    with response_refresh_lock(cache_key):
+        shared_snapshot = _load_usable_shared_snapshot(cache_key)
+        if shared_snapshot and shared_snapshot.is_fresh(_CACHE_TTL_SECONDS):
+            return shared_snapshot.payload
+        return _resolve_real_estate_context_payload(days, shared_snapshot)
 
 
 def _build_symbol_data_for_proxies(
@@ -1151,7 +1238,7 @@ def _summary(
     return " ".join(parts)
 
 
-def calculate_real_estate_index(days: int = 365) -> Dict[str, Any]:
+def _build_real_estate_index(days: int = 365) -> Dict[str, Any]:
     now = datetime.utcnow()
     with _CACHE_LOCK:
         cached = _CACHE.get(days)
@@ -1236,9 +1323,92 @@ def calculate_real_estate_index(days: int = 365) -> Dict[str, Any]:
         }
 
         with _CACHE_LOCK:
-            _CACHE[days] = {"timestamp": now, "data": data}
+            _set_bounded_memory_cache(_CACHE, days, now, data)
 
         return data
+
+
+def _resolve_real_estate_index(
+    days: int,
+    shared_snapshot,
+) -> Dict[str, Any]:
+    cache_key = f"real-estate:overview:{days}"
+    try:
+        payload = _build_real_estate_index(days=days)
+    except Exception:
+        if shared_snapshot is None:
+            raise
+        return mark_stale_snapshot(
+            shared_snapshot.payload,
+            shared_snapshot,
+            reason="real_estate_overview_refresh_failed",
+            ttl_seconds=_CACHE_TTL_SECONDS,
+            max_stale_age_seconds=_MAX_STALE_AGE_SECONDS,
+        )
+
+    availability = payload.get("availability") or {}
+    coverage = int(availability.get("available_count") or 0)
+    coverage_total = int(availability.get("total_configured") or 0)
+    missing_macro_count = len(availability.get("missing_macro_series") or [])
+    payload["data_quality"] = {
+        "status": (
+            "complete"
+            if coverage_total
+            and coverage == coverage_total
+            and missing_macro_count == 0
+            else "partial"
+            if coverage
+            else "unavailable"
+        ),
+        "stale": False,
+        "coverage_live": coverage,
+        "coverage_total": coverage_total,
+        "missing_macro_series": missing_macro_count,
+        "cache_ttl_seconds": _CACHE_TTL_SECONDS,
+        "max_stale_age_seconds": _MAX_STALE_AGE_SECONDS,
+    }
+
+    prior_availability = (
+        shared_snapshot.payload.get("availability") or {}
+        if shared_snapshot is not None
+        and isinstance(shared_snapshot.payload, dict)
+        else {}
+    )
+    prior_coverage = int(prior_availability.get("available_count") or 0)
+    prior_missing_macro = len(
+        prior_availability.get("missing_macro_series") or []
+    )
+    refresh_is_worse = (
+        coverage < prior_coverage
+        or (
+            coverage == prior_coverage
+            and missing_macro_count > prior_missing_macro
+        )
+    )
+    if shared_snapshot is not None and refresh_is_worse:
+        return mark_stale_snapshot(
+            shared_snapshot.payload,
+            shared_snapshot,
+            reason="real_estate_overview_refresh_incomplete",
+            ttl_seconds=_CACHE_TTL_SECONDS,
+            max_stale_age_seconds=_MAX_STALE_AGE_SECONDS,
+        )
+    if coverage:
+        store_response_snapshot(cache_key, payload)
+    return payload
+
+
+def calculate_real_estate_index(days: int = 365) -> Dict[str, Any]:
+    cache_key = f"real-estate:overview:{days}"
+    shared_snapshot = _load_usable_shared_snapshot(cache_key)
+    if shared_snapshot and shared_snapshot.is_fresh(_CACHE_TTL_SECONDS):
+        return shared_snapshot.payload
+
+    with response_refresh_lock(cache_key):
+        shared_snapshot = _load_usable_shared_snapshot(cache_key)
+        if shared_snapshot and shared_snapshot.is_fresh(_CACHE_TTL_SECONDS):
+            return shared_snapshot.payload
+        return _resolve_real_estate_index(days, shared_snapshot)
 
 
 def _build_commercial_group_history(
@@ -1519,7 +1689,7 @@ def _commercial_summary(
     return " ".join(parts)
 
 
-def calculate_commercial_real_estate(days: int = 365) -> Dict[str, Any]:
+def _build_commercial_real_estate(days: int = 365) -> Dict[str, Any]:
     now = datetime.utcnow()
     with _COMMERCIAL_CACHE_LOCK:
         cached = _COMMERCIAL_CACHE.get(days)
@@ -1660,5 +1830,93 @@ def calculate_commercial_real_estate(days: int = 365) -> Dict[str, Any]:
         }
 
         with _COMMERCIAL_CACHE_LOCK:
-            _COMMERCIAL_CACHE[days] = {"timestamp": now, "data": data}
+            _set_bounded_memory_cache(
+                _COMMERCIAL_CACHE,
+                days,
+                now,
+                data,
+            )
         return data
+
+
+def _resolve_commercial_real_estate(
+    days: int,
+    shared_snapshot,
+) -> Dict[str, Any]:
+    cache_key = f"real-estate:commercial:{days}"
+    try:
+        payload = _build_commercial_real_estate(days=days)
+    except Exception:
+        if shared_snapshot is None:
+            raise
+        return mark_stale_snapshot(
+            shared_snapshot.payload,
+            shared_snapshot,
+            reason="commercial_real_estate_refresh_failed",
+            ttl_seconds=_CACHE_TTL_SECONDS,
+            max_stale_age_seconds=_MAX_STALE_AGE_SECONDS,
+        )
+
+    availability = payload.get("availability") or {}
+    coverage = int(availability.get("available_count") or 0)
+    coverage_total = int(availability.get("total_configured") or 0)
+    missing_macro_count = len(availability.get("missing_macro_series") or [])
+    payload["data_quality"] = {
+        "status": (
+            "complete"
+            if coverage_total
+            and coverage == coverage_total
+            and missing_macro_count == 0
+            else "partial"
+            if coverage
+            else "unavailable"
+        ),
+        "stale": False,
+        "coverage_live": coverage,
+        "coverage_total": coverage_total,
+        "missing_macro_series": missing_macro_count,
+        "cache_ttl_seconds": _CACHE_TTL_SECONDS,
+        "max_stale_age_seconds": _MAX_STALE_AGE_SECONDS,
+    }
+
+    prior_availability = (
+        shared_snapshot.payload.get("availability") or {}
+        if shared_snapshot is not None
+        and isinstance(shared_snapshot.payload, dict)
+        else {}
+    )
+    prior_coverage = int(prior_availability.get("available_count") or 0)
+    prior_missing_macro = len(
+        prior_availability.get("missing_macro_series") or []
+    )
+    refresh_is_worse = (
+        coverage < prior_coverage
+        or (
+            coverage == prior_coverage
+            and missing_macro_count > prior_missing_macro
+        )
+    )
+    if shared_snapshot is not None and refresh_is_worse:
+        return mark_stale_snapshot(
+            shared_snapshot.payload,
+            shared_snapshot,
+            reason="commercial_real_estate_refresh_incomplete",
+            ttl_seconds=_CACHE_TTL_SECONDS,
+            max_stale_age_seconds=_MAX_STALE_AGE_SECONDS,
+        )
+    if coverage:
+        store_response_snapshot(cache_key, payload)
+    return payload
+
+
+def calculate_commercial_real_estate(days: int = 365) -> Dict[str, Any]:
+    cache_key = f"real-estate:commercial:{days}"
+    shared_snapshot = _load_usable_shared_snapshot(cache_key)
+    if shared_snapshot and shared_snapshot.is_fresh(_CACHE_TTL_SECONDS):
+        return shared_snapshot.payload
+
+    with response_refresh_lock(cache_key):
+        shared_snapshot = _load_usable_shared_snapshot(cache_key)
+        if shared_snapshot and shared_snapshot.is_fresh(_CACHE_TTL_SECONDS):
+            return shared_snapshot.payload
+        return _resolve_commercial_real_estate(days, shared_snapshot)

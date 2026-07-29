@@ -5,6 +5,7 @@ import logging
 import signal
 
 from app.services.scheduler import run_initial_etl, start_scheduler, stop_scheduler
+from app.utils.logging_config import configure_safe_dependency_logging
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ async def run_scheduler_worker() -> None:
 
 
 def main() -> None:
+    configure_safe_dependency_logging()
     asyncio.run(run_scheduler_worker())
 
 

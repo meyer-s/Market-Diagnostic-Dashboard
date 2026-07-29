@@ -244,14 +244,14 @@ function isSuspiciousProjectionSet(projectionSet?: Record<string, SectorProjecti
 function ScoreBar({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <div className="flex items-center gap-2 text-xs">
-      <span className="w-12 sm:w-14 text-gray-400">{label}</span>
-      <div className="flex-1 bg-gray-700 rounded h-2">
+      <span className="w-12 sm:w-14 text-stealth-400">{label}</span>
+      <div className="flex-1 bg-stealth-700 rounded h-2">
         <div
           className="h-2 rounded"
           style={{ width: `${value}%`, background: color }}
         ></div>
       </div>
-      <span className="w-8 text-right text-gray-300 tabular-nums">{Math.round(value)}</span>
+      <span className="w-8 text-right text-stealth-300 tabular-nums">{Math.round(value)}</span>
     </div>
   );
 }
@@ -280,12 +280,12 @@ function CompactScoreBar({
             style={{ width: `${Math.max(0, Math.min(100, value))}%`, backgroundColor: color }}
           />
         </div>
-        <span className="w-6 shrink-0 text-right text-[11px] tabular-nums text-stealth-200">
+        <span className="w-6 shrink-0 text-right text-xs tabular-nums text-stealth-200">
           {Math.round(value)}
         </span>
       </div>
       {metadata ? (
-        <div className="mt-1 truncate text-[8px] tabular-nums text-stealth-500" title={metadata}>
+        <div className="mt-1 truncate text-xs tabular-nums text-stealth-500" title={metadata}>
           {metadata}
         </div>
       ) : null}
@@ -303,11 +303,11 @@ export default function SectorProjections() {
     quality_status?: string;
     excluded_from_latest?: boolean;
   }
-  const { data, loading, error } = useApi<SectorProjectionsResponse>("/sectors/projections/latest");
+  const { data, loading, error, refetch: refetchProjections } = useApi<SectorProjectionsResponse>("/sectors/projections/latest");
   const {
     data: analyticsData,
-    loading: analyticsLoading,
     error: analyticsError,
+    refetch: refetchAnalytics,
   } = useApi<SectorProjectionAnalyticsResponse>("/sectors/projections/analytics?days=365&scanner_days=45");
   const [projections, setProjections] = useState<Record<string, SectorProjectionItem[]>>({});
   const [methodologyOpen, setMethodologyOpen] = useState(false);
@@ -315,8 +315,8 @@ export default function SectorProjections() {
   const [selectedHorizon, setSelectedHorizon] = useState<"T" | "3m" | "6m" | "12m">("12m");
   const [selectedSector, setSelectedSector] = useState<string | null>(null);
   const [selectedComparison, setSelectedComparison] = useState("cyclical_defensive");
-  const pageLoading = loading || analyticsLoading;
-  const pageError = error || analyticsError;
+  const pageLoading = loading && !data;
+  const pageError = !data ? error : null;
   const activeComparison = analyticsData?.leadership_comparisons.find((comparison) => comparison.key === selectedComparison)
     ?? analyticsData?.leadership_comparisons[0]
     ?? null;
@@ -518,13 +518,23 @@ export default function SectorProjections() {
     <div className="page-shell-narrow page-stack">
       <div className="flex flex-col">
         <span className="page-kicker">Rotation Monitor</span>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">Sector Rotation</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300 md:text-[15px]">Compare stabilized forward leadership scenarios built from trailing sector evidence, rank persistence, and bounded scanner confirmation.</p>
-        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-300">
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-4xl">Sector Rotation</h1>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-stealth-300 md:text-[15px]">Compare stabilized forward leadership scenarios built from trailing sector evidence, rank persistence, and bounded scanner confirmation.</p>
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-stealth-300">
           {data && <span className="page-badge">System {data.system_state}</span>}
           {data && <span className="page-badge">As of {data.as_of_date}</span>}
         </div>
       </div>
+
+      {analyticsError && data && (
+        <div className="rounded-xl border border-amber-500/40 bg-amber-950/25 p-4" role="status">
+          <h2 className="text-sm font-semibold text-amber-200">Partial sector update</h2>
+          <p className="mt-1 text-sm text-amber-100">Current projection rows are available, but leadership history and stabilization analytics are unavailable.</p>
+          <button type="button" onClick={refetchAnalytics} className="mt-3 inline-flex min-h-11 items-center rounded-lg border border-amber-600 px-4 text-sm font-semibold text-amber-100 hover:bg-amber-900/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300">
+            Retry sector analytics
+          </button>
+        </div>
+      )}
 
       {(data?.data_warnings?.length ?? 0) > 0 && (
         <div className="rounded-2xl border border-yellow-700/50 bg-yellow-900/20 p-3 sm:p-4">
@@ -553,11 +563,26 @@ export default function SectorProjections() {
           <MarketLoading size={110} variant="scan" label="Loading sector projections..." />
         </div>
       )}
-      {pageError && <div className="text-red-400">Error: {pageError}</div>}
+      {pageError && (
+        <div className="surface-card border-red-800/70 p-5" role="alert">
+          <h2 className="text-lg font-semibold text-red-200">Sector projections are unavailable</h2>
+          <p className="mt-2 text-sm text-red-300">{pageError}</p>
+          <button
+            type="button"
+            onClick={() => {
+              refetchProjections();
+              refetchAnalytics();
+            }}
+            className="mt-4 inline-flex min-h-11 items-center rounded-lg border border-red-700 bg-red-950/50 px-4 text-sm font-semibold text-red-100 hover:bg-red-900/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
+          >
+            Retry sector projections
+          </button>
+        </div>
+      )}
       
       {/* Sector leadership oscillator - historical trend */}
       {!pageLoading && !pageError && (
-        <div className="surface-card-strong p-4 sm:p-6">
+        <section id="sector-leadership" className="surface-card-strong scroll-mt-32 p-4 sm:p-6">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
               <h2 className="text-base font-semibold sm:text-lg">Sector Leadership Oscillator</h2>
@@ -566,14 +591,14 @@ export default function SectorProjections() {
               </p>
             </div>
             <div className="shrink-0">
-              <div className="mb-1 text-right text-[9px] uppercase tracking-wide text-stealth-500">Selected · {activeComparison?.title ?? "—"}</div>
+              <div className="mb-1 text-right text-xs uppercase tracking-wide text-stealth-400">Selected · {activeComparison?.title ?? "—"}</div>
               <div className="grid grid-cols-2 gap-2 text-xs tabular-nums">
                 <div className="rounded-lg border border-stealth-700 bg-stealth-950/40 px-3 py-2">
-                  <div className="text-[9px] uppercase tracking-wide text-stealth-500">Leading now</div>
+                  <div className="text-xs uppercase tracking-wide text-stealth-400">Leading now</div>
                   <div className="mt-0.5 font-semibold text-stealth-100">{oscillatorNowLabel}</div>
                 </div>
                 <div className="rounded-lg border border-stealth-700 bg-stealth-950/40 px-3 py-2">
-                  <div className="text-[9px] uppercase tracking-wide text-stealth-500">20-run shift</div>
+                  <div className="text-xs uppercase tracking-wide text-stealth-400">20-run shift</div>
                   <div className="mt-0.5 font-semibold text-stealth-200">
                     {oscillatorShiftLabel}
                   </div>
@@ -589,7 +614,7 @@ export default function SectorProjections() {
                 onClick={() => setSelectedComparison(comparison.key)}
                 aria-pressed={selectedComparison === comparison.key}
                 title={`${comparison.positive_label}: ${comparison.positive_symbols.join(", ")} · ${comparison.negative_label}: ${comparison.negative_symbols.join(", ")}`}
-                className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[10px] font-semibold transition ${selectedComparison === comparison.key ? "border-stealth-500 bg-stealth-900/70 text-stealth-100" : "border-stealth-700 bg-stealth-950/30 text-stealth-400 hover:border-stealth-600"}`}
+                className={`flex min-h-11 items-center gap-1.5 rounded-md border px-3 text-xs font-semibold transition ${selectedComparison === comparison.key ? "border-stealth-500 bg-stealth-900/70 text-stealth-100" : "border-stealth-700 bg-stealth-950/30 text-stealth-300 hover:border-stealth-600"}`}
               >
                 <span
                   className="h-0.5 w-4 shrink-0 rounded-full"
@@ -604,7 +629,12 @@ export default function SectorProjections() {
             <div className="surface-card-muted mt-4 p-2 sm:p-4">
               <div className="h-44 sm:h-56">
                 <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                  <AreaChart data={combinedOscillatorHistory} margin={{ ...CHART_MARGIN, right: 8 }}>
+                  <AreaChart
+                    accessibilityLayer
+                    aria-label={`${activeComparison?.title ?? "Selected sector comparison"} leadership oscillator history`}
+                    data={combinedOscillatorHistory}
+                    margin={{ ...CHART_MARGIN, right: 8 }}
+                  >
                     <CartesianGrid {...commonGridProps} />
                     <ReferenceArea y1={leadershipBand} y2={oscillatorDomain} fill={getFamilyColor("market")} fillOpacity={0.025} />
                     <ReferenceArea y1={-oscillatorDomain} y2={-leadershipBand} fill={getFamilyColor("volatility")} fillOpacity={0.025} />
@@ -616,7 +646,7 @@ export default function SectorProjections() {
                       type="number"
                       domain={[divergenceMinTime, divergenceMaxTime]}
                       ticks={divergenceTicks}
-                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
                       stroke={CHART_NEUTRAL.axis}
                       tickFormatter={(value: number) =>
                         new Date(value).toLocaleDateString(undefined, {
@@ -626,7 +656,7 @@ export default function SectorProjections() {
                       }
                     />
                     <YAxis
-                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 10 }}
+                      tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
                       stroke={CHART_NEUTRAL.axis}
                       axisLine={false}
                       tickLine={false}
@@ -678,7 +708,7 @@ export default function SectorProjections() {
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
-              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 px-1 text-[10px] text-stealth-500">
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-stealth-400">
                 <span>{activeComparison?.title} · {oscillatorRead}</span>
                 <span>{activeComparison?.sample_count ?? 0} observations per series · shaded zones mark clear leadership</span>
               </div>
@@ -688,13 +718,13 @@ export default function SectorProjections() {
               No history available yet.
             </div>
           )}
-        </div>
+        </section>
       )}
       
       
       {/* Multi-sector forward score scenarios. */}
       {!pageLoading && !pageError && Object.keys(projections).length > 0 && (
-        <div className="surface-card-strong p-4 sm:p-6">
+        <section id="sector-scenarios" className="surface-card-strong scroll-mt-32 p-4 sm:p-6">
           <h2 className="mb-2 text-base font-semibold sm:text-lg">Stabilized Sector Forward Scenarios</h2>
           <p className="mb-3 max-w-4xl text-xs leading-relaxed text-stealth-400">
             Projected leadership scores blend today's stabilized reading toward longer-run anchors, then apply bounded rank persistence and scanner confirmation. Select a sector to emphasize its path and scenario range.
@@ -707,7 +737,7 @@ export default function SectorProjections() {
 
           <div className="surface-card-muted mb-2 p-2 sm:p-4">
             <div className="w-full" style={{ aspectRatio: "2 / 1", maxHeight: "240px" }}>
-              <svg width="100%" height="100%" viewBox="0 0 1000 300" preserveAspectRatio="xMidYMid meet">
+              <svg width="100%" height="100%" viewBox="0 0 1000 300" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Projected sector scores now, in three months, six months, and twelve months. Select a sector below for exact values.">
                 <defs>
                   {chartData.map((sector, index) => (
                     <linearGradient key={sector.symbol} id={`sector-range-${index}`} x1="0%" y1="0%" x2="100%" y2="0%">
@@ -719,13 +749,13 @@ export default function SectorProjections() {
                 {[0, 25, 50, 75, 100].map((score) => (
                   <g key={score}>
                     <line x1="50" y1={260 - score * 2.4} x2="960" y2={260 - score * 2.4} stroke={CHART_NEUTRAL.grid} strokeWidth="1" strokeDasharray="4 4" />
-                    <text x="40" y={264 - score * 2.4} fill={CHART_NEUTRAL.tick} fontSize="10" textAnchor="end">{score}</text>
+                    <text x="40" y={264 - score * 2.4} fill={CHART_NEUTRAL.tick} fontSize="12" textAnchor="end">{score.toFixed(0)}</text>
                   </g>
                 ))}
-                <text x="150" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">NOW</text>
-                <text x="400" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">+3 MONTHS</text>
-                <text x="650" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">+6 MONTHS</text>
-                <text x="900" y="285" fill={CHART_NEUTRAL.tick} fontSize="11" textAnchor="middle" fontWeight="500">+12 MONTHS</text>
+                <text x="150" y="285" fill={CHART_NEUTRAL.tick} fontSize="12" textAnchor="middle" fontWeight="500">NOW</text>
+                <text x="400" y="285" fill={CHART_NEUTRAL.tick} fontSize="12" textAnchor="middle" fontWeight="500">+3 MONTHS</text>
+                <text x="650" y="285" fill={CHART_NEUTRAL.tick} fontSize="12" textAnchor="middle" fontWeight="500">+6 MONTHS</text>
+                <text x="900" y="285" fill={CHART_NEUTRAL.tick} fontSize="12" textAnchor="middle" fontWeight="500">+12 MONTHS</text>
 
                 {chartData.map((sector, index) => {
                   const color = getSectorColor(sector.symbol);
@@ -746,7 +776,7 @@ export default function SectorProjections() {
                   const rangePath = `${upperPath} L ${points[3].x} ${points[3].lower} Q 775 ${(points[2].lower + points[3].lower) / 2}, ${points[2].x} ${points[2].lower} Q 525 ${(points[1].lower + points[2].lower) / 2}, ${points[1].x} ${points[1].lower} Q 275 ${(points[0].lower + points[1].lower) / 2}, ${points[0].x} ${points[0].lower} Z`;
 
                   return (
-                    <g key={sector.symbol} onClick={() => setSelectedSector(sector.symbol)} style={{ cursor: "pointer" }}>
+                    <g key={sector.symbol}>
                       {isSelected ? <path d={rangePath} fill={`url(#sector-range-${index})`} /> : null}
                       <path d={centerPath} stroke={color} strokeWidth={isSelected ? 3.5 : 1.5} fill="none" opacity={opacity} strokeLinecap="round" strokeLinejoin="round" />
                       {points.map((point, pointIndex) => (
@@ -759,7 +789,7 @@ export default function SectorProjections() {
             </div>
           </div>
 
-          <div className="mb-4 mt-2 overflow-x-auto">
+          <div className="mb-4 mt-2 max-w-full overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400" role="region" aria-label="Sector selector. Scroll horizontally if needed." tabIndex={0}>
             <div className="flex min-w-min flex-wrap gap-1 pb-2 sm:gap-2">
               {chartData.map((sector) => {
                 const color = getSectorColor(sector.symbol);
@@ -770,7 +800,7 @@ export default function SectorProjections() {
                     type="button"
                     onClick={() => setSelectedSector(sector.symbol)}
                     aria-pressed={isSelected}
-                    className={`flex items-center gap-1 rounded-md border px-2 py-1.5 text-xs whitespace-nowrap transition ${isSelected ? "border-stealth-500 bg-stealth-800 font-semibold text-white" : "border-transparent text-stealth-400 hover:border-stealth-700 hover:bg-stealth-900/50"}`}
+                    className={`flex min-h-11 items-center gap-1 rounded-md border px-3 text-xs whitespace-nowrap transition ${isSelected ? "border-stealth-500 bg-stealth-800 font-semibold text-white" : "border-transparent text-stealth-300 hover:border-stealth-700 hover:bg-stealth-900/50"}`}
                   >
                     <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: color }} aria-hidden="true" />
                     {sector.symbol}
@@ -786,16 +816,21 @@ export default function SectorProjections() {
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1">
                   <div>
                     <div className="text-xs font-semibold text-stealth-200">{selectedSectorAnalytics.sector_symbol} · observed 3M-score history</div>
-                    <div className="text-[10px] text-stealth-500">Raw daily score versus the stabilized score used above</div>
+                    <div className="text-xs text-stealth-500">Raw daily score versus the stabilized score used above</div>
                   </div>
-                  <div className="text-[10px] text-stealth-500">{selectedSectorHistory.length} observations</div>
+                  <div className="text-xs text-stealth-500">{selectedSectorHistory.length} observations</div>
                 </div>
                 <div className="h-32">
                   <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                    <LineChart data={selectedSectorHistory} margin={{ top: 4, right: 8, bottom: 0, left: -18 }}>
+                    <LineChart
+                      accessibilityLayer
+                      aria-label={`${selectedSectorAnalytics.sector_symbol} raw and stabilized three-month score history`}
+                      data={selectedSectorHistory}
+                      margin={{ top: 4, right: 8, bottom: 0, left: -18 }}
+                    >
                       <CartesianGrid {...commonGridProps} />
                       <XAxis dataKey="timestampNum" type="number" domain={["dataMin", "dataMax"]} tick={false} axisLine={{ stroke: CHART_NEUTRAL.axis }} />
-                      <YAxis domain={[0, 100]} ticks={[0, 50, 100]} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 9 }} stroke={CHART_NEUTRAL.axis} />
+                      <YAxis domain={[0, 100]} ticks={[0, 50, 100]} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }} stroke={CHART_NEUTRAL.axis} />
                       <Tooltip contentStyle={commonTooltipStyle} labelFormatter={(label: number) => new Date(label).toLocaleDateString()} formatter={(value: number, name: string) => [value.toFixed(1), name === "stable_score" ? "Stable score" : "Raw score"]} />
                       <Line type="monotone" dataKey="raw_score" stroke={CHART_NEUTRAL.tick} strokeWidth={1} strokeOpacity={0.45} dot={false} isAnimationActive={false} />
                       <Line type="monotone" dataKey="stable_score" stroke={getSectorColor(selectedSectorAnalytics.sector_symbol)} strokeWidth={2.25} dot={false} isAnimationActive={false} />
@@ -803,7 +838,7 @@ export default function SectorProjections() {
                   </ResponsiveContainer>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-2 text-[10px] lg:grid-cols-1">
+              <div className="grid grid-cols-2 gap-2 text-xs lg:grid-cols-1">
                 <div className="rounded-lg border border-stealth-800 bg-stealth-950/30 p-2.5">
                   <div className="uppercase tracking-wide text-stealth-500">Rank persistence</div>
                   <div className="mt-1 font-semibold text-stealth-100">{selectedSectorAnalytics.persistence.direction}</div>
@@ -817,16 +852,16 @@ export default function SectorProjections() {
               </div>
             </div>
           ) : null}
-        </div>
+        </section>
       )}
 
       {/* Detailed Tables with Horizon Selector */}
       {(displayProjections[selectedHorizon === "T" ? "T" : selectedHorizon] || selectedHorizon === "T") && (
-        <div className="mb-8">
+        <section id="sector-rankings" className="scroll-mt-32 mb-8">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 mb-4">
             <div>
               <h2 className="text-base sm:text-lg font-semibold">Trailing Input Rankings</h2>
-              <p className="mt-1 text-[10px] text-stealth-500">These backward-looking windows are model evidence, not the forward scenario dates shown above. Leadership score is the smoothed composite plus scanner adjustment.</p>
+              <p className="mt-1 text-xs text-stealth-500">These backward-looking windows are model evidence, not the forward scenario dates shown above. Leadership score is the smoothed composite plus scanner adjustment.</p>
             </div>
             <div className="flex flex-wrap gap-1 sm:gap-2">
               {["T", "3m", "6m", "12m"].map((h) => {
@@ -834,13 +869,14 @@ export default function SectorProjections() {
                 return (
                   <button
                     key={h}
+                    type="button"
                     onClick={() => setSelectedHorizon(h as "T" | "3m" | "6m" | "12m")}
                     aria-pressed={selectedHorizon === h}
                     title={h === "T" ? "Current input reading" : `${h.toUpperCase()} trailing input window`}
-                    className={`px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition min-h-10 ${
+                    className={`min-h-11 rounded-lg px-4 py-2 text-xs font-medium transition sm:text-sm ${
                       selectedHorizon === h
                         ? "bg-blue-600 text-white"
-                        : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                        : "bg-stealth-700 text-stealth-300 hover:bg-stealth-600"
                     }`}
                   >
                     {h === "T" ? "Current" : `${h.toUpperCase()} input`}
@@ -860,9 +896,10 @@ export default function SectorProjections() {
             </div>
           )}
           
-          <div className="overflow-hidden rounded-lg bg-gray-800 shadow">
+          <div className="overflow-hidden rounded-lg bg-stealth-800 shadow">
             <div className="hidden md:block">
               <table className="w-full table-fixed text-xs">
+                <caption className="sr-only">Sector rankings and component scores for the selected horizon</caption>
                 <colgroup>
                   <col className="w-[5%]" />
                   <col className="w-[25%]" />
@@ -874,7 +911,7 @@ export default function SectorProjections() {
                   {showRegimeColumn ? <col className="w-[10%]" /> : null}
                 </colgroup>
                 <thead>
-                  <tr className="border-b border-stealth-700 bg-stealth-900/40 text-[10px] uppercase tracking-wide text-stealth-500">
+                  <tr className="border-b border-stealth-700 bg-stealth-900/40 text-xs uppercase tracking-wide text-stealth-500">
                     <th className="px-2 py-2 text-left">#</th>
                     <th className="px-2 py-2 text-left">Sector</th>
                     <th className="px-2 py-2 text-left">Leadership</th>
@@ -899,11 +936,12 @@ export default function SectorProjections() {
                         <button
                           type="button"
                           onClick={() => setSelectedSector(row.sector_symbol)}
-                          className="block w-full rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+                          aria-pressed={selectedSector === row.sector_symbol}
+                          className="block min-h-11 w-full rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
                           title={`Show evidence for ${row.sector_name} (${row.sector_symbol})`}
                         >
                           <div className="truncate font-medium text-stealth-100">{row.sector_name}</div>
-                          <div className="text-[9px] text-stealth-500">{row.sector_symbol}</div>
+                          <div className="text-xs text-stealth-500">{row.sector_symbol}</div>
                         </button>
                       </td>
                       <td className="px-2 py-1 align-middle">
@@ -921,7 +959,7 @@ export default function SectorProjections() {
                             ? "text-green-400"
                             : row.classification === "Loser"
                             ? "text-red-400"
-                            : "text-gray-400"
+                            : "text-stealth-400"
                         }>
                           {row.classification}
                         </span>
@@ -948,27 +986,29 @@ export default function SectorProjections() {
               {[...selectedRankingRows].sort((a, b) => a.rank - b.rank).map((row) => (
                 <div
                   key={row.sector_symbol}
-                  className={`rounded-lg border border-gray-700 overflow-hidden ${
+                  className={`rounded-lg border border-stealth-700 overflow-hidden ${
                     row.classification === "Winner"
                       ? "bg-green-900/20"
                       : row.classification === "Loser"
                       ? "bg-red-900/20"
-                      : "bg-gray-900/40"
+                      : "bg-stealth-900/40"
                   }`}
                 >
                   <button
+                    type="button"
                     onClick={() => {
                       setSelectedSector(row.sector_symbol);
                       setExpandedCard(expandedCard === row.sector_symbol ? null : row.sector_symbol);
                     }}
-                    className="w-full p-2 sm:p-3 flex items-start justify-between gap-2 sm:gap-3 hover:bg-black/20 transition-colors"
+                    className="flex min-h-11 w-full items-start justify-between gap-2 p-3 transition-colors hover:bg-stealth-950/50 sm:gap-3"
                     aria-expanded={expandedCard === row.sector_symbol}
+                    aria-controls={`sector-card-${row.sector_symbol}`}
                   >
                     <div className="text-left">
-                      <div className="text-xs sm:text-sm font-semibold text-gray-100">
+                      <div className="text-xs sm:text-sm font-semibold text-stealth-100">
                         #{row.rank} {row.sector_name}
                       </div>
-                      <div className="text-xs text-gray-500">{row.sector_symbol}</div>
+                      <div className="text-xs text-stealth-500">{row.sector_symbol}</div>
                     </div>
                     <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
                       <span className={
@@ -976,7 +1016,7 @@ export default function SectorProjections() {
                           ? "text-green-400 text-xs font-semibold"
                           : row.classification === "Loser"
                           ? "text-red-400 text-xs font-semibold"
-                          : "text-gray-400 text-xs font-semibold"
+                          : "text-stealth-400 text-xs font-semibold"
                       }>
                         {row.classification}
                       </span>
@@ -990,18 +1030,18 @@ export default function SectorProjections() {
                   <div className="px-3 pt-2 pb-3">
                     <ScoreBar label="Score" value={row.score_total} color={scoreBarColors.total} />
                     {row.raw_score !== undefined ? (
-                      <div className="mt-1 text-right text-[9px] text-stealth-500">
+                      <div className="mt-1 text-right text-xs text-stealth-500">
                         raw {row.raw_score.toFixed(0)} · scanner {row.scanner_overlay !== undefined && row.scanner_overlay >= 0 ? "+" : ""}{row.scanner_overlay?.toFixed(1) ?? "0.0"}
                       </div>
                     ) : null}
                   </div>
-                  <div className={`collapsible-panel ${expandedCard === row.sector_symbol ? 'collapsible-panel-open' : ''}`}>
+                  <div id={`sector-card-${row.sector_symbol}`} className={`collapsible-panel ${expandedCard === row.sector_symbol ? 'collapsible-panel-open' : ''}`}>
                     <div className="collapsible-panel-inner">
-                      <div className="border-t border-gray-700 bg-black/20 p-3 space-y-2">
+                      <div className="border-t border-stealth-700 bg-stealth-950/50 p-3 space-y-2">
                         <ScoreBar label="Trend" value={row.score_trend} color={scoreBarColors.trend} />
                         <ScoreBar label="Relative" value={row.score_rel} color={scoreBarColors.rel} />
                         <ScoreBar label="Stability" value={row.score_risk} color={scoreBarColors.risk} />
-                        <div className="pl-14 text-[9px] leading-relaxed text-stealth-500">
+                        <div className="pl-14 text-xs leading-relaxed text-stealth-500">
                           {formatMetricPercent(row.metrics?.vol)} annualized volatility · {formatMetricPercent(row.metrics?.drawdown)} max drawdown · higher stability is safer
                         </div>
                         {showRegimeColumn ? <ScoreBar label="Regime" value={row.score_regime} color={scoreBarColors.regime} /> : null}
@@ -1012,15 +1052,17 @@ export default function SectorProjections() {
               ))}
             </div>
           </div>
-        </div>
+        </section>
       )}
 
       {/* Methodology Explanation - Collapsible */}
-      <div className="mb-6 bg-gray-800 rounded-lg shadow">
+      <div id="sector-methodology" className="mb-6 scroll-mt-32 bg-stealth-800 rounded-lg shadow">
         <button
+          type="button"
           onClick={() => setMethodologyOpen(!methodologyOpen)}
-          className="w-full px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between hover:bg-gray-750 transition-colors rounded-lg"
+          className="w-full px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between hover:bg-stealth-750 transition-colors rounded-lg"
           aria-expanded={methodologyOpen}
+          aria-controls="sector-methodology-content"
         >
           <h2 className="text-base sm:text-lg font-semibold">Methodology & Algorithm Details</h2>
           <span className={`collapsible-icon ${methodologyOpen ? 'collapsible-icon-open' : ''}`} aria-hidden="true">
@@ -1029,53 +1071,53 @@ export default function SectorProjections() {
             </svg>
           </span>
         </button>
-        <div className={`collapsible-panel ${methodologyOpen ? 'collapsible-panel-open' : ''}`}>
+        <div id="sector-methodology-content" className={`collapsible-panel ${methodologyOpen ? 'collapsible-panel-open' : ''}`}>
           <div className="collapsible-panel-inner">
-            <div className="px-4 sm:px-6 pb-6 text-xs sm:text-sm text-gray-300 space-y-5">
+            <div className="px-4 sm:px-6 pb-6 text-xs sm:text-sm text-stealth-300 space-y-5">
             <div>
-              <h3 className="font-semibold text-gray-100 mb-3 text-sm sm:text-base">Transparent Rule-Based Scoring</h3>
-              <p className="text-gray-400 mb-2 text-xs sm:text-sm">
+              <h3 className="font-semibold text-stealth-100 mb-3 text-sm sm:text-base">Transparent Rule-Based Scoring</h3>
+              <p className="text-stealth-400 mb-2 text-xs sm:text-sm">
                 Ranks 11 sector ETFs (XLE, XLF, XLK, XLY, XLP, XLV, XLI, XLU, XLB, XLRE, XLC) using 8000 days of historical data. Each sector receives a composite score (0-100) from four weighted components.
               </p>
-              <p className="text-gray-400 text-xs sm:text-sm">
+              <p className="text-stealth-400 text-xs sm:text-sm">
                 Raw evidence is computed independently from trailing 3-month (63 trading days), 6-month (126), and 12-month (252) windows. The forward chart then converts those inputs into separate +3M, +6M, and +12M score scenarios.
               </p>
             </div>
             
-            <div className="border-t border-gray-700 pt-4">
-              <h3 className="font-semibold text-gray-100 mb-3 text-sm sm:text-base">Component Calculations</h3>
+            <div className="border-t border-stealth-700 pt-4">
+              <h3 className="font-semibold text-stealth-100 mb-3 text-sm sm:text-base">Component Calculations</h3>
               
               <div className="space-y-4">
-                <div className="bg-gray-900 rounded p-3 sm:p-4">
+                <div className="bg-stealth-900 rounded p-3 sm:p-4">
                   <h4 className="font-semibold text-yellow-400 mb-2 text-xs sm:text-sm">1. Trend Score (45% weight)</h4>
-                  <p className="text-xs text-gray-400 mb-2">
+                  <p className="text-xs text-stealth-400 mb-2">
                     Measures price momentum and technical positioning relative to moving averages.
                   </p>
-                  <div className="text-xs text-gray-400 space-y-1 ml-3">
+                  <div className="text-xs text-stealth-400 space-y-1 ml-3">
                     <p><strong>Return:</strong> Total return over the horizon period: (Price_end / Price_start) - 1</p>
                     <p><strong>SMA Distance:</strong> Distance from 200-day simple moving average: (Price_current / SMA_200) - 1</p>
                     <p><strong>Composite:</strong> Return + (0.5 x SMA Distance), scored from peer rank plus robust distance from the peer median on a 0-100 scale</p>
                   </div>
                 </div>
                 
-                <div className="bg-gray-900 rounded p-3 sm:p-4">
+                <div className="bg-stealth-900 rounded p-3 sm:p-4">
                   <h4 className="font-semibold text-lime-400 mb-2 text-xs sm:text-sm">2. Relative Strength Score (30% weight)</h4>
-                  <p className="text-xs text-gray-400 mb-2">
+                  <p className="text-xs text-stealth-400 mb-2">
                     Quantifies outperformance versus the broad market (SPY) over the same period.
                   </p>
-                  <div className="text-xs text-gray-400 space-y-1 ml-3">
+                  <div className="text-xs text-stealth-400 space-y-1 ml-3">
                     <p><strong>Calculation:</strong> Sector Return - SPY Return (both measured over the horizon)</p>
                     <p><strong>Normalization:</strong> Blends cross-sector rank with robust outperformance magnitude on a 0-100 scale</p>
                     <p>Higher scores indicate sectors beating the market; lower scores indicate underperformance</p>
                   </div>
                 </div>
                 
-                <div className="bg-gray-900 rounded p-3 sm:p-4">
+                <div className="bg-stealth-900 rounded p-3 sm:p-4">
                   <h4 className="font-semibold text-red-400 mb-2 text-xs sm:text-sm">3. Stability Score (20% weight; risk inverted)</h4>
-                  <p className="text-xs text-gray-400 mb-2">
+                  <p className="text-xs text-stealth-400 mb-2">
                     Evaluates price stability and downside protection. Lower risk = higher score (inverse ranking).
                   </p>
-                  <div className="text-xs text-gray-400 space-y-1 ml-3">
+                  <div className="text-xs text-stealth-400 space-y-1 ml-3">
                     <p><strong>Realized Volatility:</strong> 20-day rolling standard deviation of daily returns, annualized (x sqrt252)</p>
                     <p><strong>Max Drawdown:</strong> Largest peak-to-trough decline over the full horizon period</p>
                     <p><strong>Composite:</strong> Volatility + (0.5 x |Drawdown|), with peer rank and robust magnitude both inverted so lower risk scores higher</p>
@@ -1083,12 +1125,12 @@ export default function SectorProjections() {
                   </div>
                 </div>
                 
-                <div className="bg-gray-900 rounded p-3 sm:p-4">
+                <div className="bg-stealth-900 rounded p-3 sm:p-4">
                   <h4 className="font-semibold text-indigo-400 mb-2 text-xs sm:text-sm">4. Regime Adjustment (5% weight)</h4>
-                  <p className="text-xs text-gray-400 mb-2">
+                  <p className="text-xs text-stealth-400 mb-2">
                     Context-aware modifier based on the current system state (RED/YELLOW/GREEN market environment).
                   </p>
-                  <div className="text-xs text-gray-400 space-y-1 ml-3">
+                  <div className="text-xs text-stealth-400 space-y-1 ml-3">
                     <p><strong>Base Score:</strong> 50 (neutral)</p>
                     <p><strong>RED Market Adjustments:</strong></p>
                     <ul className="ml-4 list-disc">
@@ -1101,10 +1143,10 @@ export default function SectorProjections() {
               </div>
             </div>
             
-            <div className="border-t border-gray-700 pt-4">
-              <h3 className="font-semibold text-gray-100 mb-3 text-sm sm:text-base">Final Score & Ranking</h3>
-              <div className="text-xs sm:text-sm text-gray-400 space-y-2">
-                <p className="font-mono bg-gray-950 p-2 rounded text-xs">
+            <div className="border-t border-stealth-700 pt-4">
+              <h3 className="font-semibold text-stealth-100 mb-3 text-sm sm:text-base">Final Score & Ranking</h3>
+              <div className="text-xs sm:text-sm text-stealth-400 space-y-2">
+                <p className="font-mono bg-stealth-950 p-2 rounded text-xs">
                   Composite Score = (0.45 x Trend) + (0.30 x Rel_Strength) + (0.20 x Stability) + (0.05 x Regime)
                 </p>
                 <p className="text-xs sm:text-sm">
@@ -1116,12 +1158,12 @@ export default function SectorProjections() {
               </div>
             </div>
             
-            <div className="border-t border-gray-700 pt-4">
-              <h3 className="font-semibold text-gray-100 mb-3 text-sm sm:text-base">Scanner Confirmation &amp; Scenario Ranges</h3>
-              <p className="text-xs sm:text-sm text-gray-400 mb-3">
+            <div className="border-t border-stealth-700 pt-4">
+              <h3 className="font-semibold text-stealth-100 mb-3 text-sm sm:text-base">Scanner Confirmation &amp; Scenario Ranges</h3>
+              <p className="text-xs sm:text-sm text-stealth-400 mb-3">
                 Forward score scenarios blend the current stabilized reading toward the matching longer-run input anchor. Recent rank persistence and scanner evidence can tilt that path without becoming the primary model.
               </p>
-              <div className="text-xs sm:text-sm text-gray-400 space-y-2">
+              <div className="text-xs sm:text-sm text-stealth-400 space-y-2">
                 <p><strong>Scanner input:</strong> Direction comes from selected calls versus puts. Duplicate symbol/day/side events are collapsed, then recency, unique-name breadth, distinct days, and opportunity rank determine reliability.</p>
                 <p><strong>Projected center:</strong> The current stabilized score receives the most weight at +3M; longer scenarios blend progressively toward the sector's 6M and 12M structural anchors.</p>
                 <p><strong>Bounded influence:</strong> Recent rank persistence contributes at most 3, 5, and 7 points across +3M, +6M, and +12M. Scanner influence remains capped at four points and decays by half at +6M and to one quarter at +12M.</p>
@@ -1131,39 +1173,39 @@ export default function SectorProjections() {
               </div>
             </div>
 
-            <div className="border-t border-gray-700 pt-4">
-              <h3 className="font-semibold text-gray-100 mb-3 text-sm sm:text-base">Leadership Oscillators</h3>
-              <div className="text-xs sm:text-sm text-gray-400 space-y-2">
+            <div className="border-t border-stealth-700 pt-4">
+              <h3 className="font-semibold text-stealth-100 mb-3 text-sm sm:text-base">Leadership Oscillators</h3>
+              <div className="text-xs sm:text-sm text-stealth-400 space-y-2">
                 <p>Each oscillator starts with the average daily 3M score of the first basket minus the second basket. A 25% EWMA reduces one-run reversals.</p>
                 <p>The smoothed spread remains in native sector score points because every basket already uses the same 0-100 scoring scale. This preserves magnitude without rolling-volatility rescaling or artificial plateaus. Cyclical/defensive, broad offense/shelter, growth/reflation, and discretionary/staples expose different rotation regimes; the broad split uses all 11 sectors.</p>
               </div>
             </div>
             
-            <div className="border-t border-gray-700 pt-3">
-              <h4 className="font-semibold text-gray-100 mb-2 text-xs sm:text-sm">Classification Thresholds</h4>
+            <div className="border-t border-stealth-700 pt-3">
+              <h4 className="font-semibold text-stealth-100 mb-2 text-xs sm:text-sm">Classification Thresholds</h4>
               <div className="grid grid-cols-3 gap-2 sm:gap-4 text-xs">
-                <div className="bg-gray-950 p-2 sm:p-3 rounded">
+                <div className="bg-stealth-950 p-2 sm:p-3 rounded">
                   <span className="text-green-400 font-semibold text-xs">Winner</span>
-                  <p className="text-gray-400 mt-1 text-xs">Ranks 1-3</p>
+                  <p className="text-stealth-400 mt-1 text-xs">Ranks 1-3</p>
                 </div>
-                <div className="bg-gray-950 p-2 sm:p-3 rounded">
-                  <span className="text-gray-400 font-semibold text-xs">Neutral</span>
-                  <p className="text-gray-400 mt-1 text-xs">Ranks 4-8</p>
+                <div className="bg-stealth-950 p-2 sm:p-3 rounded">
+                  <span className="text-stealth-400 font-semibold text-xs">Neutral</span>
+                  <p className="text-stealth-400 mt-1 text-xs">Ranks 4-8</p>
                 </div>
-                <div className="bg-gray-950 p-2 sm:p-3 rounded">
+                <div className="bg-stealth-950 p-2 sm:p-3 rounded">
                   <span className="text-red-400 font-semibold text-xs">Loser</span>
-                  <p className="text-gray-400 mt-1 text-xs">Ranks 9-11</p>
+                  <p className="text-stealth-400 mt-1 text-xs">Ranks 9-11</p>
                 </div>
               </div>
             </div>
             
-            <div className="border-t border-gray-700 pt-3">
-              <h4 className="font-semibold text-gray-100 mb-2 text-xs sm:text-sm">Data Sources & Frequency</h4>
-              <div className="text-xs sm:text-sm text-gray-400 space-y-1">
+            <div className="border-t border-stealth-700 pt-3">
+              <h4 className="font-semibold text-stealth-100 mb-2 text-xs sm:text-sm">Data Sources & Frequency</h4>
+              <div className="text-xs sm:text-sm text-stealth-400 space-y-1">
                 <p><strong>Price Data:</strong> Yahoo Finance API (adjusted close prices)</p>
                 <p><strong>Lookback:</strong> 8000 trading days for 12-month calculation reliability</p>
                 <p><strong>Updates:</strong> Every 4 hours during market hours (Monday-Friday, 8am-8pm ET)</p>
-                <p><strong>System State:</strong> Market Stability Dashboard composite indicator model</p>
+                <p><strong>System State:</strong> Market Diagnostic Dashboard composite indicator model</p>
               </div>
             </div>
             </div>
