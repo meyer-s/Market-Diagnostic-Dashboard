@@ -25,6 +25,7 @@ def get_real_estate_overview(days: int = Query(365, ge=90, le=1095)):
         "metrics": data["metrics"],
         "availability": data["availability"],
         "warnings": data["warnings"],
+        "data_quality": data.get("data_quality"),
     }
 
 
@@ -36,6 +37,7 @@ def get_real_estate_history(days: int = Query(365, ge=90, le=1095)):
         "composite_history": data["composite_history"],
         "stability_history": data["stability_history"],
         "factor_history": data["factor_history"],
+        "data_quality": data.get("data_quality"),
     }
 
 
@@ -44,6 +46,7 @@ def get_real_estate_transmission(days: int = Query(365, ge=90, le=1095)):
     data = calculate_real_estate_index(days=days)
     return {
         "as_of": data["as_of"],
+        "data_quality": data.get("data_quality"),
         **data["transmission"],
     }
 

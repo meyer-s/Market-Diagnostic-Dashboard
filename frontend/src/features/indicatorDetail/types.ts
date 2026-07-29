@@ -1,3 +1,5 @@
+import type { DataQualityMetadata } from "../../utils/dataQuality";
+
 export interface MuniSeriesPoint {
   date: string;
   value: number | null;
@@ -63,6 +65,7 @@ export interface YieldCurveResponse {
 
 export interface MuniSubsystemResponse {
   as_of?: string;
+  data_quality?: DataQualityMetadata;
   series: MuniSeries[];
   composite?: {
     score: number | null;

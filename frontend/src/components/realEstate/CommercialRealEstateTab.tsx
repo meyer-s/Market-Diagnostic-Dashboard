@@ -29,6 +29,11 @@ import {
   rebaseSeriesToWindow,
   type RealEstateHorizon,
 } from "../../utils/realEstateHorizon";
+import {
+  dataQualityEvidenceState,
+  describeDataQuality,
+  type DataQualityMetadata,
+} from "../../utils/dataQuality";
 
 type DataPoint = { date: string; value: number };
 
@@ -115,6 +120,7 @@ type CommercialSectorContext = {
 
 type CommercialPayload = {
   as_of: string;
+  data_quality?: DataQualityMetadata;
   regime_label: string;
   pressure_score: number;
   stability_score: number;
@@ -728,6 +734,11 @@ export default function CommercialRealEstateTab({ days }: { days: number }) {
   }
 
   const data = api.data;
+  const qualityState = dataQualityEvidenceState(data.data_quality);
+  const provenanceMessage = describeDataQuality(
+    "commercial real-estate",
+    data.data_quality,
+  );
   const metrics = data.metrics;
   const orderedGroups = [...data.groups].sort((left, right) => right.score - left.score);
   const loanBalance = metrics.cre_loan_balance_bil;
@@ -738,6 +749,30 @@ export default function CommercialRealEstateTab({ days }: { days: number }) {
 
   return (
     <div className="space-y-5 md:space-y-6">
+      {(qualityState === "stale" || qualityState === "partial") && (
+        <div
+          className="rounded-xl border border-amber-500/40 bg-amber-950/25 p-4"
+          role="status"
+          data-evidence-panel="commercial-real-estate"
+          data-evidence-state={qualityState}
+        >
+          <h2 className="text-sm font-semibold text-amber-200">
+            {qualityState === "stale"
+              ? "Commercial real-estate evidence is not current"
+              : "Partial commercial real-estate update"}
+          </h2>
+          <p className="mt-1 text-sm leading-6 text-amber-100">
+            {provenanceMessage}
+          </p>
+          <button
+            type="button"
+            onClick={api.refetch}
+            className="mt-3 inline-flex min-h-11 items-center rounded-lg border border-amber-600 px-4 text-sm font-semibold text-amber-100 hover:bg-amber-900/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+          >
+            Refresh commercial evidence
+          </button>
+        </div>
+      )}
       <div className="surface-card-strong p-4 md:p-5">
         <div className="grid gap-5 xl:grid-cols-[1.05fr_1fr]">
           <div>

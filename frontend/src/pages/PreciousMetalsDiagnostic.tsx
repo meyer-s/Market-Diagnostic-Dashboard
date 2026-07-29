@@ -6,7 +6,6 @@ import { CHART_NEUTRAL } from "../utils/chartUtils";
 import { getFamilyColor, getMetricColor } from "../theme/metricColors";
 import { apiFetch } from "../utils/apiUtils";
 import { OptionsStructureMap } from "../components/widgets/OptionsStructureMap";
-import SectionNav from "../components/ui/SectionNav";
 
 interface RegimeStatus {
   gold_bias: "MONETARY_HEDGE" | "NEUTRAL" | "FINANCIAL_ASSET" | null;
@@ -607,31 +606,6 @@ export default function PreciousMetalsDiagnostic({ embedded = false }: { embedde
           </div>
         </section>
       )}
-
-      {!embedded ? (
-        <SectionNav
-          id="metals-page-sections"
-          label="Metals sections"
-          items={
-            selectedTab === "overview"
-              ? [
-                  { id: "metals-now", label: "Now" },
-                  { id: "metals-views", label: "Views" },
-                  { id: "metals-price-history", label: "Price history" },
-                  { id: "metals-projections", label: "Projections" },
-                ]
-              : [
-                  { id: "metals-now", label: "Now" },
-                  { id: "metals-views", label: "Views" },
-                  { id: "metals-drivers", label: "Drivers" },
-                  { id: "metals-market-structure", label: "Market structure" },
-                  { id: "metals-supply-demand", label: "Supply & demand" },
-                  { id: "metals-evidence", label: "Evidence" },
-                  { id: "metals-definition", label: "Definition" },
-                ]
-          }
-        />
-      ) : null}
 
       {/* SECTION 1: REGIME CLASSIFICATION PANEL (PINNED TOP) */}
       <section id="metals-now" className="section-anchor surface-card-strong p-4 md:p-5" aria-labelledby="metals-now-heading">

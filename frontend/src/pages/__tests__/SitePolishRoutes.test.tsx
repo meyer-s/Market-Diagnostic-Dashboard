@@ -180,7 +180,7 @@ describe("site-polish route contracts", () => {
 
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     expect(screen.getByRole("button", { name: "90d" }).getAttribute("aria-pressed")).toBe("true");
-    expect(await screen.findByText("3 of 3 exchanges usable")).not.toBeNull();
+    expect(await screen.findByText("3 of 3 exchanges representative")).not.toBeNull();
     expect(screen.getAllByText(/Latest history point:/)).toHaveLength(3);
     expect(
       screen.getByRole("region", { name: "AMEX recent breadth data table" }),
@@ -210,9 +210,70 @@ describe("site-polish route contracts", () => {
     render(<VolumeBreadthTools />);
 
     expect(await screen.findByRole("heading", { name: "No usable exchange snapshots" })).not.toBeNull();
-    expect(screen.getByText("0 of 3 exchanges usable")).not.toBeNull();
+    expect(screen.getByText("0 of 3 exchanges representative")).not.toBeNull();
     expect(screen.getAllByText(/did not return enough fields/)).toHaveLength(3);
-    expect(screen.queryByText("3 of 3 exchanges usable")).toBeNull();
+    expect(screen.queryByText("3 of 3 exchanges representative")).toBeNull();
+  });
+
+  it("labels sparse breadth-symbol aggregates as partial without hiding their directional data", async () => {
+    const sparseAggregate = {
+      ...breadthBucket,
+      source: "breadth-symbols",
+      advancing: 25,
+      declining: 20,
+      participation_pct: 1.5,
+      universe_size: 3_003,
+    };
+    apiFetchMock.mockResolvedValue({
+      as_of: new Date().toISOString(),
+      exchanges: {
+        amex: { ...sparseAggregate, label: "AMEX" },
+        nyse: { ...sparseAggregate, label: "NYSE" },
+        nsdq: { ...sparseAggregate, label: "Nasdaq" },
+      },
+    });
+
+    render(<VolumeBreadthTools />);
+
+    expect(await screen.findByText("0 of 3 exchanges representative")).not.toBeNull();
+    expect(screen.getByText("3 partial snapshots")).not.toBeNull();
+    expect(screen.getAllByText(/Partial aggregate:/)).toHaveLength(3);
+    expect(
+      screen.getByText(/counts are not being described as full-universe coverage/),
+    ).not.toBeNull();
+    expect(screen.getAllByText(/Latest history point:/)).toHaveLength(3);
+  });
+
+  it("surfaces backend stale-snapshot provenance for breadth data", async () => {
+    apiFetchMock.mockResolvedValue({
+      as_of: new Date().toISOString(),
+      data_quality: {
+        status: "stale",
+        stale: true,
+        reason: "breadth_refresh_incomplete",
+        snapshot_cached_at: "2026-07-28T15:00:00Z",
+        snapshot_age_seconds: 20_000,
+        representative_exchange_coverage: 3,
+      },
+      exchanges: {
+        amex: { ...breadthBucket, label: "AMEX" },
+        nyse: { ...breadthBucket, label: "NYSE" },
+        nsdq: { ...breadthBucket, label: "Nasdaq" },
+      },
+    });
+
+    const { container } = render(<VolumeBreadthTools />);
+
+    expect(await screen.findByText("Stale snapshot")).not.toBeNull();
+    expect(
+      screen.getByText(/Showing last-known-good exchange breadth/),
+    ).not.toBeNull();
+    expect(screen.getByText(/5.6 hours old/)).not.toBeNull();
+    expect(
+      container.querySelector('[data-evidence-panel="exchange-breadth"]')?.getAttribute(
+        "data-evidence-state",
+      ),
+    ).toBe("stale");
   });
 
   it("keeps a recap article first and distinguishes legacy from explicit decorative images", async () => {

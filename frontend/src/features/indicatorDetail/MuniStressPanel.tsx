@@ -8,6 +8,10 @@ import {
   muniPublicSectorWeights,
 } from "../../theme/metricRegistry";
 import { processComponentData } from "../../utils/chartDataUtils";
+import {
+  describeDataQuality,
+  mergeDataQualityEvidenceState,
+} from "../../utils/dataQuality";
 import type { EvidenceState } from "../../utils/evidenceState";
 import type { MuniSubsystemResponse } from "./types";
 
@@ -157,12 +161,20 @@ export default function MuniStressPanel({
   const hasCurveLevel = hasLineData(chartData, "curve_level");
   const hasCurveSlope = hasLineData(chartData, "curve_slope");
   const hasCurveScore = hasLineData(chartData, "curve_score");
-  const muniEvidenceState: EvidenceState =
+  const structuralEvidenceState: EvidenceState =
     missingSeries.length > 0 ||
     Boolean(data.composite?.missing_keys?.length) ||
     data.curve?.status === "unavailable"
       ? "partial"
       : "complete";
+  const muniEvidenceState = mergeDataQualityEvidenceState(
+    structuralEvidenceState,
+    data.data_quality,
+  );
+  const provenanceMessage = describeDataQuality(
+    "public-sector credit",
+    data.data_quality,
+  );
 
   return (
     <div
@@ -191,8 +203,17 @@ export default function MuniStressPanel({
               muniEvidenceState === "complete" ? "text-emerald-300" : "text-amber-300"
             }`}
           >
-            {muniEvidenceState === "complete" ? "Complete evidence" : "Partial evidence"}
+            {muniEvidenceState === "complete"
+              ? "Complete evidence"
+              : muniEvidenceState === "stale"
+                ? "Stale snapshot"
+                : "Partial evidence"}
           </p>
+          {provenanceMessage && (
+            <p className="mt-2 max-w-3xl text-xs leading-5 text-amber-200">
+              {provenanceMessage}
+            </p>
+          )}
         </div>
         <div className="text-xs text-stealth-500">
           {data.as_of && <div>As of {data.as_of}</div>}

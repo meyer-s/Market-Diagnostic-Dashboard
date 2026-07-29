@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from fastapi import APIRouter, HTTPException, Query
 from typing import List
@@ -21,9 +22,80 @@ from app.services.sector_divergence import (
     compute_breadth_counts,
 )
 from app.services.bond_market_stability import build_bond_market_stability_history
+from app.services.endpoint_response_cache import (
+    async_response_refresh_lock,
+    load_response_snapshot,
+    mark_stale_snapshot,
+    store_response_snapshot,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+_ANALYST_COMPONENT_CACHE_TTL_SECONDS = 4 * 60 * 60
+_ANALYST_COMPONENT_MAX_STALE_AGE_SECONDS = 7 * 24 * 60 * 60
+
+
+def _analyst_component_quality(payload: object) -> tuple[int, int]:
+    """Rank evidence status and optional component coverage.
+
+    Row count and snapshot age are intentionally excluded: a newly computed
+    partial response should advance the cache when its evidence quality is
+    equal, rather than freezing an older partial response until the hard stale
+    ceiling.
+    """
+
+    if not isinstance(payload, list) or not payload:
+        return (0, 0)
+    latest = payload[-1]
+    if not isinstance(latest, dict):
+        return (0, 0)
+    metadata = latest.get("data_quality")
+    status = metadata.get("status") if isinstance(metadata, dict) else None
+    if status == "stale":
+        status = None
+    if status not in {"complete", "partial", "unavailable"}:
+        vix = latest.get("vix")
+        source = vix.get("source") if isinstance(vix, dict) else None
+        status = "complete" if source == "yahoo_live" else "partial"
+    status_rank = {"unavailable": 0, "partial": 1, "complete": 2}[status]
+    component_coverage = sum(
+        isinstance(latest.get(component), dict)
+        for component in ("vix", "hy_oas", "move", "erp_proxy")
+    )
+    return (status_rank, component_coverage)
+
+
+def _stored_indicator_raw_series(code: str, start_date: str) -> list[dict]:
+    """Use the persisted ETL series when a live component provider is unavailable."""
+
+    from datetime import datetime
+
+    try:
+        cutoff = datetime.strptime(start_date, "%Y-%m-%d")
+        with get_db_session() as db:
+            indicator = db.query(Indicator).filter(Indicator.code == code).first()
+            if indicator is None:
+                return []
+            rows = (
+                db.query(IndicatorValue)
+                .filter(
+                    IndicatorValue.indicator_id == indicator.id,
+                    IndicatorValue.timestamp >= cutoff,
+                    IndicatorValue.raw_value.isnot(None),
+                )
+                .order_by(IndicatorValue.timestamp.asc())
+                .all()
+            )
+        return [
+            {
+                "date": row.timestamp.strftime("%Y-%m-%d"),
+                "value": float(row.raw_value),
+            }
+            for row in rows
+        ]
+    except Exception as exc:
+        logger.warning("Stored %s component fallback was unavailable: %s", code, exc)
+        return []
 
 
 @router.get("/indicators/metadata")
@@ -451,8 +523,7 @@ async def get_liquidity_proxy_components(days: int = Query(365, ge=1, le=1095)):
     return result
 
 
-@router.get("/indicators/ANALYST_ANXIETY/components")
-async def get_analyst_anxiety_components(days: int = Query(365, ge=1, le=1095)):
+async def _build_analyst_anxiety_components(days: int):
     """
     Return component breakdown for Analyst Confidence composite indicator.
     Shows VIX, MOVE, HY OAS, and ERP proxy with weights and contributions.
@@ -471,28 +542,41 @@ async def get_analyst_anxiety_components(days: int = Query(365, ge=1, le=1095)):
     fred = FredClient()
     yahoo = YahooClient()
     
-    # Fetch VIX
-    vix_raw = yahoo.fetch_series("^VIX", start_date=start_date)
-    
-    # Fetch MOVE (optional)
-    move_raw = []
-    try:
-        move_raw = yahoo.fetch_series("^MOVE", start_date=start_date)
-    except Exception:
-        pass
-    
-    # Fetch HY OAS
-    hy_oas_raw = await fred.fetch_series("BAMLH0A0HYM2", start_date=start_date)
-    
-    # Fetch 10Y Treasury
-    dgs10_raw = await fred.fetch_series("DGS10", start_date=start_date)
-    
-    # Fetch BBB Corporate Yield (optional for ERP)
-    bbb_raw = []
-    try:
-        bbb_raw = await fred.fetch_series("BAMLC0A4CBBB", start_date=start_date)
-    except Exception:
-        pass
+    def fetch_yahoo_components():
+        vix_values = []
+        move_values = []
+        try:
+            vix_values = yahoo.fetch_series("^VIX", start_date=start_date)
+        except Exception as exc:
+            logger.warning("Live VIX fetch failed; trying persisted history: %s", exc)
+        try:
+            move_values = yahoo.fetch_series("^MOVE", start_date=start_date)
+        except Exception:
+            pass
+        return vix_values, move_values
+
+    yahoo_result, hy_result, dgs10_result, bbb_result = await asyncio.gather(
+        asyncio.to_thread(fetch_yahoo_components),
+        fred.fetch_series("BAMLH0A0HYM2", start_date=start_date),
+        fred.fetch_series("DGS10", start_date=start_date),
+        fred.fetch_series("BAMLC0A4CBBB", start_date=start_date),
+        return_exceptions=True,
+    )
+
+    vix_source = "yahoo_live"
+    if isinstance(yahoo_result, tuple):
+        vix_raw, move_raw = yahoo_result
+    else:
+        vix_raw, move_raw = [], []
+    if len(vix_raw) < 30:
+        stored_vix = _stored_indicator_raw_series("VIX", start_date)
+        if len(stored_vix) >= 30:
+            vix_raw = stored_vix
+            vix_source = "stored_indicator_history"
+
+    hy_oas_raw = hy_result if isinstance(hy_result, list) else []
+    dgs10_raw = dgs10_result if isinstance(dgs10_result, list) else []
+    bbb_raw = bbb_result if isinstance(bbb_result, list) else []
     
     # Convert to dicts
     def series_to_dict(s):
@@ -612,12 +696,25 @@ async def get_analyst_anxiety_components(days: int = Query(365, ge=1, le=1095)):
     for i, date in enumerate(common_dates):
         entry = {
             "date": date,
+            "data_quality": {
+                "status": "complete" if vix_source == "yahoo_live" else "partial",
+                "stale": False,
+                "reason": (
+                    None
+                    if vix_source == "yahoo_live"
+                    else "live_vix_provider_unavailable"
+                ),
+                "vix_source": vix_source,
+                "cache_ttl_seconds": _ANALYST_COMPONENT_CACHE_TTL_SECONDS,
+                "max_stale_age_seconds": _ANALYST_COMPONENT_MAX_STALE_AGE_SECONDS,
+            },
             "vix": {
                 "value": float(vix_vals[i]),
                 "stress_score": float(vix_stress[i]),
                 "stability_score": float(100 - vix_stress[i]),
                 "weight": weights['vix'],
                 "contribution": float(vix_stress[i] * weights['vix']),
+                "source": vix_source,
             },
             "hy_oas": {
                 "value": float(hy_oas_vals[i]),
@@ -659,6 +756,80 @@ async def get_analyst_anxiety_components(days: int = Query(365, ge=1, le=1095)):
     result = [r for r in result if r["date"] >= cutoff_date]
     
     return result
+
+
+@router.get("/indicators/ANALYST_ANXIETY/components")
+async def get_analyst_anxiety_components(days: int = Query(365, ge=1, le=1095)):
+    cache_key = f"indicator-components:analyst-confidence:{days}"
+    shared_snapshot = load_response_snapshot(cache_key)
+    if (
+        shared_snapshot is not None
+        and not shared_snapshot.is_within_stale_limit(
+            _ANALYST_COMPONENT_MAX_STALE_AGE_SECONDS
+        )
+    ):
+        shared_snapshot = None
+    if (
+        shared_snapshot is not None
+        and shared_snapshot.is_fresh(_ANALYST_COMPONENT_CACHE_TTL_SECONDS)
+    ):
+        return shared_snapshot.payload
+
+    async with async_response_refresh_lock(cache_key):
+        # Another worker may have completed the cold/TTL refresh while this
+        # request was waiting on the advisory lock.
+        shared_snapshot = load_response_snapshot(cache_key)
+        if (
+            shared_snapshot is not None
+            and not shared_snapshot.is_within_stale_limit(
+                _ANALYST_COMPONENT_MAX_STALE_AGE_SECONDS
+            )
+        ):
+            shared_snapshot = None
+        if (
+            shared_snapshot is not None
+            and shared_snapshot.is_fresh(_ANALYST_COMPONENT_CACHE_TTL_SECONDS)
+        ):
+            return shared_snapshot.payload
+
+        try:
+            result = await _build_analyst_anxiety_components(days)
+        except Exception:
+            if shared_snapshot is None:
+                raise
+            logger.exception(
+                "Analyst component refresh failed; reusing snapshot aged %.1fs",
+                shared_snapshot.age_seconds,
+            )
+            return mark_stale_snapshot(
+                shared_snapshot.payload,
+                shared_snapshot,
+                reason="analyst_component_refresh_failed",
+                ttl_seconds=_ANALYST_COMPONENT_CACHE_TTL_SECONDS,
+                max_stale_age_seconds=_ANALYST_COMPONENT_MAX_STALE_AGE_SECONDS,
+            )
+
+        if not result:
+            return result
+
+        if (
+            shared_snapshot is not None
+            and _analyst_component_quality(shared_snapshot.payload)
+            > _analyst_component_quality(result)
+        ):
+            return mark_stale_snapshot(
+                shared_snapshot.payload,
+                shared_snapshot,
+                reason="analyst_component_refresh_lower_quality",
+                ttl_seconds=_ANALYST_COMPONENT_CACHE_TTL_SECONDS,
+                max_stale_age_seconds=_ANALYST_COMPONENT_MAX_STALE_AGE_SECONDS,
+            )
+
+        # Equal-quality partial evidence is intentionally advanced. This
+        # prevents a provider fallback from pinning an older partial response
+        # for the entire seven-day bounded-stale window.
+        store_response_snapshot(cache_key, result)
+        return result
 
 
 @router.get("/indicators/ANALYST_CONFIDENCE/components")

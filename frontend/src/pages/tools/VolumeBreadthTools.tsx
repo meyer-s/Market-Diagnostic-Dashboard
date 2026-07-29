@@ -11,6 +11,11 @@ import {
 } from "recharts";
 import { apiFetch, getErrorMessage } from "../../utils/apiUtils";
 import { CHART_MARGIN } from "../../utils/chartUtils";
+import {
+  dataQualityEvidenceState,
+  describeDataQuality,
+  type DataQualityMetadata,
+} from "../../utils/dataQuality";
 
 type TrendPeriod = 90 | 180 | 365;
 
@@ -45,6 +50,7 @@ interface BreadthBucket {
 
 interface BreadthResponse {
   as_of: string;
+  data_quality?: DataQualityMetadata;
   exchanges: {
     amex: BreadthBucket;
     nyse: BreadthBucket;
@@ -55,6 +61,8 @@ interface BreadthResponse {
 type LoadStatus = "loading" | "ready" | "error";
 
 const REQUEST_TIMEOUT_MS = 20_000;
+const MIN_REPRESENTATIVE_PARTICIPATION_PCT = 20;
+const PARTIAL_SOURCE_PATTERN = /breadth-symbols|proxy|fallback|unknown|not reported/i;
 const EXCHANGES = [
   { key: "amex", name: "AMEX" },
   { key: "nyse", name: "NYSE" },
@@ -83,7 +91,7 @@ const isStaleTimestamp = (value: string) => {
   return Date.now() - parsed.getTime() > 4 * 24 * 60 * 60 * 1000;
 };
 
-const hasUsableExchange = (bucket: BreadthBucket | undefined) =>
+const hasRenderableExchange = (bucket: BreadthBucket | undefined) =>
   Boolean(
     bucket &&
       bucket.source !== "unavailable" &&
@@ -93,6 +101,16 @@ const hasUsableExchange = (bucket: BreadthBucket | undefined) =>
       Number.isFinite(bucket.participation_pct) &&
       bucket.universe_size > 0,
   );
+
+const hasRepresentativeExchange = (bucket: BreadthBucket | undefined) =>
+  Boolean(
+    hasRenderableExchange(bucket) &&
+      !PARTIAL_SOURCE_PATTERN.test(bucket?.source || "unknown") &&
+      (bucket?.participation_pct ?? 0) >= MIN_REPRESENTATIVE_PARTICIPATION_PCT,
+  );
+
+const hasPartialExchange = (bucket: BreadthBucket | undefined) =>
+  hasRenderableExchange(bucket) && !hasRepresentativeExchange(bucket);
 
 function ExchangeChart({
   name,
@@ -112,6 +130,7 @@ function ExchangeChart({
   );
   const recentRows = useMemo(() => [...chartData].slice(-10).reverse(), [chartData]);
   const latest = chartData[chartData.length - 1];
+  const partialSnapshot = hasPartialExchange(bucket);
 
   return (
     <section className="primary-card min-w-0 p-4 sm:p-5" aria-labelledby={headingId}>
@@ -123,6 +142,12 @@ function ExchangeChart({
           <p className="mt-1 text-xs text-stealth-300">
             Source: {bucket.source || "not reported"}
           </p>
+          {partialSnapshot && (
+            <p className="mt-2 max-w-sm text-xs leading-5 text-amber-200">
+              Partial aggregate: {bucket.participation_pct.toFixed(1)}% of the listed universe
+              participated. Use the direction as supporting evidence, not a full-exchange read.
+            </p>
+          )}
         </div>
         <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:text-right">
           <div>
@@ -371,18 +396,42 @@ export default function VolumeBreadthTools() {
     };
   }, [loadBreadth]);
 
-  const usableExchanges = data
-    ? EXCHANGES.filter(({ key }) => hasUsableExchange(data.exchanges[key]))
+  const renderableExchanges = data
+    ? EXCHANGES.filter(({ key }) => hasRenderableExchange(data.exchanges[key]))
+    : [];
+  const representativeExchanges = data
+    ? EXCHANGES.filter(({ key }) => hasRepresentativeExchange(data.exchanges[key]))
     : [];
   const incompleteExchanges = data
-    ? EXCHANGES.filter(({ key }) => !hasUsableExchange(data.exchanges[key]))
+    ? EXCHANGES.filter(({ key }) => !hasRenderableExchange(data.exchanges[key]))
     : [];
-  const fallbackSources = data
+  const partialExchanges = data
+    ? EXCHANGES.filter(({ key }) => hasPartialExchange(data.exchanges[key]))
+    : [];
+  const partialSources = data
     ? EXCHANGES.filter(({ key }) =>
-        /proxy|fallback|unknown|not reported/i.test(data.exchanges[key]?.source || "unknown"),
+        PARTIAL_SOURCE_PATTERN.test(data.exchanges[key]?.source || "unknown"),
       )
     : [];
-  const stale = data ? isStaleTimestamp(data.as_of) : false;
+  const backendQualityState = dataQualityEvidenceState(data?.data_quality);
+  const stale = data
+    ? backendQualityState === "stale" || isStaleTimestamp(data.as_of)
+    : false;
+  const responseEvidenceState = stale
+    ? "stale"
+    : backendQualityState === "partial" ||
+        incompleteExchanges.length > 0 ||
+        partialExchanges.length > 0
+      ? "partial"
+      : "complete";
+  const responseQualityMessage = describeDataQuality(
+    "exchange breadth",
+    data?.data_quality,
+  );
+  const representativeExchangeCount =
+    typeof data?.data_quality?.representative_exchange_coverage === "number"
+      ? data.data_quality.representative_exchange_coverage
+      : representativeExchanges.length;
   const showingRetainedData = Boolean(data && dataPeriod !== trendPeriod);
 
   return (
@@ -475,7 +524,7 @@ export default function VolumeBreadthTools() {
 
       {data && (
         <>
-          {usableExchanges.length === 0 && (
+          {renderableExchanges.length === 0 && (
             <section
               className="rounded-xl border border-amber-400/40 bg-amber-500/10 p-4"
               role="alert"
@@ -502,6 +551,8 @@ export default function VolumeBreadthTools() {
           <section
             className="surface-card p-4 sm:p-5"
             aria-labelledby="breadth-data-status"
+            data-evidence-panel="exchange-breadth"
+            data-evidence-state={responseEvidenceState}
           >
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div>
@@ -512,20 +563,30 @@ export default function VolumeBreadthTools() {
                   Response timestamp {formatTimestamp(data.as_of)}. Received locally{" "}
                   {formatTimestamp(lastResponseLoad)}.
                 </p>
+                {responseQualityMessage && (
+                  <p className="mt-2 max-w-3xl text-sm leading-6 text-amber-200">
+                    {responseQualityMessage}
+                  </p>
+                )}
               </div>
               <div className="flex flex-wrap gap-2 text-xs">
                 <span className="page-badge">
-                  {usableExchanges.length} of {EXCHANGES.length} exchanges usable
+                  {representativeExchangeCount} of {EXCHANGES.length} exchanges representative
                 </span>
                 {stale && (
                   <span className="rounded-full border border-amber-400/40 bg-amber-500/10 px-3 py-1.5 text-amber-100">
-                    Older than four days
+                    Stale snapshot
                   </span>
                 )}
-                {fallbackSources.length > 0 && (
-                  <span className="rounded-full border border-sky-400/40 bg-sky-500/10 px-3 py-1.5 text-sky-100">
-                    {fallbackSources.length} fallback source
-                    {fallbackSources.length === 1 ? "" : "s"}
+                {!stale && backendQualityState === "partial" && (
+                  <span className="rounded-full border border-amber-400/40 bg-amber-500/10 px-3 py-1.5 text-amber-100">
+                    Partial response
+                  </span>
+                )}
+                {partialExchanges.length > 0 && (
+                  <span className="rounded-full border border-amber-400/40 bg-amber-500/10 px-3 py-1.5 text-amber-100">
+                    {partialExchanges.length} partial snapshot
+                    {partialExchanges.length === 1 ? "" : "s"}
                   </span>
                 )}
                 {showingRetainedData && (
@@ -535,18 +596,26 @@ export default function VolumeBreadthTools() {
                 )}
               </div>
             </div>
-            {(incompleteExchanges.length > 0 || fallbackSources.length > 0 || stale) && (
+            {(incompleteExchanges.length > 0 || partialExchanges.length > 0 || stale) && (
               <p className="mt-3 text-sm leading-6 text-stealth-300">
-                Treat this view as partial when an exchange is missing, a fallback source is
-                named, or the observation is stale. Those conditions are not scored as a normal
-                successful refresh.
+                Treat this view as partial when an exchange is missing, participation covers less
+                than {MIN_REPRESENTATIVE_PARTICIPATION_PCT}% of its listed universe, a partial
+                aggregate source is named, or the observation is stale. Those conditions are not
+                scored as a representative refresh.
+              </p>
+            )}
+            {partialSources.length > 0 && (
+              <p className="mt-2 text-xs leading-5 text-amber-200">
+                {partialSources.length} exchange source
+                {partialSources.length === 1 ? " is" : "s are"} aggregate breadth-symbol feeds;
+                their counts are not being described as full-universe coverage.
               </p>
             )}
           </section>
 
           <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-3">
             {EXCHANGES.map(({ key, name }) =>
-              hasUsableExchange(data.exchanges[key]) ? (
+              hasRenderableExchange(data.exchanges[key]) ? (
                 <ExchangeChart key={key} name={name} bucket={data.exchanges[key]} />
               ) : (
                 <section

@@ -288,25 +288,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <nav
-        aria-label="Dashboard sections"
-        className="sticky top-16 z-20 -mx-1 flex gap-2 overflow-x-auto rounded-xl border border-stealth-700 bg-stealth-950/95 p-2 shadow-lg shadow-black/20 backdrop-blur"
-      >
-        {[
-          ["#current-read", "Current read"],
-          ["#drivers", "Drivers"],
-          ["#indicator-breadth", "Indicator breadth"],
-        ].map(([href, label]) => (
-          <a
-            key={href}
-            href={href}
-            className="inline-flex min-h-11 shrink-0 items-center rounded-lg px-3 text-sm font-semibold text-stealth-300 transition-colors hover:bg-stealth-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-          >
-            {label}
-          </a>
-        ))}
-      </nav>
-
       <section id="current-read" aria-labelledby="current-read-title" className="scroll-mt-32">
         <h2 id="current-read-title" className="sr-only">Current market read</h2>
         {dashboardError && (

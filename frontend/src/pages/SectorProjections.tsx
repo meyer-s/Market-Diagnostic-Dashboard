@@ -526,23 +526,6 @@ export default function SectorProjections() {
         </div>
       </div>
 
-      <nav
-        aria-label="Sector rotation sections"
-        tabIndex={0}
-        className="sticky top-16 z-20 -mx-1 flex gap-2 overflow-x-auto rounded-xl border border-stealth-700 bg-stealth-950/95 p-2 shadow-lg shadow-black/20 backdrop-blur focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400"
-      >
-        {[
-          ["#sector-leadership", "Leadership"],
-          ["#sector-scenarios", "Scenarios"],
-          ["#sector-rankings", "Rankings"],
-          ["#sector-methodology", "Methodology"],
-        ].map(([href, label]) => (
-          <a key={href} href={href} className="inline-flex min-h-11 shrink-0 items-center rounded-lg px-3 text-sm font-semibold text-stealth-300 hover:bg-stealth-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
-            {label}
-          </a>
-        ))}
-      </nav>
-
       {analyticsError && data && (
         <div className="rounded-xl border border-amber-500/40 bg-amber-950/25 p-4" role="status">
           <h2 className="text-sm font-semibold text-amber-200">Partial sector update</h2>

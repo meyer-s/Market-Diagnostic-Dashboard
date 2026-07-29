@@ -25,6 +25,11 @@ import {
   type EvidenceState,
 } from "../utils/evidenceState";
 import {
+  describeDataQuality,
+  mergeDataQualityEvidenceState,
+  type DataQualityMetadata,
+} from "../utils/dataQuality";
+import {
   Area,
   AreaChart,
   LineChart,
@@ -214,12 +219,14 @@ const routeEvidenceMessage: Record<EvidenceState, string> = {
 
 interface AnalystAnxietyComponentData {
   date: string;
+  data_quality?: DataQualityMetadata;
   vix: {
     value: number;
     stress_score: number;
     stability_score: number;
     weight: number;
     contribution: number;
+    source?: string;
   };
   hy_oas: {
     value: number;
@@ -359,6 +366,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
     data: components,
     loading: componentsLoading,
     error: componentsError,
+    refetch: refetchComponents,
   } = useApi<ComponentData[]>(
     apiCode === "CONSUMER_HEALTH"
       ? `/indicators/${apiCode}/components?days=${getHistoryDays()}`
@@ -368,6 +376,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
     data: bondComponents,
     loading: bondComponentsLoading,
     error: bondComponentsError,
+    refetch: refetchBondComponents,
   } = useApi<BondComponentData[]>(
     apiCode === "BOND_MARKET_STABILITY"
       ? `/indicators/${apiCode}/components?days=${getHistoryDays()}`
@@ -377,12 +386,18 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
     data: liquidityComponents,
     loading: liquidityComponentsLoading,
     error: liquidityComponentsError,
+    refetch: refetchLiquidityComponents,
   } = useApi<LiquidityComponentData[]>(
     apiCode === "LIQUIDITY_PROXY"
       ? `/indicators/${apiCode}/components?days=${getHistoryDays()}`
       : ""
   );
-  const { data: analystAnxietyComponents } = useApi<AnalystAnxietyComponentData[]>(
+  const {
+    data: analystAnxietyComponents,
+    loading: analystAnxietyComponentsLoading,
+    error: analystAnxietyComponentsError,
+    refetch: refetchAnalystAnxietyComponents,
+  } = useApi<AnalystAnxietyComponentData[]>(
     apiCode === "ANALYST_ANXIETY"
       ? `/indicators/${apiCode}/components?days=${getHistoryDays()}`
       : ""
@@ -391,28 +406,49 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
     data: sentimentCompositeComponents,
     loading: sentimentCompositeComponentsLoading,
     error: sentimentCompositeComponentsError,
+    refetch: refetchSentimentCompositeComponents,
   } = useApi<SentimentCompositeComponentData[]>(
     apiCode === "SENTIMENT_COMPOSITE"
       ? `/indicators/${apiCode}/components?days=${getHistoryDays()}`
       : ""
   );
-  const { data: breadthHealthComponents } = useApi<BreadthHealthComponentsData>(
+  const {
+    data: breadthHealthComponents,
+    loading: breadthHealthComponentsLoading,
+    error: breadthHealthComponentsError,
+    refetch: refetchBreadthHealthComponents,
+  } = useApi<BreadthHealthComponentsData>(
     apiCode === "BREADTH_HEALTH"
       ? `/indicators/BREADTH_HEALTH/components?days=90`
       : ""
   );
-  const { data: sectorDivergenceComponents } = useApi<SectorDivergenceComponentsData>(
+  const {
+    data: sectorDivergenceComponents,
+    loading: sectorDivergenceComponentsLoading,
+    error: sectorDivergenceComponentsError,
+    refetch: refetchSectorDivergenceComponents,
+  } = useApi<SectorDivergenceComponentsData>(
     apiCode === "SECTOR_REGIME_ALIGNMENT"
       ? `/indicators/${apiCode}/components?days=${getHistoryDays()}`
       : ""
   );
-  const { data: muniSubsystem, loading: muniLoading, error: muniError } = useApi<MuniSubsystemResponse>(
-    apiCode === "BOND_MARKET_STABILITY"
+  const {
+    data: muniSubsystem,
+    loading: muniLoading,
+    error: muniError,
+    refetch: refetchMuniSubsystem,
+  } = useApi<MuniSubsystemResponse>(
+    apiCode === "BOND_MARKET_STABILITY" && bondTab === "public"
       ? `/indicators/${apiCode}/muni?days=${getHistoryDays()}`
       : ""
   );
-  const { data: yieldCurveData, loading: yieldCurveLoading, error: yieldCurveError } = useApi<YieldCurveResponse>(
-    apiCode === "BOND_MARKET_STABILITY"
+  const {
+    data: yieldCurveData,
+    loading: yieldCurveLoading,
+    error: yieldCurveError,
+    refetch: refetchYieldCurve,
+  } = useApi<YieldCurveResponse>(
+    apiCode === "BOND_MARKET_STABILITY" && bondTab === "yield"
       ? `/indicators/BOND_MARKET_STABILITY/yield-curve`
       : ""
   );
@@ -496,6 +532,62 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
       ),
     ),
   });
+  const latestAnalystComponent =
+    analystAnxietyComponents?.[analystAnxietyComponents.length - 1];
+  const analystComponentState = mergeDataQualityEvidenceState(
+    classifyCollectionEvidence({
+      data: analystAnxietyComponents,
+      loading: analystAnxietyComponentsLoading,
+      error: analystAnxietyComponentsError,
+      partial: Boolean(
+        latestAnalystComponent &&
+        (!latestAnalystComponent.move || !latestAnalystComponent.erp_proxy),
+      ),
+    }),
+    latestAnalystComponent?.data_quality,
+  );
+  const analystQualityMessage = describeDataQuality(
+    "analyst-confidence component history",
+    latestAnalystComponent?.data_quality,
+  );
+  const breadthComponentState = classifyResourceEvidence({
+    available: Boolean(breadthHealthComponents),
+    loading: breadthHealthComponentsLoading,
+    error: breadthHealthComponentsError,
+    partial: Boolean(
+      breadthHealthComponents &&
+      (
+        breadthHealthComponents.history.length === 0 ||
+        breadthHealthComponents.latest_sectors.length === 0
+      ),
+    ),
+  });
+  const sectorComponentState = classifyResourceEvidence({
+    available: Boolean(sectorDivergenceComponents),
+    loading: sectorDivergenceComponentsLoading,
+    error: sectorDivergenceComponentsError,
+    partial: Boolean(
+      sectorDivergenceComponents &&
+      (
+        sectorDivergenceComponents.history.length === 0 ||
+        sectorDivergenceComponents.latest.top_defensive.length === 0 ||
+        sectorDivergenceComponents.latest.top_cyclical.length === 0
+      ),
+    ),
+  });
+  const muniEvidenceState = mergeDataQualityEvidenceState(
+    classifyResourceEvidence({
+      available: Boolean(muniSubsystem),
+      loading: muniLoading,
+      error: muniError,
+    }),
+    muniSubsystem?.data_quality,
+  );
+  const yieldCurveEvidenceState = classifyResourceEvidence({
+    available: Boolean(yieldCurveData),
+    loading: yieldCurveLoading,
+    error: yieldCurveError,
+  });
   const activeComponentState =
     apiCode === "CONSUMER_HEALTH"
       ? consumerComponentState
@@ -503,9 +595,61 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
         ? bondComponentState
         : apiCode === "LIQUIDITY_PROXY"
           ? liquidityComponentState
+          : apiCode === "ANALYST_ANXIETY"
+            ? analystComponentState
           : apiCode === "SENTIMENT_COMPOSITE"
             ? sentimentComponentState
+            : apiCode === "BREADTH_HEALTH"
+              ? breadthComponentState
+              : apiCode === "SECTOR_REGIME_ALIGNMENT"
+                ? sectorComponentState
             : null;
+  const activeBondSupplementState =
+    apiCode === "BOND_MARKET_STABILITY" && bondTab === "public"
+      ? muniEvidenceState
+      : apiCode === "BOND_MARKET_STABILITY" && bondTab === "yield"
+        ? yieldCurveEvidenceState
+        : null;
+  const activeComponentError =
+    apiCode === "CONSUMER_HEALTH"
+      ? componentsError
+      : apiCode === "BOND_MARKET_STABILITY"
+        ? bondComponentsError
+        : apiCode === "LIQUIDITY_PROXY"
+          ? liquidityComponentsError
+          : apiCode === "ANALYST_ANXIETY"
+            ? analystAnxietyComponentsError
+            : apiCode === "SENTIMENT_COMPOSITE"
+              ? sentimentCompositeComponentsError
+              : apiCode === "BREADTH_HEALTH"
+                ? breadthHealthComponentsError
+                : apiCode === "SECTOR_REGIME_ALIGNMENT"
+                  ? sectorDivergenceComponentsError
+                  : null;
+  const refetchActiveComponents =
+    apiCode === "CONSUMER_HEALTH"
+      ? refetchComponents
+      : apiCode === "BOND_MARKET_STABILITY"
+        ? refetchBondComponents
+        : apiCode === "LIQUIDITY_PROXY"
+          ? refetchLiquidityComponents
+          : apiCode === "ANALYST_ANXIETY"
+            ? refetchAnalystAnxietyComponents
+            : apiCode === "SENTIMENT_COMPOSITE"
+              ? refetchSentimentCompositeComponents
+              : apiCode === "BREADTH_HEALTH"
+                ? refetchBreadthHealthComponents
+                : apiCode === "SECTOR_REGIME_ALIGNMENT"
+                  ? refetchSectorDivergenceComponents
+                  : null;
+  const activeBondSupplementError =
+    bondTab === "public" ? muniError : bondTab === "yield" ? yieldCurveError : null;
+  const refetchActiveBondSupplement =
+    bondTab === "public"
+      ? refetchMuniSubsystem
+      : bondTab === "yield"
+        ? refetchYieldCurve
+        : null;
   const definitionEvidenceState = classifyResourceEvidence({
     available: Boolean(meta),
     loading: metaLoading,
@@ -520,6 +664,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
     definitionEvidenceState,
     historyEvidenceState,
     ...(activeComponentState ? [activeComponentState] : []),
+    ...(activeBondSupplementState ? [activeBondSupplementState] : []),
   ]);
   const bondStressAttributionData =
     apiCode === "BOND_MARKET_STABILITY" && bondComponents
@@ -556,21 +701,6 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
         <p className="page-subtitle">Current read, underlying components, scoring definition, and historical evidence.</p>
       </header>
 
-      <nav
-        aria-label="Indicator detail sections"
-        className="sticky top-16 z-20 -mx-1 flex gap-2 overflow-x-auto rounded-xl border border-stealth-700 bg-stealth-950/95 p-2 shadow-lg shadow-black/20 backdrop-blur"
-      >
-        {[
-          ["#indicator-framework", "Definition"],
-          ["#indicator-evidence", "Evidence"],
-          ["#indicator-history", "History"],
-        ].map(([href, label]) => (
-          <a key={href} href={href} className="inline-flex min-h-11 shrink-0 items-center rounded-lg px-3 text-sm font-semibold text-stealth-300 hover:bg-stealth-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
-            {label}
-          </a>
-        ))}
-      </nav>
-
       <EvidenceStateNotice
         panelId="indicator-route"
         title="Data completeness"
@@ -581,12 +711,20 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
             <span>Definition: {definitionEvidenceState}</span>
             <span>History: {historyEvidenceState}</span>
             {activeComponentState ? <span>Components: {activeComponentState}</span> : null}
-            {(metaError || historyError) && (
+            {activeBondSupplementState ? (
+              <span>
+                {bondTab === "public" ? "Public credit" : "Yield curve"}:{" "}
+                {activeBondSupplementState}
+              </span>
+            ) : null}
+            {(metaError || historyError || activeComponentError || activeBondSupplementError) && (
               <button
                 type="button"
                 onClick={() => {
                   if (metaError) refetchMeta();
                   if (historyError) refetchHistory();
+                  if (activeComponentError) refetchActiveComponents?.();
+                  if (activeBondSupplementError) refetchActiveBondSupplement?.();
                 }}
                 className="inline-flex min-h-11 items-center rounded-lg border border-current/40 px-4 text-xs font-semibold hover:bg-black/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current"
               >
@@ -652,6 +790,20 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
       })()}
 
       <div id="indicator-evidence" className="scroll-mt-32" aria-hidden="true" />
+      {apiCode === "SECTOR_REGIME_ALIGNMENT" && (
+        <EvidenceStateNotice
+          panelId="sector-alignment-components"
+          title="Sector alignment component evidence"
+          state={sectorComponentState}
+          message={componentEvidenceMessage(
+            "sector alignment",
+            sectorComponentState,
+            sectorDivergenceComponentsError,
+            "The sector alignment response is missing history or current sector detail.",
+          )}
+          className="mb-4 md:mb-6"
+        />
+      )}
       {apiCode === "SECTOR_REGIME_ALIGNMENT" && sectorDivergenceComponents && (() => {
         const cutoffMs = Date.now() - (chartRange.days * 24 * 60 * 60 * 1000);
         const sectorHistory = sectorDivergenceComponents.history
@@ -1310,6 +1462,20 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
       )}
 
       {/* Proxy Breadth Panel for BREADTH_HEALTH */}
+      {apiCode === "BREADTH_HEALTH" && (
+        <EvidenceStateNotice
+          panelId="breadth-health-components"
+          title="Breadth health component evidence"
+          state={breadthComponentState}
+          message={componentEvidenceMessage(
+            "breadth health",
+            breadthComponentState,
+            breadthHealthComponentsError,
+            "The breadth response is missing history or current sector detail.",
+          )}
+          className="mb-4 md:mb-6"
+        />
+      )}
       {apiCode === "BREADTH_HEALTH" && breadthHealthComponents && (
         <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
           <div className="flex items-center justify-between mb-1">
@@ -1622,6 +1788,23 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
       )}
 
       {/* Component Breakdown for Analyst Confidence */}
+      {apiCode === "ANALYST_ANXIETY" && (
+        <EvidenceStateNotice
+          panelId="analyst-confidence-components"
+          title="Analyst confidence component evidence"
+          state={analystComponentState}
+          message={
+            analystQualityMessage ??
+            componentEvidenceMessage(
+              "analyst confidence",
+              analystComponentState,
+              analystAnxietyComponentsError,
+              "Core volatility and credit evidence is available, but MOVE or ERP proxy evidence is missing.",
+            )
+          }
+          className="mb-4 md:mb-6"
+        />
+      )}
       {apiCode === "ANALYST_ANXIETY" && analystAnxietyComponents && analystAnxietyComponents.length > 0 && (
         <div className="bg-stealth-800 border border-stealth-700 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
           <h3 className="text-lg md:text-xl font-semibold mb-3 md:mb-4 text-stealth-100">Component Breakdown</h3>

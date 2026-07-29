@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta
 from io import BytesIO
+import logging
 from typing import Any, Dict, List, Optional
 import zipfile
 import xml.etree.ElementTree as ET
@@ -17,10 +19,20 @@ from app.core.indicator_constants import (
     MUNI_PUBLIC_SECTOR_THRESHOLDS,
 )
 from app.services.analytics import compute_z_scores, direction_adjusted, map_z_to_score
+from app.services.endpoint_response_cache import (
+    async_response_refresh_lock,
+    load_response_snapshot,
+    mark_stale_snapshot,
+    store_response_snapshot,
+)
 from app.services.ingestion.fred_client import FredClient
 from app.utils.data_helpers import series_to_dict, find_common_dates
 
 SIFMA_SWAP_DEFAULT_URL = "https://www.sifma.org/wp-content/uploads/2024/01/Muni-Swap-Historical-Data.xlsx"
+_MUNI_CACHE_TTL_SECONDS = 6 * 60 * 60
+_MUNI_MAX_STALE_AGE_SECONDS = 7 * 24 * 60 * 60
+_SIFMA_TIMEOUT_SECONDS = 8
+logger = logging.getLogger(__name__)
 
 
 def _excel_serial_to_date(serial_value: float) -> str:
@@ -276,14 +288,28 @@ def _build_series_payload(
 
 async def _build_fred_curve_points(start_date: str) -> List[Dict[str, Any]]:
     fred = FredClient()
-    series_map = {
-        "1": await fred.fetch_series("DGS1", start_date=start_date),
-        "2": await fred.fetch_series("DGS2", start_date=start_date),
-        "5": await fred.fetch_series("DGS5", start_date=start_date),
-        "10": await fred.fetch_series("DGS10", start_date=start_date),
-        "20": await fred.fetch_series("DGS20", start_date=start_date),
-        "30": await fred.fetch_series("DGS30", start_date=start_date),
+    maturities = {
+        "1": "DGS1",
+        "2": "DGS2",
+        "5": "DGS5",
+        "10": "DGS10",
+        "20": "DGS20",
+        "30": "DGS30",
     }
+    fetched = await asyncio.gather(
+        *[
+            fred.fetch_series(series_id, start_date=start_date)
+            for series_id in maturities.values()
+        ],
+        return_exceptions=True,
+    )
+    series_map = {
+        maturity: values
+        for maturity, values in zip(maturities, fetched)
+        if isinstance(values, list)
+    }
+    if len(series_map) < 2:
+        return []
 
     series_dicts = {key: series_to_dict(values) for key, values in series_map.items()}
     common_dates = find_common_dates(*series_dicts.values())
@@ -452,7 +478,22 @@ def _compute_return_volatility(values: List[float], window: int) -> List[float]:
     return vol
 
 
-async def get_muni_subsystem(days: int = 365) -> Dict[str, Any]:
+async def _fetch_sifma_series() -> List[Dict[str, Any]]:
+    sifma_url = settings.SIFMA_SWAP_URL or SIFMA_SWAP_DEFAULT_URL
+    try:
+        async with httpx.AsyncClient(timeout=_SIFMA_TIMEOUT_SECONDS) as client:
+            response = await client.get(
+                sifma_url,
+                headers={"User-Agent": "Mozilla/5.0"},
+            )
+            response.raise_for_status()
+            return _parse_sifma_xlsx(response.content)
+    except Exception as exc:
+        logger.warning("SIFMA component fetch failed: %s", exc)
+        return []
+
+
+async def _build_muni_subsystem(days: int = 365) -> Dict[str, Any]:
     today = datetime.utcnow().date()
     cutoff = datetime.utcnow() - timedelta(days=days)
     lookback_start = datetime.utcnow() - timedelta(days=days + 365)
@@ -460,32 +501,26 @@ async def get_muni_subsystem(days: int = 365) -> Dict[str, Any]:
 
     fred = FredClient()
 
-    omrx_series = await fred.fetch_series("NASDAQOMRXMUNI", start_date=start_date)
-
-    sifma_series: List[Dict[str, Any]] = []
-    sifma_url = settings.SIFMA_SWAP_URL or SIFMA_SWAP_DEFAULT_URL
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.get(sifma_url, headers={"User-Agent": "Mozilla/5.0"})
-            response.raise_for_status()
-            sifma_series = _parse_sifma_xlsx(response.content)
-    except Exception:
-        sifma_series = []
+    omrx_result, sifma_result, curve_result = await asyncio.gather(
+        fred.fetch_series("NASDAQOMRXMUNI", start_date=start_date),
+        _fetch_sifma_series(),
+        _build_fred_curve_points(start_date),
+        return_exceptions=True,
+    )
+    omrx_series = omrx_result if isinstance(omrx_result, list) else []
+    sifma_series = sifma_result if isinstance(sifma_result, list) else []
+    fred_curve_points = curve_result if isinstance(curve_result, list) else []
 
     curve_payload: Optional[Dict[str, Any]] = None
-    try:
-        fred_curve_points = await _build_fred_curve_points(start_date)
-        if fred_curve_points:
-            curve_payload = _build_curve_payload(
-                fred_curve_points,
-                cutoff,
-                label="Treasury Curve Proxy (FRED)",
-                source="FRED DGS1/DGS2/DGS5/DGS10/DGS20/DGS30",
-                notes="Treasury curve proxy used for slope volatility; not a municipal curve feed.",
-                is_muni=False,
-            )
-    except Exception:
-        curve_payload = None
+    if fred_curve_points:
+        curve_payload = _build_curve_payload(
+            fred_curve_points,
+            cutoff,
+            label="Treasury Curve Proxy (FRED)",
+            source="FRED DGS1/DGS2/DGS5/DGS10/DGS20/DGS30",
+            notes="Treasury curve proxy used for slope volatility; not a municipal curve feed.",
+            is_muni=False,
+        )
 
     # Normalize series ordering
     def _sorted_series(raw_series: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -803,7 +838,7 @@ async def get_muni_subsystem(days: int = 365) -> Dict[str, Any]:
     latest_dates = [d for d in latest_dates if d is not None]
     as_of_date = max(latest_dates).date().isoformat() if latest_dates else today.isoformat()
 
-    return {
+    payload = {
         "as_of": as_of_date,
         "series": series_payloads,
         "composite": {
@@ -822,3 +857,93 @@ async def get_muni_subsystem(days: int = 365) -> Dict[str, Any]:
             "reason": "Treasury curve proxy unavailable (FRED fetch failed).",
         },
     }
+    payload["data_quality"] = {
+        "status": (
+            "complete"
+            if coverage_live == MUNI_PUBLIC_SECTOR_COVERAGE_TOTAL
+            else "partial"
+            if coverage_live
+            else "unavailable"
+        ),
+        "stale": False,
+        "coverage_live": coverage_live,
+        "coverage_total": MUNI_PUBLIC_SECTOR_COVERAGE_TOTAL,
+        "missing_keys": missing_keys,
+        "cache_ttl_seconds": _MUNI_CACHE_TTL_SECONDS,
+        "max_stale_age_seconds": _MUNI_MAX_STALE_AGE_SECONDS,
+    }
+    return payload
+
+
+async def get_muni_subsystem(days: int = 365) -> Dict[str, Any]:
+    cache_key = f"indicator-components:public-credit:{days}"
+    shared_snapshot = load_response_snapshot(cache_key)
+    if (
+        shared_snapshot is not None
+        and not shared_snapshot.is_within_stale_limit(
+            _MUNI_MAX_STALE_AGE_SECONDS
+        )
+    ):
+        shared_snapshot = None
+    if (
+        shared_snapshot is not None
+        and shared_snapshot.is_fresh(_MUNI_CACHE_TTL_SECONDS)
+    ):
+        return shared_snapshot.payload
+
+    async with async_response_refresh_lock(cache_key):
+        # Re-read after acquiring the shared lock so only the first worker
+        # performs a cold or expired refresh.
+        shared_snapshot = load_response_snapshot(cache_key)
+        if (
+            shared_snapshot is not None
+            and not shared_snapshot.is_within_stale_limit(
+                _MUNI_MAX_STALE_AGE_SECONDS
+            )
+        ):
+            shared_snapshot = None
+        if (
+            shared_snapshot is not None
+            and shared_snapshot.is_fresh(_MUNI_CACHE_TTL_SECONDS)
+        ):
+            return shared_snapshot.payload
+
+        try:
+            payload = await _build_muni_subsystem(days=days)
+        except Exception:
+            if shared_snapshot is None:
+                raise
+            logger.exception(
+                "Public-credit refresh failed; reusing snapshot aged %.1fs",
+                shared_snapshot.age_seconds,
+            )
+            return mark_stale_snapshot(
+                shared_snapshot.payload,
+                shared_snapshot,
+                reason="public_credit_refresh_failed",
+                ttl_seconds=_MUNI_CACHE_TTL_SECONDS,
+                max_stale_age_seconds=_MUNI_MAX_STALE_AGE_SECONDS,
+            )
+
+        coverage = int((payload.get("composite") or {}).get("coverage_live") or 0)
+        prior_coverage = (
+            int(
+                ((shared_snapshot.payload.get("composite") or {}).get("coverage_live"))
+                or 0
+            )
+            if shared_snapshot is not None
+            and isinstance(shared_snapshot.payload, dict)
+            else 0
+        )
+        if shared_snapshot is not None and coverage < prior_coverage:
+            return mark_stale_snapshot(
+                shared_snapshot.payload,
+                shared_snapshot,
+                reason="public_credit_refresh_incomplete",
+                ttl_seconds=_MUNI_CACHE_TTL_SECONDS,
+                max_stale_age_seconds=_MUNI_MAX_STALE_AGE_SECONDS,
+            )
+
+        if coverage:
+            store_response_snapshot(cache_key, payload)
+        return payload

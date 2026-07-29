@@ -12,7 +12,6 @@ import {
 } from "recharts";
 import { useApi } from "../hooks/useApi";
 import MarketLoading from "../components/ui/MarketLoading";
-import SectionNav from "../components/ui/SectionNav";
 import { CryptoSubsystemPanel } from "../components/aas/CryptoSubsystemPanel";
 import { CHART_NEUTRAL, CHART_MARGIN } from "../utils/chartUtils";
 import {
@@ -511,28 +510,6 @@ export default function CryptoDiagnostic({
         </section>
       )}
 
-      {!embedded ? (
-        <SectionNav
-          id="crypto-page-sections"
-          label="Crypto sections"
-          items={
-            selectedTab === "overview"
-              ? [
-                  { id: "crypto-now", label: "Now" },
-                  { id: "crypto-views", label: "Views" },
-                  { id: "crypto-leaders", label: "Leaders" },
-                  { id: "crypto-price-structure", label: "Price structure" },
-                ]
-              : [
-                  { id: "crypto-now", label: "Now" },
-                  { id: "crypto-views", label: "Views" },
-                  { id: "crypto-basket", label: "Basket" },
-                  { id: "crypto-method", label: "Method & audit" },
-                ]
-          }
-        />
-      ) : null}
-
       <section id="crypto-now" className="section-anchor mb-6 primary-card p-4 md:p-6" aria-labelledby="crypto-now-heading">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -732,7 +709,7 @@ export default function CryptoDiagnostic({
               ))}
             </div>
 
-            <div className="mt-4 rounded border-l-2 border-blue-500 bg-stealth-900/50 p-3 text-xs text-stealth-400">
+            <div className="mt-4 rounded-xl border border-stealth-700 bg-stealth-900/50 p-3 text-xs text-stealth-400">
               <strong>Technical Analysis:</strong> Projections are based on SMA crossovers (20/50/200), RSI, momentum,
               and recent support/resistance. Winner/Loser classification is relative across BTC, ETH, SOL, and XRP only.
             </div>

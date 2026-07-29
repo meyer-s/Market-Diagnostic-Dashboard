@@ -88,4 +88,23 @@ describe("Topbar", () => {
     expect(button).toBe(document.activeElement);
     expect(button.getAttribute("aria-label")).toBe("Open navigation menu");
   });
+
+  it("keeps mobile tool groups collapsed until requested", () => {
+    render(
+      <MemoryRouter>
+        <Topbar />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation menu" }));
+    const summary = screen.getByText("Asset Classes").closest("summary");
+    const group = summary?.closest("details");
+
+    expect(summary).not.toBeNull();
+    expect(group?.hasAttribute("open")).toBe(false);
+
+    fireEvent.click(summary as HTMLElement);
+
+    expect(group?.hasAttribute("open")).toBe(true);
+  });
 });

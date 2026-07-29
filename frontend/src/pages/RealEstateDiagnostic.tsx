@@ -31,6 +31,11 @@ import {
   REAL_ESTATE_HORIZONS,
   type RealEstateHorizon,
 } from "../utils/realEstateHorizon";
+import {
+  dataQualityEvidenceState,
+  describeDataQuality,
+  type DataQualityMetadata,
+} from "../utils/dataQuality";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -90,6 +95,7 @@ type MetricSnapshot = {
 
 type RealEstateOverview = {
   as_of: string;
+  data_quality?: DataQualityMetadata;
   composite_score: number;
   stability_score: number;
   regime_label: string;
@@ -104,6 +110,7 @@ type RealEstateOverview = {
 
 type RealEstateHistory = {
   as_of: string;
+  data_quality?: DataQualityMetadata;
   composite_history: DataPoint[];
   stability_history: DataPoint[];
   factor_history: Array<{
@@ -117,6 +124,7 @@ type RealEstateHistory = {
 
 type RealEstateTransmission = {
   as_of: string;
+  data_quality?: DataQualityMetadata;
   mortgage_rate_30y: DataPoint[];
   treasury_10y: DataPoint[];
   indexed_xhb: DataPoint[];
@@ -126,6 +134,7 @@ type RealEstateTransmission = {
 
 type RealEstateContext = {
   as_of: string;
+  data_quality?: DataQualityMetadata;
   housing_starts: DataPoint[];
   building_permits: DataPoint[];
   completions: DataPoint[];
@@ -1631,11 +1640,65 @@ export default function RealEstateDiagnostic() {
   );
   const primarySidePanelCount = Number(hasCompositePanel) + Number(hasFactorPanel);
   const longerHorizonCardCount = Number(hasSupplyPanel) + Number(hasBuyerSeller) + Number(hasAffordability);
-  const partialIssues = [
-    historyApi.error ? "Composite history" : null,
-    transmissionApi.error ? "Rate and credit transmission" : null,
-    longContextApi.error ? "Longer-horizon supply and affordability context" : null,
-  ].filter(Boolean) as string[];
+  const evidenceSources = [
+    {
+      label: "Headline overview",
+      quality: overview.data_quality,
+      error: overviewApi.error,
+      refetch: overviewApi.refetch,
+    },
+    {
+      label: "Composite history",
+      quality: history?.data_quality,
+      error: historyApi.error,
+      refetch: historyApi.refetch,
+    },
+    {
+      label: "Rate and credit transmission",
+      quality: transmission?.data_quality,
+      error: transmissionApi.error,
+      refetch: transmissionApi.refetch,
+    },
+    {
+      label: "Longer-horizon supply and affordability context",
+      quality: context?.data_quality,
+      error: longContextApi.error,
+      refetch: longContextApi.refetch,
+    },
+  ];
+  const evidenceConcerns = evidenceSources.reduce<
+    Array<{
+      label: string;
+      refetch: () => void;
+      state: "error" | "stale" | "partial";
+      message: string;
+    }>
+  >((concerns, source) => {
+      const state = dataQualityEvidenceState(source.quality);
+      if (source.error) {
+        concerns.push({
+          label: source.label,
+          refetch: source.refetch,
+          state: "error" as const,
+          message: `${source.label} is unavailable: ${source.error}`,
+        });
+      } else if (state === "stale" || state === "partial") {
+        concerns.push({
+          label: source.label,
+          refetch: source.refetch,
+          state,
+          message:
+            describeDataQuality(source.label.toLowerCase(), source.quality) ??
+            `${source.label} is ${state}.`,
+        });
+      }
+      return concerns;
+    }, []);
+  const realEstateEvidenceState = evidenceConcerns.some(
+    (source) => source.state === "stale",
+  )
+    ? "stale"
+    : "partial";
 
   return (
     <div className="page-shell-wide page-stack space-y-5 md:space-y-6">
@@ -1695,43 +1758,31 @@ export default function RealEstateDiagnostic() {
         </p>
       </div>
 
-      <nav
-        aria-label="Real estate page sections"
-        tabIndex={0}
-        className="sticky top-16 z-20 -mx-1 flex gap-2 overflow-x-auto rounded-xl border border-stealth-700 bg-stealth-950/95 p-2 shadow-lg shadow-black/20 backdrop-blur focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400"
-      >
-        {(activeTab === "overview"
-          ? [
-              ["#real-estate-now", "Current read"],
-              ["#real-estate-evidence", "Evidence"],
-              ["#real-estate-structure", "Market structure"],
-              ["#real-estate-longer-horizon", "Longer horizon"],
-              ["#real-estate-methodology", "Methodology"],
-            ]
-          : [["#real-estate-active-panel", "Commercial evidence"]]
-        ).map(([href, label]) => (
-          <a key={href} href={href} className="inline-flex min-h-11 shrink-0 items-center rounded-lg px-3 text-sm font-semibold text-stealth-300 hover:bg-stealth-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
-            {label}
-          </a>
-        ))}
-      </nav>
-
-      {partialIssues.length > 0 && activeTab === "overview" && (
-        <div className="rounded-xl border border-amber-500/40 bg-amber-950/25 p-4" role="status">
-          <h2 className="text-sm font-semibold text-amber-200">Partial real estate update</h2>
-          <p className="mt-1 text-sm text-amber-100">
-            The current headline is available, but {partialIssues.join(", ").toLowerCase()} {partialIssues.length === 1 ? "is" : "are"} missing.
-          </p>
+      {evidenceConcerns.length > 0 && activeTab === "overview" && (
+        <div
+          className="rounded-xl border border-amber-500/40 bg-amber-950/25 p-4"
+          role="status"
+          data-evidence-panel="real-estate-overview"
+          data-evidence-state={realEstateEvidenceState}
+        >
+          <h2 className="text-sm font-semibold text-amber-200">
+            {realEstateEvidenceState === "stale"
+              ? "Real estate evidence is not fully current"
+              : "Partial real estate update"}
+          </h2>
+          <ul className="mt-2 space-y-1 text-sm leading-6 text-amber-100">
+            {evidenceConcerns.map((source) => (
+              <li key={source.label}>{source.message}</li>
+            ))}
+          </ul>
           <button
             type="button"
             onClick={() => {
-              if (historyApi.error) historyApi.refetch();
-              if (transmissionApi.error) transmissionApi.refetch();
-              if (longContextApi.error) longContextApi.refetch();
+              evidenceConcerns.forEach((source) => source.refetch());
             }}
             className="mt-3 inline-flex min-h-11 items-center rounded-lg border border-amber-600 px-4 text-sm font-semibold text-amber-100 hover:bg-amber-900/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
           >
-            Retry missing evidence
+            Refresh affected evidence
           </button>
         </div>
       )}

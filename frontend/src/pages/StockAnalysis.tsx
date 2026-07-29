@@ -971,26 +971,6 @@ export default function StockAnalysis() {
         </div>
       )}
 
-      {chartData && (
-        <nav
-          aria-label="Stock analysis sections"
-          tabIndex={0}
-          className="sticky top-16 z-20 -mx-1 flex gap-2 overflow-x-auto rounded-xl border border-stealth-700 bg-stealth-950/95 p-2 shadow-lg shadow-black/20 backdrop-blur focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400"
-        >
-          {[
-            ["#stock-current-read", "Current read"],
-            ["#stock-price-evidence", "Price evidence"],
-            ["#stock-fundamentals", "Fundamentals"],
-            ["#stock-outlook", "Outlook"],
-            ["#stock-methodology", "Methodology"],
-          ].map(([href, label]) => (
-            <a key={href} href={href} className="inline-flex min-h-11 shrink-0 items-center rounded-lg px-3 text-sm font-semibold text-stealth-300 hover:bg-stealth-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
-              {label}
-            </a>
-          ))}
-        </nav>
-      )}
-
       {projectionUnavailable && !error && (
         <div className="rounded-2xl border border-yellow-700/50 bg-yellow-900/20 p-4">
           <p className="text-yellow-200">Projections unavailable for this asset.</p>

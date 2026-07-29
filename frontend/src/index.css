@@ -38,7 +38,10 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background: var(--field-canvas);
+  background:
+    radial-gradient(circle at top left, rgba(96, 165, 250, 0.16), transparent 28%),
+    radial-gradient(circle at top right, rgba(110, 231, 183, 0.14), transparent 24%),
+    linear-gradient(180deg, #121b2d 0%, #172235 38%, #1a273a 100%);
   color: var(--field-text);
 }
 
@@ -94,8 +97,9 @@ body {
   .app-shell {
     @apply min-h-screen text-white;
     background:
-      linear-gradient(90deg, transparent 0, transparent calc(50% - 1px), rgba(98, 117, 142, 0.045) 50%, transparent calc(50% + 1px)),
-      var(--field-canvas);
+      radial-gradient(circle at top left, rgba(96, 165, 250, 0.16), transparent 24%),
+      radial-gradient(circle at top right, rgba(110, 231, 183, 0.16), transparent 22%),
+      linear-gradient(180deg, rgba(18, 27, 45, 0.96) 0%, rgba(23, 34, 53, 0.98) 42%, rgba(26, 39, 58, 1) 100%);
   }
 
   .page-shell {
@@ -115,18 +119,21 @@ body {
   }
 
   .page-hero {
-    @apply relative overflow-hidden rounded-2xl border px-4 py-5 md:px-6 md:py-6;
-    background: var(--field-canvas-raised);
-    border-color: var(--field-border);
-    box-shadow: var(--field-shadow);
+    @apply relative overflow-hidden rounded-[28px] border px-4 py-5 md:px-6 md:py-6;
+    background:
+      linear-gradient(135deg, rgba(15, 23, 39, 0.92), rgba(17, 24, 39, 0.82)),
+      radial-gradient(circle at top right, rgba(110, 231, 183, 0.14), transparent 34%);
+    border-color: rgba(45, 55, 72, 0.8);
+    box-shadow: 0 26px 80px -52px rgba(0, 0, 0, 0.92);
   }
 
   .page-hero::before {
     content: "";
     position: absolute;
     inset: 0;
-    width: 4px;
-    background: var(--field-accent);
+    background:
+      linear-gradient(90deg, rgba(255, 255, 255, 0.04), transparent 18%),
+      radial-gradient(circle at 82% 18%, rgba(96, 165, 250, 0.16), transparent 24%);
     pointer-events: none;
   }
 
@@ -339,13 +346,17 @@ body {
   z-index: 200;
   top: 0;
   width: 100%;
-  border-bottom: 1px solid var(--field-border);
-  background: rgba(14, 21, 32, 0.97);
+  border-bottom: 1px solid rgba(75, 88, 107, 0.72);
+  background:
+    linear-gradient(90deg, rgba(22, 36, 58, 0.9), rgba(15, 31, 43, 0.86)),
+    rgba(14, 21, 32, 0.84);
+  box-shadow: 0 10px 32px -28px rgba(0, 0, 0, 0.92);
+  backdrop-filter: blur(18px);
 }
 
 .topbar-inner {
   display: flex;
-  min-height: 68px;
+  min-height: 64px;
   max-width: 80rem;
   margin: 0 auto;
   padding: 0 16px;
@@ -359,24 +370,12 @@ body {
   min-width: 0;
   min-height: 44px;
   align-items: center;
-  gap: 11px;
   color: var(--field-text);
   text-decoration: none;
 }
 
-.topbar-brand-mark {
-  display: inline-grid;
-  width: 36px;
-  height: 36px;
-  flex: 0 0 auto;
-  place-items: center;
-  border: 1px solid var(--field-border-strong);
-  border-radius: 9px;
-  background: var(--field-surface);
-  color: var(--field-accent-strong);
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
+.topbar-brand-copy {
+  min-width: 0;
 }
 
 .topbar-brand-name,
@@ -388,16 +387,18 @@ body {
 }
 
 .topbar-brand-name {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: 0.01em;
 }
 
 .topbar-brand-descriptor {
-  margin-top: 1px;
+  margin-top: 0;
   color: var(--field-text-subtle);
-  font-size: 12px;
-  letter-spacing: 0.04em;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
 }
 
 .topbar-primary-nav {
@@ -414,7 +415,7 @@ body {
   justify-content: center;
   gap: 8px;
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: 999px;
   background: transparent;
   color: var(--field-text-muted);
   font-size: 14px;
@@ -424,15 +425,16 @@ body {
 }
 
 .topbar-nav-link:hover {
-  border-color: var(--field-border);
-  background: var(--field-surface);
+  border-color: rgba(131, 191, 255, 0.55);
+  background: rgba(30, 43, 61, 0.8);
   color: var(--field-text);
 }
 
 .topbar-nav-link[data-active="true"] {
-  border-color: var(--field-border-strong);
-  background: var(--field-surface-raised);
+  border-color: rgba(98, 117, 142, 0.86);
+  background: rgba(30, 43, 61, 0.92);
   color: var(--field-text);
+  box-shadow: 0 0 0 1px rgba(168, 210, 255, 0.06);
 }
 
 .topbar-tools-disclosure {
@@ -468,8 +470,10 @@ body {
   padding: 7px;
   border: 1px solid var(--field-border-strong);
   border-radius: 14px;
-  background: var(--field-canvas-raised);
+  background:
+    linear-gradient(145deg, rgba(24, 35, 51, 0.98), rgba(18, 28, 42, 0.98));
   box-shadow: 0 24px 64px -28px rgba(0, 0, 0, 0.94);
+  backdrop-filter: blur(18px);
 }
 
 .topbar-tools-panel:focus-visible {
@@ -535,8 +539,8 @@ body {
   flex: 0 0 auto;
   place-items: center;
   border: 1px solid var(--field-border);
-  border-radius: 10px;
-  background: var(--field-surface);
+  border-radius: 999px;
+  background: rgba(30, 43, 61, 0.86);
   color: var(--field-text);
 }
 
@@ -546,17 +550,62 @@ body {
 }
 
 .topbar-mobile-nav {
-  max-height: calc(100vh - 68px);
+  max-height: calc(100vh - 64px);
   overflow-y: auto;
   padding: 8px 12px 16px;
   border-top: 1px solid var(--field-border);
-  background: var(--field-canvas-raised);
+  background:
+    linear-gradient(160deg, rgba(24, 35, 51, 0.99), rgba(18, 28, 42, 0.99));
+  backdrop-filter: blur(18px);
 }
 
 .topbar-mobile-section + .topbar-mobile-section {
   margin-top: 6px;
   padding-top: 6px;
   border-top: 1px solid var(--field-border);
+}
+
+.topbar-mobile-tool-group {
+  border-top: 1px solid var(--field-border);
+}
+
+.topbar-mobile-tool-summary {
+  display: flex;
+  min-height: 44px;
+  padding: 8px 10px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--field-text-subtle);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  list-style: none;
+  text-transform: uppercase;
+}
+
+.topbar-mobile-tool-summary::-webkit-details-marker {
+  display: none;
+}
+
+.topbar-mobile-tool-summary:hover {
+  color: var(--field-text);
+}
+
+.topbar-mobile-tool-chevron {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  transition: transform 160ms ease;
+}
+
+.topbar-mobile-tool-group[open] .topbar-mobile-tool-chevron {
+  transform: rotate(180deg);
+}
+
+.topbar-mobile-tool-links {
+  padding: 0 0 8px 8px;
 }
 
 @media (min-width: 1024px) {
@@ -891,7 +940,7 @@ body {
 }
 
 .section-anchor {
-  scroll-margin-top: 148px;
+  scroll-margin-top: 84px;
 }
 
 .form-field {
@@ -996,7 +1045,7 @@ body {
   }
 
   .topbar-brand-name {
-    max-width: 190px;
+    max-width: min(250px, calc(100vw - 100px));
     font-size: 14px;
   }
 
@@ -1163,6 +1212,7 @@ textarea::placeholder {
   .primary-card-hover,
   .topbar-nav-link,
   .topbar-chevron,
+  .topbar-mobile-tool-chevron,
   .collapsible-panel,
   .collapsible-icon svg {
     transition-duration: 0ms !important;

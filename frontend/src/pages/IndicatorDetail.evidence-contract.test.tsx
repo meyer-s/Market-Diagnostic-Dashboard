@@ -1,5 +1,5 @@
 import React from "react";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -199,4 +199,197 @@ describe("IndicatorDetail deterministic evidence parity", () => {
       expect(mobile).toEqual(desktop);
     },
   );
+
+  it("includes Analyst Confidence component failure in the route evidence state", () => {
+    useApiMock.mockImplementation((endpoint: string) => {
+      if (!endpoint) return apiResult(null);
+      if (endpoint === "/indicators/ANALYST_ANXIETY") {
+        return apiResult({
+          code: "ANALYST_ANXIETY",
+          name: "Analyst Anxiety",
+          has_data: true,
+        });
+      }
+      if (endpoint === "/indicators/ANALYST_ANXIETY/history?days=730") {
+        return apiResult([
+          {
+            timestamp: "2026-07-28T12:00:00Z",
+            raw_value: 1,
+            score: 55,
+            state: "YELLOW",
+          },
+        ]);
+      }
+      if (endpoint === "/indicators/ANALYST_ANXIETY/components?days=730") {
+        return apiResult(null, "component service unavailable");
+      }
+      return apiResult(null);
+    });
+
+    const { container } = render(
+      <MemoryRouter>
+        <IndicatorDetail forcedCode="ANALYST_CONFIDENCE" />
+      </MemoryRouter>,
+    );
+
+    expect(evidenceInventory(container)).toEqual([
+      { panel: "analyst-confidence-components", state: "error" },
+      { panel: "indicator-route", state: "partial" },
+    ]);
+  });
+
+  it("labels a cached Analyst Confidence component response as stale", () => {
+    useApiMock.mockImplementation((endpoint: string) => {
+      if (!endpoint) return apiResult(null);
+      if (endpoint === "/indicators/ANALYST_ANXIETY") {
+        return apiResult({
+          code: "ANALYST_ANXIETY",
+          name: "Analyst Anxiety",
+          has_data: true,
+        });
+      }
+      if (endpoint === "/indicators/ANALYST_ANXIETY/history?days=730") {
+        return apiResult([
+          {
+            timestamp: "2026-07-28T12:00:00Z",
+            raw_value: 1,
+            score: 55,
+            state: "YELLOW",
+          },
+        ]);
+      }
+      if (endpoint === "/indicators/ANALYST_ANXIETY/components?days=730") {
+        return apiResult([
+          {
+            date: "2026-07-28",
+            data_quality: {
+              status: "stale",
+              stale: true,
+              reason: "analyst_component_refresh_failed",
+              snapshot_cached_at: "2026-07-28T15:00:00Z",
+              snapshot_age_seconds: 20_000,
+            },
+            vix: {
+              value: 18,
+              stress_score: 40,
+              stability_score: 60,
+              weight: 0.4,
+              contribution: 16,
+            },
+            hy_oas: {
+              value: 3,
+              stress_score: 35,
+              stability_score: 65,
+              weight: 0.4,
+              contribution: 14,
+            },
+            composite: { stress_score: 38, stability_score: 62 },
+          },
+        ]);
+      }
+      return apiResult(null);
+    });
+
+    const { container } = render(
+      <MemoryRouter>
+        <IndicatorDetail forcedCode="ANALYST_CONFIDENCE" />
+      </MemoryRouter>,
+    );
+
+    expect(evidenceInventory(container)).toEqual([
+      { panel: "analyst-confidence-components", state: "stale" },
+      { panel: "indicator-route", state: "stale" },
+    ]);
+    expect(
+      screen.getByText(/Showing last-known-good analyst-confidence component history/),
+    ).not.toBeNull();
+    expect(screen.getByText(/5.6 hours old/)).not.toBeNull();
+  });
+
+  it("carries public-credit snapshot provenance into the route and panel state", () => {
+    useApiMock.mockImplementation((endpoint: string) => {
+      if (!endpoint) return apiResult(null);
+      if (endpoint === "/indicators/BOND_MARKET_STABILITY") {
+        return apiResult({
+          code: "BOND_MARKET_STABILITY",
+          name: "Bond Market Stability",
+          has_data: true,
+        });
+      }
+      if (endpoint === "/indicators/BOND_MARKET_STABILITY/history?days=730") {
+        return apiResult([
+          {
+            timestamp: "2026-07-28T12:00:00Z",
+            raw_value: 1,
+            score: 55,
+            state: "YELLOW",
+          },
+        ]);
+      }
+      if (endpoint === "/indicators/BOND_MARKET_STABILITY/components?days=730") {
+        return apiResult([]);
+      }
+      if (endpoint === "/indicators/BOND_MARKET_STABILITY/muni?days=730") {
+        return apiResult({
+          as_of: "2026-07-28",
+          data_quality: {
+            status: "stale",
+            stale: true,
+            reason: "public_credit_refresh_failed",
+            snapshot_cached_at: "2026-07-28T14:00:00Z",
+            snapshot_age_seconds: 30_000,
+          },
+          series: [
+            {
+              key: "MUNI_LONG_SPREAD",
+              label: "Municipal spread",
+              history: [
+                {
+                  date: "2026-07-28",
+                  value: 1,
+                  stability_score: 55,
+                },
+              ],
+            },
+          ],
+          composite: {
+            score: 55,
+            state: "YELLOW",
+            coverage_live: 1,
+            coverage_total: 1,
+            missing_keys: [],
+            weights_used: {},
+          },
+          curve: { status: "available", history: [] },
+        });
+      }
+      return apiResult(null);
+    });
+
+    const { container } = render(
+      <MemoryRouter>
+        <IndicatorDetail forcedCode="BOND_MARKET_STABILITY" />
+      </MemoryRouter>,
+    );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Public-sector credit & funding stress",
+      }),
+    );
+
+    expect(
+      container.querySelector('[data-evidence-panel="indicator-route"]')?.getAttribute(
+        "data-evidence-state",
+      ),
+    ).toBe("stale");
+    expect(
+      container.querySelector('[data-evidence-panel="bond-public-credit"]')?.getAttribute(
+        "data-evidence-state",
+      ),
+    ).toBe("stale");
+    expect(screen.getByText("Stale snapshot")).not.toBeNull();
+    expect(
+      screen.getByText(/Showing last-known-good public-sector credit/),
+    ).not.toBeNull();
+  });
 });

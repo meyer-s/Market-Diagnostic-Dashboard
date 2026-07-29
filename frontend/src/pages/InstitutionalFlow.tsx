@@ -692,21 +692,6 @@ export default function InstitutionalFlow() {
           <span className="page-badge">{usableSignals}/{totalSignals || 0} signals usable</span>
           <span className="page-badge">120-day evidence window</span>
         </div>
-        <nav className="mt-4" aria-label="Institutional flow sections">
-          <ul className="flex flex-wrap gap-2 text-sm">
-            {[
-              ["#flow-now", "Current read"],
-              ["#flow-groups", "Evidence groups"],
-              ["#flow-method", "Definition & provenance"],
-            ].map(([href, label]) => (
-              <li key={href}>
-                <a className="inline-flex min-h-11 items-center rounded-xl border border-stealth-700 bg-stealth-950/30 px-3 text-stealth-200 hover:border-blue-400 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300" href={href}>
-                  {label}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </nav>
       </section>
 
       {loading && !data && (

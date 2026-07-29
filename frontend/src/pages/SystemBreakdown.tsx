@@ -11,7 +11,6 @@ import {
 import { apiFetch } from "../utils/apiUtils";
 import MarketLoading from "../components/ui/MarketLoading";
 import InfoTooltip from "../components/ui/InfoTooltip";
-import SectionNav from "../components/ui/SectionNav";
 import { 
   getStateFromScore, 
   getStateColor, 
@@ -280,18 +279,6 @@ export default function SystemBreakdown() {
           <span className="page-badge">Breadth {breadthTrend}</span>
         </div>
       </div>
-
-      <SectionNav
-        id="system-page-sections"
-        label="System sections"
-        items={[
-          { id: "system-overview", label: "Overview" },
-          { id: "system-distribution", label: "Current state" },
-          { id: "system-history", label: "History" },
-          { id: "system-methodology", label: "Calculation" },
-          { id: "system-weights", label: "Weights" },
-        ]}
-      />
 
       {/* Overview Section */}
       <div id="system-overview" className="section-anchor surface-card-strong p-4 md:p-6">

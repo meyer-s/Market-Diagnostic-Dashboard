@@ -398,23 +398,6 @@ const MarketMap = () => {
         </button>
       </div>
 
-      <nav
-        aria-label="Market map sections"
-        tabIndex={0}
-        className="sticky top-16 z-20 -mx-1 flex gap-2 overflow-x-auto rounded-xl border border-stealth-700 bg-stealth-950/95 p-2 shadow-lg shadow-black/20 backdrop-blur focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400"
-      >
-        {[
-          ["#market-map-now", "Current read"],
-          ["#market-map-intraday", "Intraday"],
-          ["#market-map-sectors", "Sector map"],
-          ["#market-map-data", "Data table"],
-        ].map(([href, label]) => (
-          <a key={href} href={href} className="inline-flex min-h-11 shrink-0 items-center rounded-lg px-3 text-sm font-semibold text-stealth-300 hover:bg-stealth-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
-            {label}
-          </a>
-        ))}
-      </nav>
-
       {errorMessage && (
         <div className="rounded-xl border border-amber-500/40 bg-amber-950/25 p-4" role="status">
           <h2 className="text-sm font-semibold text-amber-200">Refresh failed; showing the last successful map</h2>

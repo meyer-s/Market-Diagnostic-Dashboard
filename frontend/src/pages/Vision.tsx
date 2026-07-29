@@ -447,23 +447,6 @@ export default function Vision() {
         </div>
       </section>
 
-      <nav
-        aria-label="Vision sections"
-        tabIndex={0}
-        className="sticky top-16 z-20 mx-auto flex max-w-6xl gap-2 overflow-x-auto border-b border-stealth-700 bg-stealth-950/95 px-4 py-2 backdrop-blur focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400 sm:px-6 lg:px-8"
-      >
-        {[
-          ["#vision-now", "Purpose"],
-          ["#vision-principles", "Principles"],
-          ["#vision-audience", "Who it helps"],
-          ["#vision-feedback", "Inspect the work"],
-        ].map(([href, label]) => (
-          <a key={href} href={href} className="inline-flex min-h-11 shrink-0 items-center rounded-lg px-3 text-sm font-semibold text-stealth-300 hover:bg-stealth-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
-            {label}
-          </a>
-        ))}
-      </nav>
-
       <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-14 sm:py-16">
         <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start">
           <div className="space-y-3">

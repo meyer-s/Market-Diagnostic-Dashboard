@@ -15,7 +15,6 @@ import {
 } from "recharts";
 
 import MarketLoading from "../components/ui/MarketLoading";
-import SectionNav from "../components/ui/SectionNav";
 import { useApi } from "../hooks/useApi";
 import { CompactContextDigest, type AgricultureContextData } from "../components/agriculture/AgricultureContextPanel";
 import { apiFetch } from "../utils/apiUtils";
@@ -842,28 +841,6 @@ export default function AgricultureIndex() {
           A futures-based macro diagnostic for agriculture regime stability. This is not a trading signal and is designed for contextual market structure analysis.
         </p>
       </div>
-
-      <SectionNav
-        id="agriculture-page-sections"
-        label="Agriculture sections"
-        items={
-          activeTab === "overview"
-            ? [
-                { id: "agriculture-now", label: "Now" },
-                { id: "agriculture-summary", label: "Summary" },
-                { id: "agriculture-views", label: "Views" },
-                { id: "agriculture-panel-overview", label: "Trend evidence" },
-              ]
-            : [
-                { id: "agriculture-now", label: "Now" },
-                { id: "agriculture-views", label: "Views" },
-                { id: "agriculture-sectors", label: "Sectors" },
-                { id: "agriculture-correlations", label: "Correlations" },
-                { id: "agriculture-signals", label: "Signals" },
-                { id: "agriculture-coverage", label: "Coverage" },
-              ]
-        }
-      />
 
       <div id="agriculture-now" className="section-anchor surface-card-strong p-4 md:p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">

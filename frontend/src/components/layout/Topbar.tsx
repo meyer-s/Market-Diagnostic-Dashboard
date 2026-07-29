@@ -136,8 +136,7 @@ export default function Topbar() {
     <header className="topbar">
       <div className="topbar-inner">
         <Link className="topbar-brand" to="/" aria-label={`${PRODUCT_NAME}, dashboard`}>
-          <span className="topbar-brand-mark" aria-hidden="true">MD</span>
-          <span className="min-w-0">
+          <span className="topbar-brand-copy">
             <span className="topbar-brand-name">{PRODUCT_NAME}</span>
             <span className="topbar-brand-descriptor">{PRODUCT_DESCRIPTOR}</span>
           </span>
@@ -291,24 +290,44 @@ export default function Topbar() {
           {toolGroupOrder.map((group) => {
             const groupItems = toolRoutes.filter((route) => route.toolGroup === group);
             if (groupItems.length === 0) return null;
+            const isGroupActive = groupItems.some((item) =>
+              isRouteActive(location.pathname, item),
+            );
             return (
-              <div className="topbar-mobile-section" key={group}>
-                <p className="topbar-mobile-label">{toolGroupLabels[group]}</p>
-                {groupItems.map((item) => {
-                  const isActive = isRouteActive(location.pathname, item);
-                  return (
-                    <Link
-                      key={item.path}
-                      to={item.path}
-                      aria-current={isActive ? "page" : undefined}
-                      className="topbar-mobile-link"
-                      data-active={isActive ? "true" : "false"}
-                    >
-                      {item.label}
-                    </Link>
-                  );
-                })}
-              </div>
+              <details
+                className="topbar-mobile-tool-group"
+                key={group}
+                open={isGroupActive || undefined}
+              >
+                <summary className="topbar-mobile-tool-summary">
+                  <span>{toolGroupLabels[group]}</span>
+                  <svg
+                    className="topbar-mobile-tool-chevron"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </summary>
+                <div className="topbar-mobile-tool-links">
+                  {groupItems.map((item) => {
+                    const isActive = isRouteActive(location.pathname, item);
+                    return (
+                      <Link
+                        key={item.path}
+                        to={item.path}
+                        aria-current={isActive ? "page" : undefined}
+                        className="topbar-mobile-link"
+                        data-active={isActive ? "true" : "false"}
+                      >
+                        {item.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </details>
             );
           })}
         </nav>

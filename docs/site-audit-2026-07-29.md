@@ -9,16 +9,58 @@ It evaluates the final local production bundle on
 
 | Status | Count | Meaning |
 |---|---:|---|
-| Closed | 30 | The original defect is remediated and supported by source, automated tests, or full-height capture evidence. |
-| Partial | 4 | Material remediation is present, but part of the original acceptance criteria or release proof remains. |
+| Closed | 29 | The original defect is remediated and supported by source, automated tests, or full-height capture evidence. |
+| Partial | 5 | Material remediation is present, but part of the original acceptance criteria, product-direction tradeoff, or release proof remains. |
 | Open | 0 | No original finding is wholly unaddressed. |
 
-The four Partial findings are:
+The five Partial findings are:
 
 - **AUD-004:** chart names and keyboard value layers are complete, but a manual screen-reader pass and persistent alternatives for every chart are not.
 - **AUD-013:** error, timeout, retry, and completeness UI is implemented, but cold/concurrent production endpoint budgets and last-known-good behavior still need post-deploy proof.
 - **AUD-023:** meaningful feature extraction landed, but the largest route modules are still too large to qualify as orchestration-only modules.
+- **AUD-026:** concise first-screen summaries remain, but the initial sticky section rails were deliberately removed after hands-on review because they duplicated each page’s headings and real controls. A less intrusive mobile-only jump pattern remains a possible follow-up.
 - **AUD-027:** breadth quality states and invariants are implemented, but sparse/live production behavior still needs post-deploy operating proof.
+
+## Visual correction after hands-on review
+
+The first remediation release improved structure, accessibility, state handling,
+and performance, but its shell was flatter and its navigation heavier than the
+site it replaced. The correction keeps the system work while restoring the
+earlier visual character:
+
+- the original blue/teal radial and vertical canvas gradients are restored on
+  the document and application shell;
+- page heroes again use the earlier layered atmospheric treatment instead of a
+  flat panel with a repeated accent stripe;
+- the global header is 64px high, translucent, and uses compact pill controls;
+- the ornamental boxed `MD` mark is removed while the canonical product name
+  remains;
+- thirteen duplicate sticky or inline section rails are removed from long
+  routes, while real tabs, timeframes, filters, pagination, refresh actions,
+  Market Weather controls, and the Secret Options workspace switcher remain;
+- mobile tool families are collapsed native disclosures, with the active family
+  opened automatically, so the menu does not dump every route into the first
+  viewport.
+
+## Correction release preflight
+
+The corrected release bundle is:
+
+- JavaScript: `assets/index-DcjgVjzx.js`
+- CSS: `assets/index-BjlRYaqq.css`
+
+The corrected frontend suite passed 219/219 tests across 37 files. ESLint,
+TypeScript, the production build, and bundle budgets passed. The backend suite
+collected 448 tests: 445 passed and 3 skipped. The targeted endpoint resilience
+and API-provenance suites passed 32/32 tests, and the additive response-snapshot Alembic migration
+passed upgrade/downgrade and PostgreSQL DDL smoke checks.
+
+Corrected bundle results:
+
+- initial JavaScript: 186.28 KiB raw / 60.82 KiB gzip;
+- initial CSS: 132.92 KiB raw / 23.65 KiB gzip;
+- largest deferred chunk: 274.80 KiB raw / 85.84 KiB gzip;
+- 20 route modules emitted as deferred chunks.
 
 ## Authoritative local closure evidence
 
@@ -90,7 +132,7 @@ Bundle results:
 | AUD-023 | P2 | Partial | Shared UI primitives were extracted. Secret Options domain types, presentation, and telemetry moved under `features/secretOptions`; Treasury and municipal panels moved under `features/indicatorDetail`. Full tests remained green. | `SecretOptions.tsx` is still 7,912 physical lines and `IndicatorDetail.tsx` is 2,865. Continue extracting stateful workflow slices, dialogs, forms, and indicator panels until route files are orchestration-only. Other >1,000-line research modules remain. |
 | AUD-024 | P2 | Closed | CI now has scheduled/manual desktop/mobile full-route and material-state gates, evidence upload, route-registry parity, explicit AAS legacy assertions, response-state tests, and failing runtime contracts. The final local gate passed 266/266 captures. | The first GitHub-hosted scheduled run and post-deploy production run remain monitoring steps, not missing implementation. Preserve read-only request blocking and registry parity. |
 | AUD-025 | P2 | Closed | Recap pages now render one article H1, place current content before ancillary recent-post navigation on mobile, and expose explicit Gallery empty state. All recap captures passed the one-H1 contract. | None against the original finding. |
-| AUD-026 | P2 | Closed | Shared or route-specific sticky section navigation and return paths cover the audited long research pages, including Metals, Crypto, Agriculture, System Breakdown, Dashboard, Energy, Real Estate, Stock, Vision, Map, Sector, Flow, and Weather. | Continue prioritizing first-screen summaries as individual routes evolve; total full-height content remains intentionally available. |
+| AUD-026 | P2 | Partial | Current-state summaries remain early, every major section keeps a named heading/deep-link target, and genuine page tabs and controls remain. The first implementation added thirteen sticky or inline anchor rails; hands-on review found them visually redundant, so they were removed in the correction. | If long mobile journeys still need direct jumping after production use, add one compact mobile-only section disclosure or bottom-sheet navigator rather than restoring persistent duplicate rails. |
 | AUD-027 | P2 | Partial | Volume & Breadth has bounded loading, retry/error states, exchange coverage/freshness labels, readable chart-equivalent tables, and tests that prevent unavailable placeholders from being described as usable evidence. Final serialized captures were clean. | Prove sparse/impossible production combinations suppress categorical conclusions after deployment, and monitor the market-internals endpoint against its latency/completeness budget under cold and concurrent load. |
 | AUD-028 | P2 | Closed | Incidental overflow was removed and genuine horizontal data regions were labeled/focused. Final runtime evidence reports zero unfocusable scroll regions, including all recap routes. | None against the original finding; retain runtime focusability checks. |
 | AUD-029 | P2 | Closed | Market Weather Pair controls only reference IDs present in the responsive DOM. Pair Overview, Field, Audit, and sheet coverage return zero Axe findings at both widths. | None against the original finding. |

@@ -22,6 +22,42 @@ def _quarterly(values: list[float], start: str = "2024-01-01") -> pd.Series:
     return pd.Series(values, index=dates, dtype="float64")
 
 
+def test_proxy_universe_uses_one_bounded_batch_and_keeps_symbols_distinct(
+    monkeypatch,
+) -> None:
+    dates = pd.date_range(start="2026-01-01", periods=40, freq="D")
+    columns = pd.MultiIndex.from_product([["Close"], ["AAA", "BBB"]])
+    frame = pd.DataFrame(
+        {
+            ("Close", "AAA"): [100.0 + index for index in range(40)],
+            ("Close", "BBB"): [200.0 + index * 2 for index in range(40)],
+        },
+        index=dates,
+        columns=columns,
+    )
+    calls = []
+
+    def fake_download(**kwargs):
+        calls.append(kwargs)
+        return frame
+
+    monkeypatch.setattr(rei.yf, "download", fake_download)
+    proxies = (
+        rei.RealEstateProxy("AAA", "AAA", "Alpha", "one"),
+        rei.RealEstateProxy("BBB", "BBB", "Beta", "two"),
+    )
+
+    resolved, availability, missing = rei._fetch_proxy_batch(proxies, days=365)
+
+    assert len(calls) == 1
+    assert calls[0]["timeout"] == rei.YAHOO_BATCH_TIMEOUT_SECONDS
+    assert resolved["AAA"].iloc[-1] == 139.0
+    assert resolved["BBB"].iloc[-1] == 278.0
+    assert not resolved["AAA"].equals(resolved["BBB"])
+    assert {row["status"] for row in availability} == {"ok"}
+    assert missing == []
+
+
 def test_equity_pressure_score_inverts_listed_proxy_returns() -> None:
     rising = {"5d": 3.0, "20d": 6.0, "60d": 10.0, "120d": 14.0}
     falling = {"5d": -3.0, "20d": -6.0, "60d": -10.0, "120d": -14.0}
