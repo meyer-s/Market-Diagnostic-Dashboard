@@ -512,12 +512,8 @@ test("@release gives Signal Observatory authored desktop and mobile compositions
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await chooseDesktopTheme(page, "observatory", "Signal Observatory");
 
-  const contextRail = page.locator(".observatory-context-rail");
-  await expect(contextRail).toBeVisible();
-  await expect(contextRail.locator(".section-nav-link")).toHaveCount(3);
-  await expect(
-    contextRail.locator('.section-nav-link[aria-current="location"]'),
-  ).toHaveText("Current read");
+  await expect(page.locator(".observatory-context-rail")).toHaveCount(0);
+  await expect(page.locator(".observatory-context-nav")).toHaveCount(0);
   await expect(page.locator(".dashboard-current-read-console")).toBeVisible();
   await expect(page.locator(".dashboard-current-read-heading")).toBeVisible({
     timeout: 15_000,
@@ -608,11 +604,6 @@ test("@release gives Signal Observatory authored desktop and mobile compositions
     const indicatorArray = document.querySelector<HTMLElement>(
       ".dashboard-indicator-array",
     );
-    const links = Array.from(
-      document.querySelectorAll<HTMLElement>(
-        ".observatory-context-rail .section-nav-link",
-      ),
-    );
     if (!currentRead || !indicatorArray) {
       throw new Error("Observatory mobile probe could not find dashboard structure");
     }
@@ -630,9 +621,6 @@ test("@release gives Signal Observatory authored desktop and mobile compositions
           shell.classList.contains(`dashboard-driver-${driver}`),
         ),
       ),
-      minimumRailTarget: Math.min(
-        ...links.map((link) => link.getBoundingClientRect().height),
-      ),
     };
   });
 
@@ -640,7 +628,17 @@ test("@release gives Signal Observatory authored desktop and mobile compositions
   expect(mobile.currentReadColumns.split(" ")).toHaveLength(1);
   expect(mobile.indicatorColumns.split(" ")).toHaveLength(1);
   expect(mobile.driverOrder).toEqual(["system", "dow", "sector", "aas"]);
-  expect(mobile.minimumRailTarget).toBeGreaterThanOrEqual(44);
+
+  await page.goto("/system-breakdown", { waitUntil: "domcontentloaded" });
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "observatory");
+  await expect(page.locator("#system-section-nav")).toHaveCount(0);
+  await expect(page.locator(".system-context-nav")).toHaveCount(0);
+
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await chooseDesktopTheme(page, "evidence", "Evidence Field");
+  await expect(page.locator(".section-nav")).toHaveCount(0);
+  await chooseDesktopTheme(page, "observatory", "Signal Observatory");
+  await page.setViewportSize({ width: 390, height: 844 });
 
   await page.goto("/vision", { waitUntil: "domcontentloaded" });
   await expect(page.locator("html")).toHaveAttribute("data-theme", "observatory");

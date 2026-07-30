@@ -385,11 +385,6 @@ describe("site-polish route contracts", () => {
         name: "2026-07-29: green, score 76.0",
       }),
     ).not.toBeNull();
-    expect(
-      screen.getByRole("link", { name: "Overview" }).getAttribute(
-        "aria-current",
-      ),
-    ).toBe("location");
     expect(screen.getByLabelText("Explain indicator grouping and weights")).not.toBeNull();
   });
 });

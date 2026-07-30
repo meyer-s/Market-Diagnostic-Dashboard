@@ -226,7 +226,7 @@ The form language is gently curved and crisp. Inputs use the field radius, secon
 
 ### Navigation
 
-The top bar is a solid midnight instrument rail. Active routes use a raised surface and strong border in addition to text color. Desktop disclosures support arrow keys and Escape; mobile navigation constrains focus, closes on route selection, and returns focus to its trigger. Long analytical routes use a sticky section rail below the product navigation.
+The top bar is a solid midnight instrument rail. Active routes use a raised surface and strong border in addition to text color. Desktop disclosures support arrow keys and Escape; mobile navigation constrains focus, closes on route selection, and returns focus to its trigger. Long analytical routes keep clear named headings and deep-link targets, but do not repeat them in a persistent section rail. If production use shows a real need for direct jumping, prefer one compact mobile disclosure or bottom-sheet navigator.
 
 ### Evidence Chart
 

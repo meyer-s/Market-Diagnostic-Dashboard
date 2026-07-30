@@ -92,8 +92,8 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
   const cryptoColor = getFamilyColor("crypto");
   const metalsFill = getFamilyColor("metals");
   const cryptoFill = getFamilyColor("crypto");
-  const metalsSoft = getFamilyColor("metals", "faint");
-  const cryptoSoft = getFamilyColor("crypto", "faint");
+  const metalsMuted = getFamilyColor("metals", "muted");
+  const cryptoMuted = getFamilyColor("crypto", "muted");
   const benchmarkColor = getFamilyColor("benchmark");
 
   const buildRelativeRankings = (assets: CryptoAsset[]): RelativeCryptoRanking[] => {
@@ -403,9 +403,9 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
               style={
                 aasData.primary_driver === "metals"
                   ? {
-                      backgroundColor: metalsSoft,
+                      backgroundColor: `${metalsColor}1f`,
                       border: `1px solid ${metalsColor}`,
-                      color: metalsColor,
+                      color: metalsMuted,
                     }
                   : undefined
               }
@@ -421,9 +421,9 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
               style={
                 aasData.primary_driver === "crypto"
                   ? {
-                      backgroundColor: cryptoSoft,
+                      backgroundColor: `${cryptoColor}1f`,
                       border: `1px solid ${cryptoColor}`,
-                      color: cryptoColor,
+                      color: cryptoMuted,
                     }
                   : undefined
               }

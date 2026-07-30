@@ -6,7 +6,6 @@ import SystemOverviewWidget from "../components/widgets/SystemOverviewWidget";
 import SectorDivergenceWidget from "../components/widgets/SectorDivergenceWidget";
 import AASWidget from "../components/widgets/AASWidget";
 import MarketLoading from "../components/ui/MarketLoading";
-import SectionNav from "../components/ui/SectionNav";
 import { apiFetch, getErrorMessage } from "../utils/apiUtils";
 import { getTrendWindows, type InsightSignal } from "../utils/insightUtils";
 
@@ -357,17 +356,6 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
-
-      <SectionNav
-        id="observatory-dashboard-sections"
-        className="observatory-context-rail hidden"
-        label="Dashboard sections"
-        items={[
-          { id: "current-read", label: "Current read" },
-          { id: "drivers", label: "Drivers" },
-          { id: "indicator-breadth", label: "Indicators" },
-        ]}
-      />
 
       <section id="current-read" aria-labelledby="current-read-title" className="dashboard-current-read scroll-mt-32">
         <h2 id="current-read-title" className="sr-only">Current market read</h2>

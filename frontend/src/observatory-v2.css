@@ -113,60 +113,6 @@ html[data-theme="observatory"] .control-strip > :is(button, a) {
   transition-property: border-color, background-color, color, box-shadow;
 }
 
-/* The context rails exist in the DOM for stable page structure, but become
-   visible only in Observatory. */
-html[data-theme="observatory"]
-  :is(.observatory-context-rail, .observatory-context-nav) {
-  display: flex !important;
-  border-color: rgba(79, 116, 122, 0.82);
-  background: rgba(7, 22, 25, 0.985);
-  box-shadow:
-    0 18px 34px -30px rgba(0, 0, 0, 0.96),
-    inset 0 -1px 0 rgba(104, 196, 216, 0.08);
-  backdrop-filter: none;
-}
-
-html[data-theme="observatory"]
-  :is(.observatory-context-rail, .observatory-context-nav)
-  .section-nav-label {
-  color: var(--field-accent-strong);
-  letter-spacing: 0.16em;
-}
-
-html[data-theme="observatory"]
-  :is(.observatory-context-rail, .observatory-context-nav)
-  .section-nav-link {
-  position: relative;
-  border-radius: 1px;
-  color: var(--field-text-muted);
-}
-
-html[data-theme="observatory"]
-  :is(.observatory-context-rail, .observatory-context-nav)
-  .section-nav-link::after {
-  position: absolute;
-  right: 12px;
-  bottom: 5px;
-  left: 12px;
-  height: 1px;
-  background: var(--field-accent);
-  content: "";
-  opacity: 0;
-  transform: scaleX(0.35);
-  transform-origin: left;
-  transition: opacity 160ms ease, transform 180ms ease;
-}
-
-html[data-theme="observatory"]
-  :is(.observatory-context-rail, .observatory-context-nav)
-  .section-nav-link:hover::after,
-html[data-theme="observatory"]
-  :is(.observatory-context-rail, .observatory-context-nav)
-  .section-nav-link[aria-current="location"]::after {
-  opacity: 0.9;
-  transform: scaleX(1);
-}
-
 /* ── Dashboard observation deck ─────────────────────────────────────────── */
 
 html[data-theme="observatory"] .dashboard-masthead {
@@ -706,18 +652,6 @@ html[data-theme="observatory"] .vision-highlight-detail {
     height: 24px;
   }
 
-  html[data-theme="observatory"]
-    :is(.observatory-context-rail, .observatory-context-nav) {
-    min-height: 50px;
-    padding-inline: 5px;
-  }
-
-  html[data-theme="observatory"]
-    :is(.observatory-context-rail, .observatory-context-nav)
-    .section-nav-label {
-    display: none;
-  }
-
   html[data-theme="observatory"] .dashboard-masthead {
     padding-top: 4px;
     padding-bottom: 20px;
@@ -836,9 +770,4 @@ html[data-theme="observatory"] .vision-highlight-detail {
     transition-duration: 0ms !important;
   }
 
-  html[data-theme="observatory"]
-    :is(.observatory-context-rail, .observatory-context-nav)
-    .section-nav-link::after {
-    transition: none;
-  }
 }

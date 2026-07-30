@@ -11,7 +11,6 @@ import {
 import { apiFetch } from "../utils/apiUtils";
 import MarketLoading from "../components/ui/MarketLoading";
 import InfoTooltip from "../components/ui/InfoTooltip";
-import SectionNav from "../components/ui/SectionNav";
 import { 
   getStateFromScore, 
   getStateColor, 
@@ -49,15 +48,6 @@ interface WeightedExampleRow {
   weight: number;
   contribution: number;
 }
-
-const SYSTEM_SECTION_NAV_ITEMS = [
-  { id: "system-overview", label: "Overview" },
-  { id: "system-distribution", label: "Distribution" },
-  { id: "system-history", label: "History" },
-  { id: "system-methodology", label: "Calculation" },
-  { id: "system-weights", label: "Weights" },
-  { id: "system-limitations", label: "Limitations" },
-];
 
 const getIndicatorDisplayName = (code: string, name: string) =>
   code === "ANALYST_ANXIETY" ? "Analyst Confidence" : name;
@@ -289,13 +279,6 @@ export default function SystemBreakdown() {
           <span className="page-badge">Breadth {breadthTrend}</span>
         </div>
       </div>
-
-      <SectionNav
-        id="system-section-nav"
-        items={SYSTEM_SECTION_NAV_ITEMS}
-        label="System breakdown sections"
-        className="system-context-nav observatory-context-nav hidden"
-      />
 
       {/* Overview Section */}
       <div id="system-overview" className="section-anchor surface-card-strong p-4 md:p-6">
