@@ -440,7 +440,7 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
                 data={chartHistory}
                 margin={CHART_MARGIN}
               >
-                <CartesianGrid strokeDasharray="3 3" stroke="#333338" />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
                 <XAxis
                   dataKey="timestamp"
                   tickFormatter={(v: string) =>

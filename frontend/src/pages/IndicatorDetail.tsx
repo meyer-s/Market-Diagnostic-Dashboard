@@ -913,13 +913,13 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                         dataKey="timestampNum"
                         type="number"
                         domain={["dataMin", "dataMax"]}
-                        tick={{ fill: "#94a3b8", fontSize: 12 }}
+                        tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
                         stroke={CHART_NEUTRAL.axis}
                         tickFormatter={(value: number) => formatDateUtc(value)}
                       />
-                      <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} stroke={CHART_NEUTRAL.axis} />
+                      <YAxis tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }} stroke={CHART_NEUTRAL.axis} />
                       <Tooltip
-                        contentStyle={{ backgroundColor: "#111827", border: "1px solid #374151", borderRadius: 10 }}
+                        contentStyle={{ backgroundColor: CHART_NEUTRAL.tooltipBg, border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`, borderRadius: 10 }}
                         labelFormatter={(value: number) => formatDateUtc(value)}
                         formatter={(value: number) => [`${value.toFixed(2)}`, "Spread"]}
                       />
@@ -944,13 +944,13 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                         dataKey="timestampNum"
                         type="number"
                         domain={["dataMin", "dataMax"]}
-                        tick={{ fill: "#94a3b8", fontSize: 12 }}
+                        tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
                         stroke={CHART_NEUTRAL.axis}
                         tickFormatter={(value: number) => formatDateUtc(value)}
                       />
-                      <YAxis domain={[0, 100]} tick={{ fill: "#94a3b8", fontSize: 12 }} stroke={CHART_NEUTRAL.axis} />
+                      <YAxis domain={[0, 100]} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }} stroke={CHART_NEUTRAL.axis} />
                       <Tooltip
-                        contentStyle={{ backgroundColor: "#111827", border: "1px solid #374151", borderRadius: 10 }}
+                        contentStyle={{ backgroundColor: CHART_NEUTRAL.tooltipBg, border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`, borderRadius: 10 }}
                         labelFormatter={(value: number) => formatDateUtc(value)}
                         formatter={(value: number) => [`${value.toFixed(2)}`, "Alignment Score"]}
                       />
@@ -1638,7 +1638,7 @@ export default function IndicatorDetail({ forcedCode }: IndicatorDetailProps) {
                     }`}
                   >
                     <div className="text-xs font-semibold text-stealth-100">{sector.ticker}</div>
-                    <div className="text-xs text-stealth-400 mb-1">{sector.name}</div>
+                    <div className="mb-1 text-xs text-stealth-300">{sector.name}</div>
                     <div
                       className={`text-xs font-medium ${sector.return_20d_pct >= 0 ? "text-green-300" : "text-red-300"}`}
                     >

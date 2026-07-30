@@ -51,26 +51,30 @@ const emptyReadWorkspaceResponse = (endpoint: string) => {
   return Promise.reject(new Error(`Unexpected Secret Options test endpoint: ${endpoint}`));
 };
 
-const ACTIVE_SCANNER_RUN = {
-  id: 92,
-  universe_key: "SP500",
-  universe_label: "S&P 500",
-  threshold: 30,
-  trigger_source: "dashboard",
-  status: "running",
-  total_symbols: 500,
-  scanned_symbols: 125,
-  hits: 0,
-  errors: 0,
-  rate_limit_errors: 0,
-  hit_symbols: [],
-  notes: null,
-  last_event: "Scanning",
-  last_symbol: "MSFT",
-  last_error: null,
-  started_at: "2026-07-29T12:00:00",
-  completed_at: null,
-  updated_at: "2026-07-29T12:02:00",
+const activeScannerRun = () => {
+  const updatedAt = new Date();
+  const startedAt = new Date(updatedAt.getTime() - 2 * 60_000);
+  return {
+    id: 92,
+    universe_key: "SP500",
+    universe_label: "S&P 500",
+    threshold: 30,
+    trigger_source: "dashboard",
+    status: "running",
+    total_symbols: 500,
+    scanned_symbols: 125,
+    hits: 0,
+    errors: 0,
+    rate_limit_errors: 0,
+    hit_symbols: [],
+    notes: null,
+    last_event: "Scanning",
+    last_symbol: "MSFT",
+    last_error: null,
+    started_at: startedAt.toISOString(),
+    completed_at: null,
+    updated_at: updatedAt.toISOString(),
+  };
 };
 
 const readWorkspaceWithActiveScanner = (endpoint: string) => {
@@ -90,7 +94,7 @@ const readWorkspaceWithActiveScanner = (endpoint: string) => {
       },
       top_symbols: [],
       ranked_opportunities: [],
-      runs: [ACTIVE_SCANNER_RUN],
+      runs: [activeScannerRun()],
       supported_universes: [{ key: "SP500", label: "S&P 500" }],
     });
   }
@@ -129,7 +133,7 @@ const writeWorkspaceWithoutScannerRun = (endpoint: string, options?: RequestInit
   if (endpoint === "/secret/options/scanner-run" && options?.method === "POST") {
     return Promise.resolve({
       status: "queued",
-      run: { ...ACTIVE_SCANNER_RUN, status: "queued", scanned_symbols: 0 },
+      run: { ...activeScannerRun(), status: "queued", scanned_symbols: 0 },
     });
   }
   return emptyReadWorkspaceResponse(endpoint);

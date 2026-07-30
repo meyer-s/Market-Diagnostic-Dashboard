@@ -375,8 +375,8 @@ function SignalTile({
 
 const tip = {
   contentStyle: {
-    background: "rgba(11,15,25,0.94)",
-    border: "1px solid rgba(255,255,255,0.08)",
+    background: "var(--chart-tooltip-bg)",
+    border: "1px solid var(--chart-tooltip-border)",
     borderRadius: 12,
     fontSize: 12,
     boxShadow: "0 10px 40px rgba(2,6,23,0.75)",
@@ -753,7 +753,7 @@ function RetailPricesChart({
                 <CartesianGrid {...commonGridProps} />
                 <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
                 <YAxis {...commonYAxisProps} domain={["auto", "auto"]} tickFormatter={(v) => `${v.toFixed(0)}`} />
-                <ReferenceLine y={100} stroke="#1e293b" strokeDasharray="3 3" />
+                <ReferenceLine y={100} stroke="var(--chart-grid)" strokeDasharray="3 3" />
                 <Tooltip
                   {...tip}
                   formatter={(value: number, name: string, props: { payload?: { crude_v?: number; pump_v?: number } }) => {
@@ -839,7 +839,7 @@ function SupplyPriceChart({ prices }: { prices: EnergyPrices["fred_prices"] }) {
                 return [`${(props.payload?.inventory ?? value).toFixed(0)} M bbl`, "Crude Stocks"];
               }}
             />
-            <ReferenceLine y={50} stroke="#1e293b" strokeDasharray="3 3" />
+            <ReferenceLine y={50} stroke="var(--chart-grid)" strokeDasharray="3 3" />
             <Line type="monotone" dataKey="price_norm" stroke="#f97316" dot={false} strokeWidth={2} name="price_norm" />
             <Line type="monotone" dataKey="inv_inv"    stroke="#475569" dot={false} strokeWidth={1.5} strokeDasharray="4 2" name="inv_inv" />
           </LineChart>
@@ -952,7 +952,7 @@ function FactorRadar({
             data={radar.rows}
             margin={{ top: 8, right: 28, bottom: 8, left: 28 }}
           >
-            <PolarGrid stroke="#1e293b" />
+            <PolarGrid stroke="var(--chart-grid)" />
             <PolarAngleAxis dataKey="factor" tick={{ fill: "#64748b", fontSize: 12 }} />
             <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
             {radar.layers.map((layer) => (
@@ -1101,7 +1101,7 @@ function AltEnergyChart({
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => (d as string).slice(0, 7)} />
             <YAxis {...commonYAxisProps} />
-            <ReferenceLine y={100} stroke="#1e293b" strokeDasharray="3 3" />
+            <ReferenceLine y={100} stroke="var(--chart-grid)" strokeDasharray="3 3" />
             <Tooltip {...tip} formatter={(v: number, name: string) => [`${v.toFixed(1)}`, name]} />
             <Line
               type="monotone"
@@ -1236,7 +1236,7 @@ function BiofuelsPanel({
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
             <YAxis {...commonYAxisProps} />
-            <ReferenceLine y={100} stroke="#1e293b" strokeDasharray="3 3" />
+            <ReferenceLine y={100} stroke="var(--chart-grid)" strokeDasharray="3 3" />
             <Tooltip
               {...tip}
               formatter={(value: number, name: string) => [`${value.toFixed(1)}`, labelByCode[name] ?? name]}

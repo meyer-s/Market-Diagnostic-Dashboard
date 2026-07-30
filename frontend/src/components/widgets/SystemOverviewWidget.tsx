@@ -461,7 +461,7 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
                   data={stabilityBandData}
                   margin={CHART_MARGIN}
                 >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#333338" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
                   <XAxis
                     dataKey="timestampNum"
                     type="number"
@@ -497,7 +497,7 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
                   )}
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: "#161619",
+                      backgroundColor: "var(--chart-tooltip-bg)",
                       borderColor: "#555560",
                       borderRadius: "6px",
                       padding: "8px",

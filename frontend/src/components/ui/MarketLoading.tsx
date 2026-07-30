@@ -48,18 +48,18 @@ export default function MarketLoading({
           className={`block select-none ${iconClass}`}
           aria-hidden="true"
         >
-          <rect x="18" y="60" width="12" height="16" rx="2" fill="#1c2636" />
-          <rect x="36" y="54" width="12" height="22" rx="2" fill="#243045" />
-          <rect x="54" y="50" width="12" height="26" rx="2" fill="#1f2b3e" />
-          <rect x="72" y="42" width="12" height="34" rx="2" fill="#2a3a52" />
+          <rect x="18" y="60" width="12" height="16" rx="2" fill="var(--field-surface)" />
+          <rect x="36" y="54" width="12" height="22" rx="2" fill="var(--field-surface-raised)" />
+          <rect x="54" y="50" width="12" height="26" rx="2" fill="var(--field-surface)" />
+          <rect x="72" y="42" width="12" height="34" rx="2" fill="var(--field-border)" />
 
-          <circle cx="70" cy="72" r="2" fill="#1f2b3e" opacity="0.6" />
-          <circle cx="78" cy="68" r="2.2" fill="#1f2b3e" opacity="0.55" />
-          <circle cx="86" cy="64" r="2.4" fill="#1f2b3e" opacity="0.5" />
+          <circle cx="70" cy="72" r="2" fill="var(--field-surface)" opacity="0.6" />
+          <circle cx="78" cy="68" r="2.2" fill="var(--field-surface)" opacity="0.55" />
+          <circle cx="86" cy="64" r="2.4" fill="var(--field-surface)" opacity="0.5" />
 
           <path
             d="M14 54 C20 44, 28 62, 34 52 C38 46, 44 46, 50 50 C56 54, 62 48, 68 42 C72 38, 78 34, 86 32"
-            stroke="#3b82f6"
+            stroke="var(--field-accent)"
             strokeWidth="3"
             fill="none"
             strokeLinecap="round"

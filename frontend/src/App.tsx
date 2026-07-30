@@ -7,6 +7,7 @@ import RouteExperience from "./components/layout/RouteExperience";
 import { trackPageView } from "./utils/analytics";
 import { trackSubsequentOptionsOpen } from "./utils/marketWeatherPairTelemetry";
 import { AppRoutes, getAnalyticsNameForPath, getPageNameForPath } from "./routes/registry";
+import { SiteThemeProvider } from "./theme/SiteThemeProvider";
 
 export function AppWithAnalytics() {
   const location = useLocation();
@@ -48,8 +49,10 @@ export function AppWithAnalytics() {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <AppWithAnalytics />
-    </BrowserRouter>
+    <SiteThemeProvider>
+      <BrowserRouter>
+        <AppWithAnalytics />
+      </BrowserRouter>
+    </SiteThemeProvider>
   );
 }

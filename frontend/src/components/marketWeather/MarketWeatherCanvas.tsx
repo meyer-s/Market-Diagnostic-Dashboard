@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { MarketWeatherCell, MarketWeatherMode, MarketWeatherResponse } from "../../types/marketWeather";
+import { useSiteTheme } from "../../theme/SiteThemeProvider";
 import { channelLabel, formatSigned, marketWeatherCellColor } from "../../utils/marketWeather";
 
 interface MarketWeatherCanvasProps {
@@ -19,6 +20,11 @@ interface HoverState {
 
 const FULL_PADDING = { left: 50, right: 12, top: 14, bottom: 34 };
 const CLOUD_PADDING = { left: 2, right: 2, top: 2, bottom: 2 };
+
+function readThemeColor(name: string, fallback: string): string {
+  if (typeof window === "undefined") return fallback;
+  return window.getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+}
 
 function cellAt(data: MarketWeatherResponse, horizonIndex: number, dateIndex: number): MarketWeatherCell {
   return Object.fromEntries(
@@ -57,6 +63,7 @@ function formatDate(value: string, intraday: boolean): string {
 }
 
 export default function MarketWeatherCanvas({ data, mode, inspectorChannel, compact = false }: MarketWeatherCanvasProps) {
+  const { theme } = useSiteTheme();
   const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ width: 0, height: compact ? 184 : 560 });
@@ -88,7 +95,7 @@ export default function MarketWeatherCanvas({ data, mode, inspectorChannel, comp
     if (!context) return;
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
     context.clearRect(0, 0, size.width, size.height);
-    context.fillStyle = "rgb(11, 18, 29)";
+    context.fillStyle = readThemeColor("--field-canvas", "rgb(11, 18, 29)");
     context.fillRect(0, 0, size.width, size.height);
 
     const plotWidth = size.width - padding.left - padding.right;
@@ -125,9 +132,9 @@ export default function MarketWeatherCanvas({ data, mode, inspectorChannel, comp
     });
 
     if (!compact) {
-      context.strokeStyle = "rgba(148, 163, 184, 0.18)";
+      context.strokeStyle = readThemeColor("--chart-grid", "rgba(148, 163, 184, 0.18)");
       context.lineWidth = 1;
-      context.fillStyle = "rgba(203, 213, 225, 0.78)";
+      context.fillStyle = readThemeColor("--chart-axis-tick", "rgba(203, 213, 225, 0.78)");
       context.font = "12px IBM Plex Sans, Segoe UI, sans-serif";
       context.textAlign = "right";
       const horizonTicks = [0, Math.floor((data.horizons.length - 1) / 2), data.horizons.length - 1];
@@ -160,12 +167,12 @@ export default function MarketWeatherCanvas({ data, mode, inspectorChannel, comp
       context.translate(13, padding.top + plotHeight / 2);
       context.rotate(-Math.PI / 2);
       context.textAlign = "center";
-      context.fillStyle = "rgba(148, 163, 184, 0.78)";
+      context.fillStyle = readThemeColor("--chart-axis-tick", "rgba(148, 163, 184, 0.78)");
       context.fillText("Horizon (bars)", 0, 0);
       context.restore();
     }
 
-  }, [compact, data, inspectorChannel, mode, padding, size]);
+  }, [compact, data, inspectorChannel, mode, padding, size, theme]);
 
   useEffect(() => draw(), [draw]);
 

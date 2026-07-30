@@ -292,8 +292,8 @@ function nearestDate(map: Record<string, number>, date: string): number | undefi
 
 const tip = {
   contentStyle: {
-    background: "rgba(11,15,25,0.94)",
-    border: "1px solid rgba(255,255,255,0.08)",
+    background: "var(--chart-tooltip-bg)",
+    border: "1px solid var(--chart-tooltip-border)",
     borderRadius: 12,
     fontSize: 12,
     boxShadow: "0 10px 40px rgba(2,6,23,0.75)",
@@ -802,7 +802,7 @@ function TransmissionChart({
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
             <YAxis yAxisId="idx"  {...commonYAxisProps} domain={["auto", "auto"]} tickFormatter={(v) => v.toFixed(0)} />
             <YAxis yAxisId="rate" orientation="right" {...commonYAxisProps} tickFormatter={(v: number) => `${v.toFixed(1)}%`} />
-            <ReferenceLine yAxisId="idx" y={100} stroke="#1e293b" strokeDasharray="3 3" />
+            <ReferenceLine yAxisId="idx" y={100} stroke="var(--chart-grid)" strokeDasharray="3 3" />
             <Tooltip
               {...tip}
               formatter={(v: number, name: string) => {
@@ -881,7 +881,7 @@ function CreditSpreadChart({
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(d: string) => d.slice(0, 7)} />
             <YAxis {...commonYAxisProps} domain={["auto", "auto"]} />
-            <ReferenceLine y={100} stroke="#1e293b" strokeDasharray="3 3" />
+            <ReferenceLine y={100} stroke="var(--chart-grid)" strokeDasharray="3 3" />
             <Tooltip
               {...tip}
               formatter={(value: number, name: string, props: { payload?: { spread_raw?: number | null } }) => {
@@ -1136,8 +1136,8 @@ function BuyerSellerDivergenceChart({
             />
             <YAxis {...commonYAxisProps} yAxisId="norm" domain={cycleDomain} />
             <YAxis yAxisId="gap" orientation="right" hide domain={[-100, 100]} />
-            <ReferenceLine yAxisId="norm" y={100} stroke="#1e293b" strokeDasharray="3 3" />
-            <ReferenceLine yAxisId="gap" y={0} stroke="#1e293b" strokeDasharray="3 3" />
+            <ReferenceLine yAxisId="norm" y={100} stroke="var(--chart-grid)" strokeDasharray="3 3" />
+            <ReferenceLine yAxisId="gap" y={0} stroke="var(--chart-grid)" strokeDasharray="3 3" />
             <Tooltip
               {...tip}
               labelFormatter={(label: string) => formatCycleTooltipLabel(label)}
@@ -1342,7 +1342,7 @@ function AffordabilityChart({
               tickFormatter={(d: string) => formatCycleAxisLabel(d, horizonYears)}
             />
             <YAxis {...commonYAxisProps} domain={[0, 100]} />
-            <ReferenceLine y={50} stroke="#1e293b" strokeDasharray="3 3" />
+            <ReferenceLine y={50} stroke="var(--chart-grid)" strokeDasharray="3 3" />
             <Tooltip
               {...tip}
               formatter={(value: number, name: string, props: { payload?: Record<string, number | null> }) => {

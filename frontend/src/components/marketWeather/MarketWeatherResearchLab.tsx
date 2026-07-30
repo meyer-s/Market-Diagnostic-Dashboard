@@ -13,6 +13,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { useSiteTheme } from "../../theme/SiteThemeProvider";
 import type {
   MarketWeatherAnalogStatus,
   MarketWeatherContextRelationship,
@@ -46,6 +47,11 @@ import type {
 } from "../../utils/marketWeatherTimeline";
 
 type DerivativeKey = "pressure" | "velocity" | "acceleration" | "jerk" | "snap";
+
+function readThemeColor(name: string, fallback: string): string {
+  if (typeof window === "undefined") return fallback;
+  return window.getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+}
 
 interface MarketWeatherResearchLabProps {
   research: MarketWeatherResearch;
@@ -1186,6 +1192,7 @@ function RelationshipScopeCanvas({
   selectedId: string;
   onSelect: (stateId: string) => void;
 }) {
+  const { theme } = useSiteTheme();
   const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ width: 0, height: 205 });
@@ -1279,12 +1286,12 @@ function RelationshipScopeCanvas({
     const context = canvas.getContext("2d");
     if (!context) return;
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
-    context.fillStyle = "rgb(10, 17, 29)";
+    context.fillStyle = readThemeColor("--field-canvas", "rgb(10, 17, 29)");
     context.fillRect(0, 0, size.width, size.height);
     context.lineCap = "round";
     context.lineJoin = "round";
 
-    context.strokeStyle = "rgba(148, 163, 184, .23)";
+    context.strokeStyle = readThemeColor("--chart-grid", "rgba(148, 163, 184, .23)");
     context.lineWidth = 1;
     context.setLineDash([4, 5]);
     context.beginPath();
@@ -1296,7 +1303,7 @@ function RelationshipScopeCanvas({
     context.setLineDash([]);
 
     context.font = "12px IBM Plex Sans, Segoe UI, sans-serif";
-    context.fillStyle = "rgba(148, 163, 184, .56)";
+    context.fillStyle = readThemeColor("--chart-axis-tick", "rgba(148, 163, 184, .56)");
     context.textAlign = "left";
     context.fillText(spec.cornerLabels[0].toUpperCase(), layout.padding.left + 5, layout.padding.top + 11);
     context.fillText(spec.cornerLabels[2].toUpperCase(), layout.padding.left + 5, size.height - layout.padding.bottom - 6);
@@ -1310,7 +1317,7 @@ function RelationshipScopeCanvas({
     context.clip();
 
     if (series.length > 1) {
-      context.strokeStyle = "rgba(148, 163, 184, .13)";
+      context.strokeStyle = readThemeColor("--chart-grid", "rgba(148, 163, 184, .13)");
       context.lineWidth = 0.8;
       context.setLineDash([2, 3]);
       context.beginPath();
@@ -1393,7 +1400,7 @@ function RelationshipScopeCanvas({
       context.shadowBlur = 0;
     }
 
-    context.fillStyle = "rgba(148, 163, 184, .82)";
+    context.fillStyle = readThemeColor("--chart-axis-tick", "rgba(148, 163, 184, .82)");
     context.font = "12px IBM Plex Sans, Segoe UI, sans-serif";
     context.textAlign = "center";
     context.fillText(`${spec.xLabel} →`, layout.padding.left + layout.plotWidth / 2, size.height - 8);
@@ -1402,7 +1409,7 @@ function RelationshipScopeCanvas({
     context.rotate(-Math.PI / 2);
     context.fillText(`${spec.yLabel} →`, 0, 0);
     context.restore();
-  }, [layout, lexicon.features, markers, series, selectedId, size, smoothed, spec]);
+  }, [layout, lexicon.features, markers, series, selectedId, size, smoothed, spec, theme]);
 
   const current = series[series.length - 1];
   const currentStyle = fitRelativeTraceStyle(current?.z ?? 0, lexicon.features.find((feature) => feature.id === spec.zKey));
@@ -1594,6 +1601,7 @@ function DictionaryView({ research }: { research: MarketWeatherResearch }) {
 }
 
 function DerivativeHeatmap({ series, timeframe }: { series: MarketWeatherDerivativePoint[]; timeframe: MarketWeatherTimeframe }) {
+  const { theme } = useSiteTheme();
   const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [width, setWidth] = useState(0);
@@ -1620,7 +1628,7 @@ function DerivativeHeatmap({ series, timeframe }: { series: MarketWeatherDerivat
     const context = canvas.getContext("2d");
     if (!context) return;
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
-    context.fillStyle = "rgb(10,17,29)";
+    context.fillStyle = readThemeColor("--field-canvas", "rgb(10,17,29)");
     context.fillRect(0, 0, width, height);
     const left = 98;
     const bottom = 28;
@@ -1633,17 +1641,17 @@ function DerivativeHeatmap({ series, timeframe }: { series: MarketWeatherDerivat
         context.fillStyle = value >= 0 ? `rgba(56,189,248,${alpha})` : `rgba(245,158,11,${alpha})`;
         context.fillRect(left + column * cellWidth, 7 + row * cellHeight, Math.max(1, cellWidth + 0.2), cellHeight + 0.2);
       });
-      context.fillStyle = "rgba(203,213,225,.88)";
+      context.fillStyle = readThemeColor("--chart-axis-tick", "rgba(203,213,225,.88)");
       context.font = "12px IBM Plex Sans, sans-serif";
       context.textAlign = "right";
       context.fillText(derivative.label, left - 8, 7 + (row + 0.58) * cellHeight);
     });
     context.textAlign = "left";
-    context.fillStyle = "rgba(148,163,184,.9)";
+    context.fillStyle = readThemeColor("--chart-axis-tick", "rgba(148,163,184,.9)");
     context.fillText(formatDate(series[0].date, timeframe), left, height - 8);
     context.textAlign = "right";
     context.fillText(formatDate(series[series.length - 1].date, timeframe), width - 8, height - 8);
-  }, [series, timeframe, width]);
+  }, [series, theme, timeframe, width]);
 
   return (
     <div ref={wrapperRef} className="overflow-hidden rounded-xl border border-stealth-700">

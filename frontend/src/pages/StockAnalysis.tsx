@@ -1236,8 +1236,8 @@ export default function StockAnalysis() {
             const peMcapData = mergeSeries(peSeries, "pe", mcapSeries, "mcap");
 
             const tooltipStyle = {
-              background: "#111827",
-              border: "1px solid #374151",
+              background: "var(--chart-tooltip-bg)",
+              border: "1px solid var(--chart-tooltip-border)",
               borderRadius: "8px",
               fontSize: "12px",
             };

@@ -155,13 +155,13 @@ const GROUP_COLORS: Record<string, string> = {
 
 const chartTooltip = {
   contentStyle: {
-    background: "#0f172a",
-    border: "1px solid #334155",
+    background: "var(--chart-tooltip-bg)",
+    border: "1px solid var(--chart-tooltip-border)",
     borderRadius: 10,
-    color: "#e2e8f0",
+    color: "var(--field-text)",
     fontSize: 12,
   },
-  labelStyle: { color: "#94a3b8" },
+  labelStyle: { color: "var(--chart-tooltip-label)" },
 };
 
 function pressureTone(score: number) {
@@ -295,7 +295,7 @@ function PropertyTypeChart({ data, groups }: { data: CommercialPayload["property
             <CartesianGrid {...commonGridProps} />
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(date: string) => date.slice(0, 7)} />
             <YAxis {...commonYAxisProps} domain={["auto", "auto"]} />
-            <ReferenceLine y={100} stroke="#334155" strokeDasharray="4 4" />
+            <ReferenceLine y={100} stroke="var(--chart-grid)" strokeDasharray="4 4" />
             <Tooltip
               {...chartTooltip}
               formatter={(value: number, name: string) => [value.toFixed(1), groups.find((group) => group.group === name)?.label ?? name]}
@@ -357,7 +357,7 @@ function CreditCycleChart({ price, delinquency }: { price: DataPoint[]; delinque
             <XAxis {...commonXAxisProps} dataKey="date" tickFormatter={(date: string) => date.slice(0, 7)} />
             <YAxis {...commonYAxisProps} yAxisId="price" tickFormatter={(value: number) => `${value}%`} />
             <YAxis {...commonYAxisProps} yAxisId="delinquency" orientation="right" tickFormatter={(value: number) => `${value}%`} />
-            <ReferenceLine yAxisId="price" y={0} stroke="#334155" strokeDasharray="4 4" />
+            <ReferenceLine yAxisId="price" y={0} stroke="var(--chart-grid)" strokeDasharray="4 4" />
             <Tooltip
               {...chartTooltip}
               formatter={(value: number, name: string) => [`${value.toFixed(2)}%`, name === "price" ? "CRE Prices YoY" : "CRE Delinquency"]}
@@ -583,7 +583,7 @@ function SectorDemandSupplyCard({
                 tickFormatter={(timestamp: number) => formatCycleTimeAxisLabel(timestamp, horizonYears)}
               />
               <YAxis {...commonYAxisProps} domain={["auto", "auto"]} />
-              <ReferenceLine y={100} stroke="#334155" strokeDasharray="4 4" />
+              <ReferenceLine y={100} stroke="var(--chart-grid)" strokeDasharray="4 4" />
               <Tooltip
                 {...chartTooltip}
                 labelFormatter={(timestamp: number) => formatCycleTooltipLabel(timestamp)}
@@ -679,7 +679,7 @@ function SectorPriceCard({
                 tickFormatter={(timestamp: number) => formatCycleTimeAxisLabel(timestamp, horizonYears)}
               />
               <YAxis {...commonYAxisProps} domain={["auto", "auto"]} />
-              <ReferenceLine y={100} stroke="#334155" strokeDasharray="4 4" />
+              <ReferenceLine y={100} stroke="var(--chart-grid)" strokeDasharray="4 4" />
               <Tooltip
                 {...chartTooltip}
                 labelFormatter={(timestamp: number) => formatCycleTooltipLabel(timestamp)}

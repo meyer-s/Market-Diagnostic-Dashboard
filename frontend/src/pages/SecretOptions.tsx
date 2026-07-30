@@ -5952,8 +5952,8 @@ export default function SecretOptions() {
                         formatter={(value) => formatNumber(Number(value), 3)}
                         labelFormatter={(label) => `Price: $${label}`}
                         contentStyle={{
-                          background: "#111827",
-                          border: "1px solid #374151",
+                          background: CHART_NEUTRAL.tooltipBg,
+                          border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`,
                           borderRadius: "8px",
                           fontSize: "12px",
                         }}
@@ -6039,8 +6039,8 @@ export default function SecretOptions() {
                         formatter={(value) => formatNumber(Number(value), 4)}
                         labelFormatter={(label) => `Price: $${label}`}
                         contentStyle={{
-                          background: "#111827",
-                          border: "1px solid #374151",
+                          background: CHART_NEUTRAL.tooltipBg,
+                          border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`,
                           borderRadius: "8px",
                           fontSize: "12px",
                         }}
@@ -6123,8 +6123,8 @@ export default function SecretOptions() {
                         formatter={(value) => formatNumber(Number(value), 4)}
                         labelFormatter={(label) => `${label} days to expiry`}
                         contentStyle={{
-                          background: "#111827",
-                          border: "1px solid #374151",
+                          background: CHART_NEUTRAL.tooltipBg,
+                          border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`,
                           borderRadius: "8px",
                           fontSize: "12px",
                         }}

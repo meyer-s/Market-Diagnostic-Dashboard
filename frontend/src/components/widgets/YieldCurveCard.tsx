@@ -118,7 +118,7 @@ export default function YieldCurveCard() {
               data={chartData}
               margin={{ top: 8, right: 8, left: -16, bottom: 8 }}
             >
-              <CartesianGrid strokeDasharray="3 3" stroke="#2f3b52" />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
               <XAxis dataKey="maturity" tick={{ fontSize: 12, fill: "#94a3b8" }} axisLine={{ stroke: "#475569" }} tickLine={{ stroke: "#475569" }} />
               <YAxis tick={{ fontSize: 12, fill: "#94a3b8" }} axisLine={{ stroke: "#475569" }} tickLine={{ stroke: "#475569" }} domain={["dataMin - 0.25", "dataMax + 0.25"]} />
               <Tooltip

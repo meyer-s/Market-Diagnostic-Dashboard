@@ -1044,7 +1044,7 @@ export default function AgricultureIndex() {
                   <XAxis dataKey="date" {...commonXAxisProps} />
                   <YAxis {...commonYAxisProps} domain={[0, 100]} />
                   <Tooltip
-                    contentStyle={{ background: "rgba(2,6,23,0.85)", border: "1px solid rgba(148,163,184,0.15)", borderRadius: "0.5rem", fontSize: "0.75rem" }}
+                    contentStyle={{ background: "var(--chart-tooltip-bg)", border: "1px solid var(--chart-tooltip-border)", borderRadius: "0.5rem", fontSize: "0.75rem" }}
                     formatter={(value: number) => [value.toFixed(1), "Stability"]}
                   />
                   <ReferenceLine y={70} stroke="#34d399" strokeDasharray="3 3" strokeOpacity={0.4} />

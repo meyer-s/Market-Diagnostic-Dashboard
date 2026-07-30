@@ -1039,12 +1039,12 @@ export default function MarketWeatherRadar() {
                           <stop offset="100%" stopColor="#60a5fa" stopOpacity={0.02} />
                         </linearGradient>
                       </defs>
-                      <CartesianGrid stroke="rgba(100,116,139,0.18)" strokeDasharray="3 4" vertical={false} />
+                      <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 4" vertical={false} />
                       <XAxis dataKey="date" minTickGap={64} tick={{ fill: "#94a3b8", fontSize: 12 }} tickFormatter={(value) => formatChartTick(String(value), data.timeframe)} />
                       <YAxis yAxisId="price" tick={{ fill: "#94a3b8", fontSize: 12 }} width={54} domain={["auto", "auto"]} tickFormatter={(value) => `$${Number(value).toFixed(0)}`} />
                       <YAxis yAxisId="field" orientation="right" domain={[-1, 1]} ticks={[-1, -0.5, 0, 0.5, 1]} tick={{ fill: "#94a3b8", fontSize: 12 }} width={40} />
                       <Tooltip contentStyle={{ background: "var(--chart-tooltip-bg)", border: "1px solid var(--chart-tooltip-border)", borderRadius: 12 }} labelStyle={{ color: "var(--chart-tooltip-label)" }} formatter={(value, name) => name === "close" ? [formatPrice(Number(value)), "Close"] : [formatSigned(Number(value)), "Field pressure"]} />
-                      <ReferenceLine yAxisId="field" y={0} stroke="rgba(226,232,240,0.32)" strokeDasharray="4 4" />
+                      <ReferenceLine yAxisId="field" y={0} stroke="var(--chart-axis-line)" strokeDasharray="4 4" />
                       <Area yAxisId="price" type="monotone" dataKey="close" stroke="#60a5fa" strokeWidth={2} fill="url(#weatherPriceFill)" dot={false} isAnimationActive={false} />
                       <Line yAxisId="field" type="monotone" dataKey="field" stroke="#f8c15c" strokeWidth={1.8} dot={false} isAnimationActive={false} />
                     </ComposedChart>

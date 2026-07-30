@@ -324,7 +324,7 @@ export default function TreasuryYieldCurvePanel({
             data={chartData}
             margin={CHART_MARGIN}
           >
-            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
             <XAxis
               dataKey="maturity"
               tick={{ fontSize: 12, fill: "#9ca3af" }}
