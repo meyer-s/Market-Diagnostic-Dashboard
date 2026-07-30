@@ -8,11 +8,7 @@ const AUDIT_ROOT = path.resolve(process.cwd(), "..", "artifacts", "site-audit", 
 const SCREENSHOT_ROOT = path.join(AUDIT_ROOT, "state-screenshots");
 const LIVE_ORIGIN = process.env.AUDIT_ORIGIN ?? "https://marketdiagnostictool.com";
 const RUNTIME_ORIGIN = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:4173";
-const AUDIT_THEME = process.env.AUDIT_THEME ?? "evidence";
-const AUDIT_THEME_IDS = ["evidence", "ledger", "observatory"] as const;
-if (!AUDIT_THEME_IDS.includes(AUDIT_THEME as (typeof AUDIT_THEME_IDS)[number])) {
-  throw new Error(`Unsupported AUDIT_THEME: ${AUDIT_THEME}`);
-}
+const AUDIT_THEME = "evidence" as const;
 const AUDIT_SOURCE =
   new URL(RUNTIME_ORIGIN).origin === new URL(LIVE_ORIGIN).origin
     ? "deployed production interaction-state captures with read-only request enforcement"
@@ -842,13 +838,6 @@ test("capture materially distinct interactive states at full page height", async
       deviceScaleFactor: 1,
       hasTouch: viewport.name === "mobile",
     });
-    await context.addInitScript(
-      ({ storageKey, theme }) => window.localStorage.setItem(storageKey, theme),
-      {
-        storageKey: "market-diagnostic.theme-preview",
-        theme: AUDIT_THEME,
-      },
-    );
     await context.addInitScript(() => window.sessionStorage.clear());
     let activeFixture: SecretFixture | undefined;
 

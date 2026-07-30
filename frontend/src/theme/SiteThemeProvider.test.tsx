@@ -1,25 +1,15 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
-  SITE_THEMES,
   SITE_THEME_STORAGE_KEY,
   SiteThemeProvider,
   useSiteTheme,
 } from "./SiteThemeProvider";
 
 function ThemeHarness() {
-  const { theme, activeTheme, setTheme } = useSiteTheme();
-
-  return (
-    <div>
-      <output data-testid="theme-id">{theme}</output>
-      <output data-testid="theme-label">{activeTheme.label}</output>
-      <button type="button" onClick={() => setTheme("ledger")}>
-        Choose ledger
-      </button>
-    </div>
-  );
+  const { theme } = useSiteTheme();
+  return <output data-testid="theme-id">{theme}</output>;
 }
 
 function renderThemeHarness() {
@@ -44,41 +34,24 @@ describe("SiteThemeProvider", () => {
     document.querySelector('meta[name="theme-color"]')?.remove();
   });
 
-  it("defaults to Evidence Field and publishes the expected theme metadata", async () => {
+  it("publishes Evidence as the sole production theme", async () => {
     renderThemeHarness();
 
-    expect(SITE_THEMES.map(({ id, label, shortLabel }) => ({ id, label, shortLabel }))).toEqual([
-      { id: "evidence", label: "Evidence Field", shortLabel: "Field" },
-      { id: "ledger", label: "Midnight Ledger", shortLabel: "Ledger" },
-      { id: "observatory", label: "Signal Observatory", shortLabel: "Signal" },
-    ]);
     expect(screen.getByTestId("theme-id").textContent).toBe("evidence");
-    expect(screen.getByTestId("theme-label").textContent).toBe("Evidence Field");
-
     await waitFor(() => {
       expect(document.documentElement.dataset.theme).toBe("evidence");
       expect(window.localStorage.getItem(SITE_THEME_STORAGE_KEY)).toBe("evidence");
-      expect(document.querySelector('meta[name="theme-color"]')?.getAttribute("content")).toBe("#0e1520");
+      expect(
+        document
+          .querySelector('meta[name="theme-color"]')
+          ?.getAttribute("content"),
+      ).toBe("#0e1520");
     });
   });
 
-  it("applies and persists a selected theme", async () => {
-    renderThemeHarness();
-
-    fireEvent.click(screen.getByRole("button", { name: "Choose ledger" }));
-
-    expect(screen.getByTestId("theme-id").textContent).toBe("ledger");
-    expect(screen.getByTestId("theme-label").textContent).toBe("Midnight Ledger");
-    await waitFor(() => {
-      expect(document.documentElement.dataset.theme).toBe("ledger");
-      expect(window.localStorage.getItem(SITE_THEME_STORAGE_KEY)).toBe("ledger");
-      expect(document.querySelector('meta[name="theme-color"]')?.getAttribute("content")).toBe("#0a1420");
-    });
-  });
-
-  it("falls back to Evidence Field when persisted data is invalid", async () => {
-    window.localStorage.setItem(SITE_THEME_STORAGE_KEY, "sepia");
-    document.documentElement.dataset.theme = "sepia";
+  it("retires a legacy preview preference on startup", async () => {
+    window.localStorage.setItem(SITE_THEME_STORAGE_KEY, "observatory");
+    document.documentElement.dataset.theme = "observatory";
 
     renderThemeHarness();
 
@@ -89,34 +62,20 @@ describe("SiteThemeProvider", () => {
     });
   });
 
-  it("synchronizes valid cross-tab storage changes and safely handles removal", async () => {
+  it("ignores legacy cross-tab preview changes", async () => {
     renderThemeHarness();
 
     act(() => {
       window.dispatchEvent(
         new StorageEvent("storage", {
           key: SITE_THEME_STORAGE_KEY,
-          newValue: "observatory",
-        }),
-      );
-    });
-
-    expect(screen.getByTestId("theme-id").textContent).toBe("observatory");
-    await waitFor(() => {
-      expect(document.documentElement.dataset.theme).toBe("observatory");
-      expect(window.localStorage.getItem(SITE_THEME_STORAGE_KEY)).toBe("observatory");
-      expect(document.querySelector('meta[name="theme-color"]')?.getAttribute("content")).toBe("#071619");
-    });
-
-    act(() => {
-      window.dispatchEvent(
-        new StorageEvent("storage", {
-          key: SITE_THEME_STORAGE_KEY,
-          newValue: null,
+          newValue: "ledger",
         }),
       );
     });
 
     expect(screen.getByTestId("theme-id").textContent).toBe("evidence");
+    expect(document.documentElement.dataset.theme).toBe("evidence");
+    expect(window.localStorage.getItem(SITE_THEME_STORAGE_KEY)).toBe("evidence");
   });
 });

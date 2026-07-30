@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { IndicatorStatus } from "../types";
 import IndicatorCard from "../components/widgets/IndicatorCard";
 import DowTheoryWidget from "../components/widgets/DowTheoryWidget";
@@ -118,7 +118,6 @@ const buildOverallInsight = (
 };
 
 export default function Dashboard() {
-  const driverGridRef = useRef<HTMLDivElement>(null);
   const [news, setNews] = useState<NewsArticle[]>([]);
   const [indicators, setIndicators] = useState<IndicatorStatus[] | null>(null);
   const [indicatorsLoading, setIndicatorsLoading] = useState(true);
@@ -164,74 +163,6 @@ export default function Dashboard() {
       mounted = false;
     };
   }, [retryNonce]);
-
-  useEffect(() => {
-    const grid = driverGridRef.current;
-    if (!grid || typeof window.matchMedia !== "function") return;
-
-    const shells = Array.from(
-      grid.querySelectorAll<HTMLElement>(":scope > .dashboard-driver-shell"),
-    );
-    const wideViewport = window.matchMedia("(min-width: 1024px)");
-    let frameId: number | null = null;
-
-    const resetRows = () => {
-      shells.forEach((shell) => shell.style.removeProperty("grid-row-end"));
-    };
-
-    const applyRows = () => {
-      frameId = null;
-      if (
-        document.documentElement.dataset.theme !== "observatory"
-        || !wideViewport.matches
-      ) {
-        resetRows();
-        return;
-      }
-
-      const gap = Number.parseFloat(
-        getComputedStyle(grid).getPropertyValue("--observatory-driver-gap"),
-      ) || 24;
-      shells.forEach((shell) => {
-        const content = shell.firstElementChild as HTMLElement | null;
-        if (!content) return;
-        const span = Math.max(
-          1,
-          Math.ceil(content.getBoundingClientRect().height + gap),
-        );
-        shell.style.gridRowEnd = `span ${span}`;
-      });
-    };
-
-    const scheduleRows = () => {
-      if (frameId !== null) return;
-      frameId = window.requestAnimationFrame(applyRows);
-    };
-
-    const resizeObserver =
-      typeof ResizeObserver === "undefined"
-        ? null
-        : new ResizeObserver(scheduleRows);
-    shells.forEach((shell) => {
-      const content = shell.firstElementChild;
-      if (content) resizeObserver?.observe(content);
-    });
-    const themeObserver = new MutationObserver(scheduleRows);
-    themeObserver.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["data-theme"],
-    });
-    wideViewport.addEventListener("change", scheduleRows);
-    scheduleRows();
-
-    return () => {
-      if (frameId !== null) window.cancelAnimationFrame(frameId);
-      resizeObserver?.disconnect();
-      themeObserver.disconnect();
-      wideViewport.removeEventListener("change", scheduleRows);
-      resetRows();
-    };
-  }, []);
 
   const newsCount = news.length;
   const visibleIndicators = useMemo(() => indicators?.filter((i) => i.code !== "AAS" && i.code !== "AAP") ?? [], [indicators]);
@@ -438,7 +369,7 @@ export default function Dashboard() {
           <div className="page-kicker">Drivers</div>
           <h2 id="drivers-title" className="mt-1 text-xl font-semibold text-stealth-100 sm:text-2xl">What is moving the read</h2>
         </div>
-        <div ref={driverGridRef} className="dashboard-driver-grid grid grid-cols-1 gap-3 md:gap-6 lg:grid-cols-2">
+        <div className="dashboard-driver-grid grid grid-cols-1 gap-3 md:gap-6 lg:grid-cols-2">
           <div className="dashboard-driver-shell dashboard-driver-system">
             <SystemOverviewWidget trendPeriod={trendPeriod} onInsight={handleInsight} />
           </div>

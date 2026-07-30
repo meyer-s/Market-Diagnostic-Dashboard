@@ -2,7 +2,6 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
-import "./observatory-v2.css";
 import { initializeAnalytics } from "./utils/analytics";
 
 // Initialize Google Analytics

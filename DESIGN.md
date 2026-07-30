@@ -102,6 +102,8 @@ components:
 
 Market Diagnostic Dashboard should feel like a calm research instrument: quiet enough to support concentration, structured enough to audit, and direct enough to use under time pressure. It is not a promotional finance site and it should never imply more certainty than the data supports. The interface earns trust by connecting each conclusion to its drivers, values, definitions, freshness, and provenance.
 
+Evidence Field is the sole production visual system. The Midnight Ledger and Signal Observatory studies remain preserved in Git history on `codex/observatory-v2-2026-07-30`; they are references, not user-facing modes.
+
 The default page spine is **Now → Drivers → Evidence → Definition → Audit**. Operational workspaces may add **Action**, but action must remain visibly governed by the user. Dense evidence is welcome when it has hierarchy; arbitrary card walls, microscopic labels, and decorative dashboard effects are not.
 
 **Key Characteristics:**
