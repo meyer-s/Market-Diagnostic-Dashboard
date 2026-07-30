@@ -1,4 +1,11 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import {
   MemoryRouter,
   Route,
@@ -367,6 +374,22 @@ describe("site-polish route contracts", () => {
     });
     expect(region.getAttribute("tabindex")).toBe("0");
     expect(region.className).toContain("overflow-x-auto");
+    const historyTable = screen.getByRole("table", {
+      name: "Historical indicator states by date",
+    });
+    expect(
+      within(historyTable).getByRole("rowheader", { name: "VIX" }),
+    ).not.toBeNull();
+    expect(
+      within(historyTable).getByRole("cell", {
+        name: "2026-07-29: green, score 76.0",
+      }),
+    ).not.toBeNull();
+    expect(
+      screen.getByRole("link", { name: "Overview" }).getAttribute(
+        "aria-current",
+      ),
+    ).toBe("location");
     expect(screen.getByLabelText("Explain indicator grouping and weights")).not.toBeNull();
   });
 });

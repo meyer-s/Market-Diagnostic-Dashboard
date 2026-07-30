@@ -447,9 +447,14 @@ export default function Vision() {
         </div>
       </section>
 
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-14 sm:py-16">
-        <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start">
-          <div className="space-y-3">
+      <section className="vision-highlight-region max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-14 sm:py-16">
+        <div className="vision-highlight-layout grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start">
+          <div
+            className="vision-highlight-rail space-y-3"
+            role="region"
+            aria-label="Vision highlights"
+            tabIndex={0}
+          >
             {heroHighlights.map((item) => {
               const isActive = activeHighlight === item.id;
 
@@ -457,13 +462,29 @@ export default function Vision() {
                 <button
                   key={item.id}
                   type="button"
+                  aria-label={item.title}
                   aria-pressed={isActive}
-                  onClick={() => setActiveHighlight(item.id)}
+                  aria-controls="vision-highlight-detail"
+                  data-highlight={item.id}
+                  data-active={isActive ? "true" : "false"}
+                  onClick={(event) => {
+                    setActiveHighlight(item.id);
+                    event.currentTarget.scrollIntoView({
+                      block: "nearest",
+                      inline: "center",
+                    });
+                  }}
                   onMouseEnter={() => setActiveHighlight(item.id)}
-                  onFocus={() => setActiveHighlight(item.id)}
-                  className={`min-h-11 w-full rounded-xl border px-4 py-4 text-left transition-colors duration-200 ${
+                  onFocus={(event) => {
+                    setActiveHighlight(item.id);
+                    event.currentTarget.scrollIntoView({
+                      block: "nearest",
+                      inline: "center",
+                    });
+                  }}
+                  className={`vision-highlight-selector min-h-11 w-full rounded-xl border px-4 py-4 text-left transition-colors duration-200 ${
                     isActive
-                      ? "border-emerald-300/40 bg-white/[0.08] shadow-[0_12px_36px_rgba(0,0,0,0.18)]"
+                      ? "vision-highlight-selector-active border-emerald-300/40 bg-white/[0.08] shadow-[0_12px_36px_rgba(0,0,0,0.18)]"
                       : "border-stealth-700 bg-stealth-900/35 hover:border-stealth-500 hover:bg-white/[0.04]"
                   }`}
                 >
@@ -478,18 +499,26 @@ export default function Vision() {
             })}
           </div>
 
-          <div className="rounded-2xl border border-stealth-600 bg-stealth-850 p-5 shadow-[0_18px_48px_-32px_rgba(0,0,0,0.78)] sm:p-6">
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">
+          <div
+            id="vision-highlight-detail"
+            className="vision-highlight-detail rounded-2xl border border-stealth-600 bg-stealth-850 p-5 shadow-[0_18px_48px_-32px_rgba(0,0,0,0.78)] sm:p-6"
+            role="region"
+            aria-labelledby={`vision-highlight-detail-title-${activeHeroHighlight.id}`}
+          >
+            <div className="vision-highlight-detail-eyebrow text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">
               {activeHeroHighlight.eyebrow}
             </div>
-            <h2 className="mt-3 text-2xl sm:text-3xl font-semibold text-white">
+            <h2
+              id={`vision-highlight-detail-title-${activeHeroHighlight.id}`}
+              className="vision-highlight-detail-title mt-3 text-2xl sm:text-3xl font-semibold text-white"
+            >
               {activeHeroHighlight.title}
             </h2>
-            <p className="mt-3 text-base sm:text-lg leading-7 text-stealth-200">
+            <p className="vision-highlight-detail-copy vision-highlight-detail-summary mt-3 text-base sm:text-lg leading-7 text-stealth-200">
               {activeHeroHighlight.summary}
             </p>
             <div className="mt-5 border-t border-white/8 pt-5">
-              <p className="text-sm sm:text-base leading-7 text-stealth-300">
+              <p className="vision-highlight-detail-copy vision-highlight-detail-body text-sm sm:text-base leading-7 text-stealth-300">
                 {activeHeroHighlight.detail}
               </p>
             </div>

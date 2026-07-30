@@ -1344,9 +1344,9 @@ function GenerationMixPanel({ mix }: { mix: GenerationMix }) {
       </div>
 
       {/* Fuel tiles */}
-      <div className="mb-4 grid grid-cols-4 gap-1.5">
+      <div className="energy-generation-fuel-grid mb-4 grid grid-cols-4 gap-1.5">
         {fuels.map(([fuel, pct]) => (
-          <div key={fuel} className="flex items-center gap-2 rounded-lg border border-white/[0.04] bg-stealth-900/60 px-2.5 py-2">
+          <div key={fuel} className="energy-generation-fuel-tile flex items-center gap-2 rounded-lg border border-white/[0.04] bg-stealth-900/60 px-2.5 py-2">
             <div className="h-2.5 w-2.5 flex-shrink-0 rounded-sm" style={{ background: FUEL_COLORS[fuel] ?? "#94a3b8" }} />
             <div>
               <div className="text-xs uppercase tracking-wide text-stealth-500">{FUEL_LABELS[fuel] ?? fuel}</div>

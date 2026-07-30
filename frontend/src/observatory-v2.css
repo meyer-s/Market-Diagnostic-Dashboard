@@ -1,0 +1,844 @@
+/*
+ * Signal Observatory v2
+ *
+ * A scientific observation deck: open orientation space, clearly ranked
+ * analytical frames, and compact instrument arrays. Every visual rule is
+ * scoped to the Observatory preview so Evidence Field and Midnight Ledger
+ * remain exact protected baselines.
+ */
+
+html[data-theme="observatory"] {
+  --observatory-stage: linear-gradient(
+    138deg,
+    rgba(20, 51, 58, 0.98),
+    rgba(10, 35, 40, 0.98) 58%,
+    rgba(8, 28, 32, 0.99)
+  );
+  --observatory-panel: rgba(12, 38, 43, 0.9);
+  --observatory-cell: rgba(8, 29, 33, 0.74);
+  --observatory-rule: rgba(104, 196, 216, 0.2);
+  --observatory-rule-strong: rgba(104, 196, 216, 0.62);
+  --observatory-stage-shadow: 0 30px 68px -44px rgba(0, 0, 0, 0.96);
+  --observatory-panel-shadow: 0 22px 48px -40px rgba(0, 0, 0, 0.94);
+}
+
+/* The topbar is already effectively opaque; dropping blur keeps long-page
+   scrolling crisp while preserving the same visual density. */
+html[data-theme="observatory"] .topbar {
+  backdrop-filter: none;
+}
+
+/* Three surface tiers. The v1 corner calibration mark is deliberately removed
+   from repeated cards and restored only on authored observation stages below. */
+html[data-theme="observatory"]
+  :is(.surface-card, .surface-card-strong, .primary-card, .chart-frame, .page-header) {
+  background-image: none;
+}
+
+html[data-theme="observatory"] :is(.surface-card-strong, .page-header) {
+  border-color: var(--field-border-strong);
+  background-color: var(--field-surface-raised);
+  box-shadow: var(--observatory-stage-shadow);
+}
+
+html[data-theme="observatory"] :is(.surface-card, .primary-card, .chart-frame) {
+  border-color: var(--field-border);
+  background-color: var(--observatory-panel);
+  box-shadow: var(--observatory-panel-shadow);
+}
+
+html[data-theme="observatory"]
+  :is(.secondary-card, .surface-card-muted, .data-card, .stat-card) {
+  border-color: rgba(79, 116, 122, 0.62);
+  background-color: var(--observatory-cell);
+  background-image: none;
+  box-shadow: none;
+}
+
+html[data-theme="observatory"] .primary-card-hover {
+  transition-property: border-color, background-color, box-shadow, color;
+}
+
+html[data-theme="observatory"] .primary-card-hover:hover {
+  border-color: var(--field-border-hover);
+  background-color: rgba(17, 50, 56, 0.96);
+  box-shadow: 0 0 0 1px rgba(104, 196, 216, 0.18);
+  transform: none;
+}
+
+html[data-theme="observatory"]
+  :is(
+    .dashboard-current-read-console,
+    .system-history-surface,
+    #main-content [data-testid="field-surface"]
+  ) {
+  border-color: var(--field-border-strong);
+  background-color: var(--field-surface-raised);
+  background-image:
+    linear-gradient(90deg, var(--observatory-rule-strong), var(--observatory-rule-strong)),
+    linear-gradient(180deg, var(--observatory-rule-strong), var(--observatory-rule-strong)),
+    linear-gradient(90deg, var(--observatory-rule), var(--observatory-rule)),
+    linear-gradient(180deg, var(--observatory-rule), var(--observatory-rule));
+  background-position: top right, top right, bottom left, bottom left;
+  background-repeat: no-repeat;
+  background-size: 46px 1px, 1px 46px, 28px 1px, 1px 28px;
+  box-shadow: var(--observatory-stage-shadow);
+}
+
+html[data-theme="observatory"] .chart-frame-header {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--observatory-rule);
+}
+
+html[data-theme="observatory"] .chart-frame-description {
+  font-size: 14px;
+}
+
+html[data-theme="observatory"] .chart-frame-summary {
+  margin-top: 14px;
+}
+
+html[data-theme="observatory"] .chart-frame-visual {
+  margin-top: 20px;
+}
+
+/* Observatory controls read as instrument selectors, not generic pills. */
+html[data-theme="observatory"] .control-strip {
+  border-color: var(--field-border-strong);
+  background: rgba(7, 28, 32, 0.9);
+}
+
+html[data-theme="observatory"] .control-strip > :is(button, a) {
+  border-radius: 2px 9px 2px 9px !important;
+  transition-property: border-color, background-color, color, box-shadow;
+}
+
+/* The context rails exist in the DOM for stable page structure, but become
+   visible only in Observatory. */
+html[data-theme="observatory"]
+  :is(.observatory-context-rail, .observatory-context-nav) {
+  display: flex !important;
+  border-color: rgba(79, 116, 122, 0.82);
+  background: rgba(7, 22, 25, 0.985);
+  box-shadow:
+    0 18px 34px -30px rgba(0, 0, 0, 0.96),
+    inset 0 -1px 0 rgba(104, 196, 216, 0.08);
+  backdrop-filter: none;
+}
+
+html[data-theme="observatory"]
+  :is(.observatory-context-rail, .observatory-context-nav)
+  .section-nav-label {
+  color: var(--field-accent-strong);
+  letter-spacing: 0.16em;
+}
+
+html[data-theme="observatory"]
+  :is(.observatory-context-rail, .observatory-context-nav)
+  .section-nav-link {
+  position: relative;
+  border-radius: 1px;
+  color: var(--field-text-muted);
+}
+
+html[data-theme="observatory"]
+  :is(.observatory-context-rail, .observatory-context-nav)
+  .section-nav-link::after {
+  position: absolute;
+  right: 12px;
+  bottom: 5px;
+  left: 12px;
+  height: 1px;
+  background: var(--field-accent);
+  content: "";
+  opacity: 0;
+  transform: scaleX(0.35);
+  transform-origin: left;
+  transition: opacity 160ms ease, transform 180ms ease;
+}
+
+html[data-theme="observatory"]
+  :is(.observatory-context-rail, .observatory-context-nav)
+  .section-nav-link:hover::after,
+html[data-theme="observatory"]
+  :is(.observatory-context-rail, .observatory-context-nav)
+  .section-nav-link[aria-current="location"]::after {
+  opacity: 0.9;
+  transform: scaleX(1);
+}
+
+/* ── Dashboard observation deck ─────────────────────────────────────────── */
+
+html[data-theme="observatory"] .dashboard-masthead {
+  padding: 18px 0 30px;
+  border-bottom: 1px solid var(--field-border);
+}
+
+html[data-theme="observatory"] .dashboard-masthead h1 {
+  max-width: 10ch;
+  font-size: clamp(3rem, 5.4vw, 4.8rem);
+  letter-spacing: -0.04em;
+}
+
+html[data-theme="observatory"] .dashboard-masthead-copy > p {
+  max-width: 58ch;
+  font-size: 16px;
+}
+
+html[data-theme="observatory"] .dashboard-command-dock {
+  padding: 12px 0;
+}
+
+html[data-theme="observatory"] .dashboard-current-read-console {
+  display: grid;
+  min-height: 250px;
+  padding: clamp(1.35rem, 2.7vw, 2.2rem) !important;
+  grid-template-columns: minmax(15rem, 0.38fr) minmax(0, 0.62fr);
+  grid-template-rows: auto 1fr;
+  column-gap: clamp(2rem, 4vw, 4rem);
+  row-gap: 20px;
+}
+
+html[data-theme="observatory"] .dashboard-current-read-heading {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+html[data-theme="observatory"] .dashboard-current-read-heading > div:first-child > div {
+  color: var(--field-accent-strong);
+  letter-spacing: 0.2em;
+}
+
+html[data-theme="observatory"] .dashboard-current-read-read {
+  margin-top: 10px;
+  font-family: var(--theme-font-display);
+  font-size: clamp(2.6rem, 5vw, 4.6rem) !important;
+  font-weight: 560 !important;
+  letter-spacing: -0.04em !important;
+  line-height: 0.98 !important;
+}
+
+html[data-theme="observatory"] .dashboard-current-read-confidence {
+  max-width: 11ch;
+  padding-top: 5px;
+  color: var(--field-text-muted);
+  font-family: var(--theme-font-numeric);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+
+html[data-theme="observatory"] .dashboard-direction-strip {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  margin-top: 0 !important;
+  align-content: stretch;
+  gap: 1px !important;
+  overflow: hidden;
+  border: 1px solid var(--field-border);
+  border-radius: 12px 2px 12px 2px;
+  background: var(--field-border);
+}
+
+html[data-theme="observatory"] .dashboard-direction-strip .direction-card {
+  min-height: 98px;
+  padding: 15px;
+  border: 0;
+  border-radius: 0 !important;
+  background: rgba(8, 30, 34, 0.96);
+}
+
+html[data-theme="observatory"] .dashboard-current-read-loading-card {
+  opacity: 0.72;
+}
+
+html[data-theme="observatory"]
+  .dashboard-direction-strip
+  .direction-card:is(.direction-card-up, .direction-card-down, .direction-card-flat) {
+  box-shadow: inset 2px 0 0 currentColor;
+}
+
+html[data-theme="observatory"] .dashboard-current-read-console > p:last-child {
+  grid-column: 1;
+  grid-row: 2;
+  max-width: 43ch;
+  margin-top: 0 !important;
+  align-self: end;
+  color: var(--field-text-muted);
+  font-size: 15px;
+}
+
+html[data-theme="observatory"] :is(.dashboard-drivers, .dashboard-breadth) {
+  padding-top: 10px;
+  border-top: 1px solid var(--observatory-rule);
+}
+
+/* Driver shells remain boxless so every theme keeps the same semantic and
+   visual System → Dow → Sector → Metals sequence. */
+.dashboard-driver-shell {
+  display: contents;
+}
+
+html[data-theme="observatory"] .dashboard-driver-grid {
+  align-items: start;
+}
+
+html[data-theme="observatory"] .dashboard-driver-grid > * {
+  align-self: start;
+  height: auto !important;
+}
+
+html[data-theme="observatory"]
+  .dashboard-driver-grid
+  > :is(a, div)
+  > .primary-card,
+html[data-theme="observatory"] .dashboard-driver-grid > .primary-card {
+  height: auto !important;
+}
+
+/* A single framed sensor array replaces the repeated floating card wall. */
+html[data-theme="observatory"] .dashboard-indicator-array {
+  gap: 1px !important;
+  overflow: hidden;
+  border: 1px solid var(--field-border-strong);
+  border-radius: 18px 3px 18px 3px;
+  background: rgba(8, 29, 33, 0.98);
+  box-shadow: var(--observatory-panel-shadow);
+}
+
+html[data-theme="observatory"] .indicator-sensor-link {
+  min-width: 0;
+  background: rgba(8, 29, 33, 0.98);
+  box-shadow: inset -1px -1px 0 var(--field-border);
+}
+
+html[data-theme="observatory"] .indicator-sensor-card {
+  display: grid;
+  min-height: 208px;
+  padding: 16px !important;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "name value"
+    "spark spark"
+    "score score"
+    "meta meta"
+    "description description";
+  grid-template-rows: auto 28px auto auto 1fr;
+  align-content: start;
+  column-gap: 12px;
+  border: 0;
+  border-radius: 0 !important;
+  background: transparent;
+  background-image: none !important;
+  box-shadow: none;
+}
+
+html[data-theme="observatory"] .indicator-sensor-card:hover {
+  background: rgba(18, 53, 59, 0.84);
+  box-shadow: inset 3px 0 0 var(--field-accent);
+}
+
+html[data-theme="observatory"] .indicator-sensor-name {
+  grid-area: name;
+  align-self: center;
+  overflow: hidden;
+  color: var(--field-text-muted);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+}
+
+html[data-theme="observatory"] .indicator-sensor-value {
+  grid-area: value;
+  margin-top: 0 !important;
+  align-self: center;
+  color: var(--field-text);
+  font-family: var(--theme-font-numeric);
+  font-size: 25px;
+  font-weight: 540;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+html[data-theme="observatory"] .indicator-sensor-sparkline {
+  grid-area: spark;
+  min-width: 0;
+  margin-top: 3px !important;
+  align-self: center;
+}
+
+html[data-theme="observatory"] .indicator-sensor-sparkline svg {
+  display: block;
+  width: 100%;
+  max-width: none;
+}
+
+html[data-theme="observatory"] .indicator-sensor-score-row {
+  grid-area: score;
+  margin-top: 3px !important;
+}
+
+html[data-theme="observatory"] .indicator-sensor-score {
+  color: var(--field-text-subtle);
+  font-family: var(--theme-font-numeric);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+html[data-theme="observatory"] .indicator-sensor-state {
+  gap: 7px;
+}
+
+html[data-theme="observatory"] .indicator-sensor-state-label {
+  position: static;
+  width: auto;
+  height: auto;
+  padding: 0;
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
+  border: 0;
+  color: var(--field-text-muted);
+  font-family: var(--theme-font-numeric);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+}
+
+html[data-theme="observatory"] .indicator-sensor-meta {
+  grid-area: meta;
+  min-width: 0;
+  margin-top: 0 !important;
+  padding-top: 7px !important;
+  gap: 8px;
+  border-top: 1px solid var(--observatory-rule);
+}
+
+html[data-theme="observatory"] .indicator-sensor-freshness {
+  min-width: 0;
+}
+
+html[data-theme="observatory"] .indicator-sensor-freshness > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-theme="observatory"] .indicator-sensor-frequency {
+  flex: 0 0 auto;
+  padding: 0;
+  background: transparent;
+  color: var(--field-text-subtle);
+  font-family: var(--theme-font-numeric);
+  letter-spacing: 0.04em;
+}
+
+html[data-theme="observatory"] .indicator-sensor-description {
+  grid-area: description;
+  margin-top: 5px !important;
+  align-self: start;
+  color: var(--field-text-subtle);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+/* ── System Breakdown instrument topology ───────────────────────────────── */
+
+html[data-theme="observatory"] #system-overview {
+  background: var(--observatory-stage);
+}
+
+html[data-theme="observatory"] .system-overview-input-grid {
+  gap: 1px !important;
+  overflow: hidden;
+  border: 1px solid var(--field-border);
+  border-radius: 12px 2px 12px 2px;
+  background: rgba(8, 29, 33, 0.96);
+}
+
+html[data-theme="observatory"] .system-overview-input-grid > div {
+  min-height: 74px;
+  padding: 14px 12px !important;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: rgba(8, 29, 33, 0.96) !important;
+  box-shadow: inset -1px -1px 0 var(--field-border);
+  text-align: left;
+}
+
+html[data-theme="observatory"] .system-overview-input-grid > div > :first-child {
+  color: var(--field-text);
+  font-family: var(--theme-font-numeric);
+  letter-spacing: 0.03em;
+}
+
+html[data-theme="observatory"] .system-overview-input-grid > div > :last-child {
+  margin-top: 3px;
+  line-height: 1.4;
+}
+
+html[data-theme="observatory"] .system-distribution-region {
+  gap: 1px !important;
+  overflow: hidden;
+  border: 1px solid var(--field-border-strong);
+  border-radius: 18px 3px 18px 3px;
+  background: rgba(8, 29, 33, 0.98);
+  box-shadow: var(--observatory-panel-shadow);
+}
+
+html[data-theme="observatory"] .system-distribution-card {
+  border: 0;
+  border-radius: 0 !important;
+  background: rgba(10, 34, 39, 0.98);
+  background-image: none;
+  box-shadow: inset -1px -1px 0 var(--field-border);
+}
+
+html[data-theme="observatory"] .system-distribution-ratios-card {
+  background: rgba(7, 28, 32, 0.98);
+}
+
+html[data-theme="observatory"] .system-history-grid {
+  width: max(100%, 800px) !important;
+}
+
+html[data-theme="observatory"] .system-history-scroller {
+  padding: 14px 0 4px;
+  border-top: 1px solid var(--observatory-rule);
+}
+
+html[data-theme="observatory"]
+  :is(.system-history-label, .system-history-axis-spacer) {
+  position: sticky;
+  z-index: 2;
+  left: 0;
+  flex: 0 0 12rem;
+  background: var(--field-surface-raised);
+}
+
+html[data-theme="observatory"] .system-history-label {
+  padding-block: 8px;
+}
+
+html[data-theme="observatory"] .system-history-cell {
+  min-height: 34px;
+  border-radius: 1px !important;
+}
+
+html[data-theme="observatory"] .system-history-legend {
+  padding-top: 14px;
+  border-top: 1px solid var(--observatory-rule);
+}
+
+/* ── Vision mobile master/detail distillation ───────────────────────────── */
+
+html[data-theme="observatory"] .vision-highlight-selector {
+  border-radius: 10px 2px 10px 2px !important;
+}
+
+html[data-theme="observatory"] .vision-highlight-selector-active {
+  border-color: var(--field-border-hover);
+  box-shadow: inset 3px 0 0 var(--field-accent);
+}
+
+html[data-theme="observatory"] .vision-highlight-detail {
+  border-radius: 18px 3px 18px 3px !important;
+  border-color: var(--field-border-strong);
+  background:
+    linear-gradient(145deg, rgba(17, 48, 54, 0.98), rgba(8, 28, 32, 0.98));
+}
+
+/* Wide-screen Observatory layout changes. */
+@media (min-width: 1024px) {
+  html[data-theme="observatory"] .dashboard-masthead {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(18rem, 0.42fr);
+    align-items: end;
+    gap: clamp(2rem, 5vw, 5rem);
+  }
+
+  html[data-theme="observatory"] .dashboard-command-dock {
+    align-items: flex-end;
+    border-top: 1px solid var(--observatory-rule);
+    border-bottom: 1px solid var(--observatory-rule);
+  }
+
+  html[data-theme="observatory"] .dashboard-driver-grid {
+    --observatory-driver-gap: clamp(1.25rem, 2.5vw, 2rem);
+
+    grid-template-columns: minmax(0, 1.12fr) minmax(0, 0.88fr) !important;
+    grid-auto-rows: 1px;
+    grid-auto-flow: row dense;
+    column-gap: var(--observatory-driver-gap) !important;
+    row-gap: 0 !important;
+  }
+
+  html[data-theme="observatory"] .dashboard-driver-shell {
+    display: block;
+    min-width: 0;
+  }
+
+  html[data-theme="observatory"]
+    :is(.dashboard-driver-system, .dashboard-driver-sector) {
+    grid-column: 1;
+  }
+
+  html[data-theme="observatory"]
+    :is(.dashboard-driver-dow, .dashboard-driver-aas) {
+    grid-column: 2;
+  }
+
+  html[data-theme="observatory"] .dashboard-indicator-array {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  html[data-theme="observatory"] .system-overview-input-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+
+  html[data-theme="observatory"] .system-distribution-region {
+    grid-template-columns: minmax(0, 0.86fr) minmax(0, 1.14fr) !important;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 1023px) {
+  html[data-theme="observatory"] .dashboard-indicator-array {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 1023px) {
+  html[data-theme="observatory"] .dashboard-current-read-console {
+    min-height: 0;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+    gap: 18px;
+  }
+
+  html[data-theme="observatory"] .dashboard-current-read-heading,
+  html[data-theme="observatory"] .dashboard-direction-strip,
+  html[data-theme="observatory"] .dashboard-current-read-console > p:last-child {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  html[data-theme="observatory"] .dashboard-current-read-console > p:last-child {
+    max-width: 60ch;
+  }
+}
+
+@media (max-width: 767px) {
+  html[data-theme="observatory"] {
+    --theme-stack-gap: 1.5rem;
+  }
+
+  html[data-theme="observatory"] .vision-highlight-region {
+    padding-top: 2.5rem;
+    padding-bottom: 2.5rem;
+  }
+
+  html[data-theme="observatory"] .vision-highlight-layout {
+    gap: 14px;
+  }
+
+  html[data-theme="observatory"] .vision-highlight-rail {
+    display: flex;
+    width: 100%;
+    padding-bottom: 4px;
+    gap: 8px;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scroll-snap-type: x proximity;
+  }
+
+  html[data-theme="observatory"] .vision-highlight-selector {
+    width: auto !important;
+    min-width: min(72vw, 238px);
+    padding: 11px 14px !important;
+    flex: 0 0 auto;
+    scroll-snap-align: start;
+  }
+
+  html[data-theme="observatory"] .vision-highlight-selector > :last-child {
+    display: none;
+  }
+
+  html[data-theme="observatory"] .vision-highlight-detail {
+    padding: 18px !important;
+  }
+
+  html[data-theme="observatory"] .vision-highlight-detail-title {
+    font-size: 1.65rem !important;
+  }
+}
+
+@media (max-width: 639px) {
+  html[data-theme="observatory"] {
+    --theme-topbar-height: 60px;
+    --theme-section-nav-top: 68px;
+    --theme-page-block: 1.25rem;
+    --theme-page-inline: 0.875rem;
+  }
+
+  html[data-theme="observatory"] .topbar-inner {
+    padding-inline: 14px;
+  }
+
+  html[data-theme="observatory"] .topbar-brand-name {
+    font-size: 14px;
+  }
+
+  html[data-theme="observatory"] .page-hero {
+    min-height: 0;
+    padding: 1.5rem;
+  }
+
+  html[data-theme="observatory"] .page-hero::after {
+    top: 14px;
+    right: 14px;
+    width: 24px;
+    height: 24px;
+  }
+
+  html[data-theme="observatory"]
+    :is(.observatory-context-rail, .observatory-context-nav) {
+    min-height: 50px;
+    padding-inline: 5px;
+  }
+
+  html[data-theme="observatory"]
+    :is(.observatory-context-rail, .observatory-context-nav)
+    .section-nav-label {
+    display: none;
+  }
+
+  html[data-theme="observatory"] .dashboard-masthead {
+    padding-top: 4px;
+    padding-bottom: 20px;
+  }
+
+  html[data-theme="observatory"] .dashboard-masthead h1 {
+    font-size: clamp(2.65rem, 14vw, 3.5rem);
+  }
+
+  html[data-theme="observatory"] .dashboard-masthead-copy > p {
+    font-size: 14px;
+  }
+
+  html[data-theme="observatory"] .dashboard-command-dock {
+    align-items: stretch;
+  }
+
+  html[data-theme="observatory"] .dashboard-command-dock .control-strip {
+    display: flex;
+    width: 100%;
+  }
+
+  html[data-theme="observatory"] .dashboard-current-read-console {
+    padding: 18px !important;
+    background-size: 24px 1px, 1px 24px, 18px 1px, 1px 18px;
+  }
+
+  html[data-theme="observatory"] .dashboard-current-read-read {
+    font-size: clamp(2.35rem, 13vw, 3.15rem) !important;
+  }
+
+  html[data-theme="observatory"] .dashboard-direction-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  html[data-theme="observatory"] .dashboard-direction-strip .direction-card {
+    min-height: 106px;
+    padding: 13px;
+  }
+
+  html[data-theme="observatory"] .dashboard-indicator-array {
+    grid-template-columns: 1fr !important;
+  }
+
+  html[data-theme="observatory"] .indicator-sensor-card {
+    min-height: 152px;
+    padding: 14px !important;
+    grid-template-areas:
+      "name value"
+      "spark spark"
+      "score score"
+      "meta meta";
+    grid-template-rows: auto 28px auto auto;
+  }
+
+  html[data-theme="observatory"] .indicator-sensor-description {
+    display: none;
+  }
+
+  html[data-theme="observatory"] .system-overview-input-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  html[data-theme="observatory"] .energy-generation-fuel-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  html[data-theme="observatory"] .energy-generation-fuel-tile > :last-child {
+    min-width: 0;
+  }
+
+  html[data-theme="observatory"] .system-overview-input-grid > div {
+    min-height: 70px;
+    padding: 11px !important;
+  }
+
+  html[data-theme="observatory"] .system-history-scroll-cue {
+    display: block !important;
+    margin: -3px 0 10px;
+    color: var(--field-accent-strong);
+    letter-spacing: 0.06em;
+  }
+
+  html[data-theme="observatory"] .system-history-grid {
+    width: 760px !important;
+  }
+
+  html[data-theme="observatory"]
+    :is(.system-history-label, .system-history-axis-spacer) {
+    flex-basis: 9.5rem;
+    width: 9.5rem !important;
+  }
+
+  html[data-theme="observatory"] .system-history-label {
+    padding-right: 10px !important;
+  }
+
+  html[data-theme="observatory"] .system-history-legend {
+    justify-content: flex-start;
+    gap: 12px;
+  }
+}
+
+@media (max-width: 359px) {
+  html[data-theme="observatory"] .dashboard-direction-strip {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation: none !important;
+    transition-duration: 0ms !important;
+  }
+
+  html[data-theme="observatory"]
+    :is(.observatory-context-rail, .observatory-context-nav)
+    .section-nav-link::after {
+    transition: none;
+  }
+}

@@ -11,6 +11,7 @@ import {
 import { apiFetch } from "../utils/apiUtils";
 import MarketLoading from "../components/ui/MarketLoading";
 import InfoTooltip from "../components/ui/InfoTooltip";
+import SectionNav from "../components/ui/SectionNav";
 import { 
   getStateFromScore, 
   getStateColor, 
@@ -48,6 +49,15 @@ interface WeightedExampleRow {
   weight: number;
   contribution: number;
 }
+
+const SYSTEM_SECTION_NAV_ITEMS = [
+  { id: "system-overview", label: "Overview" },
+  { id: "system-distribution", label: "Distribution" },
+  { id: "system-history", label: "History" },
+  { id: "system-methodology", label: "Calculation" },
+  { id: "system-weights", label: "Weights" },
+  { id: "system-limitations", label: "Limitations" },
+];
 
 const getIndicatorDisplayName = (code: string, name: string) =>
   code === "ANALYST_ANXIETY" ? "Analyst Confidence" : name;
@@ -280,6 +290,13 @@ export default function SystemBreakdown() {
         </div>
       </div>
 
+      <SectionNav
+        id="system-section-nav"
+        items={SYSTEM_SECTION_NAV_ITEMS}
+        label="System breakdown sections"
+        className="system-context-nav observatory-context-nav hidden"
+      />
+
       {/* Overview Section */}
       <div id="system-overview" className="section-anchor surface-card-strong p-4 md:p-6">
         <div className="flex items-center gap-2 mb-3 md:mb-4">
@@ -307,7 +324,7 @@ export default function SystemBreakdown() {
           Each indicator is independently scored on a 0-100 scale using statistical normalization techniques, then combined into 
           a weighted composite score that reflects overall market health.
         </p>
-        <div className="grid grid-cols-2 gap-2 md:gap-3 mb-3 md:mb-4">
+        <div className="system-overview-input-grid grid grid-cols-2 gap-2 md:gap-3 mb-3 md:mb-4">
           <div className="bg-stealth-900/60 border border-stealth-700 rounded p-3 text-center">
             <div className="text-xs font-semibold text-stealth-200">VIX + SPY</div>
             <div className="text-xs text-stealth-400">Volatility & Equity</div>
@@ -400,8 +417,8 @@ export default function SystemBreakdown() {
       </div>
 
       {/* Current Distribution */}
-      <div id="system-distribution" className="section-anchor grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <div className="surface-card p-6">
+      <div id="system-distribution" className="system-distribution-region section-anchor grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="system-distribution-card system-distribution-chart-card surface-card p-6">
           <h2 className="text-xl font-semibold mb-4 text-stealth-100">Current State Distribution</h2>
           <div className="flex items-center justify-center" style={{ height: 300 }}>
             <ResponsiveContainer width="100%" height="100%" minWidth={0}>
@@ -429,7 +446,7 @@ export default function SystemBreakdown() {
           </div>
         </div>
 
-        <div className="surface-card p-6">
+        <div className="system-distribution-card system-distribution-ratios-card surface-card p-6">
           <h2 className="text-xl font-semibold mb-4 text-stealth-100">State Ratios</h2>
           <div className="space-y-4 mt-8">
             <div>
@@ -475,18 +492,25 @@ export default function SystemBreakdown() {
       </div>
 
       {/* Historical State Distribution Heatmap - Moved here */}
-      <div id="system-history" className="section-anchor surface-card min-w-0 max-w-full overflow-hidden p-4 md:p-6">
+      <div id="system-history" className="system-history-surface section-anchor surface-card min-w-0 max-w-full overflow-hidden p-4 md:p-6">
         <h2 id="historical-state-heading" className="text-lg md:text-xl font-semibold mb-3 md:mb-4 text-stealth-100">Historical State Distribution (1 Year)</h2>
         <p id="historical-state-description" className="text-xs sm:text-sm text-stealth-300 mb-3 md:mb-4">Each row represents an indicator. Color shows state: Green (healthy), Yellow (caution), Red (stress).</p>
+        <p className="system-history-scroll-cue hidden text-xs font-medium text-stealth-400" aria-hidden="true">
+          Swipe to inspect history →
+        </p>
         
         <div
-          className="max-w-full overflow-x-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pulse-400"
+          className="system-history-scroller max-w-full overflow-x-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pulse-400"
           role="region"
           aria-labelledby="historical-state-heading"
           aria-describedby="historical-state-description"
           tabIndex={0}
         >
-          <div className="w-[800px] max-w-none" aria-hidden="true">
+          <div
+            className="system-history-grid w-[800px] max-w-none"
+            role="table"
+            aria-label="Historical indicator states by date"
+          >
             {/* Get unique indicator names */}
             {Array.from(new Set(heatmapData.map(d => d.indicator))).sort().map((indicatorName) => {
               // Get all data points for this indicator, sorted by date
@@ -499,16 +523,22 @@ export default function SystemBreakdown() {
               const sampledPoints = indicatorPoints.filter((_, idx) => idx % samplingRate === 0);
               
               return (
-                <div key={indicatorName} className="mb-2">
-                  <div className="flex items-center gap-2 mb-1">
-                    <div className="w-48 pr-2 text-xs font-medium leading-4 text-stealth-300">
+                <div key={indicatorName} className="system-history-row mb-2" role="row">
+                  <div className="flex items-center gap-2 mb-1" role="presentation">
+                    <div
+                      className="system-history-label w-48 pr-2 text-xs font-medium leading-4 text-stealth-300"
+                      role="rowheader"
+                    >
                       {indicatorName}
                     </div>
-                    <div className="flex-1 flex gap-0.5">
+                    <div className="system-history-cells flex-1 flex gap-0.5" role="presentation">
                       {sampledPoints.map((point, idx) => (
                         <div
                           key={idx}
-                          className="h-8 flex-1 rounded-sm"
+                          className="system-history-cell h-8 flex-1 rounded-sm"
+                          role="cell"
+                          aria-label={`${point.date}: ${point.state.toLowerCase()}, score ${point.score.toFixed(1)}`}
+                          title={`${point.date}: ${point.state}, score ${point.score.toFixed(1)}`}
                           style={{ 
                             backgroundColor: getStateColor(point.state as StabilityState),
                             minWidth: '2px',
@@ -522,9 +552,9 @@ export default function SystemBreakdown() {
             })}
             
             {/* Time axis labels */}
-            <div className="flex items-center gap-2 mt-4">
-              <div className="w-48"></div>
-              <div className="flex-1 flex justify-between text-xs text-stealth-400">
+            <div className="system-history-axis flex items-center gap-2 mt-4" aria-hidden="true">
+              <div className="system-history-axis-spacer w-48"></div>
+              <div className="system-history-axis-labels flex-1 flex justify-between text-xs text-stealth-400">
                 <span>1 year ago</span>
                 <span>6 months ago</span>
                 <span>Today</span>
@@ -532,7 +562,7 @@ export default function SystemBreakdown() {
             </div>
             
             {/* Legend */}
-            <div className="flex items-center gap-4 mt-4 justify-center text-xs">
+            <div className="system-history-legend flex items-center gap-4 mt-4 justify-center text-xs" aria-hidden="true">
               <div className="flex items-center gap-2">
                 <div className="w-4 h-4 rounded" style={{ backgroundColor: getStateColor('GREEN') }}></div>
                 <span className="text-stealth-300">
@@ -1078,7 +1108,7 @@ export default function SystemBreakdown() {
       </div>
 
       {/* Known Limitations */}
-      <div className="bg-gradient-to-br from-red-950/20 to-stealth-850 border border-red-900/30 rounded-lg p-4 md:p-6 mt-4 md:mt-6">
+      <div id="system-limitations" className="section-anchor bg-gradient-to-br from-red-950/20 to-stealth-850 border border-red-900/30 rounded-lg p-4 md:p-6 mt-4 md:mt-6">
         <h2 className="text-lg md:text-xl font-semibold mb-3 md:mb-4 text-stealth-100 flex items-center gap-2">
           <svg className="w-5 h-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
             <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />

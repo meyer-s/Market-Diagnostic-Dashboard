@@ -120,38 +120,39 @@ export default function IndicatorCard({ indicator }: Props) {
   const routePath = resolveIndicatorRoute(indicator.code);
 
   return (
-    <Link to={routePath} className="block h-full">
-      <div className="primary-card primary-card-hover flex h-full flex-col p-3.5">
-        <div className="text-sm leading-6 text-stealth-300">{displayName}</div>
-        <div className="mt-1 text-2xl font-semibold">
+    <Link to={routePath} className="indicator-sensor-link block h-full">
+      <div className="indicator-sensor-card primary-card primary-card-hover flex h-full flex-col p-3.5">
+        <div className="indicator-sensor-name text-sm leading-6 text-stealth-300">{displayName}</div>
+        <div className="indicator-sensor-value mt-1 text-2xl font-semibold">
           {formatValue(indicator.raw_value, 2)}
         </div>
         
         {/* Score Trend Sparkline - matches indicator detail pages */}
-        <div className="mt-2.5">
+        <div className="indicator-sensor-sparkline mt-2.5">
           <StateSparkline history={history} width={200} height={24} />
         </div>
         
-        <div className="mt-2 flex items-center justify-between">
-          <span className="text-sm text-stealth-400">Score: {formatValue(indicator.score, 1)}</span>
-          <span className="inline-flex items-center" aria-label={`State ${indicator.state}`} title={indicator.state}>
-            <span className={`h-2.5 w-2.5 rounded-full ${stateDotMap[indicator.state]}`}></span>
+        <div className="indicator-sensor-score-row mt-2 flex items-center justify-between">
+          <span className="indicator-sensor-score text-sm text-stealth-400">Score: {formatValue(indicator.score, 1)}</span>
+          <span className="indicator-sensor-state inline-flex items-center" title={indicator.state}>
+            <span aria-hidden="true" className={`h-2.5 w-2.5 rounded-full ${stateDotMap[indicator.state]}`}></span>
+            <span className="indicator-sensor-state-label sr-only">{indicator.state}</span>
           </span>
         </div>
         
         {/* Timestamp with tooltip */}
-        <div className="mt-auto flex items-center justify-between pt-2.5 text-xs">
-          <div className="flex items-center gap-1.5">
+        <div className="indicator-sensor-meta mt-auto flex items-center justify-between pt-2.5 text-xs">
+          <div className="indicator-sensor-freshness flex items-center gap-1.5">
             {freshnessIcon}
             <span className="text-stealth-500">Last updated: {timeDisplay}</span>
           </div>
           
           {/* Frequency badge */}
-          <span className="text-xs text-stealth-600 bg-stealth-900 px-2 py-0.5 rounded">
+          <span className="indicator-sensor-frequency text-xs text-stealth-600 bg-stealth-900 px-2 py-0.5 rounded">
             {metadata.frequency}
           </span>
         </div>
-        <p className="mt-1 text-xs leading-5 text-stealth-400">
+        <p className="indicator-sensor-description mt-1 text-xs leading-5 text-stealth-400">
           {metadata.description}
           {isStale ? " Data appears stale." : ""}
           {!isStale && businessDaysAgo > metadata.expectedLag ? " Waiting for new source data." : ""}

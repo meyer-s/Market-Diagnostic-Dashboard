@@ -2363,10 +2363,6 @@ html[data-theme="observatory"] .segmented-control-option {
   border-radius: 2px 9px 2px 9px;
 }
 
-html[data-theme="observatory"] #main-content .grid:has(> :is(.surface-card, .surface-card-strong, .primary-card, .secondary-card)) {
-  gap: clamp(1.25rem, 2.5vw, 2rem) !important;
-}
-
 html[data-theme="observatory"]
   #main-content
   :is(

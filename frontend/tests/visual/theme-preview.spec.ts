@@ -504,3 +504,167 @@ test("@release keeps the desktop view control inside the topbar at the 1024px br
   expect(menuRect.left).toBeGreaterThanOrEqual(0);
   expect(menuRect.right).toBeLessThanOrEqual(1024);
 });
+
+test("@release gives Signal Observatory authored desktop and mobile compositions", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await chooseDesktopTheme(page, "observatory", "Signal Observatory");
+
+  const contextRail = page.locator(".observatory-context-rail");
+  await expect(contextRail).toBeVisible();
+  await expect(contextRail.locator(".section-nav-link")).toHaveCount(3);
+  await expect(
+    contextRail.locator('.section-nav-link[aria-current="location"]'),
+  ).toHaveText("Current read");
+  await expect(page.locator(".dashboard-current-read-console")).toBeVisible();
+  await expect(page.locator(".dashboard-current-read-heading")).toBeVisible({
+    timeout: 15_000,
+  });
+
+  const desktop = await page.evaluate(() => {
+    const required = <ElementType extends Element>(selector: string) => {
+      const element = document.querySelector<ElementType>(selector);
+      if (!element) throw new Error(`Observatory probe could not find ${selector}`);
+      return element;
+    };
+    const columnCount = (value: string) =>
+      value.split(" ").filter((part) => part.trim().length > 0).length;
+
+    const currentRead = required<HTMLElement>(".dashboard-current-read-console");
+    const currentReadStyle = getComputedStyle(currentRead);
+    const driverGrid = required<HTMLElement>(".dashboard-driver-grid");
+    const driverStyle = getComputedStyle(driverGrid);
+    const driverOrder = Array.from(
+      driverGrid.querySelectorAll<HTMLElement>(
+        ":scope > .dashboard-driver-shell",
+      ),
+    ).map((shell) =>
+      ["system", "dow", "sector", "aas"].find((driver) =>
+        shell.classList.contains(`dashboard-driver-${driver}`),
+      ),
+    );
+    const indicatorArray = required<HTMLElement>(".dashboard-indicator-array");
+    const indicatorStyle = getComputedStyle(indicatorArray);
+    const ordinaryCard =
+      driverGrid.querySelector<HTMLElement>(".primary-card")
+      ?? (() => {
+        const card = document.createElement("div");
+        card.className = "primary-card";
+        driverGrid.append(card);
+        return card;
+      })();
+
+    const stateProbe = document.createElement("span");
+    stateProbe.className = "indicator-sensor-state-label sr-only";
+    stateProbe.textContent = "GREEN";
+    document.body.append(stateProbe);
+    const stateStyle = getComputedStyle(stateProbe);
+
+    try {
+      return {
+        documentOverflow: document.documentElement.scrollWidth - window.innerWidth,
+        currentRead: {
+          display: currentReadStyle.display,
+          columns: columnCount(currentReadStyle.gridTemplateColumns),
+          backgroundImage: currentReadStyle.backgroundImage,
+        },
+        driverColumns: columnCount(driverStyle.gridTemplateColumns),
+        driverOrder,
+        indicatorColumns: columnCount(indicatorStyle.gridTemplateColumns),
+        ordinaryCardBackgroundImage: getComputedStyle(ordinaryCard).backgroundImage,
+        stateLabel: {
+          position: stateStyle.position,
+          width: stateStyle.width,
+          height: stateStyle.height,
+          fontSize: Number.parseFloat(stateStyle.fontSize),
+        },
+      };
+    } finally {
+      stateProbe.remove();
+    }
+  });
+
+  expect(desktop.documentOverflow).toBeLessThanOrEqual(0);
+  expect(desktop.currentRead.display).toBe("grid");
+  expect(desktop.currentRead.columns).toBe(2);
+  expect(desktop.currentRead.backgroundImage).not.toBe("none");
+  expect(desktop.driverColumns).toBe(2);
+  expect(desktop.driverOrder).toEqual(["system", "dow", "sector", "aas"]);
+  expect(desktop.indicatorColumns).toBe(3);
+  expect(desktop.ordinaryCardBackgroundImage).toBe("none");
+  expect(desktop.stateLabel.position).toBe("static");
+  expect(desktop.stateLabel.width).not.toBe("1px");
+  expect(desktop.stateLabel.height).not.toBe("1px");
+  expect(desktop.stateLabel.fontSize).toBeGreaterThanOrEqual(12);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  const mobile = await page.evaluate(() => {
+    const currentRead = document.querySelector<HTMLElement>(
+      ".dashboard-current-read-console",
+    );
+    const indicatorArray = document.querySelector<HTMLElement>(
+      ".dashboard-indicator-array",
+    );
+    const links = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        ".observatory-context-rail .section-nav-link",
+      ),
+    );
+    if (!currentRead || !indicatorArray) {
+      throw new Error("Observatory mobile probe could not find dashboard structure");
+    }
+
+    return {
+      documentOverflow: document.documentElement.scrollWidth - window.innerWidth,
+      currentReadColumns: getComputedStyle(currentRead).gridTemplateColumns,
+      indicatorColumns: getComputedStyle(indicatorArray).gridTemplateColumns,
+      driverOrder: Array.from(
+        document.querySelectorAll<HTMLElement>(
+          ".dashboard-driver-grid > .dashboard-driver-shell",
+        ),
+      ).map((shell) =>
+        ["system", "dow", "sector", "aas"].find((driver) =>
+          shell.classList.contains(`dashboard-driver-${driver}`),
+        ),
+      ),
+      minimumRailTarget: Math.min(
+        ...links.map((link) => link.getBoundingClientRect().height),
+      ),
+    };
+  });
+
+  expect(mobile.documentOverflow).toBeLessThanOrEqual(0);
+  expect(mobile.currentReadColumns.split(" ")).toHaveLength(1);
+  expect(mobile.indicatorColumns.split(" ")).toHaveLength(1);
+  expect(mobile.driverOrder).toEqual(["system", "dow", "sector", "aas"]);
+  expect(mobile.minimumRailTarget).toBeGreaterThanOrEqual(44);
+
+  await page.goto("/vision", { waitUntil: "domcontentloaded" });
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "observatory");
+  await expect(page.locator(".vision-highlight-detail")).toHaveCount(1);
+  await expect(page.locator(".vision-highlight-selector")).toHaveCount(3);
+
+  const visionMobile = await page.evaluate(() => {
+    const rail = document.querySelector<HTMLElement>(".vision-highlight-rail");
+    if (!rail) throw new Error("Vision highlight rail is missing");
+    const selectors = Array.from(
+      rail.querySelectorAll<HTMLElement>(".vision-highlight-selector"),
+    );
+    return {
+      display: getComputedStyle(rail).display,
+      scrollable: rail.scrollWidth > rail.clientWidth,
+      minimumTarget: Math.min(
+        ...selectors.map((selector) => selector.getBoundingClientRect().height),
+      ),
+      documentOverflow: document.documentElement.scrollWidth - window.innerWidth,
+    };
+  });
+
+  expect(visionMobile.display).toBe("flex");
+  expect(visionMobile.scrollable).toBe(true);
+  expect(visionMobile.minimumTarget).toBeGreaterThanOrEqual(44);
+  expect(visionMobile.documentOverflow).toBeLessThanOrEqual(0);
+});
