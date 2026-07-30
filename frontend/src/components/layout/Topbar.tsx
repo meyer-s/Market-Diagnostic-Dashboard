@@ -340,15 +340,24 @@ export default function Topbar() {
                           role="menuitemradio"
                           aria-checked={isSelected}
                           data-selected={isSelected ? "true" : "false"}
+                          data-theme-value={item.id}
                           tabIndex={isSelected ? 0 : -1}
                           className="topbar-theme-option"
                           onClick={() => chooseDesktopTheme(item.id)}
                         >
                           <span
-                            className="topbar-theme-swatch"
-                            style={{ background: item.swatch }}
+                            className="topbar-theme-swatch topbar-theme-preview"
+                            data-theme-preview={item.id}
                             aria-hidden="true"
-                          />
+                          >
+                            <span className="topbar-theme-preview-layer topbar-theme-preview-layer-back" />
+                            <span className="topbar-theme-preview-layer topbar-theme-preview-layer-front">
+                              <span className="topbar-theme-preview-line topbar-theme-preview-line-primary" />
+                              <span className="topbar-theme-preview-line topbar-theme-preview-line-secondary" />
+                              <span className="topbar-theme-preview-line topbar-theme-preview-line-tertiary" />
+                            </span>
+                            <span className="topbar-theme-preview-marker" />
+                          </span>
                           <span>
                             <span className="topbar-theme-name">{item.label}</span>
                             <span className="topbar-theme-description">
@@ -494,6 +503,7 @@ export default function Topbar() {
                     role="radio"
                     aria-checked={isSelected}
                     data-selected={isSelected ? "true" : "false"}
+                    data-theme-value={item.id}
                     tabIndex={isSelected ? 0 : -1}
                     className="topbar-mobile-theme-option"
                     onClick={() => setTheme(item.id)}
@@ -502,10 +512,18 @@ export default function Topbar() {
                     }
                   >
                     <span
-                      className="topbar-mobile-theme-swatch"
-                      style={{ background: item.swatch }}
+                      className="topbar-mobile-theme-swatch topbar-theme-preview"
+                      data-theme-preview={item.id}
                       aria-hidden="true"
-                    />
+                    >
+                      <span className="topbar-theme-preview-layer topbar-theme-preview-layer-back" />
+                      <span className="topbar-theme-preview-layer topbar-theme-preview-layer-front">
+                        <span className="topbar-theme-preview-line topbar-theme-preview-line-primary" />
+                        <span className="topbar-theme-preview-line topbar-theme-preview-line-secondary" />
+                        <span className="topbar-theme-preview-line topbar-theme-preview-line-tertiary" />
+                      </span>
+                      <span className="topbar-theme-preview-marker" />
+                    </span>
                     <span className="topbar-mobile-theme-copy">
                       <span>{item.label}</span>
                       <span>{item.description}</span>

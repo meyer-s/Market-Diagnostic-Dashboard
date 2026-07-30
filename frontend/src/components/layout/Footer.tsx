@@ -44,8 +44,8 @@ export default function Footer() {
   };
 
   return (
-    <footer className="mt-auto border-t border-stealth-700/80 bg-stealth-950/72 px-6 py-5 backdrop-blur-xl">
-      <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 text-sm text-stealth-400 md:flex-row">
+    <footer className="site-footer mt-auto border-t border-stealth-700/80 bg-stealth-950/72 px-6 py-5 backdrop-blur-xl">
+      <div className="site-footer-inner mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 text-sm text-stealth-400 md:flex-row">
         <div className="text-center md:text-left">
           <button
             type="button"
@@ -57,7 +57,7 @@ export default function Footer() {
           </button>
           © 2026 Steven J Meyer LLC. All rights reserved.
         </div>
-        <div className="flex flex-wrap items-center justify-center gap-6">
+        <div className="site-footer-links flex flex-wrap items-center justify-center gap-6">
           <a 
             href="https://www.steven-meyer.com/" 
             target="_blank" 

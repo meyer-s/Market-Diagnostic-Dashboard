@@ -35,6 +35,8 @@ type StateRecord = {
   name: string;
   requestedPath: string;
   viewport: ViewportName;
+  requestedTheme: string;
+  appliedTheme: string;
   finalUrl: string;
   screenshot: string;
   screenshotWidth: number;
@@ -462,9 +464,22 @@ const viewports: Array<{ name: ViewportName; width: number; height: number }> = 
   { name: "mobile", width: 390, height: 844 },
 ];
 
-const requestedViewport = process.env.AUDIT_STATE_VIEWPORT as ViewportName | undefined;
-const targetFilter = process.env.AUDIT_STATE_FILTER?.trim().toLowerCase();
-const targetLimit = Number.parseInt(process.env.AUDIT_STATE_LIMIT ?? "", 10);
+const requestedViewport = (
+  process.env.AUDIT_STATE_VIEWPORT ?? process.env.AUDIT_VIEWPORT
+) as ViewportName | undefined;
+const targetFilter = (
+  process.env.AUDIT_STATE_FILTER ?? process.env.AUDIT_TARGET_FILTER
+)?.trim().toLowerCase();
+const targetLimit = Number.parseInt(
+  process.env.AUDIT_STATE_LIMIT ?? process.env.AUDIT_LIMIT ?? "",
+  10,
+);
+if (
+  requestedViewport &&
+  !viewports.some((viewport) => viewport.name === requestedViewport)
+) {
+  throw new Error(`Unsupported material-state audit viewport: ${requestedViewport}`);
+}
 
 const responseCache = new Map<
   string,
@@ -888,6 +903,7 @@ test("capture materially distinct interactive states at full page height", async
         await waitForDocumentHeightStable(page);
 
         let [
+          appliedTheme,
           geometry,
           bodyTextLength,
           headings,
@@ -898,6 +914,7 @@ test("capture materially distinct interactive states at full page height", async
           priorityTargetsUnder44,
           axe,
         ] = await Promise.all([
+          page.evaluate(() => document.documentElement.dataset.theme ?? ""),
           measureGeometry(page),
           page.evaluate(() => document.body.innerText.length),
           page.locator("h1, h2, h3, h4, h5, h6").evaluateAll((elements) =>
@@ -969,7 +986,10 @@ test("capture materially distinct interactive states at full page height", async
         const fullHeightVerified =
           screenshotSize.width >= viewport.width &&
           screenshotSize.height >= geometry.documentHeight - 2;
-        const accepted = fullHeightVerified && bodyTextLength >= 40;
+        const accepted =
+          fullHeightVerified &&
+          bodyTextLength >= 40 &&
+          appliedTheme === AUDIT_THEME;
         const networkEvidence = classifyNetworkEvidence(
           target,
           consoleErrors,
@@ -981,6 +1001,8 @@ test("capture materially distinct interactive states at full page height", async
           name: target.name,
           requestedPath: target.path,
           viewport: viewport.name,
+          requestedTheme: AUDIT_THEME,
+          appliedTheme,
           finalUrl: page.url(),
           screenshot: path.relative(AUDIT_ROOT, screenshotPath).replaceAll("\\", "/"),
           screenshotWidth: screenshotSize.width,
@@ -1059,6 +1081,10 @@ test("capture materially distinct interactive states at full page height", async
           name: target.name,
           requestedPath: target.path,
           viewport: viewport.name,
+          requestedTheme: AUDIT_THEME,
+          appliedTheme: await page
+            .evaluate(() => document.documentElement.dataset.theme ?? "")
+            .catch(() => ""),
           finalUrl: page.url(),
           screenshot: path.relative(AUDIT_ROOT, screenshotPath).replaceAll("\\", "/"),
           screenshotWidth: screenshotSize.width,

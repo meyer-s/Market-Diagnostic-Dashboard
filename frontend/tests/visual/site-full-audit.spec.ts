@@ -70,6 +70,8 @@ type AuditRecord = {
   viewport: ViewportName;
   viewportWidth: number;
   viewportHeight: number;
+  requestedTheme: string;
+  appliedTheme: string;
   screenshot: string;
   screenshotWidth: number;
   screenshotHeight: number;
@@ -774,11 +776,6 @@ test("capture every route, state, indicator, and recap at full page height", asy
     const page = await context.newPage();
     page.setDefaultTimeout(15_000);
     await page.route("**/api/**", proxyLiveApi);
-    await page.addStyleTag({
-      content:
-        "*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;transition-duration:0s!important;scroll-behavior:auto!important}",
-    }).catch(() => undefined);
-
     let consoleErrors: string[] = [];
     let pageErrors: string[] = [];
     let requestFailures: string[] = [];
@@ -806,6 +803,10 @@ test("capture every route, state, indicator, and recap at full page height", asy
 
       try {
         await page.goto(target.path, { waitUntil: "domcontentloaded", timeout: 120_000 });
+        await page.addStyleTag({
+          content:
+            "*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;transition-duration:0s!important;scroll-behavior:auto!important}",
+        }).catch(() => undefined);
         await waitForStableState(page);
         await page.keyboard.press("Escape");
         if (target.action) {
@@ -815,6 +816,7 @@ test("capture every route, state, indicator, and recap at full page height", asy
         await revealFullPage(page, viewport.height);
 
         const [
+          appliedTheme,
           title,
           headings,
           shell,
@@ -828,6 +830,7 @@ test("capture every route, state, indicator, and recap at full page height", asy
           scrollable,
           performance,
         ] = await Promise.all([
+          page.evaluate(() => document.documentElement.dataset.theme ?? ""),
           page.title(),
           page.locator("h1, h2, h3, h4, h5, h6").evaluateAll((elements) =>
             elements.map((element) => ({
@@ -910,7 +913,8 @@ test("capture every route, state, indicator, and recap at full page height", asy
         const accepted =
           fullHeightVerified &&
           shell.rootChildCount > 0 &&
-          shell.bodyTextLength >= 40;
+          shell.bodyTextLength >= 40 &&
+          appliedTheme === AUDIT_THEME;
 
         records.push({
           id: target.id,
@@ -923,6 +927,8 @@ test("capture every route, state, indicator, and recap at full page height", asy
           viewport: viewport.name,
           viewportWidth: viewport.width,
           viewportHeight: viewport.height,
+          requestedTheme: AUDIT_THEME,
+          appliedTheme,
           screenshot: path.relative(AUDIT_ROOT, screenshotPath).replaceAll("\\", "/"),
           screenshotWidth: screenshotSize.width,
           screenshotHeight: screenshotSize.height,
@@ -986,6 +992,10 @@ test("capture every route, state, indicator, and recap at full page height", asy
           viewport: viewport.name,
           viewportWidth: viewport.width,
           viewportHeight: viewport.height,
+          requestedTheme: AUDIT_THEME,
+          appliedTheme: await page
+            .evaluate(() => document.documentElement.dataset.theme ?? "")
+            .catch(() => ""),
           screenshot: path.relative(AUDIT_ROOT, screenshotPath).replaceAll("\\", "/"),
           screenshotWidth: screenshotSize.width,
           screenshotHeight: screenshotSize.height,

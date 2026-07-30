@@ -16,7 +16,6 @@ export type SiteThemeDefinition = {
   readonly label: string;
   readonly shortLabel: string;
   readonly description: string;
-  readonly swatch: string;
 };
 
 export const SITE_THEMES: readonly SiteThemeDefinition[] = [
@@ -24,22 +23,22 @@ export const SITE_THEMES: readonly SiteThemeDefinition[] = [
     id: "evidence",
     label: "Evidence Field",
     shortLabel: "Field",
-    description: "Cool evidence-led navy with restrained sea-glass accents.",
-    swatch: "linear-gradient(135deg, #0e1520 0%, #182333 62%, #83bfff 100%)",
+    description:
+      "Layered research cards, relaxed spacing, and editorial hierarchy.",
   },
   {
     id: "ledger",
     label: "Midnight Ledger",
     shortLabel: "Ledger",
-    description: "Matte institutional navy with crisp steel-blue evidence marks.",
-    swatch: "linear-gradient(135deg, #0a1420 0%, #162331 62%, #76a7c8 100%)",
+    description:
+      "Dense flat modules, compact typography, and ledger-style dividers.",
   },
   {
     id: "observatory",
     label: "Signal Observatory",
     shortLabel: "Signal",
-    description: "Deep blue-black instruments with crisp cyan signal accents.",
-    swatch: "linear-gradient(135deg, #071619 0%, #0e272d 62%, #68c4d8 100%)",
+    description:
+      "Bold readouts, angular instrument frames, and generous signal spacing.",
   },
 ] as const;
 
