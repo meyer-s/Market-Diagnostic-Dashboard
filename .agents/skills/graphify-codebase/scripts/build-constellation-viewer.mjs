@@ -309,8 +309,9 @@ function writeScopeNode(index, rank = null) {
   process.stdout.write(`   Scope: ${SCOPE_SHELL_DEFINITIONS[metric.shell][1]} (${relativePosition})\n`);
   process.stdout.write(`   Evidence: ${scopeEvidenceLine(index)}\n`);
   const bareLabel = node.label.replace(/\(\)$/, "");
-  if (metric.files >= 8 && (bareLabel.startsWith("_") || bareLabel.length <= 5)) {
-    process.stdout.write("   Caution: high-reuse generic/private symbols are prone to ambiguous binding; verify inbound sites directly.\n");
+  const kind = inferKind(node.label, node.sourceFile, node.isExternal);
+  if (kind !== "file" && metric.files >= 8 && (bareLabel.startsWith("_") || bareLabel.length <= 5)) {
+    process.stdout.write("   Caution: broadly matched generic/private symbols are prone to ambiguous binding; verify inbound sites directly.\n");
   }
 }
 
@@ -1964,8 +1965,8 @@ FORM: A focused operational constellation, directly shaped as a local extension 
         document.getElementById("outboundValue").textContent = node.outbound.toLocaleString();
         document.getElementById("nodeScopeLabel").textContent = DATA.scopeShells[node.scopeShell][1];
         const bareScopeLabel = node.label.replace(/\\(\\)$/, "");
-        const ambiguousScopeBinding = node.scopeFiles >= 8 && (bareScopeLabel.startsWith("_") || bareScopeLabel.length <= 5);
-        document.getElementById("nodeScopeEvidence").textContent = (node.scopeFiles > 0 ? ordinal(node.scopePercentile) + " percentile among reused production nodes · " : "No extracted cross-file inbound reuse · ") + node.scopeFiles.toLocaleString() + " inbound production file" + (node.scopeFiles === 1 ? "" : "s") + " · " + node.scopeLayers.toLocaleString() + " inbound layer" + (node.scopeLayers === 1 ? "" : "s") + " · " + node.scopeInbound.toLocaleString() + " inbound cross-file link" + (node.scopeInbound === 1 ? "" : "s") + ". Outbound fan-out does not affect radius." + (ambiguousScopeBinding ? " Generic/private high-reuse bindings are prone to ambiguity; verify inbound sites directly." : "");
+        const ambiguousScopeBinding = node.kind !== 0 && node.scopeFiles >= 8 && (bareScopeLabel.startsWith("_") || bareScopeLabel.length <= 5);
+        document.getElementById("nodeScopeEvidence").textContent = (node.scopeFiles > 0 ? ordinal(node.scopePercentile) + " percentile among reused production nodes · " : "No extracted cross-file inbound reuse · ") + node.scopeFiles.toLocaleString() + " inbound production file" + (node.scopeFiles === 1 ? "" : "s") + " · " + node.scopeLayers.toLocaleString() + " inbound layer" + (node.scopeLayers === 1 ? "" : "s") + " · " + node.scopeInbound.toLocaleString() + " inbound cross-file link" + (node.scopeInbound === 1 ? "" : "s") + ". Outbound fan-out does not affect radius." + (ambiguousScopeBinding ? " Broadly matched generic/private symbols are prone to ambiguity; verify inbound sites directly." : "");
         document.querySelectorAll("#scopeScale span").forEach((segment, index) => segment.classList.toggle("is-active", index === node.scopeShell));
 
         const rows = uniqueRelationshipRows(state.selected);
