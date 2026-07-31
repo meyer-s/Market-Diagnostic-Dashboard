@@ -80,6 +80,9 @@ dist-ssr/
 /frontend/test-results/
 /artifacts/
 
+# Guard against direct Graphify CLI output; the project wrapper stores state elsewhere
+/graphify-out/
+
 # Backup files
 *.backup
 *.old

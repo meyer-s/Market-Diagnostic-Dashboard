@@ -59,6 +59,22 @@ Key entry points:
 - Route registry: [`frontend/src/routes/registry.tsx`](frontend/src/routes/registry.tsx)
 - Deployment manifests: [`docker-compose.yml`](docker-compose.yml), [`docker-compose.dev.yml`](docker-compose.dev.yml)
 
+## Local architecture graph
+
+The optional [`graphify-codebase`](.agents/skills/graphify-codebase/SKILL.md)
+agent skill provides a guarded, code-only dependency graph for cross-layer
+impact analysis. It installs the pinned tool in an isolated per-repository cache
+under local application data, outside the OneDrive workspace:
+
+```powershell
+.\.agents\skills\graphify-codebase\scripts\graphify.ps1 build
+.\.agents\skills\graphify-codebase\scripts\graphify.ps1 explain -Text compute_optionality_metrics
+```
+
+Use graph results as leads, then verify them against source, tests, and runtime
+evidence. The integration does not install hooks, MCP, semantic document
+extraction, query memory, or Obsidian artifacts.
+
 ## Runtime model
 
 - **Web and scheduler are split.** The FastAPI web service runs with `RUN_SCHEDULER=false`; scheduled ETL and publishing run in the dedicated scheduler worker.

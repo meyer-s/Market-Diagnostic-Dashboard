@@ -1,0 +1,11 @@
+# Keep the local architecture graph focused on product code and tests.
+/.agents/
+/.codex/
+/.github/
+/.impeccable/
+/archive/
+/artifacts/
+/docs/
+/devops/
+/graphify-out/
+/backend/app/data/ticker_presets.json
