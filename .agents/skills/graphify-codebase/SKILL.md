@@ -22,11 +22,13 @@ Use Graphify as an architectural hypothesis tool. Treat direct source reads, `rg
    .\.agents\skills\graphify-codebase\scripts\graphify.ps1 update
    ```
 
-   Open the interactive local viewer when a visual map is useful:
+   Open the self-contained local Architecture Constellation when a visual map is useful:
 
    ```powershell
    .\.agents\skills\graphify-codebase\scripts\graphify.ps1 view
    ```
+
+   The sphere shows a balanced, stable sample of high-connectivity nodes for orientation; search reaches the full graph. Select a node, then switch to **Neighborhood** for a bounded one-hop dependency view and use the DOM relationship ledger as the precise, keyboard-accessible reading layer. Color denotes repository scope and shape is a heuristic symbol-kind cue. Containment edges are withheld from the visual layer, unresolved targets are labeled explicitly, and suspicious cross-language symbol matches are suppressed.
 
 3. Prefer exact-symbol operations over broad questions:
 
@@ -47,6 +49,7 @@ Use Graphify as an architectural hypothesis tool. Treat direct source reads, `rg
 - The wrapper pins `graphifyy[sql]==0.9.31` and graph state in a per-repository cache under local application data, outside the OneDrive workspace. It never modifies the project Python environment.
 - Builds always use local AST-only `--code-only --no-cluster` extraction. Query logging is forcibly disabled.
 - Generated graph state is local cache, not documentation. Never copy it into the repository or commit it.
+- The generated constellation is a local, offline HTML artifact beside the graph cache. It embeds compact graph data, makes no network requests, and should not be deployed with the application.
 - Never run `graphify install`, `graphify codex install`, hooks, watch mode, MCP, `--mode deep`, semantic document/media extraction, `save-result`, `reflect`, global graphs, or Obsidian export unless the user explicitly asks for that expansion.
 - Keep reverse traversal shallow. Depth greater than 2 often walks through module imports and exaggerates impact.
 - Graphify cannot prove frontend URL-to-FastAPI wiring, dynamic framework behavior, SQLAlchemy effects, scheduler execution, production health, or data correctness. Validate those through their native evidence paths.

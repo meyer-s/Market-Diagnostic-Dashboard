@@ -72,6 +72,12 @@ under local application data, outside the OneDrive workspace:
 .\.agents\skills\graphify-codebase\scripts\graphify.ps1 explain -Text compute_optionality_metrics
 ```
 
+The `view` action opens an offline Architecture Constellation: a rotatable sphere
+for whole-repository orientation, full-graph symbol/path search, architecture-layer
+filters, and a bounded neighborhood view with a readable relationship ledger. The
+generated HTML stays beside the local graph cache and is never part of the app or
+deployment bundle.
+
 Use graph results as leads, then verify them against source, tests, and runtime
 evidence. The integration does not install hooks, MCP, semantic document
 extraction, query memory, or Obsidian artifacts.

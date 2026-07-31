@@ -49,7 +49,8 @@ $GraphifyExe = Join-Path $VenvRoot "Scripts\graphify.exe"
 $OutputRoot = Join-Path $StateRoot "state\$GraphifyVersion"
 $GraphPath = Join-Path $OutputRoot "graphify-out\graph.json"
 $ReceiptPath = Join-Path $OutputRoot "graphify-out\codex-receipt.json"
-$ViewerPath = Join-Path $OutputRoot "graphify-out\GRAPH_TREE.html"
+$ViewerBuilder = Join-Path $PSScriptRoot "build-constellation-viewer.mjs"
+$ViewerPath = Join-Path $OutputRoot "graphify-out\ARCHITECTURE_CONSTELLATION.html"
 
 # Graphify v0.9.31 is opt-in for query logs. Force the setting off so a caller's
 # user-level environment cannot record proprietary questions outside the repo.
@@ -207,6 +208,14 @@ function Require-Graph {
     }
 }
 
+function Get-NodeExecutable {
+    $nodeCommand = Get-Command node.exe -ErrorAction SilentlyContinue
+    if ($null -eq $nodeCommand) {
+        throw "Node.js is required to generate the local architecture constellation."
+    }
+    return $nodeCommand.Source
+}
+
 function Require-Text {
     param([string]$Value, [string]$Name)
 
@@ -295,22 +304,27 @@ switch ($Action) {
         Write-Status
     }
     "view" {
-        Ensure-Graphify
         Require-Graph
+        if (-not (Test-Path -LiteralPath $ViewerBuilder)) {
+            throw "Constellation viewer builder is missing: $ViewerBuilder"
+        }
         $viewerNeedsRefresh = -not (Test-Path -LiteralPath $ViewerPath)
         if (-not $viewerNeedsRefresh) {
-            $viewerNeedsRefresh = (Get-Item -LiteralPath $GraphPath).LastWriteTimeUtc -gt (Get-Item -LiteralPath $ViewerPath).LastWriteTimeUtc
+            $viewerModified = (Get-Item -LiteralPath $ViewerPath).LastWriteTimeUtc
+            $viewerNeedsRefresh = (Get-Item -LiteralPath $GraphPath).LastWriteTimeUtc -gt $viewerModified -or
+                (Get-Item -LiteralPath $ViewerBuilder).LastWriteTimeUtc -gt $viewerModified
         }
         if ($viewerNeedsRefresh) {
-            Invoke-Graphify @(
-                "tree",
-                "--graph", $GraphPath,
-                "--output", $ViewerPath,
-                "--root", $RepoRoot,
-                "--max-children", "200",
-                "--top-k-edges", "12",
-                "--label", "Market Diagnostic Dashboard"
-            )
+            $nodeExecutable = Get-NodeExecutable
+            $LASTEXITCODE = 0
+            & $nodeExecutable $ViewerBuilder `
+                --graph $GraphPath `
+                --output $ViewerPath `
+                --repo $RepoRoot `
+                --label "Market Diagnostic Dashboard"
+            if ($LASTEXITCODE -ne 0) {
+                throw "Architecture constellation generation exited with code $LASTEXITCODE."
+            }
         }
         Write-Output "Viewer: $ViewerPath"
         if (-not $NoOpen) {
