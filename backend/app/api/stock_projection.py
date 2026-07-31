@@ -22,6 +22,8 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import math
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from app.models.institutional_flow_event import InstitutionalFlowEvent
 from app.models.stock_projection_snapshot import StockProjectionSnapshot
 from app.models.system_status import SystemStatus
@@ -163,6 +165,45 @@ def _event_datetime(date_str: str) -> datetime:
     return datetime.fromisoformat(f"{date_str}T00:00:00")
 
 
+_INSTITUTIONAL_FLOW_UNIQUE_COLUMNS = (
+    "symbol",
+    "event_date",
+    "side",
+    "price",
+    "volume",
+)
+
+
+def _insert_institutional_flow_events(db, event_rows: list[dict[str, Any]]) -> None:
+    """Insert newly detected events without failing when another worker wins the race."""
+    if not event_rows:
+        return
+
+    table = InstitutionalFlowEvent.__table__
+    dialect_name = db.bind.dialect.name if db.bind is not None else ""
+
+    if dialect_name == "postgresql":
+        statement = postgresql_insert(table).values(event_rows)
+        statement = statement.on_conflict_do_nothing(
+            index_elements=list(_INSTITUTIONAL_FLOW_UNIQUE_COLUMNS)
+        )
+        db.execute(statement)
+        return
+
+    if dialect_name == "sqlite":
+        statement = sqlite_insert(table).values(event_rows)
+        statement = statement.on_conflict_do_nothing(
+            index_elements=list(_INSTITUTIONAL_FLOW_UNIQUE_COLUMNS)
+        )
+        db.execute(statement)
+        return
+
+    # Preserve the prior behavior for other SQLAlchemy dialects. Production
+    # uses PostgreSQL, and unknown integrity failures should remain visible.
+    for event_row in event_rows:
+        db.add(InstitutionalFlowEvent(**event_row))
+
+
 def _sync_institutional_flow_history(db, symbol: str, df: pd.DataFrame, latest_price: Optional[float]) -> dict:
     detected_events = detect_flow_events_from_frame(df, lookback_days=365)
 
@@ -188,7 +229,7 @@ def _sync_institutional_flow_history(db, symbol: str, df: pd.DataFrame, latest_p
             for row in existing_rows
         }
 
-        inserted = False
+        rows_to_insert: list[dict[str, Any]] = []
         for event in detected_events:
             key = (
                 event["date"],
@@ -198,23 +239,24 @@ def _sync_institutional_flow_history(db, symbol: str, df: pd.DataFrame, latest_p
             )
             if key in existing_keys:
                 continue
-            db.add(
-                InstitutionalFlowEvent(
-                    symbol=symbol,
-                    event_date=_event_datetime(event["date"]),
-                    side=event["side"],
-                    price=float(event["price"]),
-                    volume=int(event["volume"]),
-                    notional=float(event["notional"]),
-                    volume_z=float(event["volume_z"]),
-                    clv=float(event["clv"]),
-                    price_change_pct=float(event["price_change_pct"]),
-                    strength=float(event["strength"]),
-                )
+            rows_to_insert.append(
+                {
+                    "symbol": symbol,
+                    "event_date": _event_datetime(event["date"]),
+                    "side": event["side"],
+                    "price": float(event["price"]),
+                    "volume": int(event["volume"]),
+                    "notional": float(event["notional"]),
+                    "volume_z": float(event["volume_z"]),
+                    "clv": float(event["clv"]),
+                    "price_change_pct": float(event["price_change_pct"]),
+                    "strength": float(event["strength"]),
+                }
             )
-            inserted = True
+            existing_keys.add(key)
 
-        if inserted:
+        if rows_to_insert:
+            _insert_institutional_flow_events(db, rows_to_insert)
             db.commit()
 
     rows = (
