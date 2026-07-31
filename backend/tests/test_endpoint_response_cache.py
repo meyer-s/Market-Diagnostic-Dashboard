@@ -4,7 +4,7 @@ import asyncio
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from decimal import Decimal
-from threading import Thread
+from threading import Event, Thread
 import time
 
 import pytest
@@ -190,6 +190,132 @@ def test_response_refresh_lock_serializes_same_key(monkeypatch) -> None:
         thread.join()
 
     assert max_active == 1
+
+
+def test_response_refresh_lock_has_bounded_local_contention(monkeypatch) -> None:
+    @contextmanager
+    def unavailable_session():
+        raise RuntimeError("database unavailable")
+        yield
+
+    monkeypatch.setattr(cache, "get_db_session", unavailable_session)
+    owner_ready = Event()
+    release_owner = Event()
+
+    def owner() -> None:
+        with cache.response_refresh_lock("bounded-key") as acquired:
+            assert acquired is True
+            owner_ready.set()
+            assert release_owner.wait(timeout=1)
+
+    owner_thread = Thread(target=owner)
+    owner_thread.start()
+    assert owner_ready.wait(timeout=1)
+
+    started_at = time.monotonic()
+    with cache.response_refresh_lock(
+        "bounded-key",
+        wait_timeout_seconds=0.01,
+    ) as acquired:
+        elapsed = time.monotonic() - started_at
+        assert acquired is False
+
+    release_owner.set()
+    owner_thread.join(timeout=1)
+    assert not owner_thread.is_alive()
+    assert elapsed < 0.2
+
+
+def test_postgres_refresh_lock_uses_try_lock_and_same_session_unlock(
+    monkeypatch,
+) -> None:
+    statements: list[str] = []
+
+    class Result:
+        def scalar(self):
+            return True
+
+    class Dialect:
+        name = "postgresql"
+
+    class Bind:
+        dialect = Dialect()
+
+    class FakeSession:
+        bind = Bind()
+
+        def execute(self, statement, _params):
+            statements.append(str(statement))
+            return Result()
+
+        def commit(self):
+            raise AssertionError(
+                "committing would detach the session-level advisory lock "
+                "from the Session's physical connection"
+            )
+
+        def rollback(self):
+            raise AssertionError("an acquired advisory lock must not roll back")
+
+    @contextmanager
+    def fake_session():
+        yield FakeSession()
+
+    monkeypatch.setattr(cache, "get_db_session", fake_session)
+
+    with cache.response_refresh_lock(
+        "postgres-key",
+        wait_timeout_seconds=0.25,
+    ) as acquired:
+        assert acquired is True
+
+    assert any("pg_try_advisory_lock" in statement for statement in statements)
+    assert any("pg_advisory_unlock" in statement for statement in statements)
+
+
+def test_postgres_refresh_lock_reports_shared_contention(monkeypatch) -> None:
+    statements: list[str] = []
+    rollbacks = 0
+
+    class Result:
+        def scalar(self):
+            return False
+
+    class Dialect:
+        name = "postgresql"
+
+    class Bind:
+        dialect = Dialect()
+
+    class FakeSession:
+        bind = Bind()
+
+        def execute(self, statement, _params):
+            statements.append(str(statement))
+            return Result()
+
+        def commit(self):
+            raise AssertionError("a contended try-lock must not commit")
+
+        def rollback(self):
+            nonlocal rollbacks
+            rollbacks += 1
+
+    @contextmanager
+    def fake_session():
+        yield FakeSession()
+
+    monkeypatch.setattr(cache, "get_db_session", fake_session)
+
+    with cache.response_refresh_lock(
+        "postgres-contended-key",
+        wait_timeout_seconds=0.25,
+    ) as acquired:
+        assert acquired is False
+
+    assert rollbacks == 1
+    assert any("pg_try_advisory_lock" in statement for statement in statements)
+    assert not any("pg_advisory_unlock" in statement for statement in statements)
 
 
 def test_async_response_refresh_lock_is_nonblocking_and_serializes(

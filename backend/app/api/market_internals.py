@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from threading import Event, Lock, Thread
 
 import httpx
 import pandas as pd
@@ -21,12 +23,26 @@ router = APIRouter()
 _CACHE_TTL_SECONDS = 4 * 60 * 60
 _MAX_STALE_AGE_SECONDS = 48 * 60 * 60
 _YAHOO_TIMEOUT_SECONDS = 8
+_YAHOO_HARD_TIMEOUT_SECONDS = 10
 _LISTING_TIMEOUT_SECONDS = 8
+_REFRESH_LOCK_WAIT_SECONDS = 0.25
 _MAX_MEMORY_CACHE_ENTRIES = 6
 _MIN_REPRESENTATIVE_PARTICIPATION_PCT = 20.0
 _cached_by_days: dict[int, dict[str, object]] = {}
 _LISTING_CACHE_TTL_SECONDS = 24 * 60 * 60
 _listing_cache: dict[str, object] = {"fetched_at": None, "data": None}
+_breadth_download_guard = Lock()
+
+
+@dataclass
+class _BreadthDownloadState:
+    symbols: tuple[str, ...]
+    done: Event
+    frame: pd.DataFrame | None = None
+    error: Exception | None = None
+
+
+_breadth_download_inflight: _BreadthDownloadState | None = None
 
 
 def _set_memory_snapshot(days: int, cached_at: datetime, payload: dict) -> None:
@@ -340,23 +356,72 @@ def _extract_close_frame(downloaded: pd.DataFrame) -> pd.DataFrame | None:
 
 
 def _download_breadth_close(symbols: list[str]) -> pd.DataFrame | None:
+    global _breadth_download_inflight
+
     if not symbols:
         return None
-    try:
-        frame = yf.download(
-            tickers=" ".join(symbols),
-            period="1y",
-            interval="1d",
-            auto_adjust=False,
-            progress=False,
-            threads=True,
-            group_by="column",
-            timeout=_YAHOO_TIMEOUT_SECONDS,
+
+    signature = tuple(symbols)
+    completed_state: _BreadthDownloadState | None = None
+    with _breadth_download_guard:
+        state = _breadth_download_inflight
+        if state is not None and state.done.is_set():
+            _breadth_download_inflight = None
+            if state.symbols == signature:
+                completed_state = state
+            state = None
+        if completed_state is None and state is not None:
+            logger.warning(
+                "A prior Yahoo breadth download is still running; "
+                "skipping a duplicate provider request"
+            )
+            return None
+        if completed_state is None:
+            state = _BreadthDownloadState(symbols=signature, done=Event())
+            _breadth_download_inflight = state
+
+            def download() -> None:
+                try:
+                    state.frame = yf.download(
+                        tickers=" ".join(symbols),
+                        period="1y",
+                        interval="1d",
+                        auto_adjust=False,
+                        progress=False,
+                        threads=True,
+                        group_by="column",
+                        timeout=_YAHOO_TIMEOUT_SECONDS,
+                    )
+                except Exception as exc:
+                    state.error = exc
+                finally:
+                    state.done.set()
+
+            Thread(
+                target=download,
+                name="market-internals-yahoo-breadth",
+                daemon=True,
+            ).start()
+        else:
+            state = completed_state
+
+    if not state.done.wait(timeout=_YAHOO_HARD_TIMEOUT_SECONDS):
+        logger.warning(
+            "Yahoo breadth download exceeded the %.1fs request budget; "
+            "returning stale or partial evidence",
+            _YAHOO_HARD_TIMEOUT_SECONDS,
         )
-    except Exception as exc:
-        logger.warning("Batch breadth-symbol download failed: %s", exc)
         return None
-    return _extract_close_frame(frame)
+
+    with _breadth_download_guard:
+        if _breadth_download_inflight is state:
+            _breadth_download_inflight = None
+    if state.error is not None:
+        logger.warning("Batch breadth-symbol download failed: %s", state.error)
+        return None
+    if state.frame is None:
+        return None
+    return _extract_close_frame(state.frame)
 
 
 def _fetch_breadth_metric_series(
@@ -763,6 +828,76 @@ def _build_market_internals_overview(
     return payload
 
 
+def _refresh_in_progress_fallback(
+    days: int,
+    shared_snapshot,
+) -> dict[str, object]:
+    if shared_snapshot is not None:
+        if shared_snapshot.is_fresh(_CACHE_TTL_SECONDS):
+            return shared_snapshot.payload  # type: ignore[return-value]
+        return mark_stale_snapshot(
+            shared_snapshot.payload,
+            shared_snapshot,
+            reason="breadth_refresh_in_progress",
+            ttl_seconds=_CACHE_TTL_SECONDS,
+            max_stale_age_seconds=_MAX_STALE_AGE_SECONDS,
+            warning_message=(
+                "A market breadth refresh is already in progress; "
+                "showing the last-known-good snapshot."
+            ),
+        )
+
+    cached_listings = _listing_cache.get("data")
+    listing_map = cached_listings if isinstance(cached_listings, dict) else {}
+
+    def listing_count(exchange_key: str) -> int:
+        symbols = listing_map.get(exchange_key)
+        return len(symbols) if isinstance(symbols, list) else 0
+
+    amex = _empty_bucket("AMEX", listing_count("amex"), "unavailable")
+    nasdaq = _empty_bucket("NSDQ", listing_count("nsdq"), "unavailable")
+    nyse = _empty_bucket("NYSE", listing_count("nyse"), "unavailable")
+    total_universe = int(
+        amex["universe_size"]
+        + nasdaq["universe_size"]
+        + nyse["universe_size"]
+    )
+    composite = _make_snapshot(0, 0, 0.0, 0.0, 0, 0, 0.0)
+    composite["universe_size"] = total_universe
+    return {
+        "as_of": datetime.now(timezone.utc).isoformat(),
+        "composite": composite,
+        "days": days,
+        "history": [],
+        "exchanges": {
+            "amex": amex,
+            "nsdq": nasdaq,
+            "nyse": nyse,
+        },
+        "warnings": [
+            "A market breadth refresh is already in progress; "
+            "no prior snapshot is available."
+        ],
+        "data_quality": {
+            "status": "partial",
+            "stale": False,
+            "reason": "breadth_refresh_in_progress",
+            "exchange_history_coverage": 0,
+            "exchange_history_total": 3,
+            "representative_exchange_coverage": 0,
+            "representative_exchange_total": 3,
+            "minimum_representative_participation_pct": (
+                _MIN_REPRESENTATIVE_PARTICIPATION_PCT
+            ),
+            "cacheable": False,
+            "representative": False,
+            "provider_request_shape": "single_batched_breadth_download",
+            "cache_ttl_seconds": _CACHE_TTL_SECONDS,
+            "max_stale_age_seconds": _MAX_STALE_AGE_SECONDS,
+        },
+    }
+
+
 @router.get("/market-internals/overview")
 def get_market_internals_overview(
     days: int = Query(90, ge=30, le=365),
@@ -777,7 +912,10 @@ def get_market_internals_overview(
     if shared_snapshot and shared_snapshot.is_fresh(_CACHE_TTL_SECONDS):
         return shared_snapshot.payload  # type: ignore[return-value]
 
-    with response_refresh_lock(cache_key):
+    with response_refresh_lock(
+        cache_key,
+        wait_timeout_seconds=_REFRESH_LOCK_WAIT_SECONDS,
+    ) as refresh_lock_acquired:
         # The lock holder may have populated the shared snapshot while this
         # request was waiting. Re-read before touching any provider.
         shared_snapshot = load_response_snapshot(cache_key)
@@ -788,6 +926,8 @@ def get_market_internals_overview(
             )
         ):
             shared_snapshot = None
+        if not refresh_lock_acquired:
+            return _refresh_in_progress_fallback(days, shared_snapshot)
         if shared_snapshot and shared_snapshot.is_fresh(_CACHE_TTL_SECONDS):
             return shared_snapshot.payload  # type: ignore[return-value]
         return _build_market_internals_overview(days, shared_snapshot)

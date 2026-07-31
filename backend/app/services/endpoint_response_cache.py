@@ -54,8 +54,17 @@ def _advisory_lock_id(cache_key: str) -> int:
 
 
 @contextmanager
-def response_refresh_lock(cache_key: str):
-    """Serialize expensive sync refreshes locally and across Postgres workers."""
+def response_refresh_lock(
+    cache_key: str,
+    *,
+    wait_timeout_seconds: Optional[float] = None,
+):
+    """Serialize expensive sync refreshes locally and across Postgres workers.
+
+    Callers that have a safe stale/partial fallback can pass a bounded wait and
+    inspect the yielded boolean. PostgreSQL contention then uses
+    ``pg_try_advisory_lock`` instead of parking a request indefinitely.
+    """
 
     with _LOCAL_REFRESH_LOCKS_GUARD:
         local_lock = _LOCAL_REFRESH_LOCKS.get(cache_key)
@@ -63,10 +72,21 @@ def response_refresh_lock(cache_key: str):
             local_lock = Lock()
             _LOCAL_REFRESH_LOCKS[cache_key] = local_lock
 
-    local_lock.acquire()
+    if wait_timeout_seconds is None:
+        local_lock.acquire()
+        local_acquired = True
+    else:
+        local_acquired = local_lock.acquire(
+            timeout=max(float(wait_timeout_seconds), 0.0)
+        )
+    if not local_acquired:
+        yield False
+        return
+
     session_manager = None
     db = None
     advisory_acquired = False
+    shared_lock_available = True
     advisory_id = _advisory_lock_id(cache_key)
     try:
         try:
@@ -74,11 +94,22 @@ def response_refresh_lock(cache_key: str):
             db = session_manager.__enter__()
             dialect_name = getattr(getattr(db, "bind", None), "dialect", None)
             if getattr(dialect_name, "name", "") == "postgresql":
-                db.execute(
-                    text("SELECT pg_advisory_lock(:lock_id)"),
-                    {"lock_id": advisory_id},
-                )
-                advisory_acquired = True
+                if wait_timeout_seconds is None:
+                    db.execute(
+                        text("SELECT pg_advisory_lock(:lock_id)"),
+                        {"lock_id": advisory_id},
+                    )
+                    advisory_acquired = True
+                else:
+                    advisory_acquired = bool(
+                        db.execute(
+                            text("SELECT pg_try_advisory_lock(:lock_id)"),
+                            {"lock_id": advisory_id},
+                        ).scalar()
+                    )
+                    shared_lock_available = advisory_acquired
+                if not advisory_acquired and wait_timeout_seconds is not None:
+                    db.rollback()
         except Exception as exc:
             logger.warning(
                 "Unable to acquire shared refresh lock %s; using local lock: %s",
@@ -93,7 +124,11 @@ def response_refresh_lock(cache_key: str):
             session_manager = None
             db = None
 
-        yield
+        if not shared_lock_available:
+            yield False
+            return
+
+        yield True
     finally:
         if advisory_acquired and db is not None:
             try:
@@ -107,6 +142,10 @@ def response_refresh_lock(cache_key: str):
                     cache_key,
                     exc,
                 )
+                try:
+                    db.invalidate()
+                except Exception:
+                    pass
         if session_manager is not None:
             try:
                 session_manager.__exit__(None, None, None)
@@ -294,6 +333,7 @@ def mark_stale_snapshot(
     reason: str,
     ttl_seconds: Optional[float] = None,
     max_stale_age_seconds: Optional[float] = None,
+    warning_message: Optional[str] = None,
 ) -> Any:
     """Mark reused evidence as stale without changing an endpoint's shape."""
 
@@ -320,7 +360,10 @@ def mark_stale_snapshot(
             **metadata,
         }
         warnings = marked.get("warnings")
-        warning = "Live refresh failed; showing the last-known-good snapshot."
+        warning = (
+            warning_message
+            or "Live refresh failed; showing the last-known-good snapshot."
+        )
         if isinstance(warnings, list) and warning not in warnings:
             warnings.append(warning)
         return marked

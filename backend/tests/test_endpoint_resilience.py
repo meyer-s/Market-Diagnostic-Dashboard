@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timedelta
+from threading import Event
+import time
 
 import pytest
 
@@ -36,6 +38,144 @@ def _snapshot(cache_key: str, payload, age_seconds: int = 7200) -> ResponseSnaps
         payload=payload,
         cached_at=cached_at,
         age_seconds=float(age_seconds),
+    )
+
+
+def test_market_internals_lock_contention_reuses_stale_snapshot(
+    monkeypatch,
+) -> None:
+    prior = {
+        "as_of": "2026-07-28T15:00:00+00:00",
+        "history": [{"date": "2026-07-28", "advancing": 100}],
+        "warnings": [],
+    }
+    snapshot = _snapshot(
+        "market-internals:overview:365",
+        prior,
+        age_seconds=20_000,
+    )
+
+    @contextmanager
+    def lock_busy(_cache_key: str, *, wait_timeout_seconds: float):
+        assert wait_timeout_seconds == market_internals._REFRESH_LOCK_WAIT_SECONDS
+        yield False
+
+    monkeypatch.setattr(
+        market_internals,
+        "load_response_snapshot",
+        lambda _key: snapshot,
+    )
+    monkeypatch.setattr(market_internals, "response_refresh_lock", lock_busy)
+    monkeypatch.setattr(
+        market_internals,
+        "_download_breadth_close",
+        lambda _symbols: pytest.fail("lock waiters must not call Yahoo"),
+    )
+
+    payload = market_internals.get_market_internals_overview(days=365)
+
+    assert payload["history"] == prior["history"]
+    assert payload["data_quality"]["status"] == "stale"
+    assert payload["data_quality"]["reason"] == "breadth_refresh_in_progress"
+    assert payload["data_quality"]["snapshot_age_seconds"] == 20_000
+    assert payload["warnings"] == [
+        "A market breadth refresh is already in progress; "
+        "showing the last-known-good snapshot."
+    ]
+
+
+def test_market_internals_cold_lock_contention_returns_partial_without_provider(
+    monkeypatch,
+) -> None:
+    @contextmanager
+    def lock_busy(_cache_key: str, *, wait_timeout_seconds: float):
+        assert wait_timeout_seconds == market_internals._REFRESH_LOCK_WAIT_SECONDS
+        yield False
+
+    monkeypatch.setattr(
+        market_internals,
+        "load_response_snapshot",
+        lambda _key: None,
+    )
+    monkeypatch.setattr(market_internals, "response_refresh_lock", lock_busy)
+    monkeypatch.setitem(
+        market_internals._listing_cache,
+        "data",
+        {"amex": ["A"], "nyse": ["N1", "N2"], "nsdq": ["Q"]},
+    )
+    monkeypatch.setattr(
+        market_internals,
+        "_fetch_exchange_universe",
+        lambda: pytest.fail("lock waiters must not fetch listings"),
+    )
+    monkeypatch.setattr(
+        market_internals,
+        "_download_breadth_close",
+        lambda _symbols: pytest.fail("lock waiters must not call Yahoo"),
+    )
+
+    payload = market_internals.get_market_internals_overview(days=365)
+
+    assert payload["history"] == []
+    assert payload["composite"]["universe_size"] == 4
+    assert payload["data_quality"]["status"] == "partial"
+    assert payload["data_quality"]["stale"] is False
+    assert payload["data_quality"]["reason"] == "breadth_refresh_in_progress"
+    assert payload["data_quality"]["cacheable"] is False
+    assert payload["warnings"] == [
+        "A market breadth refresh is already in progress; "
+        "no prior snapshot is available."
+    ]
+
+
+def test_market_internals_yahoo_download_has_hard_deadline_and_singleflight(
+    monkeypatch,
+) -> None:
+    provider_started = Event()
+    release_provider = Event()
+    provider_finished = Event()
+    calls = 0
+
+    def hung_download(**_kwargs):
+        nonlocal calls
+        calls += 1
+        provider_started.set()
+        release_provider.wait(timeout=1)
+        provider_finished.set()
+        return None
+
+    monkeypatch.setattr(market_internals.yf, "download", hung_download)
+    monkeypatch.setattr(
+        market_internals,
+        "_YAHOO_HARD_TIMEOUT_SECONDS",
+        0.01,
+    )
+    monkeypatch.setattr(
+        market_internals,
+        "_breadth_download_inflight",
+        None,
+    )
+
+    started_at = time.monotonic()
+    assert market_internals._download_breadth_close(["^ADVN"]) is None
+    elapsed = time.monotonic() - started_at
+    assert provider_started.wait(timeout=0.2)
+    assert elapsed < 0.2
+
+    # A second cold request observes the same inflight call and fails partial
+    # immediately instead of creating another stuck Yahoo request.
+    assert market_internals._download_breadth_close(["^ADVN"]) is None
+    assert calls == 1
+
+    release_provider.set()
+    assert provider_finished.wait(timeout=1)
+    state = market_internals._breadth_download_inflight
+    assert state is not None
+    assert state.done.wait(timeout=1)
+    monkeypatch.setattr(
+        market_internals,
+        "_breadth_download_inflight",
+        None,
     )
 
 
