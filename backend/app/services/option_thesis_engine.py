@@ -19,11 +19,38 @@ from app.models.option_decision_learning import (
 from app.services.options_review_window import ReviewWindow, compute_decision_window, parse_review_window
 
 
-GRADER_VERSION = "thesis_rules_v2"
-FEATURE_SCHEMA_VERSION = "option_thesis_features_v2"
+GRADER_VERSION = "thesis_rules_v3_trim_ladder"
+FEATURE_SCHEMA_VERSION = "option_thesis_features_v3"
 MODEL_KEY = "option_thesis_grader"
-FIELD_SHADOW_MODEL_VERSION = "thesis_rules_v2_market_field_shadow_v1"
-FIELD_SHADOW_FEATURE_SCHEMA_VERSION = "option_market_field_features_v1"
+FIELD_SHADOW_MODEL_VERSION = "thesis_rules_v3_trim_ladder_market_field_shadow_v1"
+FIELD_SHADOW_FEATURE_SCHEMA_VERSION = "option_market_field_features_v2"
+
+_TRIM_LADDER_RANK = {
+    "hold": 0,
+    "trim_25": 1,
+    "trim_50": 2,
+    "runner_25": 3,
+}
+_TRIM_LADDER_RETENTION = {
+    "hold": 1.0,
+    "trim_25": 0.75,
+    "trim_50": 0.50,
+    "runner_25": 0.25,
+}
+_DEFAULT_TRIM_SETTINGS: dict[str, float] = {
+    "trim_25_score": 2.0,
+    "trim_50_score": 4.0,
+    "runner_25_score": 7.0,
+    "theta_elevated_daily_pct": 2.0,
+    "theta_high_daily_pct": 4.0,
+    "low_delta": 0.18,
+    "very_low_delta": 0.08,
+    "opportunity_fade": -7.0,
+    "opportunity_break": -15.0,
+    "harvest_min_profit_pct": 25.0,
+    "harvest_min_delta": 0.55,
+    "harvest_max_dte": 90.0,
+}
 
 _CATALYST_TERMS = (
     "earnings",
@@ -175,6 +202,7 @@ def ensure_default_risk_policy(db: Session) -> OptionRiskPolicy:
             {
                 "basis": "tracked_option_premium",
                 "note": "Draft defaults do not authorize additions until confirmed.",
+                "trim_model": dict(_DEFAULT_TRIM_SETTINGS),
             }
         ),
     )
@@ -199,7 +227,15 @@ def ensure_model_registry(db: Session) -> OptionModelRegistry:
             model_status="champion",
             feature_schema_version=FEATURE_SCHEMA_VERSION,
             sample_count=0,
-            metrics_json=json_dumps({"mode": "deterministic_shadow", "live_outcomes": 0}),
+            metrics_json=json_dumps(
+                {
+                    "mode": "deterministic_shadow",
+                    "live_outcomes": 0,
+                    "trim_model": "capital_efficiency_trim_v1",
+                    "loss_drawdown_used_for_loser_sizing": False,
+                    "automated_execution_enabled": False,
+                }
+            ),
             promotion_gates_json=json_dumps(
                 {
                     "minimum_independent_trade_cycles": 100,
@@ -243,6 +279,14 @@ def ensure_model_registry(db: Session) -> OptionModelRegistry:
             ),
         )
         db.add(field_challenger)
+
+    db.query(OptionModelRegistry).filter(
+        OptionModelRegistry.model_key == MODEL_KEY,
+        OptionModelRegistry.model_version.notin_(
+            [GRADER_VERSION, FIELD_SHADOW_MODEL_VERSION]
+        ),
+        OptionModelRegistry.model_status.in_(["champion", "challenger"]),
+    ).update({OptionModelRegistry.model_status: "archived"}, synchronize_session=False)
     db.flush()
     return champion
 
@@ -772,6 +816,385 @@ def _at_least_urgency(current: str, minimum: str) -> str:
     return minimum if _URGENCY_RANK.get(current, 0) < _URGENCY_RANK[minimum] else current
 
 
+def _trim_settings(risk_policy: OptionRiskPolicy) -> dict[str, float]:
+    settings = json_loads(getattr(risk_policy, "settings_json", None), {})
+    configured = settings.get("trim_model") if isinstance(settings, dict) else None
+    configured = configured if isinstance(configured, dict) else {}
+    resolved = dict(_DEFAULT_TRIM_SETTINGS)
+    for key, default in _DEFAULT_TRIM_SETTINGS.items():
+        candidate = _finite(configured.get(key))
+        if candidate is not None:
+            resolved[key] = candidate
+        else:
+            resolved[key] = default
+    return resolved
+
+
+def _append_trim_signal(
+    signals: list[dict[str, object]],
+    *,
+    code: str,
+    points: int,
+    category: str,
+    detail: str,
+) -> None:
+    signals.append(
+        {
+            "code": code,
+            "points": points,
+            "category": category,
+            "detail": detail,
+        }
+    )
+
+
+def _trim_ladder_for_score(score: int, settings: dict[str, float]) -> str:
+    if score >= settings["runner_25_score"]:
+        return "runner_25"
+    if score >= settings["trim_50_score"]:
+        return "trim_50"
+    if score >= settings["trim_25_score"]:
+        return "trim_25"
+    return "hold"
+
+
+def _target_for_trim_ladder(contracts: int, ladder: str) -> int:
+    if ladder == "hold" or contracts <= 0:
+        return max(0, contracts)
+    if contracts == 1:
+        # A one-lot cannot be partially trimmed. Keep the recommendation
+        # explicit instead of pretending a fractional runner can be held.
+        return 0
+    retained = _TRIM_LADDER_RETENTION.get(ladder, 1.0)
+    return min(contracts - 1, max(1, math.ceil(contracts * retained)))
+
+
+def _previous_trim_state(
+    previous_assessment: object | None,
+) -> tuple[str, Optional[date], set[str]]:
+    if previous_assessment is None:
+        return "hold", None, set()
+    grader_version = str(getattr(previous_assessment, "grader_version", "") or "")
+    if not grader_version.startswith("thesis_rules_v3_trim_ladder"):
+        return "hold", None, set()
+    axes = json_loads(getattr(previous_assessment, "axis_results_json", None), {})
+    sizing = axes.get("trim_sizing") if isinstance(axes, dict) else None
+    if not isinstance(sizing, dict):
+        return "hold", None, set()
+    ladder = str(sizing.get("applied_ladder") or "hold")
+    if ladder not in _TRIM_LADDER_RANK:
+        ladder = "hold"
+    prior_as_of = getattr(previous_assessment, "as_of", None)
+    prior_date = prior_as_of.date() if isinstance(prior_as_of, datetime) else prior_as_of if isinstance(prior_as_of, date) else None
+    prior_codes = {
+        str(item.get("code"))
+        for item in sizing.get("signals", [])
+        if isinstance(item, dict) and item.get("code")
+    }
+    return ladder, prior_date, prior_codes
+
+
+def _build_trim_sizing(
+    *,
+    contracts: int,
+    as_of_date: date,
+    previous_assessment: object | None,
+    company_status: str,
+    path_status: str,
+    contract_status: str,
+    contract_reason_code: str,
+    portfolio_status: str,
+    portfolio_breaches: list[str],
+    hard_codes: set[str],
+    deadline_missed: bool,
+    risk_budget_breached: bool,
+    dte: Optional[int],
+    otm_pct: Optional[float],
+    expected_move_pct: Optional[float],
+    option_price: Optional[float],
+    option_price_source: object,
+    quote: dict[str, object],
+    pnl: dict[str, object],
+    greeks: dict[str, object],
+    opportunity: object,
+    risk_policy: OptionRiskPolicy,
+) -> dict[str, object]:
+    """Size a fresh-capital trim without teaching the model to sell red positions.
+
+    Negative P/L is deliberately excluded from severity. Positive P/L can only
+    enter through the separately labeled convexity-harvest rule. Non-terminal
+    recommendations escalate by at most one rung per assessment date unless a
+    confirmed mandate or portfolio constraint requires an immediate resize.
+    """
+    settings = _trim_settings(risk_policy)
+    signals: list[dict[str, object]] = []
+
+    bid = _finite(quote.get("bid"))
+    ask = _finite(quote.get("ask"))
+    spread_pct = _finite(quote.get("spread_pct"))
+    spread_limit = _finite(risk_policy.max_option_spread_pct) or 25.0
+    two_sided = bool(bid is not None and bid > 0 and ask is not None and ask > 0)
+    quote_actionable = bool(two_sided and spread_pct is not None and spread_pct <= spread_limit)
+
+    delta_abs = abs(_finite(greeks.get("delta")) or 0.0) if _finite(greeks.get("delta")) is not None else None
+    theta = _finite(greeks.get("theta"))
+    gamma = _finite(greeks.get("gamma"))
+    vega = _finite(greeks.get("vega"))
+    theta_daily_pct = (
+        abs(theta) / max(option_price * 100.0, 0.01) * 100.0
+        if theta is not None and option_price is not None and option_price > 0
+        else None
+    )
+    expected_move_usage = (
+        max(0.0, otm_pct) / expected_move_pct
+        if otm_pct is not None and expected_move_pct is not None and expected_move_pct > 0
+        else None
+    )
+    opportunity_payload = opportunity if isinstance(opportunity, dict) else {}
+    opportunity_change = _finite(opportunity_payload.get("score_change"))
+    pnl_percent = _finite(pnl.get("percent"))
+
+    if deadline_missed and "decision_deadline_failed" in hard_codes:
+        _append_trim_signal(
+            signals,
+            code="decision_deadline_failed",
+            points=7,
+            category="path",
+            detail="The maximum decision window expired without the required directional progress.",
+        )
+    if risk_budget_breached:
+        _append_trim_signal(
+            signals,
+            code="risk_budget_breached",
+            points=4,
+            category="portfolio",
+            detail="Entry premium exceeds the confirmed mandate risk budget.",
+        )
+    if portfolio_breaches and "portfolio_policy_breach" in hard_codes:
+        _append_trim_signal(
+            signals,
+            code="portfolio_policy_breach",
+            points=3 if len(portfolio_breaches) > 1 else 2,
+            category="portfolio",
+            detail=f"Approved portfolio guardrails are breached: {', '.join(portfolio_breaches)}.",
+        )
+    if company_status == "impaired":
+        _append_trim_signal(
+            signals,
+            code="company_thesis_impaired",
+            points=3,
+            category="thesis",
+            detail="Current business evidence is weakening while this exact position still consumes risk capital.",
+        )
+    if path_status == "failed":
+        _append_trim_signal(
+            signals,
+            code="path_failed",
+            points=2,
+            category="path",
+            detail="The underlying has failed the expected directional path.",
+        )
+    elif path_status == "behind":
+        _append_trim_signal(
+            signals,
+            code="path_behind",
+            points=1,
+            category="path",
+            detail="The underlying is behind the expected path but remains inside the decision window.",
+        )
+    if contract_status == "marginal" and contract_reason_code != "spread_marginal":
+        _append_trim_signal(
+            signals,
+            code="contract_marginal",
+            points=1,
+            category="contract",
+            detail="The held contract is a marginal use of remaining capital.",
+        )
+    if dte is not None and dte <= 7:
+        _append_trim_signal(
+            signals,
+            code="expiry_critical",
+            points=2,
+            category="time",
+            detail="Seven or fewer calendar days remain.",
+        )
+    elif dte is not None and dte <= 21:
+        _append_trim_signal(
+            signals,
+            code="expiry_pressure",
+            points=1,
+            category="time",
+            detail="The contract is inside the final twenty-one calendar days.",
+        )
+    if theta_daily_pct is not None and theta_daily_pct >= settings["theta_high_daily_pct"]:
+        _append_trim_signal(
+            signals,
+            code="theta_burn_high",
+            points=2,
+            category="contract",
+            detail=f"Modeled theta consumes about {theta_daily_pct:.1f}% of current option value per day.",
+        )
+    elif theta_daily_pct is not None and theta_daily_pct >= settings["theta_elevated_daily_pct"]:
+        _append_trim_signal(
+            signals,
+            code="theta_burn_elevated",
+            points=1,
+            category="contract",
+            detail=f"Modeled theta consumes about {theta_daily_pct:.1f}% of current option value per day.",
+        )
+    low_delta_is_relevant = bool(
+        delta_abs is not None
+        and otm_pct is not None
+        and otm_pct > 0
+        and ((dte is not None and dte <= 45) or path_status in {"behind", "failed"})
+    )
+    if low_delta_is_relevant and delta_abs is not None and delta_abs < settings["very_low_delta"]:
+        _append_trim_signal(
+            signals,
+            code="directional_efficiency_very_low",
+            points=2,
+            category="contract",
+            detail=f"Absolute delta is only {delta_abs:.2f} despite limited time or an adverse path.",
+        )
+    elif low_delta_is_relevant and delta_abs is not None and delta_abs < settings["low_delta"]:
+        _append_trim_signal(
+            signals,
+            code="directional_efficiency_low",
+            points=1,
+            category="contract",
+            detail=f"Absolute delta is {delta_abs:.2f}, limiting directional participation per premium dollar.",
+        )
+    if opportunity_change is not None and opportunity_change <= settings["opportunity_break"]:
+        _append_trim_signal(
+            signals,
+            code="opportunity_rank_broken",
+            points=2,
+            category="opportunity",
+            detail=f"The held-contract opportunity score has deteriorated {opportunity_change:.1f} points since entry.",
+        )
+    elif opportunity_change is not None and opportunity_change <= settings["opportunity_fade"]:
+        _append_trim_signal(
+            signals,
+            code="opportunity_rank_fading",
+            points=1,
+            category="opportunity",
+            detail=f"The held-contract opportunity score has deteriorated {opportunity_change:.1f} points since entry.",
+        )
+
+    pre_crowding_score = sum(int(item["points"]) for item in signals)
+    if portfolio_status == "crowded" and pre_crowding_score > 0:
+        _append_trim_signal(
+            signals,
+            code="crowding_confirms_weakness",
+            points=1,
+            category="portfolio",
+            detail="Same-direction or single-position crowding increases the cost of carrying a weakening contract.",
+        )
+
+    harvest_candidate = bool(
+        contracts > 1
+        and quote_actionable
+        and pnl_percent is not None
+        and pnl_percent >= settings["harvest_min_profit_pct"]
+        and delta_abs is not None
+        and delta_abs >= settings["harvest_min_delta"]
+        and dte is not None
+        and dte <= settings["harvest_max_dte"]
+        and company_status in {"strengthening", "intact", "watch"}
+        and path_status in {"ahead", "on_track"}
+        and contract_status != "nonviable"
+    )
+    if harvest_candidate:
+        _append_trim_signal(
+            signals,
+            code="convexity_harvest",
+            points=2,
+            category="harvest",
+            detail=f"The option is up {pnl_percent:.1f}% with {delta_abs:.2f} delta; harvesting part of the convexity can repay risk while retaining upside.",
+        )
+
+    signals.sort(key=lambda item: (-int(item["points"]), str(item["code"])))
+    severity_score = sum(int(item["points"]) for item in signals)
+    raw_ladder = _trim_ladder_for_score(severity_score, settings)
+    previous_ladder, previous_date, previous_codes = _previous_trim_state(previous_assessment)
+    raw_rank = _TRIM_LADDER_RANK[raw_ladder]
+    previous_rank = _TRIM_LADDER_RANK[previous_ladder]
+    hard_resize = bool(
+        hard_codes
+        & {
+            "decision_deadline_failed",
+            "risk_budget_breached",
+            "portfolio_policy_breach",
+        }
+    )
+    if raw_rank == 0 or hard_resize:
+        applied_rank = raw_rank
+    elif previous_date is not None and previous_date < as_of_date:
+        applied_rank = min(raw_rank, previous_rank + 1)
+    elif previous_date == as_of_date:
+        applied_rank = min(raw_rank, max(1, previous_rank))
+    else:
+        applied_rank = min(raw_rank, 1)
+    applied_ladder = next(
+        ladder for ladder, rank in _TRIM_LADDER_RANK.items() if rank == applied_rank
+    )
+    target = _target_for_trim_ladder(contracts, applied_ladder)
+    current_codes = {str(item["code"]) for item in signals}
+    repeated_codes = sorted(current_codes & previous_codes)
+    remaining_capital = option_price * contracts * 100.0 if option_price is not None else None
+    bid_liquidation_value = bid * contracts * 100.0 if bid is not None and bid > 0 else None
+
+    return {
+        "status": "no_trim" if applied_ladder == "hold" else applied_ladder,
+        "model_version": "capital_efficiency_trim_v1",
+        "severity_score": severity_score,
+        "raw_ladder": raw_ladder,
+        "applied_ladder": applied_ladder,
+        "target_contracts": target,
+        "target_retention_pct": round(target / contracts * 100.0, 1) if contracts else 0.0,
+        "trim_contracts": max(0, contracts - target),
+        "trim_pct": round((contracts - target) / contracts * 100.0, 1) if contracts else 0.0,
+        "signals": signals,
+        "primary_signal": signals[0] if signals else None,
+        "harvest_candidate": harvest_candidate,
+        "loss_drawdown_used_for_sizing": False,
+        "profit_used_only_for_convexity_harvest": harvest_candidate,
+        "execution": {
+            "ready": quote_actionable,
+            "two_sided": two_sided,
+            "bid": bid,
+            "ask": ask,
+            "spread_pct": spread_pct,
+            "spread_limit_pct": spread_limit,
+            "option_price_source": option_price_source,
+            "note": (
+                "Sizing is decision support only; use limit execution."
+                if quote_actionable
+                else "Quote is not execution-grade; target size requires manual price discovery."
+            ),
+        },
+        "capital_efficiency": {
+            "remaining_capital": remaining_capital,
+            "bid_liquidation_value": bid_liquidation_value,
+            "theta_daily_pct_of_option_value": theta_daily_pct,
+            "delta_abs": delta_abs,
+            "gamma_per_share_per_dollar": gamma,
+            "vega_per_contract_per_vol_point": vega,
+            "otm_expected_move_usage": expected_move_usage,
+            "opportunity_score_change": opportunity_change,
+        },
+        "persistence": {
+            "hard_resize_bypass": hard_resize,
+            "previous_ladder": previous_ladder,
+            "previous_assessment_date": previous_date,
+            "repeated_signal_codes": repeated_codes,
+            "escalation_limited": applied_rank < raw_rank,
+            "rule": "At most one trim rung per new assessment date unless a confirmed hard constraint is breached.",
+        },
+        "settings": settings,
+    }
+
+
 def _market_structure_fact(axis: dict[str, object]) -> str:
     if not axis.get("available"):
         return "Causal Market Field context is unavailable; it did not influence the verdict or target size."
@@ -801,6 +1224,7 @@ def build_assessment_payload(
     risk_policy: OptionRiskPolicy,
     source_event: object | None = None,
     projection_payload: object = None,
+    previous_assessment: object | None = None,
     as_of: Optional[datetime] = None,
 ) -> dict[str, object]:
     as_of_dt = as_of or datetime.utcnow()
@@ -822,6 +1246,7 @@ def build_assessment_payload(
         or getattr(position, "underlying_reference", None)
     )
     option_price = _finite(metrics.get("option_price"))
+    option_price_source = metrics.get("option_price_source")
     dte = int(metrics.get("dte")) if _finite(metrics.get("dte")) is not None else None
     volatility = _finite(metrics.get("volatility"))
     if volatility is not None and volatility > 5:
@@ -876,21 +1301,27 @@ def build_assessment_payload(
     contract_reasons: list[str] = []
     if dte is not None and dte <= 0:
         contract_status = "nonviable"
+        contract_reason_code = "expired"
         contract_reasons.append("The contract has expired or has no remaining time value.")
     elif otm_pct is not None and expected_move_pct and otm_pct > expected_move_pct:
         contract_status = "nonviable"
+        contract_reason_code = "implied_move_exceeded"
         contract_reasons.append("The remaining out-of-the-money distance exceeds the volatility-implied move.")
     elif dte is not None and dte <= 14:
         contract_status = "marginal"
+        contract_reason_code = "expiry_marginal"
         contract_reasons.append("Less than fifteen days remain, so path and timing risk are high.")
     elif otm_pct is not None and expected_move_pct and otm_pct > expected_move_pct * 0.6:
         contract_status = "marginal"
+        contract_reason_code = "implied_move_marginal"
         contract_reasons.append("The contract needs a large share of the remaining implied move.")
     elif spread_pct is not None and spread_pct > 35:
         contract_status = "marginal"
+        contract_reason_code = "spread_marginal"
         contract_reasons.append("The current bid/ask spread materially weakens execution quality.")
     else:
         contract_status = "attractive"
+        contract_reason_code = "no_contract_veto"
         contract_reasons.append("Remaining time, moneyness and execution inputs do not trigger a contract veto.")
 
     portfolio_rows = list(portfolio_positions)
@@ -931,7 +1362,9 @@ def build_assessment_payload(
         missing_inputs.append("current underlying price")
     if option_price is None:
         missing_inputs.append("current executable option value")
-    if quote.get("bid") is None or quote.get("ask") is None:
+    quote_bid = _finite(quote.get("bid"))
+    quote_ask = _finite(quote.get("ask"))
+    if quote_bid is None or quote_bid <= 0 or quote_ask is None or quote_ask <= 0:
         missing_inputs.append("two-sided option quote")
     if not technical:
         missing_inputs.append("current technical history")
@@ -958,7 +1391,8 @@ def build_assessment_payload(
     marginal_for_portfolio = (
         company_status in {"watch", "impaired", "broken", "retired"}
         or path_status in {"behind", "failed", "unknown"}
-        or contract_status in {"marginal", "nonviable"}
+        or contract_status == "nonviable"
+        or (contract_status == "marginal" and contract_reason_code != "spread_marginal")
         or data_quality == "stop"
     )
     vetoes: list[dict[str, object]] = []
@@ -996,6 +1430,31 @@ def build_assessment_payload(
         security_readiness = "ready"
 
     hard_codes = {str(item["code"]) for item in vetoes if item.get("hard")}
+    trim_sizing = _build_trim_sizing(
+        contracts=contracts,
+        as_of_date=as_of_date,
+        previous_assessment=previous_assessment,
+        company_status=company_status,
+        path_status=path_status,
+        contract_status=contract_status,
+        contract_reason_code=contract_reason_code,
+        portfolio_status=portfolio_status,
+        portfolio_breaches=portfolio_breaches,
+        hard_codes=hard_codes,
+        deadline_missed=deadline_missed,
+        risk_budget_breached=risk_budget_breached,
+        dte=dte,
+        otm_pct=otm_pct,
+        expected_move_pct=expected_move_pct,
+        option_price=option_price,
+        option_price_source=option_price_source,
+        quote=quote,
+        pnl=pnl,
+        greeks=greeks,
+        opportunity=metrics.get("opportunity"),
+        risk_policy=risk_policy,
+    )
+    staged_trim = str(trim_sizing["applied_ladder"]) != "hold"
     if "thesis_invalid" in hard_codes or "expired" in hard_codes:
         verdict = "close"
     elif "contract_nonviable" in hard_codes and company_status in {"strengthening", "intact", "watch"}:
@@ -1006,10 +1465,10 @@ def build_assessment_payload(
         verdict = "manual_review"
     elif company_status == "unverified":
         verdict = "manual_review"
-    elif company_status == "impaired":
+    elif staged_trim:
         verdict = "reduce"
-    elif portfolio_status == "over_budget" and marginal_for_portfolio:
-        verdict = "reduce"
+    elif not bool(trim_sizing["execution"]["ready"]):
+        verdict = "conditional_hold"
     elif portfolio_status in {"over_budget", "crowded"}:
         verdict = "conditional_hold"
     elif path_status in {"behind", "failed"} or contract_status == "marginal":
@@ -1019,10 +1478,17 @@ def build_assessment_payload(
 
     if verdict in {"close", "replacement_candidate"}:
         target = 0
+        trim_sizing.update(
+            {
+                "status": "close" if verdict == "close" else "replacement",
+                "target_contracts": 0,
+                "target_retention_pct": 0.0,
+                "trim_contracts": contracts,
+                "trim_pct": 100.0 if contracts else 0.0,
+            }
+        )
     elif verdict == "reduce":
-        target = max(0, contracts // 2)
-        if contracts > 1 and target == contracts:
-            target = contracts - 1
+        target = int(trim_sizing["target_contracts"])
     else:
         target = contracts
     target_min = max(0, target - 1) if verdict == "reduce" else target
@@ -1107,6 +1573,18 @@ def build_assessment_payload(
     else:
         reasons.append("Company thesis is unverified because current business evidence is unavailable; technical price action is not treated as thesis proof.")
     reasons.extend(contract_reasons[:1])
+    if verdict == "reduce":
+        trim_label = str(trim_sizing["applied_ladder"]).replace("_", " ")
+        primary_signal = trim_sizing.get("primary_signal")
+        primary_detail = (
+            str(primary_signal.get("detail"))
+            if isinstance(primary_signal, dict) and primary_signal.get("detail")
+            else "multiple capital-efficiency constraints are active."
+        )
+        reasons.append(
+            f"The staged sizing ladder recommends {trim_label} to {target} contract"
+            f"{'s' if target != 1 else ''}; {primary_detail}"
+        )
     if market_structure.get("available"):
         reasons.append(_market_structure_fact(market_structure))
     if portfolio_status != "acceptable":
@@ -1131,7 +1609,9 @@ def build_assessment_payload(
         "market": {
             "underlying_price": spot,
             "option_price": option_price,
+            "option_price_source": option_price_source,
             "remaining_capital": remaining_capital,
+            "bid_liquidation_value": trim_sizing["capital_efficiency"]["bid_liquidation_value"],
             "pnl_dollar": _finite(pnl.get("dollar")),
             "pnl_percent": _finite(pnl.get("percent")),
             "dte": dte,
@@ -1141,7 +1621,9 @@ def build_assessment_payload(
             "spread_pct": spread_pct,
             "quote_quality": quote.get("quality"),
             "delta": _finite(greeks.get("delta")),
+            "gamma": _finite(greeks.get("gamma")),
             "theta_per_day_per_contract": _finite(greeks.get("theta")),
+            "vega_per_contract_per_vol_point": _finite(greeks.get("vega")),
             "market_data_as_of": market.get("last_updated"),
             "market_data_source": market.get("data_source"),
         },
@@ -1158,7 +1640,9 @@ def build_assessment_payload(
         "contract": {
             "otm_pct": otm_pct,
             "expected_move_pct": expected_move_pct,
+            "reason_code": contract_reason_code,
         },
+        "trim_sizing": trim_sizing,
         "technical": technical,
         "field_context": field_context,
         "projection": projection,
@@ -1192,9 +1676,11 @@ def build_assessment_payload(
         "market_structure": market_structure,
         "exact_contract": {
             "status": contract_status,
+            "reason_code": contract_reason_code,
             "otm_pct": otm_pct,
             "expected_move_pct": expected_move_pct,
         },
+        "trim_sizing": trim_sizing,
         "portfolio_fit": {
             "status": portfolio_status,
             "position_share_pct": position_share,
@@ -1245,6 +1731,18 @@ def build_assessment_payload(
             "as_of": market.get("last_updated") or as_of_dt.isoformat(),
             "signal": contract_status,
             "fact": contract_reasons[0],
+        },
+        {
+            "evidence_id": "trim_sizing",
+            "source_type": "deterministic_capital_efficiency_model",
+            "as_of": as_of_dt.isoformat(),
+            "signal": trim_sizing["status"],
+            "fact": (
+                f"Severity {trim_sizing['severity_score']} maps to {str(trim_sizing['applied_ladder']).replace('_', ' ')} "
+                f"and a target of {trim_sizing['target_contracts']} contracts. Unrealized loss is excluded from loser sizing."
+            ),
+            "execution_ready": trim_sizing["execution"]["ready"],
+            "shadow_only": True,
         },
     ]
     stable_input = json_dumps({"inputs": input_snapshot, "axes": axes, "vetoes": vetoes, "verdict": verdict, "target": target})

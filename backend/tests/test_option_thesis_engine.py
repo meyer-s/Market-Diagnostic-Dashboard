@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 from datetime import date, datetime
+import json
 from types import SimpleNamespace
 
 import pandas as pd
@@ -10,6 +11,7 @@ from app.models.option_decision_learning import OptionPositionMandate, OptionRis
 from app.services.option_thesis_engine import (
     FIELD_SHADOW_FEATURE_SCHEMA_VERSION,
     FIELD_SHADOW_MODEL_VERSION,
+    GRADER_VERSION,
     build_assessment_payload,
     rebase_continuation_condition,
     technical_snapshot_from_frame,
@@ -202,6 +204,67 @@ def test_market_field_is_immutable_advisory_evidence_not_a_verdict_rule() -> Non
         expiration=date(2026, 12, 18),
         total_cost=2_400.0,
     )
+
+
+def _current_metrics(**overrides):
+    payload = {
+        "market": {"current_price": 94.0, "last_updated": "2026-07-15T16:00:00Z"},
+        "option_price": 2.0,
+        "option_price_source": "mid",
+        "quote": {
+            "bid": 1.9,
+            "ask": 2.1,
+            "spread_pct": 10.0,
+            "quality": "mid",
+            "open_interest": 500,
+            "volume": 50,
+        },
+        "volatility": 0.30,
+        "dte": 30,
+        "greeks": {"delta": 0.35, "gamma": 0.03, "theta": -2.0, "vega": 0.08},
+        "pnl": {"dollar": -200.0, "percent": -25.0},
+        "opportunity": {"score_change": -20.0},
+        "technical_snapshot": {
+            "price": 94.0,
+            "sma20": 97.0,
+            "sma50": 99.0,
+            "sma20_slope_pct": -1.2,
+            "rsi14": 42.0,
+            "macd_hist": -0.3,
+        },
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _weakening_projection():
+    return {
+        "projections": {"3M": {"direction": "bearish", "conviction": "medium"}},
+        "fundamentals": {
+            "revenue_yoy": {"series": [{"date": "2026-06-30", "value": -4.0}]},
+            "eps": {
+                "series": [
+                    {"date": "2026-03-31", "value": 1.0},
+                    {"date": "2026-06-30", "value": 0.7},
+                ]
+            },
+        },
+    }
+
+
+def _previous_assessment(ladder: str, *, as_of: datetime, signals: tuple[str, ...] = ()):
+    return SimpleNamespace(
+        grader_version=GRADER_VERSION,
+        as_of=as_of,
+        axis_results_json=json.dumps(
+            {
+                "trim_sizing": {
+                    "applied_ladder": ladder,
+                    "signals": [{"code": code} for code in signals],
+                }
+            }
+        ),
+    )
     field_context = {
         "schema_version": "option_market_field_v1",
         "mode": "shadow_only",
@@ -351,3 +414,214 @@ def test_market_field_is_immutable_advisory_evidence_not_a_verdict_rule() -> Non
     assert field_evidence["advisory"] is True
     assert field_evidence["rank_influence"] == 0.0
     assert field_evidence["authority"]["target_size"] == "none"
+
+
+def test_trim_ladder_excludes_loser_drawdown_and_starts_with_one_rung() -> None:
+    position = _position(contracts=10, strike=95.0, total_cost=2_000.0)
+    offset = _position(
+        id=2,
+        option_type="put",
+        expiration=date(2026, 12, 18),
+        total_cost=8_000.0,
+    )
+    common = {
+        "position": position,
+        "mandate": _mandate(),
+        "latest_review": None,
+        "portfolio_positions": [position, offset],
+        "risk_policy": _policy(),
+        "projection_payload": _weakening_projection(),
+        "as_of": datetime(2026, 7, 15, 16, 0),
+    }
+
+    mild_loss = build_assessment_payload(
+        metrics=_current_metrics(pnl={"dollar": -200.0, "percent": -10.0}),
+        **common,
+    )
+    severe_loss = build_assessment_payload(
+        metrics=_current_metrics(pnl={"dollar": -1_900.0, "percent": -95.0}),
+        **common,
+    )
+
+    assert mild_loss["proposed_verdict"] == "reduce"
+    assert mild_loss["proposed_target_contracts"] == 8
+    assert severe_loss["proposed_target_contracts"] == mild_loss["proposed_target_contracts"]
+    sizing = severe_loss["axis_results"]["trim_sizing"]
+    assert sizing["raw_ladder"] == "runner_25"
+    assert sizing["applied_ladder"] == "trim_25"
+    assert sizing["persistence"]["escalation_limited"] is True
+    assert sizing["loss_drawdown_used_for_sizing"] is False
+
+
+def test_trim_ladder_escalates_at_most_one_rung_on_a_new_date() -> None:
+    position = _position(contracts=10, strike=95.0, total_cost=2_000.0)
+    offset = _position(
+        id=2,
+        option_type="put",
+        expiration=date(2026, 12, 18),
+        total_cost=8_000.0,
+    )
+    common = {
+        "position": position,
+        "metrics": _current_metrics(),
+        "mandate": _mandate(),
+        "latest_review": None,
+        "portfolio_positions": [position, offset],
+        "risk_policy": _policy(),
+        "projection_payload": _weakening_projection(),
+        "as_of": datetime(2026, 7, 15, 16, 0),
+    }
+
+    same_day = build_assessment_payload(
+        previous_assessment=_previous_assessment(
+            "trim_25",
+            as_of=datetime(2026, 7, 15, 9, 0),
+            signals=("company_thesis_impaired", "path_failed"),
+        ),
+        **common,
+    )
+    next_day = build_assessment_payload(
+        previous_assessment=_previous_assessment(
+            "trim_25",
+            as_of=datetime(2026, 7, 14, 16, 0),
+            signals=("company_thesis_impaired", "path_failed"),
+        ),
+        **common,
+    )
+
+    assert same_day["axis_results"]["trim_sizing"]["applied_ladder"] == "trim_25"
+    assert same_day["proposed_target_contracts"] == 8
+    assert next_day["axis_results"]["trim_sizing"]["applied_ladder"] == "trim_50"
+    assert next_day["proposed_target_contracts"] == 5
+    assert next_day["axis_results"]["trim_sizing"]["persistence"]["repeated_signal_codes"]
+
+
+def test_confirmed_deadline_failure_bypasses_trim_hysteresis() -> None:
+    position = _position(contracts=10, strike=95.0, total_cost=2_000.0)
+    mandate = _mandate()
+    mandate.decision_deadline = date(2026, 7, 14)
+
+    result = build_assessment_payload(
+        position=position,
+        metrics=_current_metrics(),
+        mandate=mandate,
+        latest_review=None,
+        portfolio_positions=[position],
+        risk_policy=_policy(),
+        projection_payload=_weakening_projection(),
+        as_of=datetime(2026, 7, 15, 16, 0),
+    )
+
+    sizing = result["axis_results"]["trim_sizing"]
+    assert result["proposed_verdict"] == "reduce"
+    assert sizing["raw_ladder"] == "runner_25"
+    assert sizing["applied_ladder"] == "runner_25"
+    assert sizing["persistence"]["hard_resize_bypass"] is True
+    assert result["proposed_target_contracts"] == 3
+
+
+def test_convexity_harvest_trims_a_winner_only_with_actionable_quote() -> None:
+    position = _position(contracts=10, strike=95.0, total_cost=2_000.0)
+    offset = _position(
+        id=2,
+        option_type="put",
+        expiration=date(2026, 12, 18),
+        total_cost=8_000.0,
+    )
+    metrics = _current_metrics(
+        market={"current_price": 110.0, "last_updated": "2026-07-15T16:00:00Z"},
+        option_price=5.0,
+        dte=60,
+        greeks={"delta": 0.65, "gamma": 0.02, "theta": -2.0, "vega": 0.1},
+        pnl={"dollar": 800.0, "percent": 40.0},
+        opportunity={"score_change": 2.0},
+        technical_snapshot={
+            "price": 110.0,
+            "sma20": 106.0,
+            "sma50": 102.0,
+            "sma20_slope_pct": 1.4,
+            "rsi14": 61.0,
+            "macd_hist": 0.4,
+        },
+    )
+    strengthening = {
+        "projections": {"3M": {"direction": "bullish"}},
+        "fundamentals": {
+            "revenue_yoy": {"series": [{"date": "2026-06-30", "value": 5.0}]},
+            "eps": {"series": [{"value": 1.0}, {"value": 1.2}]},
+        },
+    }
+    common = {
+        "position": position,
+        "mandate": _mandate(),
+        "latest_review": None,
+        "portfolio_positions": [position, offset],
+        "risk_policy": _policy(),
+        "projection_payload": strengthening,
+        "as_of": datetime(2026, 7, 15, 16, 0),
+    }
+
+    actionable = build_assessment_payload(metrics=metrics, **common)
+    last_only = build_assessment_payload(
+        metrics={
+            **metrics,
+            "option_price_source": "last",
+            "quote": {
+                "bid": 0.0,
+                "ask": 5.5,
+                "spread_pct": None,
+                "quality": "last",
+            },
+        },
+        **common,
+    )
+
+    assert actionable["proposed_verdict"] == "reduce"
+    assert actionable["proposed_target_contracts"] == 8
+    assert actionable["axis_results"]["trim_sizing"]["harvest_candidate"] is True
+    assert last_only["axis_results"]["trim_sizing"]["harvest_candidate"] is False
+    assert last_only["proposed_verdict"] == "conditional_hold"
+    assert last_only["axis_results"]["trim_sizing"]["execution"]["ready"] is False
+
+
+def test_wide_spread_alone_blocks_execution_without_forcing_a_trim() -> None:
+    position = _position(contracts=10, strike=100.0, total_cost=2_000.0)
+    metrics = _current_metrics(
+        market={"current_price": 102.0, "last_updated": "2026-07-15T16:00:00Z"},
+        option_price=2.0,
+        dte=65,
+        quote={
+            "bid": 1.2,
+            "ask": 2.8,
+            "spread_pct": 80.0,
+            "quality": "wide",
+        },
+        greeks={"delta": 0.45, "gamma": 0.02, "theta": -1.0, "vega": 0.1},
+        pnl={"dollar": -100.0, "percent": -5.0},
+        opportunity={"score_change": 0.0},
+    )
+    result = build_assessment_payload(
+        position=position,
+        metrics=metrics,
+        mandate=_mandate(),
+        latest_review=None,
+        portfolio_positions=[position],
+        risk_policy=_policy(),
+        projection_payload={
+            "projections": {"3M": {"direction": "bullish"}},
+            "fundamentals": {
+                "revenue_yoy": {"series": [{"value": 5.0}]},
+                "eps": {"series": [{"value": 1.0}, {"value": 1.2}]},
+            },
+        },
+        as_of=datetime(2026, 7, 15, 16, 0),
+    )
+
+    sizing = result["axis_results"]["trim_sizing"]
+    assert result["contract_status"] == "marginal"
+    assert result["axis_results"]["exact_contract"]["reason_code"] == "spread_marginal"
+    assert result["proposed_verdict"] == "conditional_hold"
+    assert result["proposed_target_contracts"] == position.contracts
+    assert sizing["applied_ladder"] == "hold"
+    assert sizing["execution"]["ready"] is False
+    assert not any(item["code"] == "contract_marginal" for item in sizing["signals"])

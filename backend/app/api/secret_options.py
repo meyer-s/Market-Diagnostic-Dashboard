@@ -2284,6 +2284,7 @@ def _generate_position_assessment(
         risk_policy=policy,
         source_event=source_event,
         projection_payload=projection_row.payload if projection_row is not None else None,
+        previous_assessment=latest_assessment,
     )
     assessment = persist_assessment(
         db,

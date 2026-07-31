@@ -566,10 +566,10 @@ def test_market_field_registry_is_a_non_promoting_shadow_challenger(
     assert len(rows) == 2
     champion = next(row for row in rows if row.model_status == "champion")
     challenger = next(row for row in rows if row.model_status == "challenger")
-    assert champion.model_version == "thesis_rules_v2"
-    assert champion.feature_schema_version == "option_thesis_features_v2"
-    assert challenger.model_version == "thesis_rules_v2_market_field_shadow_v1"
-    assert challenger.feature_schema_version == "option_market_field_features_v1"
+    assert champion.model_version == "thesis_rules_v3_trim_ladder"
+    assert champion.feature_schema_version == "option_thesis_features_v3"
+    assert challenger.model_version == "thesis_rules_v3_trim_ladder_market_field_shadow_v1"
+    assert challenger.feature_schema_version == "option_market_field_features_v2"
     challenger_metrics = secret_options.json_loads(challenger.metrics_json, {})
     promotion_gates = secret_options.json_loads(challenger.promotion_gates_json, {})
     assert challenger_metrics["mode"] == "advisory_shadow"
@@ -577,6 +577,50 @@ def test_market_field_registry_is_a_non_promoting_shadow_challenger(
     assert challenger_metrics["automated_execution_enabled"] is False
     assert promotion_gates["incremental_out_of_sample_value_required"] is True
     assert promotion_gates["automatic_promotion"] is False
+
+
+def test_model_registry_archives_superseded_trim_graders(
+    secret_options_client,
+) -> None:
+    _client, session_local = secret_options_client
+
+    with session_local() as db:
+        db.add_all(
+            [
+                OptionModelRegistry(
+                    model_key="option_thesis_grader",
+                    model_version="thesis_rules_v2",
+                    model_status="champion",
+                    feature_schema_version="option_thesis_features_v2",
+                    sample_count=12,
+                    metrics_json="{}",
+                    promotion_gates_json="{}",
+                ),
+                OptionModelRegistry(
+                    model_key="option_thesis_grader",
+                    model_version="thesis_rules_v2_market_field_shadow_v1",
+                    model_status="challenger",
+                    feature_schema_version="option_market_field_features_v1",
+                    sample_count=12,
+                    metrics_json="{}",
+                    promotion_gates_json="{}",
+                ),
+            ]
+        )
+        db.commit()
+        secret_options.ensure_model_registry(db)
+        db.commit()
+        rows = {
+            row.model_version: row.model_status
+            for row in db.query(OptionModelRegistry)
+            .filter(OptionModelRegistry.model_key == "option_thesis_grader")
+            .all()
+        }
+
+    assert rows["thesis_rules_v2"] == "archived"
+    assert rows["thesis_rules_v2_market_field_shadow_v1"] == "archived"
+    assert rows["thesis_rules_v3_trim_ladder"] == "champion"
+    assert rows["thesis_rules_v3_trim_ladder_market_field_shadow_v1"] == "challenger"
 
 
 def _position_payload() -> dict[str, object]:

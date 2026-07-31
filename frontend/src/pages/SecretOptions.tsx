@@ -3954,6 +3954,7 @@ export default function SecretOptions() {
     const expanded = expandedPositionId === position.id;
     const assessmentResponse = selectedId === position.id ? selectedThesisAssessment : null;
     const assessment = assessmentResponse?.assessment ?? null;
+    const trimSizing = assessment?.axis_results?.trim_sizing ?? null;
     const marketField = presentOptionMarketField(
       assessment?.input_snapshot?.field_context,
       assessment?.axis_results?.market_structure,
@@ -3987,7 +3988,7 @@ export default function SecretOptions() {
               </div>
               {assessment ? (
                 <div className="mt-1 text-xs text-stealth-400">
-                  {decisionLabel(assessment.quality)} quality · {decisionLabel(assessment.urgency)} urgency · {decisionLabel(assessment.confidence)} confidence
+                  {decisionLabel(assessment.quality)} quality · {decisionLabel(assessment.urgency)} urgency · {decisionLabel(assessment.confidence)} confidence{trimSizing ? ` · ${decisionLabel(trimSizing.applied_ladder)} sizing` : ""}
                 </div>
               ) : null}
               {marketField ? (
@@ -4085,8 +4086,16 @@ export default function SecretOptions() {
           </div>
 
           <details className="mt-3 rounded-lg border border-stealth-800 bg-stealth-950/30 text-xs">
-            <summary className="min-h-11 cursor-pointer px-3 py-3 font-semibold text-stealth-300">Why this grade{assessment ? " · 6 inputs" : ""}</summary>
-            <div className="border-t border-stealth-800 p-3 leading-relaxed text-stealth-400">{assessment?.reasons.join(" ") || "The automatic assessment is still loading."}{assessment?.missing_inputs.length ? <div className="mt-2 text-amber-200">Confidence limits: {assessment.missing_inputs.join(" · ")}</div> : null}</div>
+            <summary className="min-h-11 cursor-pointer px-3 py-3 font-semibold text-stealth-300">Why this grade{assessment ? " · 7 inputs" : ""}</summary>
+            <div className="border-t border-stealth-800 p-3 leading-relaxed text-stealth-400">
+              {assessment?.reasons.join(" ") || "The automatic assessment is still loading."}
+              {trimSizing ? (
+                <div className="mt-2 rounded border border-stealth-800 bg-stealth-950/45 px-2 py-1.5">
+                  <span className="font-semibold text-stealth-200">Sizing:</span> {decisionLabel(trimSizing.applied_ladder)} to {trimSizing.target_contracts} · severity {trimSizing.severity_score} · {trimSizing.execution?.ready ? "limit execution supported" : "manual price discovery required"}
+                </div>
+              ) : null}
+              {assessment?.missing_inputs.length ? <div className="mt-2 text-amber-200">Confidence limits: {assessment.missing_inputs.join(" · ")}</div> : null}
+            </div>
           </details>
           <details className="mt-2 rounded-lg border border-stealth-800 bg-stealth-950/30 text-xs">
             <summary className="min-h-11 cursor-pointer px-3 py-3 font-semibold text-stealth-300">Decision journal · {reviews?.review_count ?? 0}</summary>
@@ -5670,7 +5679,7 @@ export default function SecretOptions() {
             {selectedThesisAssessment?.assessment && (
               <details className="mt-2 rounded-md border border-sky-700/35 bg-stealth-950/30 text-xs">
                 <summary className="cursor-pointer px-2 py-1.5 font-semibold text-stealth-300">
-                  Why this grade · 6 decision inputs
+                  Why this grade · 7 decision inputs
                 </summary>
                 <div className="space-y-2 border-t border-sky-800/30 p-2">
                 <div className="grid grid-cols-2 gap-1.5 text-xs">
@@ -5681,6 +5690,7 @@ export default function SecretOptions() {
                     ["Contract", selectedThesisAssessment.assessment.contract_status],
                     ["Portfolio", selectedThesisAssessment.assessment.portfolio_fit_status],
                     ["Data", selectedThesisAssessment.assessment.data_quality_status],
+                    ["Sizing", selectedThesisAssessment.assessment.axis_results?.trim_sizing?.applied_ladder ?? "not sized"],
                   ].map(([label, value]) => (
                     <div key={label} className="rounded border border-stealth-700/70 bg-stealth-950/55 px-1.5 py-1">
                       <div className="text-stealth-500">{label}</div>

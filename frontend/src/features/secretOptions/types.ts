@@ -334,6 +334,40 @@ export interface PositionThesisAssessment {
   } & Record<string, unknown>) | null;
   axis_results?: ({
     market_structure?: OptionMarketFieldAxisResult | null;
+    trim_sizing?: {
+      status: string;
+      model_version: string;
+      severity_score: number;
+      raw_ladder: string;
+      applied_ladder: string;
+      target_contracts: number;
+      target_retention_pct: number;
+      trim_contracts: number;
+      trim_pct: number;
+      harvest_candidate: boolean;
+      loss_drawdown_used_for_sizing: boolean;
+      signals: Array<{
+        code: string;
+        points: number;
+        category: string;
+        detail: string;
+      }>;
+      execution?: {
+        ready: boolean;
+        two_sided: boolean;
+        spread_pct: number | null;
+        spread_limit_pct: number;
+        note: string;
+      };
+      persistence?: {
+        hard_resize_bypass: boolean;
+        previous_ladder: string;
+        previous_assessment_date: string | null;
+        repeated_signal_codes: string[];
+        escalation_limited: boolean;
+        rule: string;
+      };
+    } | null;
   } & Record<string, unknown>) | null;
 }
 
