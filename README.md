@@ -68,6 +68,7 @@ under local application data, outside the OneDrive workspace:
 
 ```powershell
 .\.agents\skills\graphify-codebase\scripts\graphify.ps1 build
+.\.agents\skills\graphify-codebase\scripts\graphify.ps1 view
 .\.agents\skills\graphify-codebase\scripts\graphify.ps1 explain -Text compute_optionality_metrics
 ```
 

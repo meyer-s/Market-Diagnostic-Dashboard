@@ -22,6 +22,12 @@ Use Graphify as an architectural hypothesis tool. Treat direct source reads, `rg
    .\.agents\skills\graphify-codebase\scripts\graphify.ps1 update
    ```
 
+   Open the interactive local viewer when a visual map is useful:
+
+   ```powershell
+   .\.agents\skills\graphify-codebase\scripts\graphify.ps1 view
+   ```
+
 3. Prefer exact-symbol operations over broad questions:
 
    ```powershell
