@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("status", "build", "update", "view", "query", "explain", "affected", "path", "god-nodes", "diagnose", "benchmark")]
+    [ValidateSet("status", "build", "update", "view", "scope", "query", "explain", "affected", "path", "god-nodes", "diagnose", "benchmark")]
     [string]$Action = "status",
 
     [Parameter(Position = 1)]
@@ -208,6 +208,30 @@ function Require-Graph {
     }
 }
 
+function Test-GraphFresh {
+    if (-not (Test-Path -LiteralPath $ReceiptPath)) {
+        return $false
+    }
+
+    try {
+        $receipt = Get-Content -Raw -LiteralPath $ReceiptPath | ConvertFrom-Json
+        $current = Get-WorkspaceFingerprint
+        return $receipt.schema_version -eq 2 -and
+            $receipt.graphify_version -eq $GraphifyVersion -and
+            $receipt.git_head -eq $current.Head -and
+            $receipt.worktree_status_sha256 -eq $current.WorktreeHash
+    }
+    catch {
+        return $false
+    }
+}
+
+function Write-GraphFreshnessWarning {
+    if (-not (Test-GraphFresh)) {
+        Write-Warning "The local graph receipt does not match HEAD and the current working tree. Run the update action before relying on these leads."
+    }
+}
+
 function Get-NodeExecutable {
     $nodeCommand = Get-Command node.exe -ErrorAction SilentlyContinue
     if ($null -eq $nodeCommand) {
@@ -305,6 +329,7 @@ switch ($Action) {
     }
     "view" {
         Require-Graph
+        Write-GraphFreshnessWarning
         if (-not (Test-Path -LiteralPath $ViewerBuilder)) {
             throw "Constellation viewer builder is missing: $ViewerBuilder"
         }
@@ -331,27 +356,51 @@ switch ($Action) {
             Start-Process -FilePath $ViewerPath
         }
     }
+    "scope" {
+        Require-Graph
+        Write-GraphFreshnessWarning
+        if (-not (Test-Path -LiteralPath $ViewerBuilder)) {
+            throw "Constellation scope analyzer is missing: $ViewerBuilder"
+        }
+        $nodeExecutable = Get-NodeExecutable
+        $scopeArguments = @($ViewerBuilder, "--graph", $GraphPath)
+        if ([string]::IsNullOrWhiteSpace($Text)) {
+            $scopeArguments += @("--scope-top", "$Top")
+        }
+        else {
+            $scopeArguments += @("--scope-query", $Text)
+        }
+        $LASTEXITCODE = 0
+        & $nodeExecutable @scopeArguments
+        if ($LASTEXITCODE -ne 0) {
+            throw "Architecture scope analysis exited with code $LASTEXITCODE."
+        }
+    }
     "query" {
         Ensure-Graphify
         Require-Graph
+        Write-GraphFreshnessWarning
         Require-Text -Value $Text -Name "Text"
         Invoke-Graphify @("query", $Text, "--budget", "$Budget", "--graph", $GraphPath)
     }
     "explain" {
         Ensure-Graphify
         Require-Graph
+        Write-GraphFreshnessWarning
         Require-Text -Value $Text -Name "Text"
         Invoke-Graphify @("explain", $Text, "--graph", $GraphPath)
     }
     "affected" {
         Ensure-Graphify
         Require-Graph
+        Write-GraphFreshnessWarning
         Require-Text -Value $Text -Name "Text"
         Invoke-Graphify @("affected", $Text, "--depth", "$Depth", "--graph", $GraphPath)
     }
     "path" {
         Ensure-Graphify
         Require-Graph
+        Write-GraphFreshnessWarning
         Require-Text -Value $Text -Name "Text"
         Require-Text -Value $To -Name "To"
         Invoke-Graphify @("path", $Text, $To, "--graph", $GraphPath)
@@ -359,16 +408,19 @@ switch ($Action) {
     "god-nodes" {
         Ensure-Graphify
         Require-Graph
+        Write-GraphFreshnessWarning
         Invoke-Graphify @("god-nodes", "--top", "$Top", "--graph", $GraphPath)
     }
     "diagnose" {
         Ensure-Graphify
         Require-Graph
+        Write-GraphFreshnessWarning
         Invoke-Graphify @("diagnose", "multigraph", "--graph", $GraphPath, "--json")
     }
     "benchmark" {
         Ensure-Graphify
         Require-Graph
+        Write-GraphFreshnessWarning
         Invoke-Graphify @("benchmark", $GraphPath)
     }
 }

@@ -28,7 +28,16 @@ Use Graphify as an architectural hypothesis tool. Treat direct source reads, `rg
    .\.agents\skills\graphify-codebase\scripts\graphify.ps1 view
    ```
 
-   The sphere shows a balanced, stable sample of high-connectivity nodes for orientation; search reaches the full graph. Select a node, then switch to **Neighborhood** for a bounded one-hop dependency view and use the DOM relationship ledger as the precise, keyboard-accessible reading layer. Color denotes repository scope and shape is a heuristic symbol-kind cue. Containment edges are withheld from the visual layer, unresolved targets are labeled explicitly, and suspicious cross-language symbol matches are suppressed.
+   The sphere shows a balanced, stable sample of nodes for orientation; search reaches the full graph. Radius has three semantic shells: high inbound reuse is nearer the center, cross-file reused code is in the middle, and local code or entrypoints are nearer the surface. Only shell membership has meaning; deterministic offsets within a shell are visual packing. Double, single, or absent keylines repeat those three bands when perspective compresses distance. Node size still reflects total extracted degree, so a large entrypoint can remain prominent without being mistaken for reusable code. Select a node to inspect the inbound file/layer evidence, then switch to **Neighborhood** for a bounded one-hop dependency view and use the DOM relationship ledger as the precise, keyboard-accessible reading layer. Color denotes repository scope and shape is a heuristic symbol-kind cue. Containment edges are withheld from the visual layer, unresolved targets are labeled explicitly, and suspicious cross-language symbol matches are suppressed.
+
+   Use the same radial evidence without opening the viewer:
+
+   ```powershell
+   .\.agents\skills\graphify-codebase\scripts\graphify.ps1 scope -Text compute_optionality_metrics
+   .\.agents\skills\graphify-codebase\scripts\graphify.ps1 scope -Top 15
+   ```
+
+   Radial scope is an AST-derived inbound-reuse lead: it scores distinct inbound production files with a small architecture-layer diversity bonus and deliberately ignores outbound fan-out. It is not a claim about business importance, runtime criticality, or proven change impact. Generic-name bindings can be false positives, so use radius to decide where to trace first, then verify the named source and relationships directly.
 
 3. Prefer exact-symbol operations over broad questions:
 

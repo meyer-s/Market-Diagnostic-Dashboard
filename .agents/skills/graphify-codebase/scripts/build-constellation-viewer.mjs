@@ -15,6 +15,13 @@ const DOMAIN_DEFINITIONS = [
 ];
 
 const KIND_NAMES = ["file", "function", "class", "symbol", "unresolved"];
+const SCOPE_SHELL_DEFINITIONS = [
+  ["high-reuse", "High inbound reuse", 0.5],
+  ["cross-file", "Cross-file reused", 0.73],
+  ["local-entrypoint", "Local / entrypoint", 0.95],
+];
+const SCOPE_STRUCTURAL_RELATIONS = new Set(["contains", "rationale_for", "method", "defines"]);
+const SCOPE_EXCLUDED_NEIGHBOR_DOMAINS = new Set(["tests", "unresolved"]);
 
 function parseArgs(argv) {
   const parsed = {};
@@ -70,10 +77,11 @@ function externalLabel(id) {
 
 const args = parseArgs(process.argv.slice(2));
 if (!args.graph) fail("--graph is required");
-if (!args.output) fail("--output is required");
+const wantsScopeReport = typeof args["scope-query"] === "string" || args["scope-top"] !== undefined;
+if (!args.output && !wantsScopeReport) fail("--output is required unless a scope report is requested");
 
 const graphPath = path.resolve(args.graph);
-const outputPath = path.resolve(args.output);
+const outputPath = args.output ? path.resolve(args.output) : "";
 const repoRoot = args.repo ? path.resolve(args.repo) : "";
 const productLabel = args.label || "Codebase";
 
@@ -93,6 +101,7 @@ if (!Array.isArray(graph.nodes) || !Array.isArray(graph.edges)) {
 const sourceNodes = graph.nodes.map((node) => ({
   id: String(node.id),
   label: String(node.label || node.id),
+  fileType: String(node.file_type || ""),
   sourceFile: normalizePath(node.source_file),
   sourceLocation: String(node.source_location || ""),
   isExternal: !normalizePath(node.source_file),
@@ -111,6 +120,7 @@ for (const id of [...externalIds].sort((left, right) => left.localeCompare(right
   sourceNodes.push({
     id,
     label: externalLabel(id),
+    fileType: "",
     sourceFile: "",
     sourceLocation: "",
     isExternal: true,
@@ -155,9 +165,101 @@ for (const edge of graph.edges) {
 
 const domainIndex = new Map(DOMAIN_DEFINITIONS.map(([key], index) => [key, index]));
 const kindIndex = new Map(KIND_NAMES.map((kind, index) => [kind, index]));
+const nodeDomains = sourceNodes.map((node) => classifyDomain(node.sourceFile, node.isExternal));
+const scopeStats = sourceNodes.map(() => ({
+  inboundFiles: new Set(),
+  inboundFilesByDomain: new Map(),
+  inbound: 0,
+  outbound: 0,
+}));
+
+function isScopeProductionNode(index) {
+  return sourceNodes[index].fileType === "code" && Boolean(sourceNodes[index].sourceFile) && !SCOPE_EXCLUDED_NEIGHBOR_DOMAINS.has(nodeDomains[index]);
+}
+
+function recordScopeConnection(node, neighbor, direction) {
+  const nodeSource = sourceNodes[node];
+  const neighborSource = sourceNodes[neighbor];
+  const neighborDomain = nodeDomains[neighbor];
+  if (!isScopeProductionNode(neighbor)) return;
+  if (neighborSource.sourceFile === nodeSource.sourceFile) return;
+  const stats = scopeStats[node];
+  if (direction === "inbound") {
+    stats.inboundFiles.add(neighborSource.sourceFile);
+    if (!stats.inboundFilesByDomain.has(neighborDomain)) stats.inboundFilesByDomain.set(neighborDomain, new Set());
+    stats.inboundFilesByDomain.get(neighborDomain).add(neighborSource.sourceFile);
+  }
+  stats[direction] += 1;
+}
+
+for (const edge of compactEdges) {
+  const relation = relationNames[edge[2]];
+  if (SCOPE_STRUCTURAL_RELATIONS.has(relation)) continue;
+  recordScopeConnection(edge[0], edge[1], "outbound");
+  recordScopeConnection(edge[1], edge[0], "inbound");
+}
+
+const scopeMetrics = scopeStats.map((stats, index) => {
+  const inboundFileCount = stats.inboundFiles.size;
+  if (!isScopeProductionNode(index)) {
+    return { score: 0, files: 0, layers: 0, inbound: 0, outbound: stats.outbound };
+  }
+  let squaredDomainShare = 0;
+  for (const files of stats.inboundFilesByDomain.values()) {
+    const share = inboundFileCount > 0 ? files.size / inboundFileCount : 0;
+    squaredDomainShare += share * share;
+  }
+  const layerDiversity = inboundFileCount > 0 ? 1 - squaredDomainShare : 0;
+  const score = Math.log2(1 + inboundFileCount) + layerDiversity;
+  return {
+    score,
+    files: inboundFileCount,
+    layers: stats.inboundFilesByDomain.size,
+    inbound: stats.inbound,
+    outbound: stats.outbound,
+  };
+});
+
+const scopeCalibration = scopeMetrics
+  .filter((metric, index) => isScopeProductionNode(index) && metric.score > 0)
+  .map((metric) => metric.score)
+  .sort((left, right) => left - right);
+
+function upperBound(sortedValues, value) {
+  let low = 0;
+  let high = sortedValues.length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (sortedValues[middle] <= value) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
+const crossFileScopeThreshold = 1;
+const sharedCoreScopeThreshold = 4;
+
+for (const metric of scopeMetrics) {
+  metric.shell = metric.score >= sharedCoreScopeThreshold
+    ? 0
+    : metric.score >= crossFileScopeThreshold
+      ? 1
+      : 2;
+  metric.percentile = metric.score > 0 && scopeCalibration.length > 0
+    ? Math.round((upperBound(scopeCalibration, metric.score) / scopeCalibration.length) * 100)
+    : 0;
+}
+
+const productionScopeShellCounts = SCOPE_SHELL_DEFINITIONS.map((_, shell) => scopeMetrics.reduce(
+  (count, metric, index) => count + (isScopeProductionNode(index) && metric.shell === shell ? 1 : 0),
+  0,
+));
+const productionScopeNodeCount = productionScopeShellCounts.reduce((total, count) => total + count, 0);
+
 const compactNodes = sourceNodes.map((node, index) => {
-  const domain = classifyDomain(node.sourceFile, node.isExternal);
+  const domain = nodeDomains[index];
   const kind = inferKind(node.label, node.sourceFile, node.isExternal);
+  const scope = scopeMetrics[index];
   return [
     node.id,
     node.label,
@@ -169,22 +271,119 @@ const compactNodes = sourceNodes.map((node, index) => {
     inDegree[index],
     outDegree[index],
     node.isExternal ? 1 : 0,
+    scope.shell,
+    scope.percentile,
+    scope.files,
+    scope.layers,
+    scope.inbound,
+    scope.outbound,
   ];
 });
+
+function ordinal(value) {
+  const remainder100 = value % 100;
+  if (remainder100 >= 11 && remainder100 <= 13) return `${value}th`;
+  if (value % 10 === 1) return `${value}st`;
+  if (value % 10 === 2) return `${value}nd`;
+  if (value % 10 === 3) return `${value}rd`;
+  return `${value}th`;
+}
+
+function scopeEvidenceLine(index) {
+  const metric = scopeMetrics[index];
+  return [
+    `${metric.files} inbound production file${metric.files === 1 ? "" : "s"}`,
+    `${metric.layers} inbound layer${metric.layers === 1 ? "" : "s"}`,
+    `${metric.inbound} inbound cross-file link${metric.inbound === 1 ? "" : "s"}`,
+    `${metric.outbound} outbound cross-file link${metric.outbound === 1 ? "" : "s"} (not scored)`,
+  ].join(" | ");
+}
+
+function writeScopeNode(index, rank = null) {
+  const node = sourceNodes[index];
+  const metric = scopeMetrics[index];
+  const prefix = rank === null ? "" : `${rank}. `;
+  const relativePosition = metric.score > 0 ? `${ordinal(metric.percentile)} percentile among reused production nodes` : "no extracted cross-file inbound reuse";
+  process.stdout.write(`${prefix}${node.label}\n`);
+  process.stdout.write(`   Source: ${node.sourceFile || "<unresolved>"}${node.sourceLocation ? `:${node.sourceLocation}` : ""}\n`);
+  process.stdout.write(`   Scope: ${SCOPE_SHELL_DEFINITIONS[metric.shell][1]} (${relativePosition})\n`);
+  process.stdout.write(`   Evidence: ${scopeEvidenceLine(index)}\n`);
+  const bareLabel = node.label.replace(/\(\)$/, "");
+  if (metric.files >= 8 && (bareLabel.startsWith("_") || bareLabel.length <= 5)) {
+    process.stdout.write("   Caution: high-reuse generic/private symbols are prone to ambiguous binding; verify inbound sites directly.\n");
+  }
+}
+
+function scopeMatchScore(node, query) {
+  const label = node.label.toLowerCase();
+  const id = node.id.toLowerCase();
+  const source = node.sourceFile.toLowerCase();
+  if (label === query || id === query || source === query) return 1200;
+  if (label.replace(/\(\)$/, "") === query) return 1150;
+  if (label.startsWith(query)) return 1000 - label.length * 0.01;
+  if (id.startsWith(query)) return 900 - id.length * 0.01;
+  const labelPosition = label.indexOf(query);
+  if (labelPosition >= 0) return 760 - labelPosition;
+  const sourcePosition = source.indexOf(query);
+  if (sourcePosition >= 0) return 560 - sourcePosition * 0.1;
+  return -1;
+}
+
+if (wantsScopeReport) {
+  process.stdout.write("Radial scope is a derived inbound-reuse lead, not runtime importance or proven change impact.\n");
+  process.stdout.write("It scores distinct inbound production files plus a small layer-diversity bonus; structural relations, test/unresolved neighbors, non-code nodes, and cross-language matches are excluded.\n\n");
+  process.stdout.write(`Production code shells (${productionScopeNodeCount.toLocaleString()} nodes): ${productionScopeShellCounts[0].toLocaleString()} high inbound reuse | ${productionScopeShellCounts[1].toLocaleString()} cross-file reused | ${productionScopeShellCounts[2].toLocaleString()} local / entrypoint\n`);
+  process.stdout.write("Only shell membership has meaning; deterministic within-shell spacing is visual packing.\n\n");
+
+  if (typeof args["scope-query"] === "string") {
+    const query = args["scope-query"].trim().toLowerCase();
+    if (!query) fail("--scope-query requires a non-empty symbol, node id, or source path");
+    const matches = sourceNodes
+      .map((node, index) => ({ index, match: scopeMatchScore(node, query) }))
+      .filter((result) => result.match >= 0 && isScopeProductionNode(result.index))
+      .sort((left, right) => right.match - left.match || scopeMetrics[right.index].score - scopeMetrics[left.index].score)
+      .slice(0, 8);
+    if (matches.length === 0) fail(`No production code node matched scope query: ${args["scope-query"]}. Tests, unresolved targets, and non-code nodes are not scored.`);
+    process.stdout.write(`Scope matches for: ${args["scope-query"]}\n\n`);
+    matches.forEach((result, index) => writeScopeNode(result.index, matches.length > 1 ? index + 1 : null));
+  } else {
+    const requestedTop = Number.parseInt(args["scope-top"], 10);
+    const top = Number.isFinite(requestedTop) ? Math.max(1, Math.min(100, requestedTop)) : 15;
+    const rankedScope = sourceNodes
+      .map((node, index) => ({ node, index }))
+      .filter(({ index }) => isScopeProductionNode(index) && scopeMetrics[index].score > 0)
+      .sort((left, right) => scopeMetrics[right.index].score - scopeMetrics[left.index].score || left.node.label.localeCompare(right.node.label))
+      .slice(0, top);
+    process.stdout.write(`Top ${rankedScope.length} nodes by extracted inbound reuse\n\n`);
+    rankedScope.forEach((result, index) => writeScopeNode(result.index, index + 1));
+  }
+  process.exit(0);
+}
 
 const payload = {
   meta: {
     label: productLabel,
     repo: repoRoot,
     indexedNodes: graph.nodes.length,
-    unresolvedTargets: externalIds.size,
+    unresolvedTargets: sourceNodes.filter((node) => node.isExternal).length,
     relationships: compactEdges.length,
     rawRelationships: graph.edges.length,
     suppressedCrossLanguage,
+    scope: {
+      model: "inbound-reuse-v1",
+      productionNodes: productionScopeNodeCount,
+      productionShellCounts: productionScopeShellCounts,
+      calibrationNodes: scopeCalibration.length,
+      crossFileThreshold: crossFileScopeThreshold,
+      sharedCoreThreshold: sharedCoreScopeThreshold,
+      excludedRelations: [...SCOPE_STRUCTURAL_RELATIONS],
+      excludedNeighborDomains: [...SCOPE_EXCLUDED_NEIGHBOR_DOMAINS],
+    },
     generatedAt: new Date().toISOString(),
   },
   domains: DOMAIN_DEFINITIONS,
   kinds: KIND_NAMES,
+  scopeShells: SCOPE_SHELL_DEFINITIONS,
   relations: relationNames,
   nodes: compactNodes,
   edges: compactEdges,
@@ -197,9 +396,9 @@ const embeddedPayload = JSON.stringify(payload)
 
 const html = `<!doctype html>
 <!--
-THESIS: Make a large code graph navigable as an architecture field, refusing both the vertical tree and the all-edge hairball.
-OWN-WORLD: Evidence Field dark surfaces, crisp structural borders, layer color, symbol shape, and one restrained selected-node ring.
-STORY: Orient across the system, find any symbol, then reduce the graph to a verifiable one-hop neighborhood.
+THESIS: Make a large code graph navigable as an architecture field whose radius distinguishes inbound reuse from local code and entrypoints, refusing both the vertical tree and the all-edge hairball.
+OWN-WORLD: Evidence Field dark surfaces, crisp structural borders, layer color, symbol shape, semantic radial shells, and one restrained selected-node ring.
+STORY: Read extracted reuse from center to surface, find any symbol, then reduce the graph to a verifiable one-hop neighborhood.
 FIRST VIEWPORT: A rotatable constellation owns the canvas; search and mode controls sit above it; a source-and-relationship inspector stays visible at right.
 FORM: A focused operational constellation, directly shaped as a local extension of the established product world; no concept seed was needed.
 -->
@@ -544,6 +743,47 @@ FORM: A focused operational constellation, directly shaped as a local extension 
 
     .hud-signal { width: 7px; height: 7px; border-radius: 50%; background: var(--evidence); }
 
+    .scope-legend {
+      position: absolute;
+      right: 16px;
+      top: 14px;
+      width: min(310px, calc(100% - 210px));
+      padding: 8px 10px 9px;
+      border: 1px solid var(--border-soft);
+      border-radius: 8px;
+      background: rgba(18, 28, 42, 0.9);
+      pointer-events: none;
+    }
+
+    .scope-legend-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .scope-legend-head strong { color: var(--text); font-size: 12px; font-weight: 650; }
+    .scope-legend-axis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; margin-top: 7px; }
+
+    .scope-legend-segment {
+      position: relative;
+      height: 3px;
+      border-radius: 1px;
+      background: var(--border);
+    }
+
+    .scope-legend-segment:first-child { background: var(--evidence); }
+    .scope-legend-labels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 7px; color: var(--dim); font-size: 12px; }
+    .scope-legend-labels span { display: flex; align-items: center; gap: 7px; }
+    .scope-legend-labels span:nth-child(2) { justify-content: center; text-align: center; }
+    .scope-legend-labels span:last-child { justify-content: flex-end; text-align: right; }
+    .scope-key { flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+    .scope-key.high { box-shadow: 0 0 0 1px var(--surface-quiet), 0 0 0 2px rgba(131, 191, 255, 0.82), 0 0 0 3px var(--surface-quiet), 0 0 0 4px rgba(131, 191, 255, 0.55); }
+    .scope-key.cross-file { box-shadow: 0 0 0 1px var(--surface-quiet), 0 0 0 2px rgba(131, 191, 255, 0.72); }
+    .scope-legend.is-hidden { display: none; }
+
     .layer-deck {
       position: absolute;
       left: 16px;
@@ -721,6 +961,31 @@ FORM: A focused operational constellation, directly shaped as a local extension 
     .metric-value { display: block; font-size: 18px; font-weight: 680; }
     .metric-label { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
 
+    .scope-readout {
+      padding: 15px 0 16px;
+      border-bottom: 1px solid var(--border-soft);
+    }
+
+    .scope-readout-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .scope-readout h3 { margin: 0; font-size: 13px; font-weight: 670; }
+    .scope-label { color: var(--evidence); font-size: 12px; font-weight: 650; text-align: right; }
+    .scope-evidence { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .scope-scale { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; margin-top: 10px; }
+
+    .scope-scale span {
+      height: 3px;
+      border-radius: 1px;
+      background: var(--border-soft);
+    }
+
+    .scope-scale span.is-active { background: var(--evidence); }
+
     .relationship-head {
       display: flex;
       align-items: baseline;
@@ -796,6 +1061,23 @@ FORM: A focused operational constellation, directly shaped as a local extension 
       .mode-switch { min-width: 0; }
       .tool-button { padding-inline: 12px; }
       .stage-hud { left: 10px; top: 10px; }
+      .scope-legend {
+        left: 10px;
+        right: 10px;
+        top: 50px;
+        display: flex;
+        align-items: center;
+        width: auto;
+        gap: 10px;
+        padding: 7px 9px;
+      }
+      .scope-legend.is-hidden { display: none; }
+      .scope-legend-head { flex: 0 0 auto; }
+      .scope-legend-head > span, .scope-legend-axis { display: none; }
+      .scope-legend-labels { display: flex; flex: 1 1 auto; align-items: center; justify-content: space-between; gap: 7px; margin-top: 0; }
+      .scope-legend-labels span { font-size: 0; text-align: left !important; white-space: nowrap; }
+      .scope-legend-labels span::after { content: attr(data-short); font-size: 12px; }
+      .scope-legend-labels span + span::before { content: "→"; margin-right: 7px; color: var(--border); font-size: 12px; }
       .layer-deck { left: 10px; right: 10px; bottom: 10px; align-items: flex-start; }
       .layer-label { padding-top: 9px; }
       .inspector { overflow: visible; }
@@ -867,8 +1149,13 @@ FORM: A focused operational constellation, directly shaped as a local extension 
         </div>
 
         <div class="stage" id="stage">
-          <canvas id="graphCanvas" tabindex="0" role="img" aria-label="Rotatable sphere showing a balanced sample of high-connectivity code nodes. Use search or select a point to inspect its relationships."></canvas>
+          <canvas id="graphCanvas" tabindex="0" role="img" aria-label="Rotatable sphere showing a balanced sample of code nodes. Radial shell represents extracted inbound reuse: high-reuse nodes sit nearer the center and local code or entrypoints nearer the surface. Double, single, and absent keylines repeat high-reuse, cross-file, and local shell membership. Use search or select a point to inspect its evidence and relationships."></canvas>
           <div class="stage-hud" aria-hidden="true"><span class="hud-signal"></span><span id="stageStatus">Sphere · 240 hubs</span></div>
+          <div class="scope-legend" id="scopeLegend" aria-hidden="true">
+            <div class="scope-legend-head"><strong>Radial reuse</strong><span>center → surface</span></div>
+            <div class="scope-legend-axis"><i class="scope-legend-segment"></i><i class="scope-legend-segment"></i><i class="scope-legend-segment"></i></div>
+            <div class="scope-legend-labels"><span data-short="High"><i class="scope-key high"></i>High reuse</span><span data-short="Cross-file"><i class="scope-key cross-file"></i>Cross-file</span><span data-short="Local"><i class="scope-key"></i>Local / entry</span></div>
+          </div>
           <div class="layer-deck">
             <span class="layer-label">Architecture layers</span>
             <div class="domain-filters" id="domainFilters" aria-label="Architecture layer filters"></div>
@@ -879,12 +1166,12 @@ FORM: A focused operational constellation, directly shaped as a local extension 
       <aside class="inspector" aria-labelledby="inspectorTitle">
         <div class="inspector-inner">
           <h2 id="inspectorTitle">Graph details</h2>
-          <p class="inspector-intro">The sphere is for orientation. Select a node to reduce the system to a readable, verifiable neighborhood.</p>
+          <p class="inspector-intro">The sphere is for orientation. Radial shell shows inbound reuse: high near the center, local or entrypoint near the surface. Only bands matter; offsets prevent overlap. Double, single, or absent keylines repeat high, cross-file, or local membership when perspective compresses depth.</p>
 
           <div class="empty-state" id="emptyState">
             <div class="empty-map" aria-hidden="true"><i></i></div>
             <p class="empty-title">Start with a hub or search</p>
-            <p class="empty-copy">Color identifies architecture layer. Shape estimates files, functions, classes, symbols, and unresolved graph targets.</p>
+            <p class="empty-copy">Radius estimates inbound reuse, color identifies layer, and shape estimates symbol kind. These are navigation leads—not runtime truth.</p>
             <div class="hub-list" id="hubList" aria-label="Highest-connectivity nodes"></div>
           </div>
 
@@ -903,6 +1190,15 @@ FORM: A focused operational constellation, directly shaped as a local extension 
               <div class="metric"><span class="metric-value" id="inboundValue"></span><span class="metric-label">Inbound</span></div>
               <div class="metric"><span class="metric-value" id="outboundValue"></span><span class="metric-label">Outbound</span></div>
             </div>
+
+            <section class="scope-readout" aria-labelledby="scopeReadoutTitle">
+              <div class="scope-readout-head">
+                <h3 id="scopeReadoutTitle">Radial scope</h3>
+                <span class="scope-label" id="nodeScopeLabel"></span>
+              </div>
+              <p class="scope-evidence" id="nodeScopeEvidence"></p>
+              <div class="scope-scale" id="scopeScale" aria-hidden="true"><span></span><span></span><span></span></div>
+            </section>
 
             <div class="relationship-head">
               <h3>Extracted relationships</h3>
@@ -941,6 +1237,12 @@ FORM: A focused operational constellation, directly shaped as a local extension 
         inbound: row[7],
         outbound: row[8],
         external: row[9] === 1,
+        scopeShell: row[10],
+        scopePercentile: row[11],
+        scopeFiles: row[12],
+        scopeLayers: row[13],
+        scopeInbound: row[14],
+        scopeOutbound: row[15],
         search: (row[1] + " " + row[0] + " " + row[2]).toLowerCase(),
         point: null,
       });
@@ -959,6 +1261,7 @@ FORM: A focused operational constellation, directly shaped as a local extension 
         return degreeDifference || nodes[left].label.localeCompare(nodes[right].label);
       });
       const rankedByDomain = DATA.domains.map((_, domain) => ranked.filter((index) => nodes[index].domain === domain));
+      const rankedByScopeShell = DATA.scopeShells.map((_, shell) => ranked.filter((index) => nodes[index].scopeShell === shell));
       const state = {
         mode: "sphere",
         selected: null,
@@ -989,6 +1292,7 @@ FORM: A focused operational constellation, directly shaped as a local extension 
       const resetButton = document.getElementById("resetButton");
       const densitySelect = document.getElementById("densitySelect");
       const stageStatus = document.getElementById("stageStatus");
+      const scopeLegend = document.getElementById("scopeLegend");
       const liveStatus = document.getElementById("liveStatus");
       const emptyState = document.getElementById("emptyState");
       const selectionPanel = document.getElementById("selectionPanel");
@@ -1012,10 +1316,13 @@ FORM: A focused operational constellation, directly shaped as a local extension 
         const theta = node.domain * sectorWidth + sectorWidth * 0.5 + (hashUnit(node.id + ":azimuth") - 0.5) * sectorWidth * 0.82;
         const vertical = hashUnit(node.id + ":latitude") * 1.84 - 0.92;
         const phi = Math.asin(Math.max(-0.96, Math.min(0.96, vertical)));
+        const shellCenter = DATA.scopeShells[node.scopeShell][2];
+        const shellWidth = node.scopeShell === 1 ? 0.12 : 0.1;
+        const radialDistance = shellCenter + (hashUnit(node.id + ":scope-radius") - 0.5) * shellWidth;
         return {
-          x: Math.cos(phi) * Math.cos(theta),
-          y: Math.sin(phi),
-          z: Math.cos(phi) * Math.sin(theta),
+          x: Math.cos(phi) * Math.cos(theta) * radialDistance,
+          y: Math.sin(phi) * radialDistance,
+          z: Math.cos(phi) * Math.sin(theta) * radialDistance,
         };
       }
 
@@ -1055,6 +1362,15 @@ FORM: A focused operational constellation, directly shaped as a local extension 
         return "rgba(" + red + ", " + green + ", " + blue + ", " + alpha + ")";
       }
 
+      function ordinal(value) {
+        const remainder100 = value % 100;
+        if (remainder100 >= 11 && remainder100 <= 13) return value + "th";
+        if (value % 10 === 1) return value + "st";
+        if (value % 10 === 2) return value + "nd";
+        if (value % 10 === 3) return value + "rd";
+        return value + "th";
+      }
+
       function relationColor(relation) {
         if (relation === "calls" || relation === "indirect_call") return "#83bfff";
         if (relation.startsWith("import") || relation === "re_exports") return "#63c5d4";
@@ -1080,6 +1396,11 @@ FORM: A focused operational constellation, directly shaped as a local extension 
 
         enabledDomains.forEach((domain) => {
           rankedByDomain[domain].slice(0, floor).forEach((index) => selected.add(index));
+        });
+
+        const shellFloor = Math.max(10, Math.floor(limit * 0.09));
+        rankedByScopeShell.forEach((shell) => {
+          shell.filter((index) => enabledNode(index)).slice(0, shellFloor).forEach((index) => selected.add(index));
         });
 
         for (const index of ranked) {
@@ -1140,11 +1461,15 @@ FORM: A focused operational constellation, directly shaped as a local extension 
 
       function drawGuide(radius, centerX, centerY) {
         context.save();
-        context.strokeStyle = "rgba(63, 80, 104, 0.38)";
         context.lineWidth = 1;
-        context.beginPath();
-        context.arc(centerX, centerY, radius * 0.78, 0, Math.PI * 2);
-        context.stroke();
+        DATA.scopeShells.forEach((shell, index) => {
+          context.strokeStyle = index === DATA.scopeShells.length - 1
+            ? "rgba(63, 80, 104, 0.42)"
+            : "rgba(63, 80, 104, " + (0.17 + index * 0.07) + ")";
+          context.beginPath();
+          context.arc(centerX, centerY, radius * shell[2] * 0.78, 0, Math.PI * 2);
+          context.stroke();
+        });
 
         const drawCurve = (points) => {
           context.beginPath();
@@ -1223,9 +1548,21 @@ FORM: A focused operational constellation, directly shaped as a local extension 
           context.stroke();
         }
 
+        if (!node.external && node.scopeShell < 2) {
+          const offsets = node.scopeShell === 0 ? [2.5, 5.5] : [3.5];
+          context.strokeStyle = colorWithAlpha("#83bfff", Math.max(0.2, depthAlpha * 0.32));
+          context.lineWidth = 1;
+          offsets.forEach((offset) => {
+            context.beginPath();
+            context.arc(0, 0, radius + offset, 0, Math.PI * 2);
+            context.stroke();
+          });
+        }
+
         if (isSelected) {
           context.beginPath();
-          context.arc(0, 0, radius + 5, 0, Math.PI * 2);
+          const selectionOffset = node.scopeShell === 0 ? 9 : node.scopeShell === 1 ? 7 : 5;
+          context.arc(0, 0, radius + selectionOffset, 0, Math.PI * 2);
           context.strokeStyle = "#83bfff";
           context.lineWidth = 2;
           context.stroke();
@@ -1253,9 +1590,13 @@ FORM: A focused operational constellation, directly shaped as a local extension 
         const textWidth = Math.ceil(context.measureText(label).width);
         const width = textWidth + 16;
         const height = 26;
-        const right = forceRight !== undefined ? forceRight : screen.x < logicalWidth * 0.7;
-        const x = right ? screen.x + 12 : screen.x - width - 12;
-        const y = screen.y - height / 2;
+        const padding = 8;
+        let right = forceRight !== undefined ? forceRight : screen.x < logicalWidth * 0.7;
+        if (right && screen.x + 12 + width > logicalWidth - padding) right = false;
+        if (!right && screen.x - width - 12 < padding) right = true;
+        const desiredX = right ? screen.x + 12 : screen.x - width - 12;
+        const x = Math.max(padding, Math.min(logicalWidth - width - padding, desiredX));
+        const y = Math.max(padding, Math.min(logicalHeight - height - padding, screen.y - height / 2));
         roundedRect(x, y, width, height, 5);
         context.fillStyle = "rgba(24, 35, 51, 0.96)";
         context.fill();
@@ -1468,8 +1809,21 @@ FORM: A focused operational constellation, directly shaped as a local extension 
         state.selected = index;
         if (orient && state.mode === "sphere") {
           const point = nodes[index].point;
-          state.yaw = Math.atan2(point.x, point.z);
-          state.pitch = Math.atan2(point.y, Math.hypot(point.x, point.z));
+          const radialDistance = Math.hypot(point.x, point.y, point.z);
+          const horizontalDistance = Math.hypot(point.x, point.z);
+          const targetPlaneDistance = radialDistance * 0.58;
+          const targetX = Math.min(horizontalDistance * 0.65, targetPlaneDistance);
+          const targetY = -Math.sqrt(Math.max(0, targetPlaneDistance * targetPlaneDistance - targetX * targetX));
+          const yawOffset = horizontalDistance > 0
+            ? Math.asin(Math.max(-1, Math.min(1, targetX / horizontalDistance)))
+            : 0;
+          state.yaw = Math.atan2(point.x, point.z) - yawOffset;
+          const zAfterYaw = Math.sqrt(Math.max(0, horizontalDistance * horizontalDistance - targetX * targetX));
+          const verticalPlaneDistance = Math.hypot(point.y, zAfterYaw);
+          const targetPitch = verticalPlaneDistance > 0
+            ? Math.asin(Math.max(-1, Math.min(1, targetY / verticalPlaneDistance)))
+            : 0;
+          state.pitch = Math.atan2(point.y, zAfterYaw) - targetPitch;
         }
         state.domains[nodes[index].domain] = true;
         syncDomainFilters();
@@ -1485,6 +1839,7 @@ FORM: A focused operational constellation, directly shaped as a local extension 
         sphereModeButton.setAttribute("aria-pressed", String(mode === "sphere"));
         neighborhoodModeButton.setAttribute("aria-pressed", String(mode === "neighborhood"));
         rotationToggle.disabled = mode !== "sphere";
+        scopeLegend.classList.toggle("is-hidden", mode !== "sphere");
         if (mode === "neighborhood" && state.selected === null) selectNode(ranked.find((index) => enabledNode(index)) ?? ranked[0], false);
         liveStatus.textContent = mode === "sphere" ? "Sphere view active." : "Neighborhood view active.";
         invalidate();
@@ -1607,6 +1962,11 @@ FORM: A focused operational constellation, directly shaped as a local extension 
         document.getElementById("degreeValue").textContent = node.degree.toLocaleString();
         document.getElementById("inboundValue").textContent = node.inbound.toLocaleString();
         document.getElementById("outboundValue").textContent = node.outbound.toLocaleString();
+        document.getElementById("nodeScopeLabel").textContent = DATA.scopeShells[node.scopeShell][1];
+        const bareScopeLabel = node.label.replace(/\\(\\)$/, "");
+        const ambiguousScopeBinding = node.scopeFiles >= 8 && (bareScopeLabel.startsWith("_") || bareScopeLabel.length <= 5);
+        document.getElementById("nodeScopeEvidence").textContent = (node.scopeFiles > 0 ? ordinal(node.scopePercentile) + " percentile among reused production nodes · " : "No extracted cross-file inbound reuse · ") + node.scopeFiles.toLocaleString() + " inbound production file" + (node.scopeFiles === 1 ? "" : "s") + " · " + node.scopeLayers.toLocaleString() + " inbound layer" + (node.scopeLayers === 1 ? "" : "s") + " · " + node.scopeInbound.toLocaleString() + " inbound cross-file link" + (node.scopeInbound === 1 ? "" : "s") + ". Outbound fan-out does not affect radius." + (ambiguousScopeBinding ? " Generic/private high-reuse bindings are prone to ambiguity; verify inbound sites directly." : "");
+        document.querySelectorAll("#scopeScale span").forEach((segment, index) => segment.classList.toggle("is-active", index === node.scopeShell));
 
         const rows = uniqueRelationshipRows(state.selected);
         const list = document.getElementById("relationshipList");
@@ -1707,7 +2067,8 @@ FORM: A focused operational constellation, directly shaped as a local extension 
             copy.append(label, source);
             const degree = document.createElement("span");
             degree.className = "result-degree";
-            degree.textContent = node.degree.toLocaleString();
+            const shortScope = node.scopeShell === 0 ? "High reuse" : node.scopeShell === 1 ? "Cross-file" : "Local / entry";
+            degree.textContent = shortScope + " · " + node.degree.toLocaleString() + " relationships";
             button.append(swatch, copy, degree);
             button.addEventListener("click", () => selectNode(index, true, true));
             searchResultsElement.append(button);
