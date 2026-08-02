@@ -61,25 +61,43 @@ Key entry points:
 
 ## Local architecture graph
 
-The optional [`graphify-codebase`](.agents/skills/graphify-codebase/SKILL.md)
-agent skill provides a guarded, code-only dependency graph for cross-layer
-impact analysis. It installs the pinned tool in an isolated per-repository cache
-under local application data, outside the OneDrive workspace:
+The repository [`graphify-codebase`](.agents/skills/graphify-codebase/SKILL.md)
+agent skill provides a guarded, code-only dependency graph for cross-layer impact
+analysis and ownership-hygiene leads. Repository agent instructions require it for
+architecture-affecting work. The skill installs the pinned tool in an isolated
+per-repository cache under local application data, outside the OneDrive workspace:
 
 ```powershell
 .\.agents\skills\graphify-codebase\scripts\graphify.ps1 build
 .\.agents\skills\graphify-codebase\scripts\graphify.ps1 view
 .\.agents\skills\graphify-codebase\scripts\graphify.ps1 explain -Text compute_optionality_metrics
+.\.agents\skills\graphify-codebase\scripts\graphify.ps1 orphans
+.\.agents\skills\graphify-codebase\scripts\graphify.ps1 sync
 ```
 
-The `view` action opens an offline Architecture Constellation: a rotatable sphere
-for whole-repository orientation, full-graph symbol/path search, architecture-layer
-filters, and a bounded neighborhood view with a readable relationship ledger. The
-generated HTML stays beside the local graph cache and is never part of the app or
-deployment bundle.
+The `view` action opens an offline Architecture Constellation with a rotatable
+sphere, full-graph search, architecture-layer filters, and a bounded neighborhood
+with a precise relationship ledger. Its **Hygiene** view separates recently
+stranded relationships, detached or ownerless files, strict no-caller definitions,
+test-only definitions, unresolved internal-looking bindings, and likely framework
+or CLI roots. Stronger signals are shown by default; lower-confidence groups are
+available as explicit filters.
 
-Use graph results as leads, then verify them against source, tests, and runtime
-evidence. The integration does not install hooks, MCP, semantic document
+The `sync` action updates the graph and receipt and regenerates the viewer in one
+command. When extraction changes the graph, the wrapper retains the prior changed
+graph in the same local cache. That baseline lets later syncs identify a `Recently
+stranded` (widow) lead only when a stable production node had extracted inbound
+ownership before and has none now. History begins with the first changed update
+after this feature is installed; it is local and is not committed.
+
+The generated HTML stays beside the local graph cache and is never part of the app
+or deployment bundle. Use `orphans -Category detached`, `orphans -Category orphan-file`,
+or `orphans -Category widow` for the same hygiene evidence in the terminal.
+
+Use graph and hygiene results as leads, then verify them against source, tests, and
+runtime evidence. Exact relative dynamic imports are augmented, but decorators,
+framework registration, reflection, configuration, and CLI entrypoints can still
+hide ownership. The integration does not install hooks, MCP, semantic document
 extraction, query memory, or Obsidian artifacts.
 
 ## Runtime model

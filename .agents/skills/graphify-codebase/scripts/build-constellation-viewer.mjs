@@ -22,6 +22,18 @@ const SCOPE_SHELL_DEFINITIONS = [
 ];
 const SCOPE_STRUCTURAL_RELATIONS = new Set(["contains", "rationale_for", "method", "defines"]);
 const SCOPE_EXCLUDED_NEIGHBOR_DOMAINS = new Set(["tests", "unresolved"]);
+const HYGIENE_DEFINITIONS = [
+  ["widow", "Recently stranded", "Historical", "A production relationship present in the previous changed graph is now absent."],
+  ["detached", "Detached file", "High signal", "No extracted production or test relationships connect this file to another repository file."],
+  ["orphan-file", "Orphan file", "Review", "No extracted production or test relationship points into this non-entrypoint file."],
+  ["unreferenced", "No callers", "Low confidence", "No extracted production or test relationship points into this definition."],
+  ["test-only", "Test-only", "Review", "Tests point into this definition, but extracted production code does not."],
+  ["unresolved", "Unresolved internal", "Low confidence", "A production node points at an internal-looking target Graphify did not bind."],
+  ["root", "Likely root", "Reference", "This file has no extracted inbound owner but matches an entrypoint or framework-root convention."],
+];
+const HYGIENE_TYPE_INDEX = new Map(HYGIENE_DEFINITIONS.map(([key], index) => [key, index]));
+const INTERNAL_TARGET_PREFIX = /^(app_|backend_|frontend_|maintenance_scripts_|scripts_|evaluation_core(?:_|$))/;
+const SOURCE_CODE_EXTENSION = /\.(py|tsx?|jsx?|mjs|cjs)$/i;
 
 function parseArgs(argv) {
   const parsed = {};
@@ -52,7 +64,7 @@ function normalizePath(value) {
 function classifyDomain(sourceFile, isExternal) {
   if (isExternal) return "unresolved";
   const source = normalizePath(sourceFile).toLowerCase();
-  if (/(^|\/)(tests?|__tests__)(\/|$)|\.(test|spec)\.[^/]+$/.test(source)) return "tests";
+  if (/(^|\/)(tests?|__tests__)(\/|$)|(^|\/)test_[^/]+\.py$|\.(test|spec)\.[^/]+$/.test(source)) return "tests";
   if (source.startsWith("backend/app/api/")) return "backend-api";
   if (/^backend\/app\/(services|scripts|jobs|tasks|diagnostics|scheduler)\//.test(source)) return "backend-services";
   if (/^backend\/(alembic\/|app\/(models|db|schemas|repositories)\/)/.test(source)) return "data-models";
@@ -75,10 +87,22 @@ function externalLabel(id) {
   return String(id).replaceAll("_", ".");
 }
 
+function readOptionalJson(filePath, description) {
+  if (!filePath) return null;
+  const resolved = path.resolve(filePath);
+  if (!fs.existsSync(resolved)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(resolved, "utf8"));
+  } catch (error) {
+    fail(`Unable to read ${description}: ${error.message}`);
+  }
+}
+
 const args = parseArgs(process.argv.slice(2));
 if (!args.graph) fail("--graph is required");
 const wantsScopeReport = typeof args["scope-query"] === "string" || args["scope-top"] !== undefined;
-if (!args.output && !wantsScopeReport) fail("--output is required unless a scope report is requested");
+const wantsHygieneReport = args["hygiene-report"] === true || typeof args["hygiene-category"] === "string";
+if (!args.output && !wantsScopeReport && !wantsHygieneReport) fail("--output is required unless a scope or hygiene report is requested");
 
 const graphPath = path.resolve(args.graph);
 const outputPath = args.output ? path.resolve(args.output) : "";
@@ -88,8 +112,10 @@ const productLabel = args.label || "Codebase";
 if (!fs.existsSync(graphPath)) fail(`Graph file does not exist: ${graphPath}`);
 
 let graph;
+let graphText;
 try {
-  graph = JSON.parse(fs.readFileSync(graphPath, "utf8"));
+  graphText = fs.readFileSync(graphPath, "utf8");
+  graph = JSON.parse(graphText);
 } catch (error) {
   fail(`Unable to read Graphify graph: ${error.message}`);
 }
@@ -98,6 +124,18 @@ if (!Array.isArray(graph.nodes) || !Array.isArray(graph.edges)) {
   fail("Graphify graph must contain nodes and edges arrays.");
 }
 
+const previousGraphPath = args["previous-graph"] ? path.resolve(args["previous-graph"]) : "";
+const previousGraphText = previousGraphPath && fs.existsSync(previousGraphPath)
+  ? fs.readFileSync(previousGraphPath, "utf8")
+  : "";
+const previousGraph = previousGraphText ? readOptionalJson(previousGraphPath, "previous Graphify graph") : null;
+if (previousGraph && (!Array.isArray(previousGraph.nodes) || !Array.isArray(previousGraph.edges))) {
+  fail("Previous Graphify graph must contain nodes and edges arrays.");
+}
+const currentReceipt = readOptionalJson(args.receipt, "current Graphify receipt");
+const previousReceipt = readOptionalJson(args["previous-receipt"], "previous Graphify receipt");
+const hasDistinctBaseline = Boolean(previousGraph && previousGraphText !== graphText);
+
 const sourceNodes = graph.nodes.map((node) => ({
   id: String(node.id),
   label: String(node.label || node.id),
@@ -105,6 +143,7 @@ const sourceNodes = graph.nodes.map((node) => ({
   sourceFile: normalizePath(node.source_file),
   sourceLocation: String(node.source_location || ""),
   isExternal: !normalizePath(node.source_file),
+  isSynthesized: false,
 }));
 const knownIds = new Set(sourceNodes.map((node) => node.id));
 const externalIds = new Set();
@@ -124,6 +163,7 @@ for (const id of [...externalIds].sort((left, right) => left.localeCompare(right
     sourceFile: "",
     sourceLocation: "",
     isExternal: true,
+    isSynthesized: true,
   });
   knownIds.add(id);
 }
@@ -255,10 +295,250 @@ const productionScopeShellCounts = SCOPE_SHELL_DEFINITIONS.map((_, shell) => sco
   0,
 ));
 const productionScopeNodeCount = productionScopeShellCounts.reduce((total, count) => total + count, 0);
+const nodeKinds = sourceNodes.map((node) => inferKind(node.label, node.sourceFile, node.isExternal));
+
+function isProductionNode(index) {
+  return sourceNodes[index].fileType === "code"
+    && Boolean(sourceNodes[index].sourceFile)
+    && nodeDomains[index] !== "tests"
+    && nodeDomains[index] !== "unresolved";
+}
+
+function isTestNode(index) {
+  return sourceNodes[index].fileType === "code" && nodeDomains[index] === "tests";
+}
+
+function likelyRootSource(sourceFile) {
+  const source = normalizePath(sourceFile).toLowerCase();
+  const base = path.posix.basename(source);
+  if (!source) return false;
+  if (/^backend\/(alembic|migrations?)\//.test(source)) return true;
+  if (/(^|\/)(scripts?|maintenance_scripts|migrations?|seed|seeds|cli|commands?|jobs|tasks)(\/|$)/.test(source)) return true;
+  if (/^backend\/app\/api\//.test(source)) return true;
+  if (/^(seed|check|debug|backfill|repair|cleanup|migrate|refresh|generate|publish|run|sync|validate|verify|update)_[^/]+\.py$/.test(base)) return true;
+  if (/^backend\/(fetch|register|send|probe|inspect|diagnose|smoke|setup|install|export|import|scrape|calculate|complete)_[^/]+\.py$/.test(source)) return true;
+  if (["main.py", "__main__.py", "__init__.py", "env.py", "conftest.py", "seed_indicators.py"].includes(base)) return true;
+  if (/^frontend\/(public\/|src\/(main\.|theme-init\.|vite-env\.d\.ts$))/.test(source)) return true;
+  if (/(^|\/)(vite|vitest|playwright|eslint|postcss|tailwind)\.config\.[^/]+$/.test(source)) return true;
+  if (/^frontend\/\.(eslint|prettier|stylelint)rc/.test(source)) return true;
+  if (/\.(config|d)\.tsx?$/.test(base) || /\.(sh|ps1|bat|cmd)$/.test(base)) return true;
+  return false;
+}
+
+function resolveRelativeModule(importer, specifier, knownSources) {
+  if (!specifier.startsWith(".")) return "";
+  const base = path.posix.normalize(path.posix.join(path.posix.dirname(importer), specifier));
+  const candidates = [base];
+  for (const extension of [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py"]) {
+    candidates.push(base + extension, path.posix.join(base, "index" + extension));
+  }
+  return candidates.find((candidate) => knownSources.has(candidate)) || "";
+}
+
+const hygieneNodeStats = sourceNodes.map(() => ({ productionInbound: new Set(), testInbound: new Set() }));
+const methodNodes = new Set();
+const productionFiles = new Map();
+
+for (let index = 0; index < sourceNodes.length; index += 1) {
+  const node = sourceNodes[index];
+  if (!isProductionNode(index) || !SOURCE_CODE_EXTENSION.test(node.sourceFile)) continue;
+  if (!productionFiles.has(node.sourceFile)) {
+    productionFiles.set(node.sourceFile, {
+      nodeIndex: index,
+      inboundProduction: new Set(),
+      inboundTests: new Set(),
+      outboundProduction: new Set(),
+    });
+  }
+  if (nodeKinds[index] === "file") productionFiles.get(node.sourceFile).nodeIndex = index;
+}
+
+for (const edge of compactEdges) {
+  const sourceIndex = edge[0];
+  const targetIndex = edge[1];
+  const relation = relationNames[edge[2]];
+  if (relation === "method") methodNodes.add(targetIndex);
+  if (SCOPE_STRUCTURAL_RELATIONS.has(relation)) continue;
+  const source = sourceNodes[sourceIndex];
+  const target = sourceNodes[targetIndex];
+  if (isProductionNode(targetIndex)) {
+    const signature = `${source.id}\u0000${relation}`;
+    if (isProductionNode(sourceIndex)) hygieneNodeStats[targetIndex].productionInbound.add(signature);
+    else if (isTestNode(sourceIndex)) hygieneNodeStats[targetIndex].testInbound.add(signature);
+  }
+  if (!source.sourceFile || !target.sourceFile || source.sourceFile === target.sourceFile) continue;
+  const targetFileStats = productionFiles.get(target.sourceFile);
+  if (targetFileStats && isProductionNode(sourceIndex)) targetFileStats.inboundProduction.add(source.sourceFile);
+  if (targetFileStats && isTestNode(sourceIndex)) targetFileStats.inboundTests.add(source.sourceFile);
+  const sourceFileStats = productionFiles.get(source.sourceFile);
+  if (sourceFileStats && isProductionNode(targetIndex)) sourceFileStats.outboundProduction.add(target.sourceFile);
+}
+
+// Graphify does not currently bind lazy import() calls. Add only exact relative
+// module targets that resolve to an indexed production source file.
+if (repoRoot && fs.existsSync(repoRoot)) {
+  const knownSources = new Set(productionFiles.keys());
+  const dynamicImportPattern = /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g;
+  for (const [sourceFile, fileStats] of productionFiles) {
+    const absolutePath = path.join(repoRoot, ...sourceFile.split("/"));
+    if (!fs.existsSync(absolutePath)) continue;
+    let sourceText = "";
+    try {
+      sourceText = fs.readFileSync(absolutePath, "utf8");
+    } catch {
+      continue;
+    }
+    for (const match of sourceText.matchAll(dynamicImportPattern)) {
+      const targetFile = resolveRelativeModule(sourceFile, match[1], knownSources);
+      if (!targetFile || targetFile === sourceFile) continue;
+      fileStats.outboundProduction.add(targetFile);
+      productionFiles.get(targetFile)?.inboundProduction.add(sourceFile);
+    }
+  }
+}
+
+const unreferencedPool = sourceNodes
+  .map((node, index) => ({ node, index, identifier: node.label.replace(/\(\)$/, "") }))
+  .filter(({ node, index, identifier }) => isProductionNode(index)
+    && (nodeKinds[index] === "function" || nodeKinds[index] === "class")
+    && hygieneNodeStats[index].productionInbound.size === 0
+    && hygieneNodeStats[index].testInbound.size === 0
+    && !methodNodes.has(index)
+    && !likelyRootSource(node.sourceFile)
+    && /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(identifier));
+const candidateIdentifiers = new Set(unreferencedPool.map(({ identifier }) => identifier));
+const identifierOccurrences = new Map([...candidateIdentifiers].map((identifier) => [identifier, 0]));
+
+if (repoRoot && fs.existsSync(repoRoot) && candidateIdentifiers.size > 0) {
+  const tokenPattern = /[A-Za-z_$][A-Za-z0-9_$]*/g;
+  const indexedSources = new Set(sourceNodes.map((node) => node.sourceFile).filter((source) => SOURCE_CODE_EXTENSION.test(source)));
+  for (const sourceFile of indexedSources) {
+    const absolutePath = path.join(repoRoot, ...sourceFile.split("/"));
+    if (!fs.existsSync(absolutePath)) continue;
+    let sourceText = "";
+    try {
+      sourceText = fs.readFileSync(absolutePath, "utf8");
+    } catch {
+      continue;
+    }
+    for (const match of sourceText.matchAll(tokenPattern)) {
+      if (candidateIdentifiers.has(match[0])) identifierOccurrences.set(match[0], identifierOccurrences.get(match[0]) + 1);
+    }
+  }
+}
+
+function previousProductionInbound(rawGraph) {
+  if (!rawGraph) return new Map();
+  const previousNodes = new Map(rawGraph.nodes.map((node) => [String(node.id), {
+    id: String(node.id),
+    sourceFile: normalizePath(node.source_file),
+    fileType: String(node.file_type || ""),
+  }]));
+  const result = new Map();
+  for (const edge of rawGraph.edges) {
+    const relation = String(edge.relation || "related");
+    if (SCOPE_STRUCTURAL_RELATIONS.has(relation)) continue;
+    const source = previousNodes.get(String(edge.source));
+    const target = previousNodes.get(String(edge.target));
+    if (!source || !target || source.fileType !== "code" || target.fileType !== "code") continue;
+    if (!source.sourceFile || !target.sourceFile) continue;
+    if (classifyDomain(source.sourceFile, false) === "tests" || classifyDomain(target.sourceFile, false) === "tests") continue;
+    const sourceFamily = languageFamily(source.sourceFile);
+    const targetFamily = languageFamily(target.sourceFile);
+    if (sourceFamily && targetFamily && sourceFamily !== targetFamily) continue;
+    if (!result.has(target.id)) result.set(target.id, new Map());
+    result.get(target.id).set(`${source.id}\u0000${relation}`, source.sourceFile);
+  }
+  return result;
+}
+
+const previousInbound = hasDistinctBaseline ? previousProductionInbound(previousGraph) : new Map();
+const hygieneItems = [];
+
+function addHygieneItem(nodeIndexValue, type, evidence, score = 0, detail = "") {
+  hygieneItems.push([nodeIndexValue, HYGIENE_TYPE_INDEX.get(type), evidence, score, detail]);
+}
+
+if (hasDistinctBaseline) {
+  for (let index = 0; index < sourceNodes.length; index += 1) {
+    if (!isProductionNode(index)) continue;
+    const before = previousInbound.get(sourceNodes[index].id);
+    if (!before || before.size === 0 || hygieneNodeStats[index].productionInbound.size > 0) continue;
+    const lostSources = [...new Set(before.values())].sort();
+    addHygieneItem(
+      index,
+      "widow",
+      `Lost ${before.size} extracted production relationship${before.size === 1 ? "" : "s"} from ${lostSources.length} source file${lostSources.length === 1 ? "" : "s"}; now has none.`,
+      before.size * 100 + lostSources.length,
+      lostSources.slice(0, 5).join(" | "),
+    );
+  }
+}
+
+for (const [sourceFile, fileStats] of productionFiles) {
+  const inboundCount = fileStats.inboundProduction.size + fileStats.inboundTests.size;
+  if (inboundCount > 0) continue;
+  if (likelyRootSource(sourceFile)) {
+    addHygieneItem(fileStats.nodeIndex, "root", `No extracted inbound owner; classified as a likely framework, migration, script, build, or CLI root.`, fileStats.outboundProduction.size);
+  } else if (fileStats.outboundProduction.size === 0) {
+    addHygieneItem(fileStats.nodeIndex, "detached", "No extracted cross-file production or test relationships.", 1000);
+  } else {
+    addHygieneItem(fileStats.nodeIndex, "orphan-file", `No extracted inbound production or test files; ${fileStats.outboundProduction.size} outbound production file${fileStats.outboundProduction.size === 1 ? "" : "s"}.`, 500 - fileStats.outboundProduction.size);
+  }
+}
+
+for (const { index, identifier } of unreferencedPool) {
+  const occurrenceCount = identifierOccurrences.get(identifier) || 0;
+  if (repoRoot && occurrenceCount !== 1) continue;
+  addHygieneItem(index, "unreferenced", `0 extracted production/test callers; identifier appears ${occurrenceCount || "only at this definition"}${occurrenceCount ? " time in indexed source" : ""}.`, 100);
+}
+
+for (let index = 0; index < sourceNodes.length; index += 1) {
+  if (!isProductionNode(index) || methodNodes.has(index) || likelyRootSource(sourceNodes[index].sourceFile)) continue;
+  if (nodeKinds[index] !== "function" && nodeKinds[index] !== "class") continue;
+  const stats = hygieneNodeStats[index];
+  if (stats.productionInbound.size === 0 && stats.testInbound.size > 0) {
+    addHygieneItem(index, "test-only", `0 extracted production callers; ${stats.testInbound.size} extracted test relationship${stats.testInbound.size === 1 ? "" : "s"}.`, stats.testInbound.size);
+  }
+}
+
+const unresolvedBySource = new Map();
+for (const edge of compactEdges) {
+  const sourceIndex = edge[0];
+  const targetIndex = edge[1];
+  if (!isProductionNode(sourceIndex) || !sourceNodes[targetIndex].isSynthesized || !INTERNAL_TARGET_PREFIX.test(sourceNodes[targetIndex].id)) continue;
+  if (!unresolvedBySource.has(sourceIndex)) unresolvedBySource.set(sourceIndex, new Set());
+  unresolvedBySource.get(sourceIndex).add(sourceNodes[targetIndex].id);
+}
+for (const [index, targets] of unresolvedBySource) {
+  const labels = [...targets].sort();
+  addHygieneItem(index, "unresolved", `${labels.length} internal-looking target${labels.length === 1 ? "" : "s"} ${labels.length === 1 ? "was" : "were"} not bound by Graphify; resolver misses are common.`, labels.length, labels.slice(0, 5).join(" | "));
+}
+
+const hygienePriority = new Map([
+  ["widow", 0],
+  ["detached", 1],
+  ["orphan-file", 2],
+  ["unresolved", 3],
+  ["test-only", 4],
+  ["unreferenced", 5],
+  ["root", 6],
+]);
+hygieneItems.sort((left, right) => {
+  const leftType = HYGIENE_DEFINITIONS[left[1]][0];
+  const rightType = HYGIENE_DEFINITIONS[right[1]][0];
+  return hygienePriority.get(leftType) - hygienePriority.get(rightType)
+    || right[3] - left[3]
+    || sourceNodes[left[0]].label.localeCompare(sourceNodes[right[0]].label);
+});
+const hygieneCounts = HYGIENE_DEFINITIONS.map((_, typeIndexValue) => hygieneItems.reduce(
+  (count, item) => count + (item[1] === typeIndexValue ? 1 : 0),
+  0,
+));
 
 const compactNodes = sourceNodes.map((node, index) => {
   const domain = nodeDomains[index];
-  const kind = inferKind(node.label, node.sourceFile, node.isExternal);
+  const kind = nodeKinds[index];
   const scope = scopeMetrics[index];
   return [
     node.id,
@@ -361,6 +641,38 @@ if (wantsScopeReport) {
   process.exit(0);
 }
 
+if (wantsHygieneReport) {
+  const requestedCategory = String(args["hygiene-category"] || "all").trim().toLowerCase();
+  const allowedCategories = new Set(["all", ...HYGIENE_DEFINITIONS.map(([key]) => key)]);
+  if (!allowedCategories.has(requestedCategory)) {
+    fail(`Unknown hygiene category '${requestedCategory}'. Use all, ${HYGIENE_DEFINITIONS.map(([key]) => key).join(", ")}.`);
+  }
+  const requestedTop = Number.parseInt(args["hygiene-top"], 10);
+  const top = Number.isFinite(requestedTop) ? Math.max(1, Math.min(100, requestedTop)) : 15;
+  const filteredItems = hygieneItems.filter((item) => requestedCategory === "all" || HYGIENE_DEFINITIONS[item[1]][0] === requestedCategory);
+  const currentHead = currentReceipt?.git_head ? String(currentReceipt.git_head).slice(0, 12) : "unknown";
+  const previousHead = previousReceipt?.git_head ? String(previousReceipt.git_head).slice(0, 12) : "none";
+
+  process.stdout.write("Repository hygiene is a static lead, not proof of dead code. Dynamic imports, decorators, framework registration, reflection, configuration, and CLI entrypoints can hide ownership. Verify source, tests, and runtime before removal.\n\n");
+  process.stdout.write(`Snapshot: ${currentHead} | Widow baseline: ${hasDistinctBaseline ? previousHead : "current snapshot only"}\n`);
+  process.stdout.write(`${HYGIENE_DEFINITIONS.map((definition, index) => `${definition[1]} ${hygieneCounts[index]}`).join(" | ")}\n\n`);
+  process.stdout.write(`${requestedCategory === "all" ? "Highest-signal leads" : HYGIENE_DEFINITIONS[HYGIENE_TYPE_INDEX.get(requestedCategory)][1]} (${Math.min(top, filteredItems.length)} of ${filteredItems.length})\n\n`);
+  filteredItems.slice(0, top).forEach((item, index) => {
+    const node = sourceNodes[item[0]];
+    const definition = HYGIENE_DEFINITIONS[item[1]];
+    process.stdout.write(`${index + 1}. ${node.label} — ${definition[1]} · ${definition[2]}\n`);
+    process.stdout.write(`   Source: ${node.sourceFile || "<unresolved>"}${node.sourceLocation ? `:${node.sourceLocation}` : ""}\n`);
+    process.stdout.write(`   Evidence: ${item[2]}\n`);
+    if (item[4]) process.stdout.write(`   Detail: ${item[4]}\n`);
+  });
+  if (filteredItems.length === 0) {
+    process.stdout.write(hasDistinctBaseline || requestedCategory !== "widow"
+      ? "No candidates match this category. That does not prove the absence of dead code.\n"
+      : "No changed baseline exists yet. The next graph-changing sync will preserve the current snapshot for widow detection.\n");
+  }
+  process.exit(0);
+}
+
 const payload = {
   meta: {
     label: productLabel,
@@ -380,11 +692,21 @@ const payload = {
       excludedRelations: [...SCOPE_STRUCTURAL_RELATIONS],
       excludedNeighborDomains: [...SCOPE_EXCLUDED_NEIGHBOR_DOMAINS],
     },
+    hygiene: {
+      model: "ownership-leads-v1",
+      counts: hygieneCounts,
+      hasDistinctBaseline,
+      currentHead: currentReceipt?.git_head ? String(currentReceipt.git_head).slice(0, 12) : "",
+      previousHead: previousReceipt?.git_head ? String(previousReceipt.git_head).slice(0, 12) : "",
+      defaultTypes: ["widow", "detached", "orphan-file"],
+    },
     generatedAt: new Date().toISOString(),
   },
   domains: DOMAIN_DEFINITIONS,
   kinds: KIND_NAMES,
   scopeShells: SCOPE_SHELL_DEFINITIONS,
+  hygieneTypes: HYGIENE_DEFINITIONS,
+  hygiene: hygieneItems,
   relations: relationNames,
   nodes: compactNodes,
   edges: compactEdges,
@@ -659,8 +981,8 @@ FORM: A focused operational constellation, directly shaped as a local extension 
 
     .mode-switch {
       display: grid;
-      grid-template-columns: 1fr 1fr;
-      min-width: 222px;
+      grid-template-columns: repeat(3, 1fr);
+      min-width: 318px;
       padding: 3px;
       border: 1px solid var(--border);
       border-radius: 10px;
@@ -669,7 +991,7 @@ FORM: A focused operational constellation, directly shaped as a local extension 
 
     .mode-button,
     .tool-button {
-      min-height: 38px;
+      min-height: 44px;
       padding: 8px 13px;
       border: 0;
       border-radius: 7px;
@@ -724,6 +1046,7 @@ FORM: A focused operational constellation, directly shaped as a local extension 
     }
 
     canvas.is-dragging { cursor: grabbing; }
+    .stage.is-hygiene canvas { visibility: hidden; pointer-events: none; }
 
     .stage-hud {
       position: absolute;
@@ -785,6 +1108,117 @@ FORM: A focused operational constellation, directly shaped as a local extension 
     .scope-key.cross-file { box-shadow: 0 0 0 1px var(--surface-quiet), 0 0 0 2px rgba(131, 191, 255, 0.72); }
     .scope-legend.is-hidden { display: none; }
 
+    .hygiene-board {
+      position: absolute;
+      inset: 0;
+      display: none;
+      overflow-y: auto;
+      padding: 58px 18px 24px;
+      background:
+        linear-gradient(180deg, rgba(18, 28, 42, 0.86), rgba(14, 21, 32, 0.96) 180px),
+        var(--canvas);
+    }
+
+    .hygiene-board.is-visible { display: block; }
+
+    .hygiene-inner {
+      width: min(920px, 100%);
+      margin: 0 auto;
+    }
+
+    .hygiene-heading {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .hygiene-title { margin: 0; font-size: 21px; font-weight: 680; letter-spacing: -0.025em; }
+    .hygiene-copy { max-width: 68ch; margin: 7px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .hygiene-baseline { flex: 0 0 auto; color: var(--dim); font-size: 12px; text-align: right; }
+
+    .hygiene-filters {
+      display: flex;
+      gap: 6px;
+      margin-top: 18px;
+      padding-bottom: 3px;
+      overflow-x: auto;
+      scrollbar-width: thin;
+    }
+
+    .hygiene-filter {
+      flex: 0 0 auto;
+      min-height: 44px;
+      padding: 7px 10px;
+      border: 1px solid var(--border-soft);
+      border-radius: 8px;
+      background: transparent;
+      color: var(--dim);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .hygiene-filter:hover { border-color: var(--border); color: var(--text); }
+    .hygiene-filter[aria-pressed="true"] { border-color: #5f7899; background: var(--surface); color: var(--text); }
+    .hygiene-filter b { margin-left: 5px; color: var(--caution); font-size: 12px; font-weight: 680; }
+
+    .hygiene-result-summary {
+      margin: 14px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .hygiene-layers {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      margin-top: 12px;
+      padding: 9px 10px;
+      border-block: 1px solid var(--border-soft);
+    }
+
+    .hygiene-layers .layer-label { padding-top: 7px; }
+    .hygiene-layers .domain-chip span { min-height: 44px; }
+
+    .hygiene-list {
+      margin: 12px 0 0;
+      padding: 0;
+      border-top: 1px solid var(--border);
+      list-style: none;
+    }
+
+    .hygiene-list li { border-bottom: 1px solid var(--border-soft); }
+
+    .hygiene-row {
+      display: grid;
+      grid-template-columns: 12px minmax(0, 1fr) minmax(210px, 0.72fr);
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+      min-height: 66px;
+      padding: 10px 8px;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: var(--text);
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .hygiene-row:hover { background: var(--surface); }
+    .hygiene-row[aria-current="true"] { background: #22334a; box-shadow: inset 2px 0 0 var(--evidence); }
+    .hygiene-signal { width: 8px; height: 8px; border-radius: 50%; background: var(--caution); }
+    .hygiene-row[data-type="widow"] .hygiene-signal { background: var(--evidence); }
+    .hygiene-row[data-type="detached"] .hygiene-signal { background: #b9a5ff; }
+    .hygiene-row[data-type="root"] .hygiene-signal { background: var(--stable); }
+    .hygiene-primary, .hygiene-evidence { min-width: 0; }
+    .hygiene-name { display: block; overflow: hidden; font-size: 14px; font-weight: 660; text-overflow: ellipsis; white-space: nowrap; }
+    .hygiene-path { display: block; overflow: hidden; margin-top: 4px; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+    .hygiene-type { display: block; color: var(--caution); font-size: 12px; font-weight: 650; }
+    .hygiene-row[data-type="root"] .hygiene-type { color: var(--stable); }
+    .hygiene-detail { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.4; }
+    .hygiene-empty { margin: 30px 0 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
+
     .layer-deck {
       position: absolute;
       left: 16px;
@@ -799,6 +1233,8 @@ FORM: A focused operational constellation, directly shaped as a local extension 
       background: rgba(18, 28, 42, 0.93);
       box-shadow: 0 10px 24px rgba(4, 9, 15, 0.2);
     }
+
+    .stage.is-hygiene > .layer-deck { display: none; }
 
     .layer-label { flex: 0 0 auto; color: var(--muted); font-size: 12px; font-weight: 650; }
 
@@ -851,6 +1287,9 @@ FORM: A focused operational constellation, directly shaped as a local extension 
     .inspector-intro { margin: 8px 0 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
 
     .empty-state { padding-top: 24px; }
+    .empty-state.is-hygiene-context { padding-top: 18px; }
+    .empty-state.is-hygiene-context .empty-map,
+    .empty-state.is-hygiene-context .hub-list { display: none; }
 
     .empty-map {
       position: relative;
@@ -987,6 +1426,17 @@ FORM: A focused operational constellation, directly shaped as a local extension 
 
     .scope-scale span.is-active { background: var(--evidence); }
 
+    .hygiene-readout {
+      padding: 15px 0 16px;
+      border-bottom: 1px solid var(--border-soft);
+    }
+
+    .hygiene-readout-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+    .hygiene-readout h3 { margin: 0; font-size: 13px; font-weight: 670; }
+    .hygiene-readout-label { color: var(--caution); font-size: 12px; font-weight: 650; text-align: right; }
+    .hygiene-readout-evidence { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .hygiene-verify { width: 100%; margin-top: 11px; }
+
     .relationship-head {
       display: flex;
       align-items: baseline;
@@ -1046,6 +1496,7 @@ FORM: A focused operational constellation, directly shaped as a local extension 
       .density-select { display: none; }
       .graph-summary { display: none; }
       .workspace { grid-template-columns: minmax(0, 1fr) 320px; }
+      .mode-switch { min-width: 280px; }
     }
 
     @media (max-width: 780px) {
@@ -1073,6 +1524,13 @@ FORM: A focused operational constellation, directly shaped as a local extension 
         padding: 7px 9px;
       }
       .scope-legend.is-hidden { display: none; }
+      .hygiene-board { padding-inline: 10px; }
+      .hygiene-heading { display: block; }
+      .hygiene-baseline { margin-top: 8px; text-align: left; }
+      .hygiene-row { grid-template-columns: 12px minmax(0, 1fr); }
+      .hygiene-evidence { grid-column: 2; padding-bottom: 2px; }
+      .hygiene-layers { display: block; padding-inline: 0; }
+      .hygiene-layers .layer-label { display: block; margin-bottom: 5px; padding: 0; }
       .scope-legend-head { flex: 0 0 auto; }
       .scope-legend-head > span, .scope-legend-axis { display: none; }
       .scope-legend-labels { display: flex; flex: 1 1 auto; align-items: center; justify-content: space-between; gap: 7px; margin-top: 0; }
@@ -1097,6 +1555,8 @@ FORM: A focused operational constellation, directly shaped as a local extension 
       .layer-deck { display: block; padding: 8px; }
       .layer-label { display: block; margin-bottom: 6px; padding: 0; }
       .domain-filters { padding-bottom: 2px; }
+      .hygiene-board { padding-top: 56px; }
+      .hygiene-row { min-height: 76px; padding-block: 11px; }
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -1134,6 +1594,7 @@ FORM: A focused operational constellation, directly shaped as a local extension 
           <div class="mode-switch" aria-label="Graph view mode">
             <button class="mode-button" id="sphereMode" type="button" aria-pressed="true">Sphere</button>
             <button class="mode-button" id="neighborhoodMode" type="button" aria-pressed="false">Neighborhood</button>
+            <button class="mode-button" id="hygieneMode" type="button" aria-pressed="false">Hygiene</button>
           </div>
 
           <button class="tool-button" id="rotationToggle" type="button" aria-pressed="false">Rotate</button>
@@ -1157,6 +1618,25 @@ FORM: A focused operational constellation, directly shaped as a local extension 
             <div class="scope-legend-axis"><i class="scope-legend-segment"></i><i class="scope-legend-segment"></i><i class="scope-legend-segment"></i></div>
             <div class="scope-legend-labels"><span data-short="High"><i class="scope-key high"></i>High reuse</span><span data-short="Cross-file"><i class="scope-key cross-file"></i>Cross-file</span><span data-short="Local"><i class="scope-key"></i>Local / entry</span></div>
           </div>
+          <section class="hygiene-board" id="hygieneBoard" aria-labelledby="hygieneTitle" aria-hidden="true">
+            <div class="hygiene-inner">
+              <div class="hygiene-heading">
+                <div>
+                  <h2 class="hygiene-title" id="hygieneTitle">Orphans &amp; widows</h2>
+                  <p class="hygiene-copy">Static ownership leads for pieces that lost a relationship, have no extracted owner, or sit outside the repository’s mapped flow. These are triage prompts—not deletion instructions.</p>
+                </div>
+                <div class="hygiene-baseline" id="hygieneBaseline"></div>
+              </div>
+              <div class="hygiene-filters" id="hygieneFilters" aria-label="Hygiene signal filters"></div>
+              <div class="hygiene-layers">
+                <span class="layer-label">Architecture layers</span>
+                <div class="domain-filters" id="hygieneDomainFilters" aria-label="Hygiene architecture layer filters"></div>
+              </div>
+              <p class="hygiene-result-summary" id="hygieneResultSummary"></p>
+              <ul class="hygiene-list" id="hygieneList"></ul>
+              <p class="hygiene-empty" id="hygieneEmpty" hidden>No candidates in the enabled signals and layers. This does not prove dead-code absence.</p>
+            </div>
+          </section>
           <div class="layer-deck">
             <span class="layer-label">Architecture layers</span>
             <div class="domain-filters" id="domainFilters" aria-label="Architecture layer filters"></div>
@@ -1167,12 +1647,12 @@ FORM: A focused operational constellation, directly shaped as a local extension 
       <aside class="inspector" aria-labelledby="inspectorTitle">
         <div class="inspector-inner">
           <h2 id="inspectorTitle">Graph details</h2>
-          <p class="inspector-intro">The sphere is for orientation. Radial shell shows inbound reuse: high near the center, local or entrypoint near the surface. Only bands matter; offsets prevent overlap. Double, single, or absent keylines repeat high, cross-file, or local membership when perspective compresses depth.</p>
+          <p class="inspector-intro" id="inspectorIntro">The sphere is for orientation. Radial shell shows inbound reuse: high near the center, local or entrypoint near the surface. Only bands matter; offsets prevent overlap. Double, single, or absent keylines repeat high, cross-file, or local membership when perspective compresses depth.</p>
 
           <div class="empty-state" id="emptyState">
             <div class="empty-map" aria-hidden="true"><i></i></div>
-            <p class="empty-title">Start with a hub or search</p>
-            <p class="empty-copy">Radius estimates inbound reuse, color identifies layer, and shape estimates symbol kind. These are navigation leads—not runtime truth.</p>
+            <p class="empty-title" id="emptyTitle">Start with a hub or search</p>
+            <p class="empty-copy" id="emptyCopy">Radius estimates inbound reuse, color identifies layer, and shape estimates symbol kind. These are navigation leads—not runtime truth.</p>
             <div class="hub-list" id="hubList" aria-label="Highest-connectivity nodes"></div>
           </div>
 
@@ -1191,6 +1671,15 @@ FORM: A focused operational constellation, directly shaped as a local extension 
               <div class="metric"><span class="metric-value" id="inboundValue"></span><span class="metric-label">Inbound</span></div>
               <div class="metric"><span class="metric-value" id="outboundValue"></span><span class="metric-label">Outbound</span></div>
             </div>
+
+            <section class="hygiene-readout" aria-labelledby="hygieneReadoutTitle">
+              <div class="hygiene-readout-head">
+                <h3 id="hygieneReadoutTitle">Hygiene signal</h3>
+                <span class="hygiene-readout-label" id="nodeHygieneLabel"></span>
+              </div>
+              <p class="hygiene-readout-evidence" id="nodeHygieneEvidence"></p>
+              <button class="tool-button hygiene-verify" id="verifyRelationships" type="button">View direct relationships</button>
+            </section>
 
             <section class="scope-readout" aria-labelledby="scopeReadoutTitle">
               <div class="scope-readout-head">
@@ -1214,7 +1703,7 @@ FORM: A focused operational constellation, directly shaped as a local extension 
 
     <footer class="statusbar">
       <span><strong>Graph connections are leads.</strong> Verify source before treating them as runtime truth. <span id="suppressionSummary"></span></span>
-      <span class="keyboard-help">Drag to orbit · Wheel to zoom · Arrow keys rotate · Home resets</span>
+      <span class="keyboard-help" id="keyboardHelp">Drag to orbit · Wheel to zoom · Arrow keys rotate · Home resets</span>
     </footer>
   </div>
 
@@ -1250,6 +1739,9 @@ FORM: A focused operational constellation, directly shaped as a local extension 
 
       const nodes = DATA.nodes.map(rowToNode);
       const edges = DATA.edges.map((row) => ({ source: row[0], target: row[1], relation: row[2], inferred: row[3] === 1 }));
+      const hygieneItems = DATA.hygiene.map((row) => ({ node: row[0], type: row[1], evidence: row[2], score: row[3], detail: row[4] }));
+      const hygieneByNode = Array.from({ length: nodes.length }, () => []);
+      hygieneItems.forEach((item) => hygieneByNode[item.node].push(item));
       const adjacency = Array.from({ length: nodes.length }, () => []);
 
       edges.forEach((edge, edgeIndex) => {
@@ -1275,6 +1767,7 @@ FORM: A focused operational constellation, directly shaped as a local extension 
         pointerStart: null,
         density: window.matchMedia("(max-width: 600px)").matches ? 140 : 240,
         domains: DATA.domains.map((domain) => domain[0] !== "tests" && domain[0] !== "unresolved"),
+        hygieneTypes: DATA.hygieneTypes.map((definition) => DATA.meta.hygiene.defaultTypes.includes(definition[0])),
         searchResults: [],
         searchActive: -1,
         screenNodes: [],
@@ -1289,11 +1782,15 @@ FORM: A focused operational constellation, directly shaped as a local extension 
       const searchResultsElement = document.getElementById("searchResults");
       const sphereModeButton = document.getElementById("sphereMode");
       const neighborhoodModeButton = document.getElementById("neighborhoodMode");
+      const hygieneModeButton = document.getElementById("hygieneMode");
       const rotationToggle = document.getElementById("rotationToggle");
       const resetButton = document.getElementById("resetButton");
       const densitySelect = document.getElementById("densitySelect");
       const stageStatus = document.getElementById("stageStatus");
       const scopeLegend = document.getElementById("scopeLegend");
+      const hygieneBoard = document.getElementById("hygieneBoard");
+      const hygieneList = document.getElementById("hygieneList");
+      const hygieneEmpty = document.getElementById("hygieneEmpty");
       const liveStatus = document.getElementById("liveStatus");
       const emptyState = document.getElementById("emptyState");
       const selectionPanel = document.getElementById("selectionPanel");
@@ -1767,7 +2264,7 @@ FORM: A focused operational constellation, directly shaped as a local extension 
         context.fillStyle = "#0e1520";
         context.fillRect(0, 0, logicalWidth, logicalHeight);
         if (state.mode === "sphere") drawSphere();
-        else drawNeighborhood();
+        else if (state.mode === "neighborhood") drawNeighborhood();
       }
 
       function frame(now) {
@@ -1829,6 +2326,7 @@ FORM: A focused operational constellation, directly shaped as a local extension 
         state.domains[nodes[index].domain] = true;
         syncDomainFilters();
         renderInspector();
+        if (state.mode === "hygiene") renderHygieneBoard();
         closeSearch();
         searchInput.value = "";
         if (announce) liveStatus.textContent = nodes[index].label + " selected. " + nodes[index].degree.toLocaleString() + " direct relationships.";
@@ -1839,10 +2337,37 @@ FORM: A focused operational constellation, directly shaped as a local extension 
         state.mode = mode;
         sphereModeButton.setAttribute("aria-pressed", String(mode === "sphere"));
         neighborhoodModeButton.setAttribute("aria-pressed", String(mode === "neighborhood"));
+        hygieneModeButton.setAttribute("aria-pressed", String(mode === "hygiene"));
         rotationToggle.disabled = mode !== "sphere";
+        rotationToggle.hidden = mode !== "sphere";
+        resetButton.disabled = mode === "hygiene";
+        resetButton.hidden = mode === "hygiene";
+        densitySelect.disabled = mode !== "sphere";
+        densitySelect.hidden = mode !== "sphere";
         scopeLegend.classList.toggle("is-hidden", mode !== "sphere");
+        stage.classList.toggle("is-hygiene", mode === "hygiene");
+        hygieneBoard.classList.toggle("is-visible", mode === "hygiene");
+        hygieneBoard.setAttribute("aria-hidden", String(mode !== "hygiene"));
+        canvas.tabIndex = mode === "hygiene" ? -1 : 0;
+        canvas.setAttribute("aria-hidden", String(mode === "hygiene"));
         if (mode === "neighborhood" && state.selected === null) selectNode(ranked.find((index) => enabledNode(index)) ?? ranked[0], false);
-        liveStatus.textContent = mode === "sphere" ? "Sphere view active." : "Neighborhood view active.";
+        if (mode === "hygiene") renderHygieneBoard();
+        document.getElementById("inspectorIntro").textContent = mode === "hygiene"
+          ? "Hygiene signals are extraction leads, not proof of dead code. Select one, inspect its evidence, then verify direct relationships and source."
+          : mode === "neighborhood"
+            ? "Neighborhood reduces the graph to one selected node and its bounded direct relationships. The ledger below retains every extracted row."
+            : "The sphere is for orientation. Radial shell shows inbound reuse: high near the center, local or entrypoint near the surface. Only bands matter; offsets prevent overlap.";
+        emptyState.classList.toggle("is-hygiene-context", mode === "hygiene");
+        document.getElementById("emptyTitle").textContent = mode === "hygiene" ? "Select a hygiene lead" : "Start with a hub or search";
+        document.getElementById("emptyCopy").textContent = mode === "hygiene"
+          ? "Choose a row to see its exact extraction evidence. Verify the named source and runtime path before changing or removing anything."
+          : "Radius estimates inbound reuse, color identifies layer, and shape estimates symbol kind. These are navigation leads—not runtime truth.";
+        document.getElementById("keyboardHelp").textContent = mode === "hygiene"
+          ? "Filter signals · Select a lead · Verify relationships and source"
+          : mode === "neighborhood"
+            ? "Select a node · Wheel to zoom · Home resets"
+            : "Drag to orbit · Wheel to zoom · Arrow keys rotate · Home resets";
+        liveStatus.textContent = mode === "sphere" ? "Sphere view active." : mode === "neighborhood" ? "Neighborhood view active." : "Hygiene view active.";
         invalidate();
       }
 
@@ -1860,38 +2385,120 @@ FORM: A focused operational constellation, directly shaped as a local extension 
       }
 
       function buildDomainFilters() {
-        const container = document.getElementById("domainFilters");
-        DATA.domains.forEach((domain, index) => {
-          const label = document.createElement("label");
-          label.className = "domain-chip";
-          const input = document.createElement("input");
-          input.type = "checkbox";
-          input.checked = state.domains[index];
-          input.dataset.domain = String(index);
-          input.addEventListener("change", () => {
-            state.domains[index] = input.checked;
-            if (!state.domains.some(Boolean)) {
-              state.domains[index] = true;
-              input.checked = true;
-            }
-            renderHubList();
-            renderInspector();
-            invalidate();
+        ["domainFilters", "hygieneDomainFilters"].forEach((containerId) => {
+          const container = document.getElementById(containerId);
+          DATA.domains.forEach((domain, index) => {
+            const label = document.createElement("label");
+            label.className = "domain-chip";
+            const input = document.createElement("input");
+            input.type = "checkbox";
+            input.checked = state.domains[index];
+            input.dataset.domain = String(index);
+            input.addEventListener("change", () => {
+              state.domains[index] = input.checked;
+              if (!state.domains.some(Boolean)) state.domains[index] = true;
+              syncDomainFilters();
+              renderHubList();
+              renderInspector();
+              if (state.mode === "hygiene") renderHygieneBoard(true);
+              invalidate();
+            });
+            const chip = document.createElement("span");
+            const swatch = document.createElement("i");
+            swatch.className = "chip-swatch";
+            swatch.style.backgroundColor = domain[2];
+            chip.append(swatch, document.createTextNode(domain[1]));
+            label.append(input, chip);
+            container.append(label);
           });
-          const chip = document.createElement("span");
-          const swatch = document.createElement("i");
-          swatch.className = "chip-swatch";
-          swatch.style.backgroundColor = domain[2];
-          chip.append(swatch, document.createTextNode(domain[1]));
-          label.append(input, chip);
-          container.append(label);
         });
       }
 
       function syncDomainFilters() {
-        document.querySelectorAll("#domainFilters input").forEach((input) => {
+        document.querySelectorAll("#domainFilters input, #hygieneDomainFilters input").forEach((input) => {
           input.checked = state.domains[Number(input.dataset.domain)];
         });
+      }
+
+      function buildHygieneFilters() {
+        const container = document.getElementById("hygieneFilters");
+        container.replaceChildren();
+        DATA.hygieneTypes.forEach((definition, typeIndex) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "hygiene-filter";
+          button.setAttribute("aria-pressed", String(state.hygieneTypes[typeIndex]));
+          const count = document.createElement("b");
+          count.textContent = DATA.meta.hygiene.counts[typeIndex].toLocaleString();
+          button.append(document.createTextNode(definition[1]), count);
+          button.addEventListener("click", () => {
+            state.hygieneTypes[typeIndex] = !state.hygieneTypes[typeIndex];
+            button.setAttribute("aria-pressed", String(state.hygieneTypes[typeIndex]));
+            renderHygieneBoard(true);
+          });
+          container.append(button);
+        });
+        const baseline = document.getElementById("hygieneBaseline");
+        baseline.textContent = DATA.meta.hygiene.hasDistinctBaseline
+          ? "Relationship history " + (DATA.meta.hygiene.previousHead || "previous") + " → " + (DATA.meta.hygiene.currentHead || "current")
+          : "Current snapshot only · next changed sync starts widow history";
+      }
+
+      function visibleHygieneItems() {
+        const seenNodes = new Set();
+        return hygieneItems.filter((item) => {
+          if (!state.hygieneTypes[item.type] || !enabledNode(item.node) || seenNodes.has(item.node)) return false;
+          seenNodes.add(item.node);
+          return true;
+        });
+      }
+
+      function renderHygieneBoard(announce = false) {
+        const items = visibleHygieneItems();
+        const displayed = items.slice(0, 80);
+        hygieneList.replaceChildren();
+        displayed.forEach((item) => {
+          const node = nodes[item.node];
+          const definition = DATA.hygieneTypes[item.type];
+          const listItem = document.createElement("li");
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "hygiene-row";
+          button.dataset.type = definition[0];
+          button.setAttribute("aria-current", String(state.selected === item.node));
+          const signal = document.createElement("i");
+          signal.className = "hygiene-signal";
+          signal.setAttribute("aria-hidden", "true");
+          const primary = document.createElement("span");
+          primary.className = "hygiene-primary";
+          const name = document.createElement("span");
+          name.className = "hygiene-name";
+          name.textContent = node.label;
+          const source = document.createElement("span");
+          source.className = "hygiene-path";
+          source.textContent = node.source || "Unresolved graph target";
+          primary.append(name, source);
+          const evidence = document.createElement("span");
+          evidence.className = "hygiene-evidence";
+          const type = document.createElement("span");
+          type.className = "hygiene-type";
+          type.textContent = definition[1] + " · " + definition[2];
+          const detail = document.createElement("span");
+          detail.className = "hygiene-detail";
+          detail.textContent = item.evidence;
+          evidence.append(type, detail);
+          button.append(signal, primary, evidence);
+          button.addEventListener("click", () => selectNode(item.node, true, false));
+          listItem.append(button);
+          hygieneList.append(listItem);
+        });
+        hygieneEmpty.hidden = items.length > 0;
+        const summary = items.length > 80
+          ? "Showing 80 of " + items.length.toLocaleString() + " unique leads in enabled signals and layers. Use search or the CLI for the full set."
+          : items.length.toLocaleString() + " unique lead" + (items.length === 1 ? "" : "s") + " in enabled signals and layers.";
+        document.getElementById("hygieneResultSummary").textContent = summary;
+        if (state.mode === "hygiene") stageStatus.textContent = "Hygiene · " + items.length.toLocaleString() + " leads";
+        if (announce) liveStatus.textContent = summary;
       }
 
       function createHubButton(index) {
@@ -1963,6 +2570,16 @@ FORM: A focused operational constellation, directly shaped as a local extension 
         document.getElementById("degreeValue").textContent = node.degree.toLocaleString();
         document.getElementById("inboundValue").textContent = node.inbound.toLocaleString();
         document.getElementById("outboundValue").textContent = node.outbound.toLocaleString();
+        const nodeSignals = hygieneByNode[state.selected];
+        document.getElementById("nodeHygieneLabel").textContent = nodeSignals.length > 0
+          ? nodeSignals.slice(0, 2).map((item) => DATA.hygieneTypes[item.type][1]).join(" · ")
+          : "No current signal";
+        document.getElementById("nodeHygieneEvidence").textContent = nodeSignals.length > 0
+          ? nodeSignals.slice(0, 3).map((item) => item.evidence).join(" ") + " Static lead—not proof of dead code."
+          : "No enabled hygiene rule currently flags this node. That does not establish runtime use or safety to remove.";
+        const verifyRelationships = document.getElementById("verifyRelationships");
+        verifyRelationships.disabled = adjacency[state.selected].length === 0;
+        verifyRelationships.textContent = verifyRelationships.disabled ? "No direct relationships extracted" : "View direct relationships";
         document.getElementById("nodeScopeLabel").textContent = DATA.scopeShells[node.scopeShell][1];
         const bareScopeLabel = node.label.replace(/\\(\\)$/, "");
         const ambiguousScopeBinding = node.kind !== 0 && node.scopeFiles >= 8 && (bareScopeLabel.startsWith("_") || bareScopeLabel.length <= 5);
@@ -2069,7 +2686,8 @@ FORM: A focused operational constellation, directly shaped as a local extension 
             const degree = document.createElement("span");
             degree.className = "result-degree";
             const shortScope = node.scopeShell === 0 ? "High reuse" : node.scopeShell === 1 ? "Cross-file" : "Local / entry";
-            degree.textContent = shortScope + " · " + node.degree.toLocaleString() + " relationships";
+            const hygieneLabel = hygieneByNode[index].length > 0 ? DATA.hygieneTypes[hygieneByNode[index][0].type][1] + " · " : "";
+            degree.textContent = hygieneLabel + shortScope + " · " + node.degree.toLocaleString() + " relationships";
             button.append(swatch, copy, degree);
             button.addEventListener("click", () => selectNode(index, true, true));
             searchResultsElement.append(button);
@@ -2196,6 +2814,8 @@ FORM: A focused operational constellation, directly shaped as a local extension 
 
       sphereModeButton.addEventListener("click", () => setMode("sphere"));
       neighborhoodModeButton.addEventListener("click", () => setMode("neighborhood"));
+      hygieneModeButton.addEventListener("click", () => setMode("hygiene"));
+      document.getElementById("verifyRelationships").addEventListener("click", () => setMode("neighborhood"));
       rotationToggle.addEventListener("click", () => {
         state.autoRotate = !state.autoRotate;
         syncRotationButton();
@@ -2223,7 +2843,9 @@ FORM: A focused operational constellation, directly shaped as a local extension 
         ? DATA.meta.suppressedCrossLanguage.toLocaleString() + " suspicious cross-language matches are omitted."
         : "";
       buildDomainFilters();
+      buildHygieneFilters();
       renderHubList();
+      renderHygieneBoard();
       renderInspector();
       syncRotationButton();
       resizeCanvas();

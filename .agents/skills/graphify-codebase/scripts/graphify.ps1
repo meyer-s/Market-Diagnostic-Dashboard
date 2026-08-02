@@ -1,7 +1,29 @@
+<#
+.SYNOPSIS
+Builds, synchronizes, queries, and inspects the repository's guarded local code graph.
+
+.DESCRIPTION
+Graphify state and the offline Architecture Constellation remain in local application data. Use graph and hygiene output as static leads, then verify source, tests, and runtime evidence.
+
+.PARAMETER Action
+Operation to run. Use sync after architecture changes; use orphans for ownership-hygiene leads.
+
+.PARAMETER Text
+Symbol or query text for scope/query actions. For backward compatibility, orphans also accepts a category through Text.
+
+.PARAMETER Category
+Hygiene group for the orphans action: all, widow, detached, orphan-file, unreferenced, test-only, unresolved, or root.
+
+.EXAMPLE
+.\.agents\skills\graphify-codebase\scripts\graphify.ps1 sync
+
+.EXAMPLE
+.\.agents\skills\graphify-codebase\scripts\graphify.ps1 orphans -Category widow -Top 30
+#>
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("status", "build", "update", "view", "scope", "query", "explain", "affected", "path", "god-nodes", "diagnose", "benchmark")]
+    [ValidateSet("status", "build", "update", "sync", "view", "scope", "orphans", "query", "explain", "affected", "path", "god-nodes", "diagnose", "benchmark")]
     [string]$Action = "status",
 
     [Parameter(Position = 1)]
@@ -18,6 +40,9 @@ param(
 
     [ValidateRange(1, 100)]
     [int]$Top = 15,
+
+    [ValidateSet("all", "widow", "detached", "orphan-file", "unreferenced", "test-only", "unresolved", "root")]
+    [string]$Category,
 
     [switch]$Force,
 
@@ -49,6 +74,8 @@ $GraphifyExe = Join-Path $VenvRoot "Scripts\graphify.exe"
 $OutputRoot = Join-Path $StateRoot "state\$GraphifyVersion"
 $GraphPath = Join-Path $OutputRoot "graphify-out\graph.json"
 $ReceiptPath = Join-Path $OutputRoot "graphify-out\codex-receipt.json"
+$PreviousGraphPath = Join-Path $OutputRoot "graphify-out\graph.previous.json"
+$PreviousReceiptPath = Join-Path $OutputRoot "graphify-out\codex-receipt.previous.json"
 $ViewerBuilder = Join-Path $PSScriptRoot "build-constellation-viewer.mjs"
 $ViewerPath = Join-Path $OutputRoot "graphify-out\ARCHITECTURE_CONSTELLATION.html"
 
@@ -240,6 +267,130 @@ function Get-NodeExecutable {
     return $nodeCommand.Source
 }
 
+function Invoke-LocalGraphExtraction {
+    param([bool]$RequireExistingGraph)
+
+    Ensure-Graphify
+    if ($RequireExistingGraph) {
+        Require-Graph
+    }
+
+    New-Item -ItemType Directory -Force -Path $OutputRoot | Out-Null
+    $graphDirectory = Split-Path -Parent $GraphPath
+    New-Item -ItemType Directory -Force -Path $graphDirectory | Out-Null
+    $beforeGraphPath = Join-Path $graphDirectory ".graph.before-$PID.json"
+    $beforeReceiptPath = Join-Path $graphDirectory ".receipt.before-$PID.json"
+    $hadGraph = Test-Path -LiteralPath $GraphPath
+    $hadReceipt = Test-Path -LiteralPath $ReceiptPath
+
+    if ($hadGraph) {
+        Copy-Item -LiteralPath $GraphPath -Destination $beforeGraphPath -Force
+    }
+    if ($hadReceipt) {
+        Copy-Item -LiteralPath $ReceiptPath -Destination $beforeReceiptPath -Force
+    }
+
+    try {
+        # Reuse the same privacy and output flags for every extraction. Graphify
+        # is manifest-incremental once graphify-out exists.
+        $arguments = @("extract", $RepoRoot, "--code-only", "--no-cluster", "--out", $OutputRoot)
+        if ($Force) {
+            $arguments += "--force"
+        }
+        Invoke-Graphify $arguments
+        Remove-WorkspaceStatIndexScratch
+        Write-Receipt
+
+        if ($hadGraph) {
+            $beforeHash = (Get-FileHash -LiteralPath $beforeGraphPath -Algorithm SHA256).Hash
+            $afterHash = (Get-FileHash -LiteralPath $GraphPath -Algorithm SHA256).Hash
+            if ($beforeHash -ne $afterHash) {
+                Copy-Item -LiteralPath $beforeGraphPath -Destination $PreviousGraphPath -Force
+                if ($hadReceipt) {
+                    Copy-Item -LiteralPath $beforeReceiptPath -Destination $PreviousReceiptPath -Force
+                }
+                elseif (Test-Path -LiteralPath $PreviousReceiptPath) {
+                    Remove-Item -LiteralPath $PreviousReceiptPath -Force
+                }
+            }
+        }
+    }
+    catch {
+        if ($hadGraph -and (Test-Path -LiteralPath $beforeGraphPath)) {
+            Copy-Item -LiteralPath $beforeGraphPath -Destination $GraphPath -Force
+        }
+        if ($hadReceipt -and (Test-Path -LiteralPath $beforeReceiptPath)) {
+            Copy-Item -LiteralPath $beforeReceiptPath -Destination $ReceiptPath -Force
+        }
+        throw
+    }
+    finally {
+        if (Test-Path -LiteralPath $beforeGraphPath) {
+            Remove-Item -LiteralPath $beforeGraphPath -Force
+        }
+        if (Test-Path -LiteralPath $beforeReceiptPath) {
+            Remove-Item -LiteralPath $beforeReceiptPath -Force
+        }
+    }
+}
+
+function Invoke-ConstellationViewer {
+    param([bool]$OpenViewer)
+
+    Require-Graph
+    Write-GraphFreshnessWarning
+    if (-not (Test-Path -LiteralPath $ViewerBuilder)) {
+        throw "Constellation viewer builder is missing: $ViewerBuilder"
+    }
+
+    $viewerNeedsRefresh = -not (Test-Path -LiteralPath $ViewerPath)
+    if (-not $viewerNeedsRefresh) {
+        $viewerModified = (Get-Item -LiteralPath $ViewerPath).LastWriteTimeUtc
+        $viewerInputs = @($GraphPath, $ReceiptPath, $ViewerBuilder)
+        if (Test-Path -LiteralPath $PreviousGraphPath) {
+            $viewerInputs += $PreviousGraphPath
+        }
+        if (Test-Path -LiteralPath $PreviousReceiptPath) {
+            $viewerInputs += $PreviousReceiptPath
+        }
+        $viewerNeedsRefresh = @(
+            $viewerInputs | Where-Object {
+                (Test-Path -LiteralPath $_) -and (Get-Item -LiteralPath $_).LastWriteTimeUtc -gt $viewerModified
+            }
+        ).Count -gt 0
+    }
+
+    if ($viewerNeedsRefresh) {
+        $nodeExecutable = Get-NodeExecutable
+        $viewerArguments = @(
+            $ViewerBuilder,
+            "--graph", $GraphPath,
+            "--output", $ViewerPath,
+            "--repo", $RepoRoot,
+            "--label", "Market Diagnostic Dashboard"
+        )
+        if (Test-Path -LiteralPath $ReceiptPath) {
+            $viewerArguments += @("--receipt", $ReceiptPath)
+        }
+        if (Test-Path -LiteralPath $PreviousGraphPath) {
+            $viewerArguments += @("--previous-graph", $PreviousGraphPath)
+        }
+        if (Test-Path -LiteralPath $PreviousReceiptPath) {
+            $viewerArguments += @("--previous-receipt", $PreviousReceiptPath)
+        }
+        $LASTEXITCODE = 0
+        & $nodeExecutable @viewerArguments
+        if ($LASTEXITCODE -ne 0) {
+            throw "Architecture constellation generation exited with code $LASTEXITCODE."
+        }
+    }
+
+    Write-Output "Viewer: $ViewerPath"
+    if ($OpenViewer) {
+        Start-Process -FilePath $ViewerPath
+    }
+}
+
 function Require-Text {
     param([string]$Value, [string]$Name)
 
@@ -290,6 +441,25 @@ function Write-Status {
         else {
             Write-Output "Fresh:  unknown - no receipt; run the update action"
         }
+
+        if (Test-Path -LiteralPath $PreviousGraphPath) {
+            $baselineLabel = "previous changed graph"
+            if (Test-Path -LiteralPath $PreviousReceiptPath) {
+                try {
+                    $previousReceipt = Get-Content -Raw -LiteralPath $PreviousReceiptPath | ConvertFrom-Json
+                    if (-not [string]::IsNullOrWhiteSpace($previousReceipt.git_head)) {
+                        $baselineLabel = "HEAD $($previousReceipt.git_head.Substring(0, 12))"
+                    }
+                }
+                catch {
+                    $baselineLabel = "receipt unreadable"
+                }
+            }
+            Write-Output "History: available ($baselineLabel)"
+        }
+        else {
+            Write-Output "History: current snapshot only; the first changed update establishes a widow baseline"
+        }
     }
     else {
         Write-Output "Graph: not built"
@@ -301,60 +471,20 @@ switch ($Action) {
         Write-Status
     }
     "build" {
-        Ensure-Graphify
-        New-Item -ItemType Directory -Force -Path $OutputRoot | Out-Null
-        $arguments = @("extract", $RepoRoot, "--code-only", "--no-cluster", "--out", $OutputRoot)
-        if ($Force) {
-            $arguments += "--force"
-        }
-        Invoke-Graphify $arguments
-        Remove-WorkspaceStatIndexScratch
-        Write-Receipt
+        Invoke-LocalGraphExtraction -RequireExistingGraph $false
         Write-Status
     }
     "update" {
-        Ensure-Graphify
-        Require-Graph
-        # Reuse the same privacy and output flags as the initial build. `extract`
-        # is manifest-incremental once graphify-out exists; this avoids drift
-        # between the full-extract and separate update code paths.
-        $arguments = @("extract", $RepoRoot, "--code-only", "--no-cluster", "--out", $OutputRoot)
-        if ($Force) {
-            $arguments += "--force"
-        }
-        Invoke-Graphify $arguments
-        Remove-WorkspaceStatIndexScratch
-        Write-Receipt
+        Invoke-LocalGraphExtraction -RequireExistingGraph $true
+        Write-Status
+    }
+    "sync" {
+        Invoke-LocalGraphExtraction -RequireExistingGraph (Test-Path -LiteralPath $GraphPath)
+        Invoke-ConstellationViewer -OpenViewer $false
         Write-Status
     }
     "view" {
-        Require-Graph
-        Write-GraphFreshnessWarning
-        if (-not (Test-Path -LiteralPath $ViewerBuilder)) {
-            throw "Constellation viewer builder is missing: $ViewerBuilder"
-        }
-        $viewerNeedsRefresh = -not (Test-Path -LiteralPath $ViewerPath)
-        if (-not $viewerNeedsRefresh) {
-            $viewerModified = (Get-Item -LiteralPath $ViewerPath).LastWriteTimeUtc
-            $viewerNeedsRefresh = (Get-Item -LiteralPath $GraphPath).LastWriteTimeUtc -gt $viewerModified -or
-                (Get-Item -LiteralPath $ViewerBuilder).LastWriteTimeUtc -gt $viewerModified
-        }
-        if ($viewerNeedsRefresh) {
-            $nodeExecutable = Get-NodeExecutable
-            $LASTEXITCODE = 0
-            & $nodeExecutable $ViewerBuilder `
-                --graph $GraphPath `
-                --output $ViewerPath `
-                --repo $RepoRoot `
-                --label "Market Diagnostic Dashboard"
-            if ($LASTEXITCODE -ne 0) {
-                throw "Architecture constellation generation exited with code $LASTEXITCODE."
-            }
-        }
-        Write-Output "Viewer: $ViewerPath"
-        if (-not $NoOpen) {
-            Start-Process -FilePath $ViewerPath
-        }
+        Invoke-ConstellationViewer -OpenViewer (-not $NoOpen)
     }
     "scope" {
         Require-Graph
@@ -374,6 +504,42 @@ switch ($Action) {
         & $nodeExecutable @scopeArguments
         if ($LASTEXITCODE -ne 0) {
             throw "Architecture scope analysis exited with code $LASTEXITCODE."
+        }
+    }
+    "orphans" {
+        Require-Graph
+        Write-GraphFreshnessWarning
+        if (-not (Test-Path -LiteralPath $ViewerBuilder)) {
+            throw "Constellation hygiene analyzer is missing: $ViewerBuilder"
+        }
+        $nodeExecutable = Get-NodeExecutable
+        $hygieneArguments = @(
+            $ViewerBuilder,
+            "--graph", $GraphPath,
+            "--repo", $RepoRoot,
+            "--hygiene-report",
+            "--hygiene-top", "$Top"
+        )
+        if (-not [string]::IsNullOrWhiteSpace($Text) -and -not [string]::IsNullOrWhiteSpace($Category)) {
+            throw "Use either -Category or the legacy -Text category for 'orphans', not both."
+        }
+        $requestedCategory = if (-not [string]::IsNullOrWhiteSpace($Category)) { $Category } else { $Text }
+        if (-not [string]::IsNullOrWhiteSpace($requestedCategory)) {
+            $hygieneArguments += @("--hygiene-category", $requestedCategory)
+        }
+        if (Test-Path -LiteralPath $ReceiptPath) {
+            $hygieneArguments += @("--receipt", $ReceiptPath)
+        }
+        if (Test-Path -LiteralPath $PreviousGraphPath) {
+            $hygieneArguments += @("--previous-graph", $PreviousGraphPath)
+        }
+        if (Test-Path -LiteralPath $PreviousReceiptPath) {
+            $hygieneArguments += @("--previous-receipt", $PreviousReceiptPath)
+        }
+        $LASTEXITCODE = 0
+        & $nodeExecutable @hygieneArguments
+        if ($LASTEXITCODE -ne 0) {
+            throw "Architecture hygiene analysis exited with code $LASTEXITCODE."
         }
     }
     "query" {

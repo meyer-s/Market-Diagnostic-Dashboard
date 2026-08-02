@@ -1,4 +1,4 @@
 interface:
   display_name: "Graphify Codebase"
-  short_description: "Map and verify cross-layer dependencies"
-  default_prompt: "Use $graphify-codebase to trace a cross-layer dependency and verify its change impact."
+  short_description: "Map dependencies and stranded-code leads"
+  default_prompt: "Use $graphify-codebase to trace dependencies, inspect orphan or widow leads, and verify every result in source."

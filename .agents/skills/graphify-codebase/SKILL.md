@@ -1,6 +1,6 @@
 ---
 name: graphify-codebase
-description: Build and query this repository's guarded local Graphify code graph. Use when Codex must trace cross-layer dependencies, estimate change blast radius, find architectural hubs or extraction seams, follow callers/importers across backend/frontend/tests, or investigate legacy AAS dependencies. Do not use for visual styling, simple route-registry lookups, localized symbol searches, or claims about runtime, database, provider, scheduler, or production state.
+description: Build, update, and query this repository's guarded local Graphify code graph and ownership-hygiene history. Use when Codex must trace cross-layer dependencies, estimate change blast radius, find architectural hubs or extraction seams, follow callers/importers, or inspect orphan, detached, test-only, unresolved, or recently stranded code leads. Do not use for visual styling, simple route-registry lookups, localized symbol searches, or claims about runtime, database, provider, scheduler, or production state.
 ---
 
 # Graphify Codebase
@@ -39,6 +39,16 @@ Use Graphify as an architectural hypothesis tool. Treat direct source reads, `rg
 
    Radial scope is an AST-derived inbound-reuse lead: it scores distinct inbound production files with a small architecture-layer diversity bonus and deliberately ignores outbound fan-out. It is not a claim about business importance, runtime criticality, or proven change impact. Generic-name bindings can be false positives, so use radius to decide where to trace first, then verify the named source and relationships directly.
 
+   Switch the viewer to **Hygiene** to triage ownership leads without adding warning encodings to the sphere. The default ledger shows historical widows, detached files, and non-root files with no extracted inbound owner. Lower-confidence no-caller, test-only, unresolved-binding, and likely-root reference groups are opt-in filters. Use the terminal report when exact evidence is easier to review there:
+
+   ```powershell
+   .\.agents\skills\graphify-codebase\scripts\graphify.ps1 orphans
+   .\.agents\skills\graphify-codebase\scripts\graphify.ps1 orphans -Category detached -Top 30
+   .\.agents\skills\graphify-codebase\scripts\graphify.ps1 orphans -Category widow
+   ```
+
+   A widow is historical: the stable node had at least one extracted inbound production relationship in the prior changed graph and has none now. The wrapper preserves that prior graph locally only when extraction output changes. With no baseline, the viewer says `Current snapshot only`; it never invents historical loss. An orphan is a current static ownership lead and is not proof of dead code.
+
 3. Prefer exact-symbol operations over broad questions:
 
    ```powershell
@@ -53,11 +63,18 @@ Use Graphify as an architectural hypothesis tool. Treat direct source reads, `rg
 
 5. Report only verified relationships as facts. Label unverified graph connections as leads.
 
+6. After architecture-affecting edits, run the one-step final synchronizer. Run it again after committing so the receipt matches the committed HEAD:
+
+   ```powershell
+   .\.agents\skills\graphify-codebase\scripts\graphify.ps1 sync
+   ```
+
 ## Guardrails
 
 - The wrapper pins `graphifyy[sql]==0.9.31` and graph state in a per-repository cache under local application data, outside the OneDrive workspace. It never modifies the project Python environment.
 - Builds always use local AST-only `--code-only --no-cluster` extraction. Query logging is forcibly disabled.
 - Generated graph state is local cache, not documentation. Never copy it into the repository or commit it.
+- The local history retains one prior changed graph and receipt for widow comparison. It is not a Git substitute and must remain outside the repository.
 - The generated constellation is a local, offline HTML artifact beside the graph cache. It embeds compact graph data, makes no network requests, and should not be deployed with the application.
 - Never run `graphify install`, `graphify codex install`, hooks, watch mode, MCP, `--mode deep`, semantic document/media extraction, `save-result`, `reflect`, global graphs, or Obsidian export unless the user explicitly asks for that expansion.
 - Keep reverse traversal shallow. Depth greater than 2 often walks through module imports and exaggerates impact.
