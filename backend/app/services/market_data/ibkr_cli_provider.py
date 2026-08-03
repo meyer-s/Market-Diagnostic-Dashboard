@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from datetime import datetime, timezone
 import logging
 import math
 import os
@@ -375,6 +376,8 @@ class IbkrCliProvider:
                 puts=cached.puts.copy(),
                 source=cached.source,
                 quote_source=cached.quote_source,
+                observed_at=cached.observed_at,
+                retrieved_at=cached.retrieved_at,
             )
 
         logger.info(
@@ -408,6 +411,7 @@ class IbkrCliProvider:
             for value in pd.concat([calls, puts], ignore_index=True).get("quoteSource", pd.Series(dtype=object)).dropna()
             if value
         }
+        retrieved_at = datetime.now(timezone.utc).isoformat()
         chain = OptionChainFrame(
             symbol=normalized,
             expiry=iso_expiry,
@@ -415,6 +419,8 @@ class IbkrCliProvider:
             puts=puts,
             source=self.name,
             quote_source=",".join(sorted(quote_sources)) if quote_sources else None,
+            observed_at=retrieved_at,
+            retrieved_at=retrieved_at,
         )
         from app.services.market_data_capture import record_option_chain
 
@@ -427,6 +433,8 @@ class IbkrCliProvider:
             puts=chain.puts.copy(),
             source=chain.source,
             quote_source=chain.quote_source,
+            observed_at=chain.observed_at,
+            retrieved_at=chain.retrieved_at,
         )
 
     def _chain_rows(self, symbol: str) -> list[dict[str, Any]]:

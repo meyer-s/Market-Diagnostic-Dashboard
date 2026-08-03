@@ -1,14 +1,14 @@
 /**
  * Stock Analysis Page
  * 
- * Single stock lookup and analysis with multi-horizon outlook.
- * Allows users to search for any stock and view transparent scoring across time horizons.
+ * Single stock lookup and analysis across trailing windows.
+ * Allows users to search for any stock and compare transparent lookback scores.
  * 
  * Features:
  * - Stock ticker search and lookup
- * - Multi-horizon analysis: 3-month, 6-month, and 12-month outlooks
- * - Interactive chart with uncertainty cones
- * - Detailed scoring breakdown with conviction metrics
+ * - Multi-window analysis: 21-day, 3-month, 6-month, and 12-month lookbacks
+ * - Interactive trailing-score profile
+ * - Detailed scoring breakdown with composite signal-quality metrics
  * - Price analysis with volatility-based reference bands
  * - Comparison against SPY benchmark
  */
@@ -29,7 +29,10 @@ import {
 import { PriceAnalysisChart } from "../components/widgets/PriceAnalysisChart";
 import { ConvictionSnapshot } from "../components/widgets/ConvictionSnapshot";
 import { TechnicalIndicators, type TechnicalData } from "../components/widgets/TechnicalIndicators.tsx";
-import { OptionalityMispricingWidget } from "../components/widgets/OptionalityMispricingWidget";
+import {
+  OptionalityMispricingWidget,
+  type OptionalityMetrics,
+} from "../components/widgets/OptionalityMispricingWidget";
 import { OptionsStructureMap } from "../components/widgets/OptionsStructureMap";
 import MarketLoading from "../components/ui/MarketLoading";
 import "../index.css";
@@ -130,7 +133,27 @@ interface StockProjection {
   };
   target_regime?: string;
   stop_loss: number;
+  analysis_kind?: "trailing_window" | string;
+  lookback_days?: number;
+  trailing_price_return_pct?: number;
+  return_basis?: "adjusted_close" | "raw_close_fallback" | string;
 }
+
+type ProjectionHorizon = "T" | "3m" | "6m" | "12m";
+
+const HORIZON_OPTIONS: ReadonlyArray<{ value: ProjectionHorizon; label: string }> = [
+  { value: "T", label: "21D" },
+  { value: "3m", label: "3M" },
+  { value: "6m", label: "6M" },
+  { value: "12m", label: "12M" },
+];
+
+const HORIZON_LABELS: Record<ProjectionHorizon, string> = {
+  T: "21D",
+  "3m": "3M",
+  "6m": "6M",
+  "12m": "12M",
+};
 
 interface NewsArticle {
   id: number;
@@ -165,13 +188,9 @@ interface OptionsFlowData {
   call_volume_total: number;
   put_volume_total: number;
   put_call_oi_ratio: number | null;
-}
-
-interface OptionalityMetrics {
-  iv30: number | null;
-  hv30: number | null;
-  iv_percentile: number | null;
-  avg_edr: number | null;
+  observed_at?: string | null;
+  data_source?: string | null;
+  quote_source?: string | null;
 }
 
 interface FundamentalPoint {
@@ -184,12 +203,28 @@ interface FundamentalSeries {
   derived?: boolean;
 }
 
+interface FundamentalSnapshotMetric {
+  value: number | null;
+  period_end?: string | null;
+  change_pct?: number | null;
+  derived?: boolean;
+}
+
+interface FundamentalSnapshot {
+  eps_ttm?: FundamentalSnapshotMetric;
+  revenue_ttm?: FundamentalSnapshotMetric;
+  free_cash_flow_ttm?: FundamentalSnapshotMetric;
+  roe_ttm?: FundamentalSnapshotMetric;
+  pe_ratio?: FundamentalSnapshotMetric;
+  market_cap?: FundamentalSnapshotMetric;
+}
+
 interface FundamentalsPayload {
-  eps: FundamentalSeries;
-  roe: FundamentalSeries;
-  free_cash_flow: FundamentalSeries;
-  market_cap: FundamentalSeries;
-  pe_ratio: FundamentalSeries;
+  eps?: FundamentalSeries;
+  roe?: FundamentalSeries;
+  free_cash_flow?: FundamentalSeries;
+  market_cap?: FundamentalSeries;
+  pe_ratio?: FundamentalSeries;
   revenue?: FundamentalSeries;
   revenue_yoy?: FundamentalSeries;
   eps_annual?: FundamentalSeries;
@@ -199,6 +234,23 @@ interface FundamentalsPayload {
   pe_ratio_annual?: FundamentalSeries;
   revenue_annual?: FundamentalSeries;
   revenue_yoy_annual?: FundamentalSeries;
+  as_of?: string | null;
+  retrieved_at?: string | null;
+  snapshot?: FundamentalSnapshot;
+}
+
+interface ObservationMetadata {
+  source?: string | null;
+  observed_at?: string | null;
+  retrieved_at?: string | null;
+  cache_updated_at?: string | null;
+  cache_age_seconds?: number | null;
+  observation_age_seconds?: number | null;
+  stale?: boolean;
+  refresh_attempted?: boolean;
+  refresh_succeeded?: boolean;
+  refresh_error?: string | null;
+  adjusted_close_coverage_pct?: number | null;
 }
 
 interface PriceHistoryPoint {
@@ -288,24 +340,24 @@ function getSignalClasses(signal: "accumulation" | "distribution" | "neutral"): 
   return "border-stealth-600 bg-stealth-800/80 text-stealth-300";
 }
 
-function getConfidenceStrokeClass(signal: "accumulation" | "distribution" | "neutral"): string {
+function getSignalStrengthStrokeClass(signal: "accumulation" | "distribution" | "neutral"): string {
   if (signal === "accumulation") return "stroke-emerald-300/75 drop-shadow-[0_0_5px_rgba(74,222,128,0.2)]";
   if (signal === "distribution") return "stroke-rose-300/75 drop-shadow-[0_0_5px_rgba(251,113,133,0.2)]";
   return "stroke-stealth-300/70 drop-shadow-[0_0_4px_rgba(148,163,184,0.16)]";
 }
 
-function ConfidenceArc({ confidence, signal }: { confidence: number; signal: "accumulation" | "distribution" | "neutral" }) {
-  const normalizedConfidence = Math.max(0, Math.min(100, confidence));
+function SignalStrengthArc({ strength, signal }: { strength: number; signal: "accumulation" | "distribution" | "neutral" }) {
+  const normalizedStrength = Math.max(0, Math.min(100, strength));
   const strokeWidth = 10;
   const radius = 50 - strokeWidth;
   const circumference = 2 * Math.PI * radius;
-  const dashOffset = circumference * (1 - normalizedConfidence / 100);
+  const dashOffset = circumference * (1 - normalizedStrength / 100);
 
   return (
     <div
       className="inline-flex h-4 w-4 items-center"
       role="img"
-      aria-label={`Confidence ${normalizedConfidence.toFixed(0)} out of 100`}
+      aria-label={`Signal strength ${normalizedStrength.toFixed(0)} out of 100`}
     >
       <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90" aria-hidden="true">
         <circle cx="50" cy="50" r={radius} className="fill-none stroke-white/8" strokeWidth={strokeWidth} />
@@ -313,7 +365,7 @@ function ConfidenceArc({ confidence, signal }: { confidence: number; signal: "ac
           cx="50"
           cy="50"
           r={radius}
-          className={`fill-none ${getConfidenceStrokeClass(signal)}`}
+          className={`fill-none ${getSignalStrengthStrokeClass(signal)}`}
           strokeWidth={strokeWidth}
           strokeLinecap="round"
           strokeDasharray={circumference}
@@ -378,7 +430,11 @@ function longestDirectionalStreak(timeline: FlowTimelineBucket[], direction: "po
 }
 
 function formatBucket(bucket: string): string {
-  return new Date(bucket).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return new Date(bucket).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 function TrendZoneBar({ value, scale, certainty }: { value: number | null; scale: number; certainty: number }) {
@@ -417,59 +473,47 @@ function TrendZoneBar({ value, scale, certainty }: { value: number | null; scale
 function TimelineCluster({ timeline }: { timeline: FlowTimelineBucket[] }) {
   const recentTimeline = timeline.slice(-4);
   const scale = Math.max(1, ...recentTimeline.map((bucket) => Math.abs(bucket.net_flow_usd)));
-  const accumulationBuckets = recentTimeline.filter((bucket) => bucket.net_flow_usd > 0).length;
-  const distributionBuckets = recentTimeline.filter((bucket) => bucket.net_flow_usd < 0).length;
+  const positiveBuckets = recentTimeline.filter((bucket) => bucket.net_flow_usd > 0).length;
+  const negativeBuckets = recentTimeline.filter((bucket) => bucket.net_flow_usd < 0).length;
   const positiveStreak = longestDirectionalStreak(recentTimeline, "positive");
   const negativeStreak = longestDirectionalStreak(recentTimeline, "negative");
   const maxVolume = Math.max(1, ...recentTimeline.map((bucket) => bucket.total_notional_usd));
-  const dominantCluster = positiveStreak > negativeStreak ? "Accumulation trend" : negativeStreak > positiveStreak ? "Distribution trend" : "Mixed trend";
+  const dominantCluster = positiveStreak > negativeStreak
+    ? "Positive-bar streak"
+    : negativeStreak > positiveStreak
+      ? "Negative-bar streak"
+      : "Mixed proxy";
 
   return (
     <div className="rounded-2xl border border-stealth-700 bg-stealth-950/55 p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <div className="text-xs uppercase tracking-[0.22em] text-stealth-500">Flow Over Time</div>
+          <div className="text-xs uppercase tracking-[0.22em] text-stealth-500">Proxy Over Time</div>
           <div className="mt-1 text-xs text-stealth-300">{dominantCluster} across the latest weekly buckets.</div>
         </div>
         <div className="flex gap-2 text-xs">
-          <GroupBadge label="Up" value={accumulationBuckets} tone="buy" />
-          <GroupBadge label="Down" value={distributionBuckets} tone="sell" />
+          <GroupBadge label="Positive" value={positiveBuckets} tone="buy" />
+          <GroupBadge label="Negative" value={negativeBuckets} tone="sell" />
         </div>
       </div>
 
       <div className="mt-2.5 space-y-1.5">
         {recentTimeline.map((bucket) => {
           const certainty = bucket.total_notional_usd / maxVolume;
+          const barCount = bucket.buy_events + bucket.sell_events + bucket.neutral_events;
           return (
             <div key={bucket.bucket} className="grid grid-cols-[54px_minmax(0,1fr)_88px] items-center gap-2 rounded-xl border border-stealth-800 bg-stealth-900/55 px-2.5 py-2">
               <div className="text-xs uppercase tracking-[0.16em] text-stealth-500">{formatBucket(bucket.bucket)}</div>
               <TrendZoneBar value={bucket.net_flow_usd} scale={scale} certainty={certainty} />
               <div className="text-right">
                 <div className="text-xs font-semibold text-stealth-100">{formatCompactCurrency(bucket.net_flow_usd)}</div>
-                <div className="mt-0.5 text-xs uppercase tracking-[0.16em] text-stealth-500">{bucket.buy_events + bucket.sell_events + bucket.neutral_events} events</div>
+                <div className="mt-0.5 text-xs uppercase tracking-[0.16em] text-stealth-500">
+                  {barCount} {barCount === 1 ? "bar" : "bars"}
+                </div>
               </div>
             </div>
           );
         })}
-      </div>
-
-      <div className="mt-2.5 grid grid-cols-4 gap-2 text-xs text-stealth-300">
-        <div className="rounded-xl border border-stealth-700 bg-stealth-900/60 px-2.5 py-2">
-          <div className="text-xs uppercase tracking-[0.16em] text-stealth-500">Up Streak</div>
-          <div className="mt-1 font-semibold text-emerald-300">{positiveStreak}</div>
-        </div>
-        <div className="rounded-xl border border-stealth-700 bg-stealth-900/60 px-2.5 py-2">
-          <div className="text-xs uppercase tracking-[0.16em] text-stealth-500">Down Streak</div>
-          <div className="mt-1 font-semibold text-rose-300">{negativeStreak}</div>
-        </div>
-        <div className="rounded-xl border border-stealth-700 bg-stealth-900/60 px-2.5 py-2">
-          <div className="text-xs uppercase tracking-[0.16em] text-stealth-500">Net</div>
-          <div className="mt-1 font-semibold text-stealth-100">{formatCompactCurrency(recentTimeline.reduce((sum, bucket) => sum + bucket.net_flow_usd, 0))}</div>
-        </div>
-        <div className="rounded-xl border border-stealth-700 bg-stealth-900/60 px-2.5 py-2">
-          <div className="text-xs uppercase tracking-[0.16em] text-stealth-500">Volume</div>
-          <div className="mt-1 font-semibold text-stealth-100">{formatCompactCurrency(recentTimeline.reduce((sum, bucket) => sum + bucket.total_notional_usd, 0))}</div>
-        </div>
       </div>
     </div>
   );
@@ -482,11 +526,11 @@ function buildFlowTimeline(events: InstitutionalFlowEvent[]): FlowTimelineBucket
   events.forEach((event) => {
     const eventDate = new Date(event.date);
     if (Number.isNaN(eventDate.getTime())) return;
-    const day = eventDate.getDay();
+    const day = eventDate.getUTCDay();
     const mondayOffset = day === 0 ? -6 : 1 - day;
     const monday = new Date(eventDate);
-    monday.setDate(eventDate.getDate() + mondayOffset);
-    monday.setHours(0, 0, 0, 0);
+    monday.setUTCDate(eventDate.getUTCDate() + mondayOffset);
+    monday.setUTCHours(0, 0, 0, 0);
     const key = monday.toISOString().slice(0, 10);
 
     if (!buckets.has(key)) {
@@ -523,11 +567,27 @@ function buildFlowTimeline(events: InstitutionalFlowEvent[]): FlowTimelineBucket
   return Array.from(buckets.values()).sort((a, b) => a.bucket.localeCompare(b.bucket));
 }
 
-function FlowFocusCard({ flow, events, ticker, currentPrice }: { flow: InstitutionalFlowPayload; events: InstitutionalFlowEvent[]; ticker: string; currentPrice: number | null }) {
+function FlowFocusCard({
+  flow,
+  events,
+  ticker,
+  currentPrice,
+  closeLabel,
+}: {
+  flow: InstitutionalFlowPayload;
+  events: InstitutionalFlowEvent[];
+  ticker: string;
+  currentPrice: number | null;
+  closeLabel: string;
+}) {
   const summary = flow.summary;
   const signal = summary.signal;
   const toneClasses = getSignalClasses(signal);
-  const signalLabel = signal === "accumulation" ? "Accumulation" : signal === "distribution" ? "Distribution" : "Neutral";
+  const signalLabel = signal === "accumulation"
+    ? "Positive-bar proxy"
+    : signal === "distribution"
+      ? "Negative-bar proxy"
+      : "Mixed proxy";
   const confidencePercent = Math.max(0, Math.min(100, summary.confidence));
   const directionalDenominator = Math.max(Math.abs(summary.buy_notional_usd), Math.abs(summary.sell_notional_usd), 1);
   const normalizedSignal = Math.max(-100, Math.min(100, (summary.net_flow_usd / directionalDenominator) * 100));
@@ -546,8 +606,8 @@ function FlowFocusCard({ flow, events, ticker, currentPrice }: { flow: Instituti
     <div className="surface-card-strong space-y-3 p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <div className="text-xs uppercase tracking-[0.22em] text-stealth-500">Institutional Flow Focus</div>
-          <div className="mt-1 text-sm font-semibold text-stealth-100">{ticker} regime</div>
+          <div className="text-xs uppercase tracking-[0.22em] text-stealth-500">High-Volume Bar Proxy</div>
+          <div className="mt-1 text-sm font-semibold text-stealth-100">{ticker} proxy read</div>
         </div>
         <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${toneClasses}`}>
           {signalLabel}
@@ -557,30 +617,33 @@ function FlowFocusCard({ flow, events, ticker, currentPrice }: { flow: Instituti
       <div className="rounded-2xl border border-stealth-700 bg-stealth-950/55 p-3">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <div className="text-xs uppercase tracking-[0.22em] text-stealth-500">Net Flow Bias</div>
+            <div className="text-xs uppercase tracking-[0.22em] text-stealth-500">Signed Notional</div>
             <div className={`mt-1 text-base font-semibold ${summary.net_flow_usd >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
               {formatCompactCurrency(summary.net_flow_usd)}
             </div>
           </div>
           <div className="text-right text-xs text-stealth-400">
             <div className="flex justify-end">
-              <ConfidenceArc confidence={confidencePercent} signal={signal} />
+              <SignalStrengthArc strength={confidencePercent} signal={signal} />
             </div>
-            <div className="mt-0.5">Events {summary.event_count}</div>
+            <div className="mt-0.5">Proxy strength {Math.round(confidencePercent)}/100</div>
+            <div>
+              {summary.event_count} {summary.event_count === 1 ? "bar" : "bars"} · {formatCompactCurrency(summary.buy_notional_usd + summary.sell_notional_usd)} flagged
+            </div>
           </div>
         </div>
 
         <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-end gap-2 text-xs uppercase tracking-[0.16em] text-stealth-500">
           <div>
-            <div>Sell Cluster</div>
+            <div>Negative-Bar Cluster</div>
             <div className="mt-0.5 text-sm font-semibold normal-case tracking-normal text-rose-300">{formatFlowCurrency(summary.sell_cluster_level)}</div>
           </div>
           <div className="text-center">
-            <div>Current</div>
+            <div>{closeLabel}</div>
             <div className="mt-0.5 text-sm font-semibold normal-case tracking-normal text-stealth-100">{formatFlowCurrency(currentPrice)}</div>
           </div>
           <div className="text-right">
-            <div>Buy Cluster</div>
+            <div>Positive-Bar Cluster</div>
             <div className="mt-0.5 text-sm font-semibold normal-case tracking-normal text-emerald-300">{formatFlowCurrency(summary.buy_cluster_level)}</div>
           </div>
         </div>
@@ -614,19 +677,6 @@ function FlowFocusCard({ flow, events, ticker, currentPrice }: { flow: Instituti
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        <GroupBadge label="Net Flow" value={formatCompactCurrency(summary.net_flow_usd)} tone={summary.net_flow_usd >= 0 ? "buy" : "sell"} />
-        <GroupBadge label="Notional" value={formatCompactCurrency(summary.buy_notional_usd + summary.sell_notional_usd)} />
-        <GroupBadge label="Events" value={summary.event_count} />
-        <div className="rounded-xl border border-stealth-700 bg-stealth-900/70 px-2.5 py-1.5">
-          <div className="text-xs uppercase tracking-[0.18em] text-stealth-500">Confidence</div>
-          <div className="mt-0.5 flex items-center gap-2 text-sm font-semibold text-stealth-100">
-            <ConfidenceArc confidence={confidencePercent} signal={signal} />
-            <span>{formatFlowPercent(summary.confidence)}</span>
-          </div>
-        </div>
-      </div>
-
       {timeline.length > 0 ? <TimelineCluster timeline={timeline} /> : null}
 
     </div>
@@ -639,7 +689,7 @@ export default function StockAnalysis() {
 
   type ProjectionsPayload = {
     projections?: Record<string, StockProjection>;
-    historical?: { score_3m_ago?: number };
+    historical?: { score_3m_ago?: number; cutoff_date?: string | null };
     technical?: TechnicalData;
     options_flow?: OptionsFlowData;
     optionality?: OptionalityMetrics;
@@ -653,6 +703,9 @@ export default function StockAnalysis() {
     data_warnings?: DataWarning[];
     as_of_date?: string;
     created_at?: string;
+    computed_at?: string;
+    price_metadata?: ObservationMetadata;
+    intraday_metadata?: ObservationMetadata;
   };
 
   const projectionCacheRef = useRef<Map<string, { payload: ProjectionsPayload; fetchedAt: number }>>(new Map());
@@ -671,7 +724,6 @@ export default function StockAnalysis() {
   const [fundamentals, setFundamentals] = useState<FundamentalsPayload | null>(null);
   const [analystTarget, setAnalystTarget] = useState<number | null>(null);
   const [analystCount, setAnalystCount] = useState<number | null>(null);
-  const [historicalScore, setHistoricalScore] = useState<number | null>(null);
   const [news, setNews] = useState<NewsArticle[]>([]);
   const [dataWarnings, setDataWarnings] = useState<DataWarning[]>([]);
   const [institutionalFlow, setInstitutionalFlow] = useState<InstitutionalFlowPayload | null>(null);
@@ -681,34 +733,33 @@ export default function StockAnalysis() {
   const [error, setError] = useState<string | null>(null);
   const [projectionUnavailable, setProjectionUnavailable] = useState(false);
   const [methodologyOpen, setMethodologyOpen] = useState(false);
-  const [selectedHorizon, setSelectedHorizon] = useState<"T" | "3m" | "6m" | "12m">("12m");
-  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [selectedHorizon, setSelectedHorizon] = useState<ProjectionHorizon>("T");
+  const [analysisComputedAt, setAnalysisComputedAt] = useState<string | null>(null);
   const [dataAsOf, setDataAsOf] = useState<string | null>(null);
-  const [showSummaryDebug, setShowSummaryDebug] = useState(false);
+  const [priceMetadata, setPriceMetadata] = useState<ObservationMetadata | null>(null);
   const [fundView, setFundView] = useState<"1Y" | "5Y">("1Y");
   const [historyWindow, setHistoryWindow] = useState<HistoryWindow>("252d");
 
-  const applyProjectionsPayload = useCallback((payload: ProjectionsPayload | null, fetchTimestamp: string) => {
+  const applyProjectionsPayload = useCallback((payload: ProjectionsPayload | null) => {
     if (payload) {
       setProjections(payload.projections ?? {});
-      setHistoricalScore(payload.historical?.score_3m_ago ?? null);
       setTechnicalData(payload.technical || null);
       setOptionsFlow(payload.options_flow || null);
       setOptionalityMetrics(payload.optionality || null);
       setInstitutionalFlow(payload.institutional_flow || null);
       setPriceHistory(payload.price_history || []);
-      setIntradayHistory2h(payload.intraday_history_2h || []);
+      setIntradayHistory2h(payload.intraday_metadata?.stale ? [] : payload.intraday_history_2h || []);
       setFundamentals(payload.fundamentals || null);
       setAnalystTarget(payload.analyst_target ?? null);
       setAnalystCount(payload.analyst_count ?? null);
       setDataWarnings(payload.data_warnings || []);
-      setLastUpdated(fetchTimestamp);
-      setDataAsOf(payload.as_of_date || payload.created_at || null);
+      setAnalysisComputedAt(payload.computed_at || payload.created_at || null);
+      setDataAsOf(payload.price_metadata?.observed_at || payload.as_of_date || null);
+      setPriceMetadata(payload.price_metadata || null);
       return;
     }
 
     setProjections({});
-    setHistoricalScore(null);
     setTechnicalData(null);
     setOptionsFlow(null);
     setOptionalityMetrics(null);
@@ -719,8 +770,9 @@ export default function StockAnalysis() {
     setAnalystTarget(null);
     setAnalystCount(null);
     setDataWarnings([]);
-    setLastUpdated(null);
+    setAnalysisComputedAt(null);
     setDataAsOf(null);
+    setPriceMetadata(null);
   }, []);
 
   const runSearch = useCallback(async (
@@ -738,7 +790,6 @@ export default function StockAnalysis() {
     setError(null);
     setProjectionUnavailable(false);
 
-    const fetchTimestamp = new Date().toISOString();
     let projectionsPayload: ProjectionsPayload | null = null;
     const cacheKey = `${normalizedTicker}:${window}`;
     const now = Date.now();
@@ -767,7 +818,14 @@ export default function StockAnalysis() {
       }
     }
 
-    applyProjectionsPayload(projectionsPayload, fetchTimestamp);
+    if (projectionsPayload) {
+      const hasAllRequiredWindows = (["T", "3m", "6m", "12m"] as const).every(
+        (horizon) => Boolean(projectionsPayload?.projections?.[horizon])
+      );
+      setProjectionUnavailable(!hasAllRequiredWindows);
+    }
+
+    applyProjectionsPayload(projectionsPayload);
 
     // Fetch news filtered by ticker (server-side to avoid missing relevant articles)
     if (includeNews) {
@@ -776,15 +834,12 @@ export default function StockAnalysis() {
         setNews(cachedNews.data);
       } else {
         const tickerNews = await apiFetch<NewsArticle[]>(
-          `/news?hours=720&limit=50&symbol=${normalizedTicker}`
+          `/news?hours=720&limit=12&symbol=${normalizedTicker}`
         ).catch(() => null); // Last 30 days
         if (tickerNews) {
-          const sliced = tickerNews.slice(0, 10);
+          const sliced = tickerNews.slice(0, 6);
           setNews(sliced);
           newsCacheRef.current.set(normalizedTicker, { data: sliced, fetchedAt: now });
-          if (!projectionsPayload) {
-            setLastUpdated(fetchTimestamp);
-          }
         } else {
           setNews([]);
         }
@@ -867,7 +922,29 @@ export default function StockAnalysis() {
 
   const chartData = getChartData();
 
-  const isSelectedHorizon = (h: "T" | "3m" | "6m" | "12m") => selectedHorizon === h;
+  const horizonLabel = (h: ProjectionHorizon) => HORIZON_LABELS[h];
+
+  const formatObservedDate = (value: string) => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      timeZone: "UTC",
+    });
+  };
+
+  const formatComputedTime = (value: string) => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  };
 
   // Format relative time for timestamps
   const getRelativeTime = (isoString: string) => {
@@ -899,7 +976,11 @@ export default function StockAnalysis() {
     `${value.toFixed(digits)}%`;
 
   const formatDateLabel = (date: string) =>
-    new Date(date).toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+    new Date(date).toLocaleDateString("en-US", {
+      month: "short",
+      year: "2-digit",
+      timeZone: "UTC",
+    });
 
   const summaryInput = useMemo(
     () =>
@@ -918,17 +999,32 @@ export default function StockAnalysis() {
     () => (summaryInput ? buildHolisticSummary(summaryInput) : null),
     [summaryInput]
   );
+  const latestNewsPublishedAt = useMemo(() => {
+    const latestTimestamp = news.reduce((latest, article) => {
+      const timestamp = new Date(article.published_at).getTime();
+      return Number.isFinite(timestamp) ? Math.max(latest, timestamp) : latest;
+    }, 0);
+    return latestTimestamp > 0 ? new Date(latestTimestamp).toISOString() : null;
+  }, [news]);
+  const visibleDataWarnings = useMemo(
+    () => dataWarnings.filter((warning) => {
+      if (warning.type === "optionality_quality" || warning.type === "upstream_options_unavailable") return false;
+      const interval = warning.details?.interval;
+      return !(
+        (warning.type === "stale_series" || warning.type === "cache_refresh_failed")
+        && interval === "2h"
+      );
+    }),
+    [dataWarnings]
+  );
 
   return (
     <div className="page-shell-narrow page-stack">
       <div className="flex flex-col">
         <span className="page-kicker">Single Name Lens</span>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-4xl">Stock Analysis</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-stealth-300 md:text-[15px]">Analyze individual stocks across multiple time horizons with quantified confidence levels.</p>
-        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-stealth-300">
-          <span className="page-badge">Projection horizons T, 3M, 6M, 12M</span>
-          {searchTicker && <span className="page-badge">Tracking {searchTicker}</span>}
-        </div>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-stealth-300 md:text-[15px]">Compare trailing stock evidence across four lookback windows with quantified signal quality.</p>
+        {searchTicker && <div className="mt-4"><span className="page-badge">Tracking {searchTicker}</span></div>}
       </div>
       
       {/* Stock Search */}
@@ -973,7 +1069,7 @@ export default function StockAnalysis() {
 
       {projectionUnavailable && !error && (
         <div className="rounded-2xl border border-yellow-700/50 bg-yellow-900/20 p-4">
-          <p className="text-yellow-200">Projections unavailable for this asset.</p>
+          <p className="text-yellow-200">Trailing analysis unavailable for this asset.</p>
         </div>
       )}
 
@@ -985,65 +1081,46 @@ export default function StockAnalysis() {
             <section id="stock-current-read" aria-label="Current stock read" className="surface-card-strong scroll-mt-32 p-4 sm:p-6">
               {(() => {
                 const projectionNow = projections["T"];
-                const tradeTarget = projectionNow.trade_target ?? projectionNow.take_profit;
-                const rawUpper = projectionNow.raw_upper_reference ?? projectionNow.take_profit;
-                const hasSpeculativeGap = rawUpper > tradeTarget * 1.03;
-                const sanityFlagCount = projectionNow.sanity_flags?.length ?? 0;
+                const closeLabel = priceMetadata?.stale ? "Last Available Close" : "Latest Close";
+                const sourceLabel = priceMetadata?.source?.replace(/_/g, " ");
+                const provenanceLabel = [
+                  dataAsOf ? `Close ${formatObservedDate(dataAsOf)}` : null,
+                  sourceLabel,
+                  analysisComputedAt ? `computed ${formatComputedTime(analysisComputedAt)}` : null,
+                ].filter(Boolean).join(" · ");
 
                 return (
                   <>
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-1">
+                  <div className="mb-1 flex flex-wrap items-center gap-3">
                     <h2 className="text-xl font-bold">{chartData.ticker}</h2>
-                    {lastUpdated && (
-                      <span className="rounded-full bg-stealth-950/90 px-2 py-0.5 text-xs text-stealth-500">
-                        Updated {new Date(lastUpdated).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                    {provenanceLabel && (
+                      <span className="rounded-full bg-stealth-950/90 px-2 py-0.5 text-xs capitalize text-stealth-500">
+                        {provenanceLabel}
                       </span>
                     )}
                   </div>
                   <p className="text-stealth-400">{chartData.name}</p>
-                  {dataAsOf && (
-                    <p className="text-xs text-stealth-500 mt-1">
-                      Market data as of {new Date(dataAsOf).toLocaleString('en-US', { 
-                        month: 'short', 
-                        day: 'numeric', 
-                        hour: '2-digit', 
-                        minute: '2-digit' 
-                      })}
-                    </p>
-                  )}
                 </div>
                 <div className="text-right">
-                  <p className="text-xs text-stealth-400">Current Price</p>
+                  <p className="text-xs text-stealth-400">{closeLabel}</p>
                   <p className="text-2xl font-bold text-blue-400">${projectionNow.current_price.toFixed(2)}</p>
                 </div>
               </div>
 
-              {sanityFlagCount > 0 && (
-                <div className="mt-4 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
-                  <p className="font-semibold uppercase tracking-[0.14em] text-amber-300">Projection Sanity</p>
-                  <p className="mt-1">
-                    {projectionNow.target_regime
-                      ? `Regime: ${projectionNow.target_regime.replace(/_/g, " ")}. `
-                      : ""}
-                    {projectionNow.sanity_flags?.map((flag) => flag.message || flag.type.replace(/_/g, " ")).join("; ")}
-                  </p>
-                </div>
-              )}
-
-              <div className="mt-4 grid grid-cols-2 gap-3 text-xs sm:grid-cols-3 lg:grid-cols-6">
-                <div className="surface-card-muted p-3">
-                  <p className="text-stealth-400 mb-1" title="52-week low and high range">52W Range</p>
-                  <p className="font-semibold">
+              <dl className="mt-4 grid grid-cols-1 gap-px overflow-hidden rounded-xl border border-stealth-800 bg-stealth-800 text-xs sm:grid-cols-3">
+                <div className="bg-stealth-950/70 px-3 py-2.5">
+                  <dt className="text-stealth-400" title="52-week low and high range">52W Range</dt>
+                  <dd className="mt-0.5 font-semibold text-stealth-100">
                     {technicalData?.low_52w !== undefined && technicalData?.high_52w !== undefined
                       ? `$${Number(technicalData.low_52w).toFixed(2)} - $${Number(technicalData.high_52w).toFixed(2)}`
                       : "n/a"}
-                  </p>
+                  </dd>
                 </div>
-                <div className="surface-card-muted p-3">
-                  <p className="text-stealth-400 mb-1" title="Price momentum and moving averages">Trend</p>
-                  <p
+                <div className="bg-stealth-950/70 px-3 py-2.5">
+                  <dt className="text-stealth-400" title="Price momentum and exponential moving averages">Trend</dt>
+                  <dd
                     className={`font-semibold capitalize ${
                       technicalData?.trend === "uptrend"
                         ? "text-green-400"
@@ -1053,53 +1130,71 @@ export default function StockAnalysis() {
                     }`}
                   >
                     {technicalData?.trend ?? "n/a"}
-                  </p>
+                  </dd>
                 </div>
-                <div className="surface-card-muted p-3">
-                  <p className="text-stealth-400 mb-1" title="Confidence level in the composite projection (0-100)">Conviction</p>
-                  <p className="font-semibold text-purple-300">{Math.round(projectionNow.conviction)}%</p>
+                <div className="bg-stealth-950/70 px-3 py-2.5">
+                  <dt className="text-stealth-400">Return basis</dt>
+                  <dd className={`mt-0.5 font-semibold ${projectionNow.return_basis === "raw_close_fallback" ? "text-amber-300" : "text-stealth-100"}`}>
+                    {projectionNow.return_basis === "adjusted_close"
+                      ? "Adjusted close"
+                      : projectionNow.return_basis === "raw_close_fallback"
+                        ? "Raw-close fallback"
+                        : "Unavailable"}
+                  </dd>
                 </div>
-                <div className="surface-card-muted p-3">
-                  <p className="text-stealth-400 mb-1" title="Actionable target after sanity checks">Trade Target</p>
-                  <p className="font-semibold text-green-400">${tradeTarget.toFixed(2)}</p>
-                  {hasSpeculativeGap && (
-                    <p className="mt-1 text-xs text-amber-300">Raw ext ${rawUpper.toFixed(2)}</p>
-                  )}
-                </div>
-                <div className="surface-card-muted p-3">
-                  <p className="text-stealth-400 mb-1" title="Lower reference band derived from volatility">Lower Reference</p>
-                  <p className="font-semibold text-red-400">
-                    ${Math.max(0, projectionNow.stop_loss).toFixed(2)}
-                  </p>
-                </div>
-                <div className="surface-card-muted p-3">
-                  <p className="text-stealth-400 mb-1" title="Volatility and max drawdown">Risk</p>
-                  <p className="font-semibold text-stealth-100">
-                    Vol {projectionNow.volatility.toFixed(1)}% / DD {projectionNow.max_drawdown.toFixed(1)}%
-                  </p>
-                </div>
-              </div>
+              </dl>
                   </>
                 );
               })()}
             </section>
           )}
 
-          {/* Price Analysis & Conviction Grid */}
+          {/* Price analysis and signal-quality grid */}
           {projections[selectedHorizon] && (
-            <section id="stock-price-evidence" aria-label="Price evidence and conviction" className="scroll-mt-32 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <section id="stock-price-evidence" aria-label="Price evidence and signal quality" className="scroll-mt-32">
+              <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h2 className="text-base font-semibold text-stealth-100">{horizonLabel(selectedHorizon)} evidence</h2>
+                  <p className="mt-0.5 text-xs text-stealth-400">
+                    {projections[selectedHorizon].lookback_days ?? "—"} completed trading sessions
+                  </p>
+                </div>
+                <div
+                  className="inline-flex w-fit items-center gap-1 rounded-xl border border-stealth-700 bg-stealth-900/70 p-1"
+                  role="group"
+                  aria-label="Trailing analysis window"
+                >
+                  {HORIZON_OPTIONS.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      aria-pressed={selectedHorizon === option.value}
+                      onClick={() => setSelectedHorizon(option.value)}
+                      className={`min-h-11 rounded-lg px-3 text-xs font-semibold transition-colors ${
+                        selectedHorizon === option.value
+                          ? "bg-stealth-700 text-white"
+                          : "text-stealth-300 hover:bg-stealth-800 hover:text-white"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               {(() => {
                 const selectedProjection = projections[selectedHorizon];
-                const tradeTarget = selectedProjection.trade_target ?? selectedProjection.take_profit;
+                const upperReference = selectedProjection.trade_target ?? selectedProjection.take_profit;
 
                 return (
               <PriceAnalysisChart
-                currentPrice={selectedProjection.current_price}
-                takeProfit={tradeTarget}
+                latestClose={selectedProjection.current_price}
+                closeLabel={priceMetadata?.stale ? "Last Available Close" : "Latest Close"}
+                upperReference={upperReference}
                 rawUpperReference={selectedProjection.raw_upper_reference ?? selectedProjection.take_profit}
-                stopLoss={selectedProjection.stop_loss}
-                trailingReturn={selectedProjection.trailing_return_pct}
-                horizon={selectedHorizon.toUpperCase()}
+                lowerReference={selectedProjection.stop_loss}
+                trailingReturn={selectedProjection.trailing_price_return_pct ?? selectedProjection.trailing_return_pct}
+                horizon={horizonLabel(selectedHorizon)}
                 analystTarget={analystTarget}
                 analystCount={analystCount}
                 targetRegime={selectedProjection.target_regime}
@@ -1108,11 +1203,12 @@ export default function StockAnalysis() {
                 );
               })()}
               <ConvictionSnapshot
-                conviction={projections[selectedHorizon].conviction}
+                signalQuality={projections[selectedHorizon].conviction}
                 score={projections[selectedHorizon].score_total}
                 volatility={projections[selectedHorizon].volatility}
-                horizon={selectedHorizon.toUpperCase()}
+                horizon={horizonLabel(selectedHorizon)}
               />
+              </div>
             </section>
           )}
 
@@ -1128,23 +1224,30 @@ export default function StockAnalysis() {
               historyWindow={historyWindow}
               onHistoryWindowChange={setHistoryWindow}
               hideOptionsContext={true}
+              closeLabel={priceMetadata?.stale ? "Last Available Close" : "Latest Close"}
             />
           )}
 
           {projections["T"] && (
             <div className="grid grid-cols-1 gap-4 mb-6 xl:grid-cols-2">
               <div className="surface-card-strong p-4 sm:p-5">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-sm sm:text-base font-semibold text-stealth-100">Optionality and Structure</h3>
-                    <p className="mt-1 text-xs text-stealth-400">Consolidated options mispricing with resistance and support context.</p>
-                  </div>
-                  <span className="rounded-full border border-stealth-700 bg-stealth-900/70 px-2.5 py-1 text-xs uppercase tracking-[0.18em] text-stealth-300">{searchTicker}</span>
+                <div>
+                  <h3 className="text-sm sm:text-base font-semibold text-stealth-100">Options and Structure</h3>
+                  <p className="mt-1 text-xs capitalize text-stealth-400">
+                    {[
+                      optionsFlow?.expiry ? `expiry ${formatObservedDate(optionsFlow.expiry)}` : null,
+                      optionsFlow?.quote_source || optionsFlow?.data_source,
+                      optionsFlow?.observed_at || optionsFlow?.as_of
+                        ? `observed ${formatObservedDate(optionsFlow.observed_at || optionsFlow.as_of)}`
+                        : null,
+                    ].filter(Boolean).join(" · ") || "Options chain unavailable"}
+                  </p>
                 </div>
 
                 <div className="mt-3">
                   <OptionsStructureMap
                     currentPrice={projections["T"].current_price}
+                    priceLabel={priceMetadata?.stale ? "Last available close" : "Latest close"}
                     callWalls={optionsFlow?.call_walls ?? []}
                     putWalls={optionsFlow?.put_walls ?? []}
                     sma50={technicalData?.sma_50 ?? null}
@@ -1167,12 +1270,13 @@ export default function StockAnalysis() {
                   events={institutionalFlow.event_history ?? []}
                   ticker={searchTicker}
                   currentPrice={projections["T"]?.current_price ?? null}
+                  closeLabel={priceMetadata?.stale ? "Last Available Close" : "Latest Close"}
                 />
               ) : (
                 <div className="surface-card-strong p-4 sm:p-5">
-                  <div className="text-xs uppercase tracking-[0.2em] text-stealth-500">Institutional Flow Focus</div>
+                  <div className="text-xs uppercase tracking-[0.2em] text-stealth-500">High-Volume Bar Proxy</div>
                   <div className="mt-2 rounded-xl border border-dashed border-stealth-700 bg-stealth-900/35 px-3 py-2 text-xs text-stealth-400">
-                    Institutional flow events are not available for this symbol.
+                    High-volume proxy events are unavailable for this symbol.
                   </div>
                 </div>
               )}
@@ -1190,7 +1294,7 @@ export default function StockAnalysis() {
             const peSeries = (isAnnual ? fundamentals.pe_ratio_annual?.series : fundamentals.pe_ratio?.series) || [];
             const yoySeries = (isAnnual ? fundamentals.revenue_yoy_annual?.series : fundamentals.revenue_yoy?.series) || [];
 
-            // Latest values + QoQ deltas
+            // Canonical TTM/current snapshot with a cautious legacy fallback.
             const latest = (series: FundamentalPoint[]) =>
               series.length > 0 ? series[series.length - 1].value : null;
             const qoqDelta = (series: FundamentalPoint[]) => {
@@ -1201,13 +1305,79 @@ export default function StockAnalysis() {
               return ((cur - prev) / Math.abs(prev)) * 100;
             };
 
+            const snapshot = fundamentals.snapshot;
+            const snapshotValue = (metric: FundamentalSnapshotMetric | undefined, fallback: FundamentalPoint[]) =>
+              metric ? metric.value : latest(fallback);
+            const snapshotDelta = (metric: FundamentalSnapshotMetric | undefined, fallback: FundamentalPoint[]) =>
+              metric ? metric.change_pct ?? null : qoqDelta(fallback);
+            const ttmPeriodEnds = Array.from(new Set([
+              snapshot?.eps_ttm?.period_end,
+              snapshot?.roe_ttm?.period_end,
+              snapshot?.free_cash_flow_ttm?.period_end,
+              snapshot?.revenue_ttm?.period_end,
+            ].filter((periodEnd): periodEnd is string => Boolean(periodEnd))));
+            const snapshotPeriodLabel = ttmPeriodEnds.length === 1
+              ? `TTM through ${formatObservedDate(ttmPeriodEnds[0])}`
+              : ttmPeriodEnds.length > 1
+                ? "TTM mixed reporting dates"
+                : `Latest ${isAnnual ? "annual" : "quarterly"} values`;
+            const priceMetricPeriodEnds = Array.from(new Set([
+              snapshot?.pe_ratio?.period_end,
+              snapshot?.market_cap?.period_end,
+            ].filter((periodEnd): periodEnd is string => Boolean(periodEnd))));
+            const hasSnapshotPriceMetrics = Boolean(snapshot?.pe_ratio || snapshot?.market_cap);
+            const priceMetricPeriodLabel = !hasSnapshotPriceMetrics
+              ? null
+              : priceMetricPeriodEnds.length === 1
+                ? `price metrics at ${formatObservedDate(priceMetricPeriodEnds[0])} close`
+                : priceMetricPeriodEnds.length > 1
+                  ? "price metrics at mixed close dates"
+                  : dataAsOf
+                    ? `price metrics at ${formatObservedDate(dataAsOf)} close`
+                    : "price metrics at latest available close";
             const snapMetrics = [
-              { label: "EPS", value: latest(epsSeries), fmt: (v: number) => formatDollars(v, 2), delta: qoqDelta(epsSeries) },
-              { label: "ROE", value: latest(roeSeries), fmt: (v: number) => formatPercent(v, 1), delta: qoqDelta(roeSeries) },
-              { label: "FCF", value: latest(fcfSeries), fmt: (v: number) => `$${formatCompact(v, 1)}`, delta: qoqDelta(fcfSeries) },
-              { label: "Rev", value: latest(revSeries), fmt: (v: number) => `$${formatCompact(v, 1)}`, delta: qoqDelta(revSeries) },
-              { label: "P/E", value: latest(peSeries), fmt: (v: number) => v.toFixed(1), delta: qoqDelta(peSeries) },
-              { label: "MCap", value: latest(mcapSeries), fmt: (v: number) => `$${formatCompact(v, 1)}`, delta: qoqDelta(mcapSeries) },
+              {
+                label: snapshot?.eps_ttm ? "EPS TTM" : "EPS",
+                value: snapshotValue(snapshot?.eps_ttm, epsSeries),
+                fmt: (value: number) => formatDollars(value, 2),
+                delta: snapshotDelta(snapshot?.eps_ttm, epsSeries),
+                deltaLabel: snapshot?.eps_ttm ? "vs prior TTM" : isAnnual ? "YoY" : "QoQ",
+              },
+              {
+                label: snapshot?.roe_ttm ? "ROE TTM" : "ROE",
+                value: snapshotValue(snapshot?.roe_ttm, roeSeries),
+                fmt: (value: number) => formatPercent(value, 1),
+                delta: snapshotDelta(snapshot?.roe_ttm, roeSeries),
+                deltaLabel: snapshot?.roe_ttm ? "vs prior TTM" : isAnnual ? "YoY" : "QoQ",
+              },
+              {
+                label: snapshot?.free_cash_flow_ttm ? "FCF TTM" : "FCF",
+                value: snapshotValue(snapshot?.free_cash_flow_ttm, fcfSeries),
+                fmt: (value: number) => `$${formatCompact(value, 1)}`,
+                delta: snapshotDelta(snapshot?.free_cash_flow_ttm, fcfSeries),
+                deltaLabel: snapshot?.free_cash_flow_ttm ? "vs prior TTM" : isAnnual ? "YoY" : "QoQ",
+              },
+              {
+                label: snapshot?.revenue_ttm ? "Rev TTM" : "Rev",
+                value: snapshotValue(snapshot?.revenue_ttm, revSeries),
+                fmt: (value: number) => `$${formatCompact(value, 1)}`,
+                delta: snapshotDelta(snapshot?.revenue_ttm, revSeries),
+                deltaLabel: snapshot?.revenue_ttm ? "vs prior TTM" : isAnnual ? "YoY" : "QoQ",
+              },
+              {
+                label: snapshot?.pe_ratio ? "P/E TTM" : "P/E",
+                value: snapshotValue(snapshot?.pe_ratio, peSeries),
+                fmt: (value: number) => value.toFixed(1),
+                delta: snapshotDelta(snapshot?.pe_ratio, peSeries),
+                deltaLabel: snapshot?.pe_ratio ? "vs prior period" : isAnnual ? "YoY" : "QoQ",
+              },
+              {
+                label: "MCap",
+                value: snapshotValue(snapshot?.market_cap, mcapSeries),
+                fmt: (value: number) => `$${formatCompact(value, 1)}`,
+                delta: snapshotDelta(snapshot?.market_cap, mcapSeries),
+                deltaLabel: snapshot?.market_cap ? "vs prior period" : isAnnual ? "YoY" : "QoQ",
+              },
             ];
 
             // Merge series by date for dual-axis charts
@@ -1271,7 +1441,7 @@ export default function StockAnalysis() {
                       </div>
                       {m.delta !== null && (
                         <div className={`mt-0.5 text-xs ${m.delta >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                          {m.delta >= 0 ? "▲" : "▼"} {Math.abs(m.delta).toFixed(1)}% {isAnnual ? "YoY" : "QoQ"}
+                          {m.delta >= 0 ? "▲" : "▼"} {Math.abs(m.delta).toFixed(1)}% {m.deltaLabel}
                         </div>
                       )}
                     </div>
@@ -1279,7 +1449,7 @@ export default function StockAnalysis() {
                 </div>
 
                 <div className="mb-4 text-xs text-stealth-400">
-                  Source: Yahoo Finance filings via yfinance. Cadence: {isAnnual ? "annual" : "quarterly"}.
+                  {[snapshotPeriodLabel, priceMetricPeriodLabel, "Yahoo Finance via yfinance"].filter(Boolean).join(" · ")}
                 </div>
 
                 {/* ── Dual-Axis Charts ── */}
@@ -1478,376 +1648,69 @@ export default function StockAnalysis() {
           {/* Holistic Summary */}
           {holisticSummary && (
             <div className="surface-card-strong p-4 sm:p-6">
-              <div className="flex items-center justify-between mb-3">
+              <div className="mb-3 flex items-center justify-between">
                 <h3 className="text-base sm:text-lg font-semibold">Holistic Summary</h3>
                 <span className="text-xs sm:text-xs text-stealth-200 bg-stealth-900/70 border border-stealth-700 px-2 py-1 rounded-full">
                   {holisticSummary.regime}
                 </span>
               </div>
-              <p className="text-sm text-stealth-200 leading-relaxed mb-4">
-                {holisticSummary.narrative}
-              </p>
-              <div className="space-y-2 text-sm text-stealth-400">
+              <div className="grid overflow-hidden rounded-xl border border-stealth-800 bg-stealth-800 sm:grid-cols-3 sm:gap-px">
                 {holisticSummary.bullets.map((bullet) => (
-                  <div key={bullet.axis}>
-                    <span className="text-stealth-500">{bullet.axis}:</span> {bullet.text}
+                  <div key={bullet.axis} className="border-b border-stealth-800 bg-stealth-950/65 px-3 py-2.5 last:border-b-0 sm:border-b-0">
+                    <div className="text-xs font-semibold text-stealth-300">{bullet.axis}</div>
+                    <div className="mt-1 text-xs leading-5 text-stealth-400">{bullet.text}</div>
                   </div>
                 ))}
               </div>
-              <div className="mt-3 text-sm text-stealth-400">
-                <span className="text-stealth-500">Watch:</span> {holisticSummary.watch}
+              <div className="mt-3 flex gap-2 text-sm text-stealth-300">
+                <span className="shrink-0 font-semibold text-stealth-500">Watch</span>
+                <span>{holisticSummary.watch}</span>
               </div>
-              {holisticSummary.debug && (
-                <button
-                  type="button"
-                  aria-expanded={showSummaryDebug}
-                  aria-controls="stock-summary-debug"
-                  onClick={() => setShowSummaryDebug((prev) => !prev)}
-                  className="mt-3 min-h-11 rounded-lg px-3 text-xs font-semibold text-blue-300 transition hover:bg-stealth-800 hover:text-blue-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                >
-                  {showSummaryDebug ? "Hide debug" : "Show debug"}
-                </button>
-              )}
-              {showSummaryDebug && holisticSummary.debug && (
-                <div id="stock-summary-debug" className="mt-3 secondary-card p-3 text-xs text-stealth-400 space-y-2">
-                  {[
-                    holisticSummary.debug.technical,
-                    holisticSummary.debug.fundamental,
-                    holisticSummary.debug.options,
-                  ].map((axis) => (
-                    <div key={axis.label}>
-                      <span className="text-stealth-500">{axis.label}:</span>{" "}
-                      {axis.bias} · score {axis.score.toFixed(1)} · confidence {axis.confidence.toFixed(1)} · rules{" "}
-                      {Array.isArray(axis.debug?.rules) ? axis.debug?.rules.join(", ") : "n/a"}
-                    </div>
-                  ))}
-                  <div>
-                    <span className="text-stealth-500">Regime:</span>{" "}
-                    {holisticSummary.debug.regime_matrix.key} ·{" "}
-                    {holisticSummary.debug.regime_matrix.rationale.join("; ")}
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
-          {/* Interactive Chart */}
+          {/* Independent trailing-window comparison */}
           <div className="surface-card-strong p-4 sm:p-6">
-            <h3 className="text-base sm:text-lg font-semibold mb-4">Score Trends</h3>
-            <div className="secondary-card p-2 sm:p-4 mb-2">
-              <div className="w-full" style={{ aspectRatio: '3 / 1', maxHeight: '240px' }}>
-                <svg width="100%" height="100%" viewBox="0 0 1000 300" preserveAspectRatio="xMidYMid meet">
-                {/* Grid lines */}
-                {[0, 25, 50, 75, 100].map((y) => (
-                  <g key={y}>
-                    <line x1="50" y1={260 - (y * 2.4)} x2="960" y2={260 - (y * 2.4)} stroke={CHART_NEUTRAL.grid} strokeWidth="1" strokeDasharray="4 4" />
-                    <text x="40" y={264 - (y * 2.4)} fill={CHART_NEUTRAL.tick} fontSize="12" textAnchor="end">{y}</text>
-                  </g>
-                ))}
-                
-                {/* X-axis labels - simplified */}
-                <text x="150" y="285" fill={CHART_NEUTRAL.tick} fontSize="12" textAnchor="middle" fontWeight="500">-3M</text>
-                <text x="375" y="285" fill={CHART_NEUTRAL.tick} fontSize="12" textAnchor="middle" fontWeight="500">T</text>
-                <text x="575" y="285" fill={CHART_NEUTRAL.tick} fontSize="12" textAnchor="middle" fontWeight="500">3M</text>
-                <text x="750" y="285" fill={CHART_NEUTRAL.tick} fontSize="12" textAnchor="middle" fontWeight="500">6M</text>
-                <text x="925" y="285" fill={CHART_NEUTRAL.tick} fontSize="12" textAnchor="middle" fontWeight="500">12M</text>
-                
-                {(() => {
-                  const color = getFamilyColor("equity");
-                  
-                  // Calculate points - -3M is shown only when history exists
-                  const hasHistory = historicalScore !== null;
-                  const histScore = historicalScore ?? null;
-                  
-                  const xHist = 150;   // -3M
-                  const yHist = hasHistory ? 260 - ((histScore as number) * 2.4) : 0;
-                  const x0 = 375;      // Now (T)
-                  const y0 = 260 - (chartData.scores["T"] * 2.4);
-                  const x1 = 575;      // +3M
-                  const y1 = 260 - (chartData.scores["3m"] * 2.4);
-                  const x2 = 750;      // +6M
-                  const y2 = 260 - (chartData.scores["6m"] * 2.4);
-                  const x3 = 925;      // +12M
-                  const y3 = 260 - (chartData.scores["12m"] * 2.4);
-                  
-                  // Calculate uncertainty cone (only for future projections starting from T)
-                  const initialSigma = 2;
-                  const sigma3m = 3;
-                  const sigma6m = Math.abs(chartData.scores["6m"] - chartData.scores["3m"]) * 0.3 + 6;
-                  const sigma12m = Math.abs(chartData.scores["12m"] - chartData.scores["6m"]) * 0.4 + 10;
-                  
-                  const upper0 = y0 - (initialSigma * 2.4);
-                  const lower0 = y0 + (initialSigma * 2.4);
-                  const upper1 = y1 - (sigma3m * 2.4);
-                  const lower1 = y1 + (sigma3m * 2.4);
-                  const upper2 = y2 - (sigma6m * 2.4);
-                  const lower2 = y2 + (sigma6m * 2.4);
-                  const upper3 = y3 - (sigma12m * 2.4);
-                  const lower3 = y3 + (sigma12m * 2.4);
-                  
-                  // Historical path (solid, no cone, -3M to T)
-                  const historicalPath = hasHistory
-                    ? `
-                      M ${xHist} ${yHist}
-                      Q ${(xHist + x0) / 2} ${(yHist + y0) / 2}, ${x0} ${y0}
-                    `
-                    : null;
-                  
-                  // Future path - full (from T through all horizons)
-                  // Path from T to 6M (solid, normal opacity)
-                  const pathToSixMonth = `
-                    M ${x0} ${y0}
-                    L ${x1} ${y1}
-                    Q ${(x1 + x2) / 2} ${(y1 + y2) / 2}, ${x2} ${y2}
-                  `;
-                  
-                  // Path from 6M to 12M (fading segment)
-                  const pathSixToTwelve = `
-                    M ${x2} ${y2}
-                    Q ${(x2 + x3) / 2} ${(y2 + y3) / 2}, ${x3} ${y3}
-                  `;
-                  
-                  const conePathUpper = `
-                    M ${x0} ${upper0}
-                    L ${x1} ${upper1}
-                    Q ${(x1 + x2) / 2} ${(upper1 + upper2) / 2}, ${x2} ${upper2}
-                    Q ${(x2 + x3) / 2} ${(upper2 + upper3) / 2}, ${x3} ${upper3}
-                  `;
-                  
-                  const conePathLower = `
-                    M ${x0} ${lower0}
-                    L ${x1} ${lower1}
-                    Q ${(x1 + x2) / 2} ${(lower1 + lower2) / 2}, ${x2} ${lower2}
-                    Q ${(x2 + x3) / 2} ${(lower2 + lower3) / 2}, ${x3} ${lower3}
-                  `;
-                  
-                  return (
-                    <g>
-                      <defs>
-                        <linearGradient id="stockGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                          <stop offset="0%" stopColor={color} stopOpacity="0.02" />
-                          <stop offset="40%" stopColor={color} stopOpacity="0.08" />
-                          <stop offset="100%" stopColor={color} stopOpacity="0.15" />
-                        </linearGradient>
-                        <linearGradient id="lineFadeGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                          <stop offset="0%" stopColor={color} stopOpacity="0.9" />
-                          <stop offset="100%" stopColor={color} stopOpacity="0.15" />
-                        </linearGradient>
-                      </defs>
-                      
-                      {/* Historical line (solid, brighter, -3M to T) */}
-                      {historicalPath && (
-                        <path 
-                          d={historicalPath} 
-                          stroke={color} 
-                          strokeWidth="3" 
-                          fill="none" 
-                          opacity={0.9}
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      )}
-                      
-                      {/* Uncertainty cone */}
-                      <path
-                        d={`${conePathUpper} L ${x3} ${lower3} Q ${(x2 + x3) / 2} ${(lower2 + lower3) / 2}, ${x2} ${lower2} Q ${(x1 + x2) / 2} ${(lower1 + lower2) / 2}, ${x1} ${lower1} L ${x0} ${lower0} Z`}
-                        fill="url(#stockGradient)"
-                        opacity={0.5}
+            <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
+              <h3 className="text-base font-semibold sm:text-lg">Trailing Window Comparison</h3>
+              <span className="text-xs text-stealth-500">Independent lookbacks · 0–100</span>
+            </div>
+            <div
+              className="relative grid h-48 grid-cols-4 items-end gap-3 border-b border-stealth-700 px-3 pt-5 sm:gap-6 sm:px-8"
+              role="img"
+              aria-label={`Trailing scores: 21 days ${Math.round(chartData.scores.T)}, 3 months ${Math.round(chartData.scores["3m"])}, 6 months ${Math.round(chartData.scores["6m"])}, 12 months ${Math.round(chartData.scores["12m"])}`}
+            >
+              <div className="pointer-events-none absolute inset-x-3 bottom-1/2 border-t border-dashed border-stealth-700 sm:inset-x-8" aria-hidden="true" />
+              {HORIZON_OPTIONS.map((option) => {
+                const score = Math.max(0, Math.min(100, chartData.scores[option.value]));
+                const active = selectedHorizon === option.value;
+                return (
+                  <div key={option.value} className="relative z-10 flex h-full flex-col items-center justify-end gap-1.5">
+                    <span className={`text-sm font-semibold tabular-nums ${active ? "text-white" : "text-stealth-300"}`}>
+                      {Math.round(score)}
+                    </span>
+                    <div className="flex h-32 w-full max-w-16 items-end rounded-t-lg bg-stealth-950/70">
+                      <div
+                        className={`w-full rounded-t-lg transition-[height] ${active ? "bg-sky-400" : "bg-sky-700/65"}`}
+                        style={{ height: `${score}%` }}
                       />
-                      
-                      {/* Cone boundaries */}
-                      <path 
-                        d={conePathUpper}
-                        stroke={color}
-                        strokeWidth="1"
-                        fill="none"
-                        opacity={0.3}
-                        strokeDasharray="3 3"
-                      />
-                      <path 
-                        d={conePathLower}
-                        stroke={color}
-                        strokeWidth="1"
-                        fill="none"
-                        opacity={0.3}
-                        strokeDasharray="3 3"
-                      />
-                      
-                      {/* Future projection line T to 6M (normal opacity) */}
-                      <path 
-                        d={pathToSixMonth} 
-                        stroke={color} 
-                        strokeWidth="3.5" 
-                        fill="none" 
-                        opacity={0.8}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                      
-                      {/* Future projection line 6M to 12M (fading into cone) */}
-                      <path 
-                        d={pathSixToTwelve} 
-                        stroke="url(#lineFadeGradient)" 
-                        strokeWidth="3.5" 
-                        fill="none" 
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                      
-                      {/* Vertical "Now" line */}
-                      <line 
-                        x1={x0} 
-                        y1={20} 
-                        x2={x0} 
-                        y2={280} 
-                        stroke={getFamilyColor("benchmark")} 
-                        strokeWidth="2" 
-                        strokeDasharray="5 5"
-                        opacity={0.5}
-                      />
-                      
-                      {/* Points - 5 data points */}
-                      {hasHistory && (
-                        <circle cx={xHist} cy={yHist} r="4" fill={color} opacity={0.7} />
-                      )}
-                      <circle cx={x0} cy={y0} r="6" fill={color} opacity={0.9} stroke={getFamilyColor("benchmark")} strokeWidth="2" />
-                      <circle cx={x1} cy={y1} r="5" fill={color} opacity={0.8} />
-                      <circle cx={x2} cy={y2} r="5" fill={color} opacity={0.6} />
-                      <circle cx={x3} cy={y3} r="5" fill={color} opacity={0.3} />
-                    </g>
-                  );
-                })()}
-              </svg>
-              </div>
+                    </div>
+                    <span className={`text-xs font-semibold ${active ? "text-sky-300" : "text-stealth-500"}`}>{option.label}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
-          {/* Score Breakdown Tables - Conditional based on selected horizon */}
-          <section id="stock-outlook" aria-label="Projection outlook" className="scroll-mt-32 space-y-6">
-            {selectedHorizon === "T" && projections["3m"] && (
-              <div className="surface-card-strong p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold">Current Position</h3>
-                  
-                  {/* Horizon Selector */}
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      aria-pressed={isSelectedHorizon("T")}
-                      onClick={() => setSelectedHorizon("T")}
-                      className={`min-h-11 rounded px-4 py-2 text-xs font-medium transition sm:text-sm ${
-                        isSelectedHorizon("T")
-                          ? "bg-stealth-700 text-white"
-                          : "bg-stealth-800 text-stealth-300 hover:bg-stealth-700"
-                      }`}
-                    >
-                      Now
-                    </button>
-                    <button
-                      type="button"
-                      aria-pressed={isSelectedHorizon("3m")}
-                      onClick={() => setSelectedHorizon("3m")}
-                      className={`min-h-11 rounded px-4 py-2 text-xs font-medium transition sm:text-sm ${
-                        isSelectedHorizon("3m")
-                          ? "bg-stealth-700 text-white"
-                          : "bg-stealth-800 text-stealth-300 hover:bg-stealth-700"
-                      }`}
-                    >
-                      T+3M
-                    </button>
-                    <button
-                      type="button"
-                      aria-pressed={isSelectedHorizon("6m")}
-                      onClick={() => setSelectedHorizon("6m")}
-                      className={`min-h-11 rounded px-4 py-2 text-xs font-medium transition sm:text-sm ${
-                        isSelectedHorizon("6m")
-                          ? "bg-stealth-700 text-white"
-                          : "bg-stealth-800 text-stealth-300 hover:bg-stealth-700"
-                      }`}
-                    >
-                      T+6M
-                    </button>
-                    <button
-                      type="button"
-                      aria-pressed={isSelectedHorizon("12m")}
-                      onClick={() => setSelectedHorizon("12m")}
-                      className={`min-h-11 rounded px-4 py-2 text-xs font-medium transition sm:text-sm ${
-                        isSelectedHorizon("12m")
-                          ? "bg-stealth-700 text-white"
-                          : "bg-stealth-800 text-stealth-300 hover:bg-stealth-700"
-                      }`}
-                    >
-                      T+12M
-                    </button>
-                  </div>
-                </div>
-                <div className="text-stealth-400 text-xs sm:text-sm">
-                  Current score reflects real-time positioning. Select a future horizon to view the outlook.
-                </div>
-              </div>
-            )}
-            
+          {/* Score breakdown tables by trailing lookback */}
+          <section id="stock-outlook" aria-label="Trailing window analysis" className="scroll-mt-32 space-y-6">
             {selectedHorizon !== "T" && (() => {
               const projection = projections[selectedHorizon];
               if (!projection) return null;
 
               return (
                 <div key={selectedHorizon} className="surface-card-strong p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-semibold">{selectedHorizon.toUpperCase()} Outlook</h3>
-                    
-                    {/* Horizon Selector */}
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        aria-pressed={isSelectedHorizon("T")}
-                        onClick={() => setSelectedHorizon("T")}
-                        className={`min-h-11 rounded px-4 py-2 text-xs font-medium transition sm:text-sm ${
-                          isSelectedHorizon("T")
-                            ? "bg-stealth-700 text-white"
-                            : "bg-stealth-800 text-stealth-300 hover:bg-stealth-700"
-                        }`}
-                      >
-                        Now
-                      </button>
-                      <button
-                        type="button"
-                        aria-pressed={isSelectedHorizon("3m")}
-                        onClick={() => setSelectedHorizon("3m")}
-                        className={`min-h-11 rounded px-4 py-2 text-xs font-medium transition sm:text-sm ${
-                          isSelectedHorizon("3m")
-                            ? "bg-stealth-700 text-white"
-                            : "bg-stealth-800 text-stealth-300 hover:bg-stealth-700"
-                        }`}
-                      >
-                        T+3M
-                      </button>
-                      <button
-                        type="button"
-                        aria-pressed={isSelectedHorizon("6m")}
-                        onClick={() => setSelectedHorizon("6m")}
-                        className={`min-h-11 rounded px-4 py-2 text-xs font-medium transition sm:text-sm ${
-                          isSelectedHorizon("6m")
-                            ? "bg-stealth-700 text-white"
-                            : "bg-stealth-800 text-stealth-300 hover:bg-stealth-700"
-                        }`}
-                      >
-                        T+6M
-                      </button>
-                      <button
-                        type="button"
-                        aria-pressed={isSelectedHorizon("12m")}
-                        onClick={() => setSelectedHorizon("12m")}
-                        className={`min-h-11 rounded px-4 py-2 text-xs font-medium transition sm:text-sm ${
-                          isSelectedHorizon("12m")
-                            ? "bg-stealth-700 text-white"
-                            : "bg-stealth-800 text-stealth-300 hover:bg-stealth-700"
-                        }`}
-                      >
-                        T+12M
-                      </button>
-                    </div>
-                  </div>
+                  <h3 className="mb-4 text-lg font-semibold">{horizonLabel(selectedHorizon)} Component Read</h3>
                   
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-4">
                     <div className="secondary-card p-4">
@@ -1855,12 +1718,12 @@ export default function StockAnalysis() {
                       <div className="text-2xl sm:text-3xl font-bold text-blue-400">{Math.round(projection.score_total)}</div>
                     </div>
                     <div className="secondary-card p-4">
-                      <div className="text-xs sm:text-sm text-stealth-400 mb-1">Score Change</div>
+                      <div className="text-xs sm:text-sm text-stealth-400 mb-1">vs 21D</div>
                       <div className={`text-2xl sm:text-3xl font-bold ${
-                        projection.score_total >= projections["3m"].score_total ? 'text-green-400' : 'text-red-400'
+                        projection.score_total >= projections["T"].score_total ? 'text-green-400' : 'text-red-400'
                       }`}>
-                        {projection.score_total >= projections["3m"].score_total ? '+' : ''}
-                        {(projection.score_total - projections["3m"].score_total).toFixed(1)}
+                        {projection.score_total >= projections["T"].score_total ? '+' : ''}
+                        {(projection.score_total - projections["T"].score_total).toFixed(1)}
                       </div>
                     </div>
                   </div>
@@ -1926,28 +1789,10 @@ export default function StockAnalysis() {
             })()}
           </section>
 
-          {/* Understanding the Analysis */}
-          <div className="mt-6 bg-blue-900/20 border border-blue-700/50 rounded-lg p-3 sm:p-4">
-            <h3 className="text-xs sm:text-sm font-semibold text-blue-200 mb-2">Understanding the Analysis</h3>
-            <div className="text-xs text-blue-200/80 space-y-1 sm:space-y-2 leading-relaxed">
-              <p><strong>Score (0-100):</strong> Higher scores indicate stronger technical outlook.</p>
-              <p><strong>Score Change:</strong> Shows whether the outlook is improving (+) or deteriorating (-) over time.</p>
-              <p><strong>Uncertainty Cone:</strong> Tighter cones = higher confidence. Wider cones = greater uncertainty.</p>
-              <p><strong>Conviction:</strong> Confidence level in the analysis (0-100). Based on signal alignment, volatility, and score strength.</p>
-              <p><strong>Reference Bands:</strong> Upper and lower bands derived from volatility-adjusted returns and risk metrics.</p>
-            </div>
-          </div>
-
-        {dataWarnings.length > 0 && (
-          <div className="mt-6 bg-yellow-900/20 border border-yellow-700/50 rounded-lg p-3 sm:p-4">
-            <p className="text-xs sm:text-sm text-yellow-200/90 leading-relaxed">
-              <strong>Data Warning:</strong> Recent analysis snapshots contain data quality flags that may reduce accuracy.
-            </p>
-            {dataWarnings.length > 0 && (
-              <p className="mt-1 text-xs text-yellow-200/80">
-                {dataWarnings.map(w => w.type.replace(/_/g, " ")).join(", ")}
-              </p>
-            )}
+        {visibleDataWarnings.length > 0 && (
+          <div className="mt-6 flex flex-wrap gap-x-2 gap-y-1 rounded-lg border border-yellow-700/50 bg-yellow-900/20 p-3 text-xs text-yellow-200/90">
+            <strong>Data quality</strong>
+            <span>{visibleDataWarnings.map((warning) => warning.type.replace(/_/g, " ")).join(" · ")}</span>
           </div>
         )}
 
@@ -1972,7 +1817,7 @@ export default function StockAnalysis() {
                 <div className="px-6 pb-6 text-sm text-stealth-200 space-y-4">
                 <p>
                   Stock analysis uses the same transparent scoring methodology as sector analysis, 
-                  evaluating performance across 3-month, 6-month, and 12-month lookback periods.
+                  evaluating performance across 21-day, 3-month, 6-month, and 12-month lookback periods.
                 </p>
                 <div className="secondary-card p-4">
                   <h4 className="font-semibold mb-2">Scoring Components</h4>
@@ -1984,31 +1829,30 @@ export default function StockAnalysis() {
                   </ul>
                 </div>
                 <div className="secondary-card p-4">
-                  <h4 className="font-semibold mb-2">Conviction Metric</h4>
+                  <h4 className="font-semibold mb-2">Signal Quality</h4>
                   <p className="text-xs mb-2">
-                    Measures confidence in the analysis (0-100) based on three factors:
+                    Composite quality measure (0-100) based on three factors:
                   </p>
                   <ul className="space-y-1 text-xs">
                     <li>- <strong>Component Alignment (40%):</strong> How well the scoring components agree with each other</li>
-                    <li>- <strong>Volatility Factor (35%):</strong> Lower volatility = higher conviction in the analysis</li>
-                    <li>- <strong>Signal Strength (25%):</strong> How far the score deviates from neutral (50 = stronger signal)</li>
+                    <li>- <strong>Volatility Factor (35%):</strong> Lower realized volatility increases the composite</li>
+                    <li>- <strong>Signal Strength (25%):</strong> How far the score deviates from neutral (farther from 50 = stronger direction)</li>
                   </ul>
                 </div>
                 <div className="secondary-card p-4">
                   <h4 className="font-semibold mb-2">Reference Bands</h4>
                   <ul className="space-y-2 text-xs">
-                      <li><strong>Raw Upper Reference:</strong> Calculated from projected return with volatility and horizon adjustments. Signals expansion energy.</li>
-                      <li><strong>Trade Target:</strong> Actionable upper reference after valuation and market-cap sanity checks when needed.</li>
-                      <li><strong>Speculative Extension:</strong> Raw upside shown separately when it exceeds trade target and enters dislocation territory.</li>
-                    <li><strong>Lower Reference:</strong> Based on volatility (ATR), risk score, and time horizon. Serves as a downside context band.</li>
+                      <li><strong>Raw Upper Reference:</strong> Calculated from trailing return with volatility and lookback adjustments.</li>
+                      <li><strong>Upper Reference:</strong> Context band after valuation and market-cap checks; it is not a recommendation.</li>
+                      <li><strong>Technical Extension:</strong> Raw upper band shown separately when it exceeds the checked upper reference.</li>
+                    <li><strong>Lower Reference:</strong> Based on a realized-volatility proxy, risk score, and lookback length. Serves as a downside context band.</li>
                     <li><strong>Range Ratio:</strong> Upper band distance divided by lower band distance. Higher values indicate wider asymmetry.</li>
                   </ul>
                 </div>
                 <div className="secondary-card p-4">
-                  <h4 className="font-semibold mb-2">Uncertainty Cones</h4>
+                  <h4 className="font-semibold mb-2">Trailing Windows</h4>
                   <p className="text-xs">
-                    The expanding cone represents uncertainty bands. Width increases with horizon, 
-                    reflecting greater dispersion. Narrower cones indicate more stable behavior.
+                    The 21D, 3M, 6M, and 12M scores are separate historical lookbacks. The profile compares sensitivity to window length.
                   </p>
                 </div>
               </div>
@@ -2039,9 +1883,9 @@ export default function StockAnalysis() {
         <div className="mt-6 surface-card-strong p-4 sm:p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-base sm:text-lg font-semibold">Recent News for {searchTicker}</h2>
-            {lastUpdated && (
+            {latestNewsPublishedAt && (
               <span className="text-xs text-stealth-500">
-                Updated {getRelativeTime(lastUpdated)}
+                Latest article {getRelativeTime(latestNewsPublishedAt)}
               </span>
             )}
           </div>
@@ -2077,7 +1921,7 @@ export default function StockAnalysis() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
             <p className="text-lg font-semibold mb-2">Search for a stock to get started</p>
-            <p className="text-sm">Enter any stock ticker to analyze its multi-horizon outlook</p>
+            <p className="text-sm">Enter any stock ticker to compare its trailing-window evidence</p>
           </div>
         </div>
       )}

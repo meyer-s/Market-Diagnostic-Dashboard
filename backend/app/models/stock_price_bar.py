@@ -19,6 +19,9 @@ class StockPriceBar(Base):
     high = Column(Float, nullable=False)
     low = Column(Float, nullable=False)
     close = Column(Float, nullable=False)
+    # Kept nullable so rows written before the adjusted-history migration remain
+    # readable. Consumers explicitly fall back to the raw close when unavailable.
+    adjusted_close = Column(Float, nullable=True)
     volume = Column(Float, nullable=True)
 
     source = Column(String, nullable=False, default="YAHOO")

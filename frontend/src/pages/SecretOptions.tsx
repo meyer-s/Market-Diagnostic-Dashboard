@@ -147,43 +147,19 @@ const formatRelativeTime = (value: string | Date | null | undefined) => {
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 const toDate = (value: string | null | undefined) => {
   if (!value) return null;
+  if (DATE_ONLY_PATTERN.test(value)) {
+    const [year, month, day] = value.split("-").map(Number);
+    return new Date(Date.UTC(year, month - 1, day, 12));
+  }
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
 const addDays = (date: Date, days: number) => new Date(date.getTime() + days * DAY_MS);
-
-const formatHoldDateWindow = (
-  position: OptionPosition,
-  evaluation: EvaluationInsight | null | undefined,
-  lane: TimelineLane | null | undefined
-) => {
-  const minHoldDays = evaluation?.minHoldDays ?? lane?.minHoldDays ?? position.evaluation_min_hold_days ?? null;
-  const maxHoldDays = evaluation?.holdDays ?? lane?.maxHoldDays ?? position.evaluation_hold_days ?? null;
-  if (!minHoldDays || !maxHoldDays) return null;
-
-  const anchorDate =
-    toDate(position.evaluation_start_date) ||
-    toDate(position.source_triggered_at) ||
-    toDate(position.trade_date);
-  const maxDate = toDate(position.evaluation_due_date) || (anchorDate ? addDays(anchorDate, maxHoldDays) : null);
-  const minDate = anchorDate ? addDays(anchorDate, minHoldDays) : null;
-
-  if (minDate && maxDate) {
-    return {
-      range: `${formatDate(minDate)} - ${formatDate(maxDate)}`,
-      detail: `${minHoldDays}-${maxHoldDays}d hold window`,
-    };
-  }
-
-  return {
-    range: `${minHoldDays}-${maxHoldDays} trading days`,
-    detail: "Hold window",
-  };
-};
 
 const buildEvaluationInsight = (
   holdDaysRaw: number,
@@ -379,6 +355,7 @@ const PositionTimelineCell = memo(function PositionTimelineCell({
   suggestedWindow,
   isInteractive = false,
   showHeader = true,
+  showClockLabels = false,
 }: {
   position: OptionPosition;
   metrics: PositionMetrics;
@@ -387,6 +364,7 @@ const PositionTimelineCell = memo(function PositionTimelineCell({
   suggestedWindow?: SuggestedDecisionWindow | null;
   isInteractive?: boolean;
   showHeader?: boolean;
+  showClockLabels?: boolean;
 }) {
   const remainingDays = lane?.remainingDays ?? metrics.dte ?? null;
   const sourceConfidence = clampRange(position.source_match_confidence ?? (lane?.matched ? 0.65 : 0.15), 0, 1);
@@ -405,13 +383,6 @@ const PositionTimelineCell = memo(function PositionTimelineCell({
   const latestReviewDate = toDate(latestReview?.review_date);
   const latestCheckpoint = toDate(latestReview?.next_review_date);
   const latestDeadline = toDate(latestReview?.decision_deadline);
-  const latestWindowCurrent = Boolean(
-    latestReview &&
-      latestDeadline &&
-      latestDeadline.getTime() >= today.getTime() &&
-      (!latestCheckpoint || latestCheckpoint.getTime() > today.getTime())
-  );
-  const useSuggestedWindow = Boolean(suggestedWindow && (!latestReview || suggestedWindow.rebased || !latestWindowCurrent));
 
   const legacyMinDays = Math.max(1, lane?.minHoldDays ?? position.evaluation_min_hold_days ?? 1);
   const legacyMaxDays = Math.max(legacyMinDays, lane?.maxHoldDays ?? position.evaluation_hold_days ?? legacyMinDays);
@@ -432,7 +403,7 @@ const PositionTimelineCell = memo(function PositionTimelineCell({
     activeTitle = `Confirmed decision window: ${formatDate(activeCheckpoint)} review; ${formatDate(activeDeadline)} maximum hold`;
   }
 
-  if (latestReview && latestWindowCurrent && !useSuggestedWindow) {
+  if (latestReview) {
     activeStart = latestReviewDate ?? timelineStart;
     activeCheckpoint = latestCheckpoint;
     activeDeadline = latestDeadline ?? activeDeadline;
@@ -475,19 +446,24 @@ const PositionTimelineCell = memo(function PositionTimelineCell({
     ? Math.ceil((activeCheckpoint.getTime() - today.getTime()) / DAY_MS)
     : null;
   const daysToDeadline = Math.ceil((activeDeadline.getTime() - today.getTime()) / DAY_MS);
+  const reviewOverdue = daysToCheckpoint !== null && daysToCheckpoint < 0 && !activeOverdue;
   const statusLabel = activeOverdue
     ? `${Math.abs(daysToDeadline)}d past decision`
     : daysToCheckpoint === 0
       ? "Review today"
       : daysToCheckpoint !== null && daysToCheckpoint > 0
         ? `Review in ${daysToCheckpoint}d`
-        : activeKind === "suggested"
-          ? "Decision due today"
-          : isLowConfidence && urgency === "calm"
-            ? "monitor"
-            : lane?.label ?? "monitor";
-  const urgencyTextClass = getStatusTextClass(activeOverdue ? "overdue" : urgency, remainingDays, statusLabel === "monitor");
-  const accessibleSummary = `${position.symbol}. ${activeKind} decision window from ${formatDate(activeStart)} to ${formatDate(activeDeadline)}. ${activeCheckpoint ? `Next review ${formatDate(activeCheckpoint)}.` : "No additional review before the decision deadline."} Today is marked by a capped vertical marker. ${priorWindows.length} prior window${priorWindows.length === 1 ? "" : "s"} shown.`;
+        : reviewOverdue
+          ? `${Math.abs(daysToCheckpoint ?? 0)}d review overdue`
+          : daysToDeadline === 0
+            ? "Decision due today"
+            : activeKind === "suggested" && daysToDeadline > 0
+              ? `Decision in ${daysToDeadline}d`
+              : isLowConfidence && urgency === "calm"
+                ? "monitor"
+                : lane?.label ?? "monitor";
+  const urgencyTextClass = getStatusTextClass(activeOverdue ? "overdue" : reviewOverdue ? "due" : urgency, remainingDays, statusLabel === "monitor");
+  const accessibleSummary = `${position.symbol}. ${activeKind} decision window from ${formatDate(activeStart)} to ${formatDate(activeDeadline)}. ${activeCheckpoint ? `Next review ${formatDate(activeCheckpoint)}, marked by a circular checkpoint.` : "No additional review before the decision deadline."} Decision deadline ${formatDate(activeDeadline)}, marked by a square endpoint. Today is marked by a capped vertical marker. ${priorWindows.length} prior window${priorWindows.length === 1 ? "" : "s"} shown.`;
 
   return (
     <div className="min-w-0" aria-label={accessibleSummary}>
@@ -541,11 +517,18 @@ const PositionTimelineCell = memo(function PositionTimelineCell({
         </div>
         {checkpointPct !== null ? (
           <span
-            className={`absolute inset-y-1 z-40 w-px -translate-x-1/2 transition-colors duration-150 ${isInteractive ? "bg-amber-300/75" : "bg-amber-300/35"}`}
+            className={`absolute inset-y-0 z-40 w-px -translate-x-1/2 transition-colors duration-150 before:absolute before:left-1/2 before:top-0 before:h-1.5 before:w-1.5 before:-translate-x-1/2 before:rounded-full ${isInteractive ? "bg-amber-300/75 before:bg-amber-200/90" : "bg-amber-300/35 before:bg-amber-200/55"}`}
             style={{ left: `${checkpointPct}%` }}
             title={`Next review: ${formatDate(activeCheckpoint)}`}
+            aria-hidden="true"
           />
         ) : null}
+        <span
+          className="absolute inset-y-0 z-40 w-0.5 -translate-x-1/2 bg-rose-300/70 before:absolute before:left-1/2 before:top-0 before:h-1.5 before:w-1.5 before:-translate-x-1/2 before:bg-rose-200/90"
+          style={{ left: `${activeDeadlinePct}%` }}
+          title={`Decision deadline: ${formatDate(activeDeadline)}`}
+          aria-hidden="true"
+        />
         <span
           className={`absolute top-1/2 z-50 h-[26px] w-px -translate-x-1/2 -translate-y-1/2 transition-colors duration-150 before:absolute before:left-1/2 before:top-0 before:h-px before:w-1.5 before:-translate-x-1/2 after:absolute after:bottom-0 after:left-1/2 after:h-px after:w-1.5 after:-translate-x-1/2 ${isInteractive ? "bg-stealth-100/70 before:bg-stealth-100/70 after:bg-stealth-100/70" : "bg-stealth-200/35 before:bg-stealth-200/35 after:bg-stealth-200/35"}`}
           style={{ left: `${todayPct}%` }}
@@ -553,6 +536,32 @@ const PositionTimelineCell = memo(function PositionTimelineCell({
           aria-hidden="true"
         />
       </div>
+      {showClockLabels ? (
+        <div className="mt-2 grid grid-cols-2 gap-3 text-xs tabular-nums">
+          <div className="flex min-w-0 items-center gap-1.5 text-stealth-400">
+            <span className="h-2 w-2 shrink-0 rounded-full bg-amber-300" aria-hidden="true" />
+            <span className="truncate">
+              Review{" "}
+              {activeCheckpoint ? (
+                <time className="font-semibold text-stealth-100" dateTime={activeCheckpoint.toISOString().slice(0, 10)}>
+                  {formatDate(activeCheckpoint)}
+                </time>
+              ) : (
+                <span className="font-semibold text-stealth-100">not required</span>
+              )}
+            </span>
+          </div>
+          <div className="flex min-w-0 items-center justify-end gap-1.5 text-right text-stealth-400">
+            <span className="h-2 w-2 shrink-0 bg-rose-300" aria-hidden="true" />
+            <span className="truncate">
+              Deadline{" "}
+              <time className="font-semibold text-stealth-100" dateTime={activeDeadline.toISOString().slice(0, 10)}>
+                {formatDate(activeDeadline)}
+              </time>
+            </span>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 });
@@ -668,47 +677,6 @@ function VolatilitySignalCard({
       <div className="mt-1.5 flex items-center justify-between gap-2 border-t border-stealth-800 pt-1 text-xs text-stealth-500">
         <span className="truncate">{signal.entry ? "entry scanner -> current chain" : "current only"}</span>
         <span className="truncate">{source}</span>
-      </div>
-    </div>
-  );
-}
-
-function TimelinePressureStack({
-  position,
-  metrics,
-  lane,
-}: {
-  position: OptionPosition;
-  metrics: PositionMetrics;
-  lane: TimelineLane | undefined;
-}) {
-  const dteAtEntry = position.dte_at_entry ?? null;
-  const dteNow = metrics.dte ?? null;
-  const elapsedToTodayDays =
-    dteAtEntry !== null && dteNow !== null
-      ? Math.max(0, dteAtEntry - dteNow)
-      : Math.max(0, lane?.elapsedDays ?? 0);
-  const expirationTotalDays = Math.max(1, dteAtEntry ?? elapsedToTodayDays + Math.max(0, dteNow ?? 0), lane?.totalDays ?? 1);
-  const timePct = clampRange((elapsedToTodayDays / expirationTotalDays) * 100, 0, 100);
-  const volState = metrics.volatility_signal.trend.value_state;
-  const volPressure =
-    volState === "contracting" ? 0.85 : volState === "expanding" ? 0.65 : volState === "stable" ? 0.35 : 0.2;
-  const pressurePct = clampRange(Math.max(lane?.attentionStrength ?? 0.2, volPressure) * 100, 0, 100);
-  const sourceConfidence = clampRange(position.source_match_confidence ?? (lane?.matched ? 0.65 : 0.15), 0, 1);
-
-  return (
-    <div className="mt-2 grid grid-cols-[14px_minmax(0,1fr)] items-center gap-x-1 gap-y-1 text-xs text-stealth-500">
-      <span>T</span>
-      <div className="h-1.5 rounded-full bg-stealth-800" title="Time elapsed toward expiration">
-        <div className="h-full rounded-full bg-emerald-300" style={{ width: `${timePct}%` }} />
-      </div>
-      <span>V</span>
-      <div className="h-1.5 rounded-full bg-stealth-800" title="Volatility/time pressure">
-        <div className="h-full rounded-full bg-cyan-300" style={{ width: `${pressurePct}%` }} />
-      </div>
-      <span>C</span>
-      <div className="h-1.5 rounded-full bg-stealth-800" title="Source confidence">
-        <div className="h-full rounded-full bg-indigo-300" style={{ width: `${sourceConfidence * 100}%` }} />
       </div>
     </div>
   );
@@ -1186,6 +1154,8 @@ const initialDecisionReviewFormState = {
 };
 
 type DecisionReviewMode = "override" | "window";
+type DesktopInspectorPanel = "basis" | "market" | "history";
+type DesktopScannerSummaryView = "names" | "themes";
 
 const decisionLabel = (value: string | null | undefined) =>
   (value || "unassessed")
@@ -1615,7 +1585,9 @@ export default function SecretOptions() {
   const decisionReviewErrorRef = useRef<HTMLDivElement>(null);
   const [decisionReviewSubmitting, setDecisionReviewSubmitting] = useState(false);
   const [confirmingDecisionReview, setConfirmingDecisionReview] = useState(false);
-  const [showRiskEvidence, setShowRiskEvidence] = useState(false);
+  const [desktopInspectorPanel, setDesktopInspectorPanel] = useState<DesktopInspectorPanel | null>(null);
+  const [desktopScannerExpanded, setDesktopScannerExpanded] = useState(false);
+  const [desktopScannerSummaryView, setDesktopScannerSummaryView] = useState<DesktopScannerSummaryView>("names");
   const [mobileWorkspace, setMobileWorkspace] = useState<MobileOptionsWorkspace>("positions");
   const [mobileScannerView, setMobileScannerView] = useState<MobileScannerView>("hits");
   const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
@@ -1696,6 +1668,9 @@ export default function SecretOptions() {
     setPendingClosedDeletion(null);
     setShowTrainingOutcomes(false);
     setShowDecisionReviewModal(false);
+    setDesktopInspectorPanel(null);
+    setDesktopScannerExpanded(false);
+    setDesktopScannerSummaryView("names");
     setExpandedScannerHitId(null);
     setEditingPositionId(null);
     setClosingPositionId(null);
@@ -1785,7 +1760,7 @@ export default function SecretOptions() {
     const isClosing = expandedPositionId === position.id;
     setSelectedId(position.id);
     setExpandedPositionId(isClosing ? null : position.id);
-    setShowRiskEvidence(false);
+    setDesktopInspectorPanel(null);
     const next = new URLSearchParams(searchParams);
     if (isClosing) next.delete("position");
     else next.set("position", position.symbol.trim().toUpperCase());
@@ -1837,7 +1812,6 @@ export default function SecretOptions() {
       setPositionsLoadedAt(new Date());
       if (normalizedPositions.length > 0 && selectedId === null) {
         setSelectedId(normalizedPositions[0].position.id);
-        if (!isMobileWorkflow) setExpandedPositionId(normalizedPositions[0].position.id);
       }
       const cacheRefreshing = data.metrics_cache?.refresh_in_progress === true;
       setPositionsRefreshing(cacheRefreshing);
@@ -2120,9 +2094,11 @@ export default function SecretOptions() {
         || null;
       const preferredRunId = preferredRun?.id ?? null;
       setSelectedScannerRunIdStable(preferredRunId);
-      await loadScannerRunDetail(preferredRunId, {
-        quiet: scannerRunDetailRef.current?.run.id === preferredRunId,
-      });
+      if (isMobileWorkflow || desktopScannerExpanded || (preferredRun ? isActiveScannerRun(preferredRun) : false)) {
+        await loadScannerRunDetail(preferredRunId, {
+          quiet: scannerRunDetailRef.current?.run.id === preferredRunId,
+        });
+      }
     } catch (err: unknown) {
       console.error("Failed to load scanner summary:", err);
     }
@@ -2832,7 +2808,6 @@ export default function SecretOptions() {
         loadLearningSummary(),
       ]);
       setSelectedId(result.position.id);
-      if (!isMobileWorkflow) setExpandedPositionId(result.position.id);
     } catch (err: unknown) {
       setClosedRestoreError(
         `Failed to restore ${target.symbol}: ${err instanceof Error ? err.message : String(err)}`,
@@ -2994,6 +2969,8 @@ export default function SecretOptions() {
     }
   }, [selectedId]);
 
+  const showRiskEvidence = desktopInspectorPanel === "market";
+
   useEffect(() => {
     if (!showRiskEvidence || selectedId === null || greeksPositionId === selectedId) {
       return;
@@ -3071,7 +3048,7 @@ export default function SecretOptions() {
   }, [selected]);
 
   useEffect(() => {
-    setShowRiskEvidence(false);
+    setDesktopInspectorPanel(null);
   }, [selectedId]);
 
   const sortedPositions = useMemo(() => {
@@ -3241,11 +3218,16 @@ export default function SecretOptions() {
     () => optionalityClusters.filter((cluster) => cluster.group !== "Unclassified"),
     [optionalityClusters]
   );
+  const maxOptionalityClusterHits = Math.max(1, ...visibleOptionalityClusters.map((cluster) => cluster.hits));
 
   const activeScannerRun = useMemo(
     () => scannerData?.runs.find(isActiveScannerRun) ?? null,
     [scannerData]
   );
+  const desktopScannerOpen = desktopScannerExpanded || Boolean(activeScannerRun);
+  const scannerRankingVisible = isMobileWorkflow
+    ? mobileWorkspace === "scanner" && mobileScannerView === "hits"
+    : desktopScannerOpen;
   const scannerUniverses = scannerData?.supported_universes ?? [
     { key: "SP500", label: "S&P 500" },
     { key: "RUSSELL2000", label: "Russell 2000" },
@@ -3352,7 +3334,7 @@ export default function SecretOptions() {
 
   useEffect(() => {
     const snapshot = scannerRunDetail?.ranking_snapshot;
-    if (secretAuthRequired || !snapshot?.integrity_verified) return;
+    if (!scannerRankingVisible || secretAuthRequired || !snapshot?.integrity_verified) return;
     recordScannerImpressions(snapshot, [
       {
         dedupeKey: `${snapshot.snapshot_uuid}:ranking_rendered`,
@@ -3363,7 +3345,7 @@ export default function SecretOptions() {
         },
       },
     ]);
-  }, [recordScannerImpressions, scannerRunDetail, secretAuthRequired]);
+  }, [recordScannerImpressions, scannerRankingVisible, scannerRunDetail, secretAuthRequired]);
 
   useEffect(() => {
     const snapshot = scannerRunDetail?.ranking_snapshot;
@@ -3461,6 +3443,7 @@ export default function SecretOptions() {
       timers.clear();
     };
   }, [
+    desktopScannerOpen,
     isMobileWorkflow,
     mobileScannerView,
     mobileWorkspace,
@@ -3600,7 +3583,9 @@ export default function SecretOptions() {
     [filteredPositions, timelineLaneByPositionId]
   );
 
-  const reviewSoonCount = evaluationSummary.watch + evaluationSummary.due;
+  const reviewSoonCount = timelineLanes.filter(
+    (lane) => lane.urgency === "watch" || lane.urgency === "due" || lane.urgency === "overdue"
+  ).length;
   const mobileEarningsRuns = useMemo(
     () => recentScannerRuns.filter((run) => /earning/i.test(`${run.universe_label} ${run.universe_key}`)),
     [recentScannerRuns]
@@ -3614,7 +3599,7 @@ export default function SecretOptions() {
     if (!selectedIsVisible) {
       const nextPositionId = filteredPositions[0].position.id;
       setSelectedId(nextPositionId);
-      setExpandedPositionId(isMobileWorkflow ? null : nextPositionId);
+      setExpandedPositionId(null);
       if (isMobileWorkflow && searchParams.has("position")) {
         const nextParams = new URLSearchParams(searchParams);
         nextParams.delete("position");
@@ -3666,12 +3651,33 @@ export default function SecretOptions() {
       ? clampUnit(selectedSpotWeight.fundamental - currentSpotLean)
       : projectedSpotGap;
   const selectedTimelineLane = selected ? timelineLaneByPositionId.get(selected.position.id) ?? null : null;
-  const selectedDiagnosis = selected
-    ? buildPositionDiagnosis(selected.position, selected.metrics, selectedTimelineLane)
-    : null;
   const selectedOpportunityRead = selected ? buildOpportunityRead(selected.metrics.opportunity) : null;
   const selectedDecisionReviews = selected ? decisionReviewsByPosition[selected.position.id] ?? null : null;
   const selectedThesisAssessment = selected ? thesisAssessmentsByPosition[selected.position.id] ?? null : null;
+  const selectedAssessment = selectedThesisAssessment?.assessment ?? null;
+  const selectedLatestReview = selectedDecisionReviews?.latest_review ?? null;
+  const selectedDecisionVerdict = selectedLatestReview?.verdict ?? selectedAssessment?.proposed_verdict ?? null;
+  const selectedDecisionTarget = selectedLatestReview?.target_contracts ?? selectedAssessment?.proposed_target_contracts ?? null;
+  const selectedDecisionQuality = selectedLatestReview?.quality ?? selectedAssessment?.quality ?? null;
+  const selectedDecisionUrgency = selectedLatestReview?.urgency ?? selectedAssessment?.urgency ?? null;
+  const selectedDecisionConfidence = selectedLatestReview?.confidence ?? selectedAssessment?.confidence ?? null;
+  const selectedTrimSizing = selectedAssessment?.axis_results?.trim_sizing ?? null;
+  const selectedDecisionLimits = Array.from(new Set([
+    ...(selectedAssessment?.vetoes.map((item) => item.detail) ?? []),
+    ...(selectedDecisionReviews?.status.additions_blocked
+      ? selectedDecisionReviews.status.addition_blockers
+      : []),
+    ...(selectedDecisionReviews?.status.warnings ?? []),
+  ].filter((value): value is string => Boolean(value))));
+  const selectedQuoteStatus = selectedTrimSizing
+    ? selectedTrimSizing.execution?.ready
+      ? "Quote supports limit review"
+      : "Manual price discovery required"
+    : selected
+      ? selected.metrics.quote.bid === null || selected.metrics.quote.ask === null
+        ? "Option quote incomplete"
+        : `Option quote ${selected.metrics.quote.quality ? decisionLabel(selected.metrics.quote.quality) : "unrated"}${selected.metrics.quote.last_trade_at ? ` · trade ${formatRelativeTime(selected.metrics.quote.last_trade_at)}` : " · last trade unavailable"}`
+      : null;
   const selectedMarketFieldContext = selectedThesisAssessment?.assessment.input_snapshot?.field_context ?? null;
   const selectedMarketFieldAxis = selectedThesisAssessment?.assessment.axis_results?.market_structure ?? null;
   const selectedMarketField = presentOptionMarketField(
@@ -3921,17 +3927,6 @@ export default function SecretOptions() {
       positionFilter === filter ? "ring-1 ring-white/45 shadow-[0_0_14px_rgba(125,211,252,0.16)]" : "hover:border-white/35"
     }`;
 
-  const activeFilterLabel =
-    positionFilter === "all"
-      ? null
-      : positionFilter === "attention"
-        ? "Needs attention"
-      : positionFilter === "lowConfidence"
-        ? "Low confidence"
-        : positionFilter === "losing"
-          ? "Losing positions"
-          : capitalizeWord(positionFilter);
-
   const openAddTrade = () => {
     setEditingPositionId(null);
     setFormSourceEventId(null);
@@ -4079,14 +4074,14 @@ export default function SecretOptions() {
           </div>
 
           <div className="mt-3 grid grid-cols-2 gap-2">
-            <button type="button" disabled={confirmingDecisionReview || loadingThesisAssessment || !assessment || selectedAssessmentConfirmed} onClick={confirmAutomaticAssessment} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-emerald-600/50 bg-emerald-900/35 px-2 text-xs font-semibold text-emerald-100 disabled:opacity-50"><CheckCircle2 className="h-4 w-4" aria-hidden="true" />{confirmingDecisionReview ? "Confirming…" : selectedAssessmentConfirmed ? "Confirmed" : "Confirm grade"}</button>
+            <button type="button" disabled={confirmingDecisionReview || loadingThesisAssessment || !assessment || selectedAssessmentConfirmed} onClick={confirmAutomaticAssessment} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-emerald-600/50 bg-emerald-900/35 px-2 text-xs font-semibold text-emerald-100 disabled:opacity-50"><CheckCircle2 className="h-4 w-4" aria-hidden="true" />{confirmingDecisionReview ? "Recording…" : selectedAssessmentConfirmed ? "Review recorded" : "Record review"}</button>
             <button type="button" onClick={() => openDecisionReviewModal(position, "override")} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-sky-600/50 bg-sky-900/35 px-2 text-xs font-semibold text-sky-100"><SlidersHorizontal className="h-4 w-4" aria-hidden="true" />Override</button>
             <button type="button" onClick={() => openDecisionReviewModal(position, "window")} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-amber-700/50 bg-amber-950/25 px-2 text-xs font-semibold text-amber-100"><CalendarClock className="h-4 w-4" aria-hidden="true" />Revise window</button>
-            <button type="button" disabled={loadingThesisAssessment} onClick={() => loadThesisAssessment(position.id, true)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-stealth-700 bg-stealth-900/70 px-2 text-xs font-semibold text-stealth-200 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${loadingThesisAssessment ? "animate-spin" : ""}`} aria-hidden="true" />Refresh grade</button>
+            <button type="button" disabled={loadingThesisAssessment} onClick={() => loadThesisAssessment(position.id, true)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-stealth-700 bg-stealth-900/70 px-2 text-xs font-semibold text-stealth-200 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${loadingThesisAssessment ? "animate-spin" : ""}`} aria-hidden="true" />Refresh assessment</button>
           </div>
 
           <details className="mt-3 rounded-lg border border-stealth-800 bg-stealth-950/30 text-xs">
-            <summary className="min-h-11 cursor-pointer px-3 py-3 font-semibold text-stealth-300">Why this grade{assessment ? " · 7 inputs" : ""}</summary>
+            <summary className="min-h-11 cursor-pointer px-3 py-3 font-semibold text-stealth-300">Decision basis{assessment ? " · 7 inputs" : ""}</summary>
             <div className="border-t border-stealth-800 p-3 leading-relaxed text-stealth-400">
               {assessment?.reasons.join(" ") || "The automatic assessment is still loading."}
               {trimSizing ? (
@@ -4118,64 +4113,6 @@ export default function SecretOptions() {
       </Fragment>
     );
   };
-
-  const optionalityClustersCard = (
-    <div className="surface-card-strong p-3">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <Activity className="h-4 w-4 text-emerald-300" aria-hidden="true" />
-            <h2 className="text-base font-semibold text-stealth-100">Optionality Clusters</h2>
-          </div>
-          <div className="mt-0.5 text-xs text-stealth-400">
-            45d scanner hits grouped by actionable sector/theme.
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={loadOptionalityClusters}
-          className="inline-flex items-center gap-1.5 rounded-md border border-stealth-600 bg-stealth-900/70 px-2.5 py-1.5 text-xs font-semibold text-stealth-200 hover:border-sky-400/50 hover:text-sky-100"
-        >
-          <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
-          Refresh
-        </button>
-      </div>
-
-      {visibleOptionalityClusters.length === 0 ? (
-        <div className="rounded-lg border border-stealth-700/70 bg-stealth-950/35 px-3 py-4 text-sm text-stealth-400">
-          No classified clusters in the current lookback.
-        </div>
-      ) : (
-        <div className="grid gap-2">
-          {visibleOptionalityClusters.slice(0, 6).map((cluster) => (
-            <div
-              key={cluster.group}
-              className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-stealth-800/70 py-2 last:border-b-0"
-              title={`${cluster.group}: ${cluster.symbols.join(", ")}`}
-            >
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-300/80" />
-                  <div className="truncate text-sm font-semibold text-stealth-100">{cluster.group}</div>
-                  <div className={`shrink-0 text-xs font-semibold ${clusterMomentumClass(cluster.momentum)}`}>
-                    {cluster.momentum === 0 ? "flat" : `${formatSigned(cluster.momentum, 0)} wk`}
-                  </div>
-                </div>
-                <div className="mt-1 truncate text-xs text-stealth-400">
-                  {cluster.symbols.slice(0, 6).join(" ")}
-                  {cluster.symbols.length > 6 ? ` +${cluster.symbols.length - 6}` : ""}
-                </div>
-              </div>
-              <div className="text-right text-xs tabular-nums">
-                <div className="font-semibold text-stealth-100">{cluster.hits} hits</div>
-                <div className="text-stealth-400">IV/HV {formatPointChange(cluster.avg_iv_hv_spread, 1)}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
 
   if (secretAuthRequired) {
     return (
@@ -4627,79 +4564,45 @@ export default function SecretOptions() {
               </span>
             </div>
             {positions.length > 0 ? (
-              <div className="mt-2 space-y-1.5">
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
                 <div className="flex flex-wrap items-center gap-1.5">
-                  {(evaluationSummary.matched > 0 || positionFilter === "matched") ? (
-                    <button
-                      type="button"
-                      onClick={() => toggleFilter("matched")}
-                      aria-pressed={positionFilter === "matched"}
-                      title="Matched = open positions with a model or historical evaluation window."
-                      className={filterChipClass("matched", "border-indigo-500/35 bg-indigo-500/10 text-indigo-200")}
-                    >
-                      Matched {evaluationSummary.matched}
-                    </button>
-                  ) : null}
-                  {(evaluationSummary.watch > 0 || positionFilter === "watch") ? (
-                    <button
-                      type="button"
-                      onClick={() => toggleFilter("watch")}
-                      aria-pressed={positionFilter === "watch"}
-                      title="Watch = model evaluation gate is within five days."
-                      className={filterChipClass("watch", "border-yellow-500/35 bg-yellow-500/10 text-yellow-200")}
-                    >
-                      Watch {evaluationSummary.watch}
-                    </button>
-                  ) : null}
-                  {(evaluationSummary.due > 0 || positionFilter === "due") ? (
-                    <button
-                      type="button"
-                      onClick={() => toggleFilter("due")}
-                      aria-pressed={positionFilter === "due"}
-                      title="Due = the modeled evaluation gate is today."
-                      className={filterChipClass("due", "border-amber-500/35 bg-amber-500/10 text-amber-200")}
-                    >
-                      Due {evaluationSummary.due}
-                    </button>
-                  ) : null}
-                  {(evaluationSummary.overdue > 0 || positionFilter === "overdue") ? (
-                    <button
-                      type="button"
-                      onClick={() => toggleFilter("overdue")}
-                      aria-pressed={positionFilter === "overdue"}
-                      title="Overdue = current time is past the modeled evaluation gate."
-                      className={filterChipClass("overdue", "border-rose-500/35 bg-rose-500/10 text-rose-200")}
-                    >
-                      Overdue {evaluationSummary.overdue}
-                    </button>
-                  ) : null}
-                  {(filterCounts.losing > 0 || positionFilter === "losing") ? (
-                    <button
-                      type="button"
-                      onClick={() => toggleFilter("losing")}
-                      aria-pressed={positionFilter === "losing"}
-                      title="Filter to open positions with negative live P/L."
-                      className={filterChipClass("losing", "border-rose-500/35 bg-rose-500/10 text-rose-200")}
-                    >
-                      Losing {filterCounts.losing}
-                    </button>
-                  ) : null}
-                  {(filterCounts.lowConfidence > 0 || positionFilter === "lowConfidence") ? (
-                    <button
-                      type="button"
-                      onClick={() => toggleFilter("lowConfidence")}
-                      aria-pressed={positionFilter === "lowConfidence"}
-                      title="Low confidence = unlinked positions or source matches below 60% confidence."
-                      className={filterChipClass("lowConfidence", "border-stealth-700 bg-stealth-900/70 text-stealth-300")}
-                    >
-                      Low conf {filterCounts.lowConfidence}
-                    </button>
-                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => setPositionFilter("all")}
+                    aria-pressed={positionFilter === "all"}
+                    className={filterChipClass("all", "border-stealth-600 bg-stealth-900/70 text-stealth-200")}
+                  >
+                    All {positions.length}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleFilter("attention")}
+                    aria-pressed={positionFilter === "attention"}
+                    title="Review window is near, due, or past due."
+                    className={filterChipClass("attention", "border-amber-500/35 bg-amber-500/10 text-amber-100")}
+                  >
+                    Review soon {reviewSoonCount}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleFilter("losing")}
+                    aria-pressed={positionFilter === "losing"}
+                    title="Open positions with negative live P/L."
+                    className={filterChipClass("losing", "border-rose-500/35 bg-rose-500/10 text-rose-200")}
+                  >
+                    Losing {filterCounts.losing}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleFilter("lowConfidence")}
+                    aria-pressed={positionFilter === "lowConfidence"}
+                    title="Unlinked positions or source matches below 60% confidence."
+                    className={filterChipClass("lowConfidence", "border-stealth-700 bg-stealth-900/70 text-stealth-300")}
+                  >
+                    Low confidence {filterCounts.lowConfidence}
+                  </button>
                 </div>
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs leading-none text-stealth-400 tabular-nums">
-                  <span title="Total premium paid for open positions.">
-                    Cost <span className="text-stealth-200">{formatCurrency(totals.totalCost, 0)}</span>
-                  </span>
                   <span title={`P/L from current contract marks. Coverage ${totals.markedCount} of ${totals.count} open positions.`}>
                     P/L{" "}
                     <span className={
@@ -4716,50 +4619,11 @@ export default function SecretOptions() {
                   <span title="Positions with a current bid/ask midpoint or last contract price.">
                     Marks <span className="text-stealth-200">{totals.markedCount}/{totals.count}</span>
                   </span>
-                  <span title="Linked = positions matched to scanner/model templates. Confidence is the reliability of the match.">
-                    Linked{" "}
-                    <span className="text-stealth-200">
-                      {openAttribution.linked}/{openAttribution.total} · {formatPercent(openAttribution.coverage, 0)}
-                    </span>
-                  </span>
-                  {closedAttribution.linked > 0 ? (
-                    <span title="Quality = historical win rate and average result for linked closed trades.">
-                      Q{" "}
-                      <span
-                        className={
-                          closedAttribution.linkedAvgPercent !== null && closedAttribution.linkedAvgPercent < 0
-                            ? "text-rose-300"
-                            : "text-emerald-300"
-                        }
-                      >
-                        {formatPercent(closedAttribution.linkedWinRate, 0)}
-                        {closedAttribution.linkedAvgPercent !== null
-                          ? ` / ${formatSigned(closedAttribution.linkedAvgPercent, 1)}%`
-                          : ""}
-                      </span>
-                    </span>
-                  ) : null}
                 </div>
               </div>
             ) : null}
           </div>
           <div className="flex flex-wrap justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => void refreshPositionList()}
-              disabled={loading || listRefreshPending}
-              title={listRefreshPending ? "Fresh quotes and list updates are pending" : "Refresh all positions and review windows"}
-              className={`inline-flex min-h-11 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition disabled:cursor-wait ${
-                listRefreshPending
-                  ? "border-amber-400/35 bg-amber-500/10 text-amber-100"
-                  : listRefreshSettled
-                    ? "border-emerald-400/35 bg-emerald-500/10 text-emerald-100"
-                    : "border-stealth-600 bg-stealth-900/70 text-stealth-300 hover:border-stealth-500 hover:text-stealth-100"
-              }`}
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${listRefreshPending ? "animate-spin" : ""}`} aria-hidden="true" />
-              {listRefreshProgressLabel}
-            </button>
             <button
               onClick={openAddTrade}
               disabled={secretMutationDisabled}
@@ -4768,33 +4632,35 @@ export default function SecretOptions() {
             >
               <span className="text-base leading-none">+</span> Add Trade
             </button>
-            <button
-              onClick={() => {
-                loadClosedPositions();
-                loadLearningSummary();
-                setShowClosedLog(true);
-              }}
-              className="min-h-11 rounded-lg bg-stealth-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-stealth-600"
-            >
-              P/L History
-            </button>
+            <details className="relative">
+              <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1.5 rounded-lg border border-stealth-700 bg-stealth-900/70 px-3 text-xs font-semibold text-stealth-200 hover:border-stealth-500">
+                <MoreVertical className="h-4 w-4" aria-hidden="true" />
+                More actions
+              </summary>
+              <div className="absolute right-0 z-30 mt-1 w-52 rounded-lg border border-stealth-700 bg-stealth-950 p-1.5 shadow-xl">
+                <button
+                  type="button"
+                  onClick={() => void refreshPositionList()}
+                  disabled={loading || listRefreshPending}
+                  className="flex min-h-10 w-full items-center gap-2 rounded-md px-2 text-left text-xs font-semibold text-stealth-200 hover:bg-stealth-800 disabled:opacity-50"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Refresh positions
+                </button>
+                <button
+                  type="button"
+                  onClick={openProfitLossHistory}
+                  className="flex min-h-10 w-full items-center gap-2 rounded-md px-2 text-left text-xs font-semibold text-stealth-200 hover:bg-stealth-800"
+                >
+                  <History className="h-3.5 w-3.5" aria-hidden="true" /> P/L history
+                </button>
+                <div className="border-t border-stealth-800 px-2 py-2 text-xs leading-5 text-stealth-500">
+                  Cost {formatCurrency(totals.totalCost, 0)} · linked {openAttribution.linked}/{openAttribution.total}
+                  {closedAttribution.linked > 0 ? ` · history ${formatPercent(closedAttribution.linkedWinRate, 0)} win rate` : ""}
+                </div>
+              </div>
+            </details>
           </div>
         </div>
-
-        {activeFilterLabel ? (
-          <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-sky-500/25 bg-sky-500/10 px-2.5 py-1.5 text-xs text-sky-100">
-            <span>
-              Showing {filteredPositions.length}/{positions.length} positions: {activeFilterLabel}
-            </span>
-            <button
-              type="button"
-              onClick={() => setPositionFilter("all")}
-              className="rounded border border-sky-300/35 px-2 py-0.5 text-xs font-semibold text-sky-100 hover:bg-sky-400/10"
-            >
-              Clear
-            </button>
-          </div>
-        ) : null}
 
         {loading && positions.length === 0 ? (
           <div className="text-sm text-stealth-400">Loading positions...</div>
@@ -4821,7 +4687,7 @@ export default function SecretOptions() {
                   className="inline-flex"
                   role="img"
                   aria-label="Timeline legend"
-                  title="Rail = contract life. Filled range = active maximum-hold window. Brackets strengthen on interaction. Thin amber marker = next review. Capped white marker = today. Translucent onion skins = all prior window versions."
+                  title="Rail = contract life. Filled range = active maximum-hold window. Amber circle = next review. Rose square = decision deadline. Capped white marker = today. Translucent onion skins = prior window versions."
                 >
                   <HelpCircle className="h-3.5 w-3.5 text-sky-300/80" aria-hidden="true" />
                 </span>
@@ -4838,7 +4704,6 @@ export default function SecretOptions() {
               {filteredPositions.map((item) => {
                 const { position, metrics } = item;
                 const rowContext = positionRowContexts[String(position.id)];
-                const evaluation = evaluationByPositionId[position.id] || null;
                 const lane = timelineLaneByPositionId.get(position.id);
                 const heat = attributionHeat(position.source_event_id, position.source_match_confidence);
                 const tooltip = buildPositionRowContextTooltip(position, rowContext);
@@ -4846,9 +4711,6 @@ export default function SecretOptions() {
                 const opportunityRead = buildOpportunityRead(metrics.opportunity);
                 const rowActive = position.id === selectedId;
                 const rowHovered = position.id === hoveredPositionId;
-                const isExpanded = expandedPositionId === position.id;
-                const rowDiagnosis = buildPositionDiagnosis(position, metrics, lane);
-                const holdDateWindow = formatHoldDateWindow(position, evaluation, lane);
                 const rowRefreshState = positionRefreshState(position.id);
 
                 return (
@@ -4856,8 +4718,9 @@ export default function SecretOptions() {
                     <div
                       role="button"
                       tabIndex={0}
-                      aria-expanded={isExpanded}
-                      aria-label={`${isExpanded ? "Collapse" : "Expand"} ${position.symbol} position details`}
+                      aria-pressed={rowActive}
+                      aria-controls="desktop-position-inspector"
+                      aria-label={`Select ${position.symbol} position`}
                       className={`relative grid cursor-pointer items-center gap-1.5 px-1.5 py-1.5 transition-colors sm:gap-2 sm:px-2 ${positionMobileGrid} ${positionGridColumns} ${
                         rowActive
                           ? "bg-sky-500/12 shadow-[inset_3px_0_0_rgba(125,211,252,0.9)] ring-1 ring-inset ring-sky-400/25"
@@ -4865,13 +4728,11 @@ export default function SecretOptions() {
                       }`}
                       onClick={() => {
                         setSelectedId(position.id);
-                        setExpandedPositionId((current) => (current === position.id ? null : position.id));
                       }}
                       onKeyDown={(event) => {
                         if (event.key !== "Enter" && event.key !== " ") return;
                         event.preventDefault();
                         setSelectedId(position.id);
-                        setExpandedPositionId((current) => (current === position.id ? null : position.id));
                       }}
                       onMouseEnter={() => setHoveredPositionId(position.id)}
                       onMouseLeave={() => setHoveredPositionId((current) => (current === position.id ? null : current))}
@@ -4956,117 +4817,49 @@ export default function SecretOptions() {
                         />
                       ) : null}
                     </div>
-
-                    {isExpanded ? (
-                      <div className="border-t border-stealth-800 bg-stealth-950/35 px-3 py-2">
-                        <div
-                          className={`mb-2 rounded-md border px-2.5 py-1.5 text-xs ${
-                            lane?.urgency === "overdue"
-                              ? "border-rose-500/35 bg-rose-500/10 text-rose-100"
-                              : lane?.urgency === "due"
-                                ? "border-amber-500/35 bg-amber-500/10 text-amber-100"
-                                : lane?.urgency === "watch"
-                                  ? "border-yellow-500/30 bg-yellow-500/10 text-yellow-100"
-                                  : "border-stealth-700/70 bg-stealth-900/45 text-stealth-300"
-                          }`}
-                        >
-                          {rowDiagnosis}
-                        </div>
-                        <div className="grid gap-2 text-xs text-stealth-400 md:grid-cols-4">
-                          <div className="rounded-md border border-stealth-700/70 bg-stealth-900/45 p-2">
-                            <div className="text-xs uppercase tracking-wide text-stealth-500">Pricing</div>
-                            <div className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5">
-                              <span>Fill</span><span className="text-stealth-200">{formatCurrency(position.fill_price, 2)}</span>
-                              <span>Option</span><span className="text-stealth-200">{metrics.option_price !== null ? formatCurrency(metrics.option_price, 2) : "—"}</span>
-                              <span>Underlying</span><span className="text-stealth-200">{metrics.market.current_price !== null ? formatCurrency(metrics.market.current_price, 2) : "—"}</span>
-                              <span>Bid / Ask</span><span className="text-stealth-200">
-                                {metrics.quote.bid !== null && metrics.quote.bid !== undefined ? formatCurrency(metrics.quote.bid, 2) : "n/a"} / {metrics.quote.ask !== null && metrics.quote.ask !== undefined ? formatCurrency(metrics.quote.ask, 2) : "n/a"}
-                              </span>
-                              <span>Spread</span><span className="text-stealth-200">{metrics.quote.spread_pct !== null && metrics.quote.spread_pct !== undefined ? formatPercent(metrics.quote.spread_pct, 1) : "n/a"}</span>
-                              <span>OI / Vol</span><span className="text-stealth-200">{metrics.quote.open_interest ?? "n/a"} / {metrics.quote.volume ?? "n/a"}</span>
-                            </div>
-                          </div>
-
-                          <div className="rounded-md border border-stealth-700/70 bg-stealth-900/45 p-2">
-                            <div className="text-xs uppercase tracking-wide text-stealth-500">Model Rank</div>
-                            <div className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5">
-                              <span>Entry</span>
-                              <span className="text-stealth-200">
-                                {metrics.opportunity?.entry?.score !== null && metrics.opportunity?.entry?.score !== undefined
-                                  ? `${compactOpportunityGrade(metrics.opportunity.entry.score, metrics.opportunity.entry.grade)} (${metrics.opportunity.entry.score.toFixed(0)})`
-                                  : "n/a"}
-                              </span>
-                              <span>Now</span>
-                              <span className="text-stealth-200">
-                                {metrics.opportunity?.current?.score !== null && metrics.opportunity?.current?.score !== undefined
-                                  ? `${opportunityRead.label} (${metrics.opportunity.current.score.toFixed(0)})`
-                                  : opportunityRead.label}
-                              </span>
-                              <span>Change</span>
-                              <span className={metrics.opportunity?.score_change !== null && metrics.opportunity?.score_change !== undefined && metrics.opportunity.score_change >= 0 ? "text-emerald-300" : "text-rose-300"}>
-                                {metrics.opportunity?.score_change !== null && metrics.opportunity?.score_change !== undefined ? formatSigned(metrics.opportunity.score_change, 1) : "n/a"}
-                              </span>
-                            </div>
-                            <div className="mt-1 truncate text-xs text-stealth-500">
-                              {metrics.opportunity?.current?.reasons?.slice(0, 2).join(" / ") || metrics.opportunity?.basis || "score unavailable"}
-                            </div>
-                            {holdDateWindow ? (
-                              <div className="mt-2 border-t border-stealth-800/80 pt-1.5 text-xs">
-                                <div className="flex items-center justify-between gap-2">
-                                  <span className="uppercase tracking-wide text-stealth-500">Hold</span>
-                                  <span className="truncate text-right font-medium text-cyan-100">{holdDateWindow.range}</span>
-                                </div>
-                                <div className="mt-0.5 truncate text-stealth-500">{holdDateWindow.detail}</div>
-                              </div>
-                            ) : null}
-                          </div>
-
-                          <div className="rounded-md border border-stealth-700/70 bg-stealth-900/45 p-2">
-                            <div className="text-xs uppercase tracking-wide text-stealth-500">Window</div>
-                            <div className="mt-1 space-y-0.5">
-                              <div className="text-stealth-200">{lane?.detail ?? evaluation?.detail ?? "No linked or historical template"}</div>
-                              <div>{volatilityRead.label}</div>
-                              <div>{position.source_match_method || "unlinked"} / {position.source_match_confidence !== null && position.source_match_confidence !== undefined ? formatPercent(position.source_match_confidence * 100, 0) : "n/a"}</div>
-                            </div>
-                            <TimelinePressureStack position={position} metrics={metrics} lane={lane} />
-                          </div>
-
-                          <VolatilitySignalCard metrics={metrics} />
-                        </div>
-                      </div>
-                    ) : null}
                   </Fragment>
                 );
               })}
-            </div>
-
-            <div className="flex items-center justify-between border-t border-stealth-700 px-3 py-2 text-xs">
-              <span className="font-semibold text-stealth-400">
-                Quoted P&amp;L · {totals.markedCount}/{totals.count}
-              </span>
-              <span className={`font-semibold ${
-                totals.markedCount === 0
-                  ? "text-stealth-500"
-                  : totals.totalPnl >= 0
-                    ? "text-emerald-300"
-                    : "text-rose-300"
-              }`}>
-                {totals.markedCount > 0 ? formatCurrency(totals.totalPnl, 0) : "—"}
-              </span>
-              <span className="text-stealth-500">{totals.percent !== null ? `${formatSigned(totals.percent, 1)}%` : "—"}</span>
             </div>
           </div>
         )}
       </div>
 
       <div className="surface-card-strong p-3">
-        <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0">
-            <h2 className="text-base font-semibold text-stealth-100">Scanner Control &amp; Outcomes</h2>
-            <div className="mt-0.5 text-xs text-stealth-400">
-              Runs the same options sweep used by Discord and preserves Discord hit output.
-            </div>
-          </div>
+        <button
+          type="button"
+          disabled={Boolean(activeScannerRun)}
+          onClick={() => {
+            const nextOpen = !desktopScannerOpen;
+            setDesktopScannerExpanded(nextOpen);
+            if (nextOpen && selectedScannerRunId && scannerRunDetail?.run.id !== selectedScannerRunId) {
+              void loadScannerRunDetail(selectedScannerRunId);
+            }
+          }}
+          aria-expanded={desktopScannerOpen}
+          aria-controls="desktop-scanner-workspace"
+          title={activeScannerRun ? "Scanner controls remain open while a scan is active" : undefined}
+          className="flex min-h-11 w-full items-center justify-between gap-3 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 disabled:cursor-default"
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <Activity className={`h-4 w-4 shrink-0 ${activeScannerRun ? "animate-pulse text-sky-300 motion-reduce:animate-none" : "text-emerald-300"}`} aria-hidden="true" />
+            <span className="min-w-0">
+              <span className="block text-base font-semibold text-stealth-100">Scanner Control &amp; Outcomes</span>
+              <span className="block truncate text-xs text-stealth-400">
+                {activeScannerRun
+                  ? `${activeScannerRun.universe_label} · ${activeScannerRun.scanned_symbols}/${activeScannerRun.total_symbols} scanned`
+                  : scannerError
+                    ? "Scanner error · open details"
+                  : `${scannerData?.summary.event_count ?? 0} hits · ${scannerData?.summary.symbol_count ?? 0} names · 45d`}
+              </span>
+            </span>
+          </span>
+          <ChevronDown className={`h-4 w-4 shrink-0 text-stealth-400 transition-transform ${desktopScannerOpen ? "rotate-180" : ""}`} aria-hidden="true" />
+        </button>
+
+        {desktopScannerOpen ? (
+        <div id="desktop-scanner-workspace" className="mt-3">
+        <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-end">
           <div className="grid items-end gap-2 sm:grid-cols-[minmax(150px,1fr)_112px_auto] lg:w-[660px]">
             <label className="grid gap-1 text-xs text-stealth-300">
               Universe
@@ -5370,7 +5163,10 @@ export default function SecretOptions() {
           <div className="min-w-0 rounded-lg border border-stealth-800/80 bg-stealth-950/25 p-2">
             <div className="mb-2 flex items-center justify-between gap-2">
               <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-stealth-500">Repeated Names</div>
+                <div className="flex items-center gap-1 rounded-md border border-stealth-800 bg-stealth-950/45 p-0.5">
+                  <button type="button" onClick={() => setDesktopScannerSummaryView("names")} aria-pressed={desktopScannerSummaryView === "names"} className={`rounded px-2 py-1 text-xs font-semibold ${desktopScannerSummaryView === "names" ? "bg-stealth-700 text-white" : "text-stealth-400 hover:text-stealth-200"}`}>Names</button>
+                  <button type="button" onClick={() => setDesktopScannerSummaryView("themes")} aria-pressed={desktopScannerSummaryView === "themes"} className={`rounded px-2 py-1 text-xs font-semibold ${desktopScannerSummaryView === "themes" ? "bg-stealth-700 text-white" : "text-stealth-400 hover:text-stealth-200"}`}>Themes</button>
+                </div>
                 <div className="text-xs text-stealth-500">All runs / 45d</div>
               </div>
               <div className="text-right text-xs text-stealth-500">
@@ -5378,11 +5174,11 @@ export default function SecretOptions() {
                 <div>{scannerData?.summary.symbol_count ?? 0} names</div>
               </div>
             </div>
-            {topScannerSymbols.length === 0 ? (
+            {desktopScannerSummaryView === "names" && topScannerSymbols.length === 0 ? (
               <div className="min-h-[220px] rounded-lg border border-stealth-700/70 bg-stealth-950/35 px-3 py-4 text-sm text-stealth-400">
                 No recent scanner hits in the current lookback.
               </div>
-            ) : (
+            ) : desktopScannerSummaryView === "names" ? (
               <div className="max-h-[460px] divide-y divide-stealth-800/80 overflow-y-auto pr-1">
                 {topScannerSymbols.slice(0, 8).map((symbol) => (
                   <div key={symbol.symbol} className="grid min-h-[54px] grid-cols-[56px_minmax(0,1fr)_auto] items-center gap-2 py-1.5 text-xs">
@@ -5409,28 +5205,68 @@ export default function SecretOptions() {
                   </div>
                 ))}
               </div>
+            ) : visibleOptionalityClusters.length === 0 ? (
+              <div className="min-h-[220px] rounded-lg border border-stealth-700/70 bg-stealth-950/35 px-3 py-4 text-sm text-stealth-400">
+                No classified themes in the current lookback.
+              </div>
+            ) : (
+              <div className="max-h-[460px] space-y-2 overflow-y-auto pr-1">
+                <div className="flex justify-end">
+                  <button type="button" onClick={() => void loadOptionalityClusters()} className="inline-flex min-h-9 items-center gap-1.5 rounded-md px-2 text-xs font-semibold text-sky-300 hover:bg-stealth-800">
+                    <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Refresh themes
+                  </button>
+                </div>
+                {visibleOptionalityClusters.slice(0, 8).map((cluster) => {
+                  const relativeDiameter = 34 + 30 * Math.sqrt(cluster.hits / maxOptionalityClusterHits);
+                  return (
+                    <div key={cluster.group} className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-lg border border-stealth-800 bg-stealth-950/35 p-2">
+                      <div
+                        className="flex shrink-0 items-center justify-center rounded-full border border-emerald-400/45 bg-emerald-500/15 text-xs font-semibold text-emerald-100"
+                        style={{ width: `${relativeDiameter}px`, height: `${relativeDiameter}px` }}
+                        aria-label={`${cluster.hits} hits relative to ${maxOptionalityClusterHits} in the largest theme`}
+                        title={`${cluster.hits} hits · relative cluster size`}
+                      >
+                        {cluster.hits}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate text-xs font-semibold text-stealth-100">{cluster.group}</span>
+                          <span className={`shrink-0 text-xs font-semibold ${clusterMomentumClass(cluster.momentum)}`}>{cluster.momentum === 0 ? "flat" : `${formatSigned(cluster.momentum, 0)} wk`}</span>
+                        </div>
+                        <div className="mt-1 flex flex-wrap gap-1" aria-label={`${cluster.group} members`}>
+                          {cluster.symbols.slice(0, 6).map((symbol) => <span key={symbol} className="rounded-full border border-stealth-700 bg-stealth-900/70 px-1.5 py-0.5 text-xs text-stealth-300">{symbol}</span>)}
+                          {cluster.symbols.length > 6 ? <span className="px-1 py-0.5 text-xs text-stealth-500">+{cluster.symbols.length - 6}</span> : null}
+                        </div>
+                        <div className="mt-1 text-xs text-stealth-500">IV/HV {formatPointChange(cluster.avg_iv_hv_spread, 1)}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
         </div>
+        </div>
+        ) : null}
       </div>
 
         </section>
         ) : null}
 
         <aside className="min-w-0 space-y-3 xl:sticky xl:top-4">
-      <div className="surface-card-strong max-h-[calc(100vh-2rem)] overflow-y-auto p-2.5">
+      <div id="desktop-position-inspector" className="surface-card-strong max-h-[calc(100vh-2rem)] overflow-y-auto p-2.5">
         <div className="mb-2 flex items-start justify-between gap-2">
-          <div>
-            <h2 className="text-sm font-semibold text-stealth-100">Position inspector</h2>
+          <div className="min-w-0">
             {selected ? (
-              <p className="mt-0.5 text-xs font-medium text-stealth-300">
-                Selected: {selected.position.symbol} {selected.position.option_type.toUpperCase()} ${formatNumber(selected.position.strike, 2)}
-                {" · "}
-                {formatDate(selected.position.expiration)}
-                {" · "}
-                {selected.metrics.dte ?? "n/a"} DTE
-              </p>
-            ) : null}
+              <>
+                <h2 className="truncate text-sm font-semibold text-stealth-100">
+                  {selected.position.symbol} {selected.position.option_type.toUpperCase()} ${formatNumber(selected.position.strike, 2)}
+                </h2>
+                <p className="mt-0.5 text-xs font-medium text-stealth-400">
+                  {formatDate(selected.position.expiration)} · {selected.metrics.dte ?? "n/a"} DTE · {selected.position.contracts} held
+                </p>
+              </>
+            ) : <h2 className="text-sm font-semibold text-stealth-100">Position details</h2>}
           </div>
           <div className="flex shrink-0 flex-col items-end gap-1.5">
             {selectedStockAnalysisPath && selectedSymbol && (
@@ -5444,53 +5280,44 @@ export default function SecretOptions() {
           </div>
         </div>
 
-        {selectedDiagnosis && (
-          <div
-            className={`mb-2 rounded-md border px-2.5 py-1.5 text-xs ${
-              selectedTimelineLane?.urgency === "overdue"
-                ? "border-rose-500/35 bg-rose-500/10 text-rose-100"
-                : selectedTimelineLane?.urgency === "due"
-                  ? "border-amber-500/35 bg-amber-500/10 text-amber-100"
-                  : selectedTimelineLane?.urgency === "watch"
-                    ? "border-yellow-500/30 bg-yellow-500/10 text-yellow-100"
-                    : "border-stealth-700/70 bg-stealth-900/45 text-stealth-300"
-            }`}
-          >
-            {selectedDiagnosis}
-          </div>
-        )}
-
         {selected && (
           <div className="mb-2 rounded-xl border border-sky-700/45 bg-sky-950/20 p-3">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-300">Decision cockpit</div>
+                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-300">
+                  {selectedLatestReview ? `Recorded decision · review #${selectedLatestReview.review_sequence}` : "Model proposal"}
+                </div>
                 <div className="mt-1 text-base font-semibold leading-tight text-stealth-100">
-                  {selectedThesisAssessment?.assessment
-                    ? `${decisionLabel(selectedThesisAssessment.assessment.proposed_verdict)} to ${selectedThesisAssessment.assessment.proposed_target_contracts}`
+                  {selectedDecisionVerdict && selectedDecisionTarget !== null
+                    ? `${decisionLabel(selectedDecisionVerdict)} to ${selectedDecisionTarget}`
                     : "Building the first point-in-time assessment"}
                 </div>
-                {selectedThesisAssessment?.assessment && (
-                  <div className="mt-1 flex flex-wrap gap-1 text-xs">
-                    <span className="rounded-full border border-stealth-700 bg-stealth-950/45 px-1.5 py-0.5 text-stealth-300">
-                      {decisionLabel(selectedThesisAssessment.assessment.quality)} quality
-                    </span>
-                    <span className="rounded-full border border-stealth-700 bg-stealth-950/45 px-1.5 py-0.5 text-stealth-300">
-                      {decisionLabel(selectedThesisAssessment.assessment.urgency)} urgency
-                    </span>
-                    <span className="rounded-full border border-stealth-700 bg-stealth-950/45 px-1.5 py-0.5 text-stealth-300">
-                      {decisionLabel(selectedThesisAssessment.assessment.confidence)} confidence
-                    </span>
+                {selectedDecisionQuality && selectedDecisionUrgency && selectedDecisionConfidence && (
+                  <div className="mt-1 text-xs text-stealth-400">
+                    {decisionLabel(selectedDecisionQuality)} quality · {decisionLabel(selectedDecisionUrgency)} urgency · {decisionLabel(selectedDecisionConfidence)} confidence
                   </div>
                 )}
               </div>
               <div className="shrink-0 text-right text-xs text-stealth-500">
-                <div>{selected.position.contracts} held</div>
-                <div>{selected.metrics.dte ?? "—"} DTE</div>
+                <div className="font-semibold text-stealth-200">{selected.position.contracts} → {selectedDecisionTarget ?? "—"}</div>
+                <div>held → target</div>
               </div>
             </div>
 
             {selectedMarketField ? (
+              <div className="mt-2 flex min-w-0 items-center gap-2 border-t border-sky-800/35 pt-2 text-xs">
+                <span
+                  aria-label={selectedMarketField.accessibleLabel}
+                  title={selectedMarketField.accessibleLabel}
+                  className={`shrink-0 rounded border px-1.5 py-0.5 font-semibold tracking-wide ${scannerPositionMatchBadgeClass[selectedMarketField.tone]}`}
+                >
+                  {selectedMarketField.badgeLabel}
+                </span>
+                <span className="truncate text-stealth-400">{selectedMarketField.summary}</span>
+              </div>
+            ) : null}
+
+            {selectedMarketField && desktopInspectorPanel === "basis" ? (
               <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-sky-800/35 pt-2 text-xs">
                 <span
                   aria-label={selectedMarketField.accessibleLabel}
@@ -5541,7 +5368,7 @@ export default function SecretOptions() {
                 ) : null}
               </div>
             ) : null}
-            {selectedMarketFieldHistory.length > 1 ? (
+            {desktopInspectorPanel === "basis" && selectedMarketFieldHistory.length > 1 ? (
               <div className="mt-1.5 grid grid-cols-3 overflow-hidden rounded-md border border-stealth-800/80 bg-stealth-950/35">
                 {selectedMarketFieldHistory.map(({ assessment, field }, index) => {
                   const isLatest = index === selectedMarketFieldHistory.length - 1;
@@ -5568,84 +5395,71 @@ export default function SecretOptions() {
               </div>
             ) : null}
 
+            <div className="mt-3 rounded-lg border border-stealth-800 bg-stealth-950/35 p-2">
+              <PositionTimelineCell
+                position={selected.position}
+                metrics={selected.metrics}
+                lane={selectedTimelineLane ?? undefined}
+                decisionHistory={selectedDecisionReviews?.history ?? decisionWindowsByPosition[String(selected.position.id)]}
+                suggestedWindow={selectedThesisAssessment?.suggested_window ?? null}
+                isInteractive
+                showHeader={false}
+                showClockLabels
+              />
+              <button
+                type="button"
+                onClick={() => openDecisionReviewModal(selected.position, "window")}
+                disabled={secretMutationDisabled}
+                title={secretOptionsReadOnly ? "Write access is required to revise a decision window" : undefined}
+                className="mt-2 inline-flex min-h-9 items-center gap-1.5 rounded-md border border-amber-700/45 bg-amber-950/20 px-2 text-xs font-semibold text-amber-100 hover:bg-amber-900/35 disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                <CalendarClock className="h-3.5 w-3.5" aria-hidden="true" /> Revise window
+              </button>
+            </div>
+
+            {selectedDecisionLimits.length > 0 || selectedQuoteStatus ? (
+              <div className={`mt-2 rounded-md border px-2.5 py-2 text-xs leading-5 ${selectedDecisionLimits.length > 0 || selectedQuoteStatus === "Manual price discovery required" ? "border-amber-500/35 bg-amber-500/10 text-amber-100" : "border-stealth-700 bg-stealth-950/30 text-stealth-300"}`}>
+                <div className="font-semibold">{selectedDecisionLimits.length > 0 ? "Decision limits" : "Execution state"}</div>
+                {selectedDecisionLimits.length > 0 ? (
+                  <div>{selectedDecisionLimits[0]}{selectedDecisionLimits.length > 1 ? ` · +${selectedDecisionLimits.length - 1} more in Decision basis` : ""}</div>
+                ) : null}
+                {selectedQuoteStatus ? <div>{selectedQuoteStatus}</div> : null}
+              </div>
+            ) : null}
+
             <div className="mt-3 grid grid-cols-2 gap-1.5">
               <button
                 type="button"
-                disabled={confirmingDecisionReview || loadingThesisAssessment || !selectedThesisAssessment?.assessment || selectedAssessmentConfirmed}
+                disabled={secretMutationDisabled || confirmingDecisionReview || loadingThesisAssessment || !selectedAssessment || selectedAssessmentConfirmed}
                 onClick={confirmAutomaticAssessment}
-                title="Append the current automatic grade to the decision journal. No order is submitted."
-                className="hidden min-h-11 items-center justify-center gap-1.5 rounded-md border border-emerald-600/55 bg-emerald-900/35 px-2 py-1.5 text-xs font-semibold text-emerald-100 hover:bg-emerald-800/45 disabled:opacity-50 xl:inline-flex"
+                title={secretOptionsReadOnly ? "Write access is required to record a review" : "Append the current assessment to the decision journal. No order is submitted."}
+                className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-md border border-emerald-600/55 bg-emerald-900/35 px-2 py-1.5 text-xs font-semibold text-emerald-100 hover:bg-emerald-800/45 disabled:opacity-50"
               >
                 <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
-                {confirmingDecisionReview ? "Confirming..." : selectedAssessmentConfirmed ? "Grade confirmed" : "Confirm grade"}
+                {confirmingDecisionReview ? "Recording..." : selectedAssessmentConfirmed ? "Review recorded" : "Record review"}
               </button>
               <button
                 type="button"
                 onClick={() => openDecisionReviewModal(selected.position, "override")}
-                className="hidden min-h-11 items-center justify-center gap-1.5 rounded-md border border-sky-600/55 bg-sky-900/35 px-2 py-1.5 text-xs font-semibold text-sky-100 hover:bg-sky-800/55 xl:inline-flex"
+                disabled={secretMutationDisabled}
+                title={secretOptionsReadOnly ? "Write access is required to record an override" : undefined}
+                className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-md border border-sky-600/55 bg-sky-900/35 px-2 py-1.5 text-xs font-semibold text-sky-100 hover:bg-sky-800/55 disabled:cursor-not-allowed disabled:opacity-45"
               >
-                <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
-                Override decision
+                <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" /> Override
               </button>
-              <button
-                type="button"
-                onClick={() => openDecisionReviewModal(selected.position, "window")}
-                className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-md border border-amber-700/50 bg-amber-950/25 px-2 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-900/40"
-              >
-                <CalendarClock className="h-3.5 w-3.5" aria-hidden="true" />
-                Revise window
-              </button>
-              <button
-                type="button"
-                disabled={loadingThesisAssessment}
-                onClick={() => loadThesisAssessment(selected.position.id, true)}
-                className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-md border border-stealth-600 bg-stealth-900/70 px-2 py-1.5 text-xs font-semibold text-stealth-200 hover:bg-stealth-800 disabled:opacity-50"
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${loadingThesisAssessment ? "animate-spin" : ""}`} aria-hidden="true" />
-                {loadingThesisAssessment ? "Grading..." : "Refresh grade"}
-              </button>
-              <button
-                type="button"
-                onClick={() => openEditModal(selected.position)}
-                className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-md border border-sky-500/35 bg-sky-500/10 px-2 py-1.5 text-xs font-semibold text-sky-100 hover:bg-sky-500/20"
-              >
-                <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
-                Edit position
-              </button>
-              <button
-                type="button"
-                onClick={() => openCloseModal(selected.position.id)}
-                className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-md border border-rose-500/35 bg-rose-500/10 px-2 py-1.5 text-xs font-semibold text-rose-100 hover:bg-rose-500/20"
-              >
-                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                Close position
-              </button>
+              <details className="relative col-span-2">
+                <summary className="inline-flex min-h-10 w-full cursor-pointer list-none items-center justify-center gap-1.5 rounded-md border border-stealth-700 bg-stealth-900/60 px-2 text-xs font-semibold text-stealth-200 hover:border-stealth-500">
+                  <MoreVertical className="h-3.5 w-3.5" aria-hidden="true" /> More actions
+                </summary>
+                <div className="mt-1 grid grid-cols-2 gap-1 rounded-md border border-stealth-700 bg-stealth-950 p-1.5">
+                  <button type="button" disabled={loadingThesisAssessment} onClick={() => loadThesisAssessment(selected.position.id, true)} className="min-h-9 rounded px-2 text-left text-xs font-semibold text-stealth-200 hover:bg-stealth-800 disabled:opacity-50">Refresh assessment</button>
+                  <button type="button" disabled={secretMutationDisabled} title={secretOptionsReadOnly ? "Write access is required to edit a position" : undefined} onClick={() => openEditModal(selected.position)} className="min-h-9 rounded px-2 text-left text-xs font-semibold text-stealth-200 hover:bg-stealth-800 disabled:cursor-not-allowed disabled:opacity-45">Edit position</button>
+                  {selectedStockAnalysisPath ? <Link to={selectedStockAnalysisPath} className="flex min-h-9 items-center rounded px-2 text-xs font-semibold text-stealth-200 hover:bg-stealth-800">Stock analysis</Link> : null}
+                  {selectedMarketFieldPath ? <Link to={selectedMarketFieldPath} className="flex min-h-9 items-center rounded px-2 text-xs font-semibold text-stealth-200 hover:bg-stealth-800">Market Field</Link> : null}
+                  <button type="button" disabled={secretMutationDisabled} title={secretOptionsReadOnly ? "Write access is required to close a position" : undefined} onClick={() => openCloseModal(selected.position.id)} className="col-span-2 min-h-9 rounded px-2 text-left text-xs font-semibold text-rose-200 hover:bg-rose-950/40 disabled:cursor-not-allowed disabled:opacity-45">Close position</button>
+                </div>
+              </details>
             </div>
-
-            {selectedThesisAssessment?.assessment && (
-              <div className="mt-2 text-xs">
-                <div className="grid grid-cols-2 gap-1.5">
-                  <div className="rounded-md border border-stealth-700/70 bg-stealth-950/35 px-2 py-1.5">
-                    <div className="text-xs uppercase tracking-wide text-stealth-500">Suggested next review</div>
-                    <div className="mt-0.5 font-semibold text-stealth-100">
-                      {selectedThesisAssessment.suggested_window.next_review_date
-                        ? formatDate(selectedThesisAssessment.suggested_window.next_review_date)
-                        : "No further review"}
-                    </div>
-                  </div>
-                  <div className="rounded-md border border-stealth-700/70 bg-stealth-950/35 px-2 py-1.5">
-                    <div className="text-xs uppercase tracking-wide text-stealth-500">Maximum hold deadline</div>
-                    <div className="mt-0.5 font-semibold text-stealth-100">
-                      {formatDate(selectedThesisAssessment.suggested_window.decision_deadline)}
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-1.5 text-xs text-stealth-500">
-                  {selectedThesisAssessment.suggested_window.max_hold_sessions} session max · entry model {selectedThesisAssessment.suggested_window.original_min_hold_days}-{selectedThesisAssessment.suggested_window.original_max_hold_days} sessions
-                  {selectedThesisAssessment.suggested_window.rebased ? " · rebased today; prior window preserved" : ""}
-                </div>
-              </div>
-            )}
 
             {selectedPositionReplacementHit?.position_match?.replacement_decision && selectedPositionReplacementPresentation ? (
               <button
@@ -5670,17 +5484,44 @@ export default function SecretOptions() {
               </button>
             ) : null}
 
+            {selectedDecisionReviews?.latest_review ? (
+              <div className="mt-2 flex items-center justify-between gap-2 rounded-md border border-stealth-700/70 bg-stealth-950/25 px-2.5 py-2 text-xs">
+                <div className="min-w-0">
+                  <div className="font-semibold text-stealth-200">Latest review · #{selectedDecisionReviews.latest_review.review_sequence}</div>
+                  <div className="truncate text-stealth-500">{formatDate(selectedDecisionReviews.latest_review.review_date)} · {decisionLabel(selectedDecisionReviews.latest_review.verdict)} to {selectedDecisionReviews.latest_review.target_contracts}</div>
+                </div>
+                <div className="shrink-0 text-stealth-400">{selectedDecisionReviews.review_count} total</div>
+              </div>
+            ) : null}
+
+            <div className="mt-2 grid grid-cols-3 gap-1.5" role="group" aria-label="Position detail views">
+              {([
+                ["basis", "Decision basis", "desktop-decision-basis"],
+                ["market", "Market & contract", "desktop-market-contract"],
+                ["history", "History", "desktop-decision-history"],
+              ] as const).map(([panel, label, controls]) => (
+                <button
+                  key={panel}
+                  type="button"
+                  onClick={() => setDesktopInspectorPanel((current) => current === panel ? null : panel)}
+                  aria-expanded={desktopInspectorPanel === panel}
+                  aria-controls={desktopInspectorPanel === panel ? controls : undefined}
+                  className={`min-h-10 rounded-md border px-2 text-xs font-semibold transition ${desktopInspectorPanel === panel ? "border-sky-400/50 bg-sky-500/15 text-sky-100" : "border-stealth-700 bg-stealth-900/35 text-stealth-300 hover:border-stealth-500"}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
             {thesisAssessmentError && (
               <div className="mt-2 rounded border border-rose-600/40 bg-rose-950/25 px-2 py-1.5 text-xs text-rose-100">
                 {thesisAssessmentError}
               </div>
             )}
 
-            {selectedThesisAssessment?.assessment && (
-              <details className="mt-2 rounded-md border border-sky-700/35 bg-stealth-950/30 text-xs">
-                <summary className="cursor-pointer px-2 py-1.5 font-semibold text-stealth-300">
-                  Why this grade · 7 decision inputs
-                </summary>
+            {desktopInspectorPanel === "basis" && selectedThesisAssessment && selectedAssessment ? (
+              <div id="desktop-decision-basis" className="mt-2 rounded-md border border-sky-700/35 bg-stealth-950/30 text-xs">
+                <div className="px-2 py-1.5 font-semibold text-stealth-300">Decision basis · 7 inputs</div>
                 <div className="space-y-2 border-t border-sky-800/30 p-2">
                 <div className="grid grid-cols-2 gap-1.5 text-xs">
                   {[
@@ -5701,10 +5542,12 @@ export default function SecretOptions() {
                 <div className="text-xs leading-relaxed text-stealth-300">
                   {selectedThesisAssessment.assessment.reasons.join(" ")}
                 </div>
-                {selectedThesisAssessment.assessment.vetoes.length > 0 && (
+                {selectedDecisionLimits.length > 0 && (
                   <div className="rounded border border-rose-600/40 bg-rose-950/25 px-2 py-1.5 text-xs text-rose-100">
-                    <span className="font-semibold">Vetoes: </span>
-                    {selectedThesisAssessment.assessment.vetoes.map((item) => item.detail).join(" ")}
+                    <div className="font-semibold">Decision limits</div>
+                    <ul className="mt-1 space-y-0.5">
+                      {selectedDecisionLimits.map((limit) => <li key={limit}>· {limit}</li>)}
+                    </ul>
                   </div>
                 )}
                 {selectedThesisAssessment.assessment.missing_inputs.length > 0 && (
@@ -5752,16 +5595,27 @@ export default function SecretOptions() {
                   <span>Shadow decision only · no order submitted</span>
                 </div>
                 </div>
-              </details>
-            )}
+              </div>
+            ) : desktopInspectorPanel === "basis" ? (
+              <div id="desktop-decision-basis" className="mt-2 rounded-md border border-sky-700/35 bg-stealth-950/30 px-2.5 py-3 text-xs text-stealth-400">
+                {selectedDecisionLimits.length > 0 ? (
+                  <div className="rounded border border-rose-600/40 bg-rose-950/25 px-2 py-1.5 text-rose-100">
+                    <div className="font-semibold">Decision limits</div>
+                    <ul className="mt-1 space-y-0.5">
+                      {selectedDecisionLimits.map((limit) => <li key={limit}>· {limit}</li>)}
+                    </ul>
+                  </div>
+                ) : loadingThesisAssessment ? "Loading decision basis…" : "Decision basis is unavailable for this position."}
+              </div>
+            ) : null}
 
-            {loadingDecisionReview && !selectedDecisionReviews ? (
-              <div className="mt-2 text-xs text-stealth-400">Loading decision history...</div>
-            ) : selectedDecisionReviews?.latest_review ? (
-              <details className="mt-2 rounded-md border border-stealth-700/70 bg-stealth-950/25 text-xs">
-                <summary className="cursor-pointer px-2 py-1.5 font-semibold text-stealth-300">
-                  Decision journal · {selectedDecisionReviews.review_count} review{selectedDecisionReviews.review_count === 1 ? "" : "s"}
-                </summary>
+            {desktopInspectorPanel === "history" && loadingDecisionReview && !selectedDecisionReviews ? (
+              <div id="desktop-decision-history" className="mt-2 text-xs text-stealth-400">Loading decision history...</div>
+            ) : desktopInspectorPanel === "history" && selectedDecisionReviews?.latest_review ? (
+              <div id="desktop-decision-history" className="mt-2 rounded-md border border-stealth-700/70 bg-stealth-950/25 text-xs">
+                <div className="px-2 py-1.5 font-semibold text-stealth-300">
+                  Decision history · {selectedDecisionReviews.review_count} review{selectedDecisionReviews.review_count === 1 ? "" : "s"}
+                </div>
                 <div className="space-y-2 border-t border-stealth-800 p-2">
                 <div className="grid grid-cols-4 gap-1.5 text-xs">
                   <div className="rounded border border-stealth-700/70 bg-stealth-950/40 px-1.5 py-1">
@@ -5785,7 +5639,7 @@ export default function SecretOptions() {
                 </div>
 
                 <div className="rounded border border-stealth-700/70 bg-stealth-950/35 px-2 py-1.5 text-xs text-stealth-300">
-                  <span className="text-stealth-500">Would open this exact contract today? </span>
+                  <span className="text-stealth-500">Fresh-capital fit </span>
                   <span className="font-semibold text-stealth-100">
                     {decisionLabel(selectedDecisionReviews.latest_review.fresh_entry_answer)}
                   </span>
@@ -5793,7 +5647,7 @@ export default function SecretOptions() {
 
                 <div className="grid grid-cols-2 gap-1.5 text-xs">
                   <div className="rounded border border-stealth-700/70 bg-stealth-950/35 px-2 py-1.5">
-                    <div className="text-stealth-500">Review date · process clock</div>
+                    <div className="text-stealth-500">Next review · process clock</div>
                     <div className="font-semibold text-stealth-100">
                       {selectedDecisionReviews.latest_review.next_review_date
                         ? formatDate(selectedDecisionReviews.latest_review.next_review_date)
@@ -5812,13 +5666,13 @@ export default function SecretOptions() {
 
                 {selectedDecisionReviews.latest_review.evidence_since_last && (
                   <div className="text-xs leading-relaxed text-stealth-300">
-                    <span className="text-stealth-500">What changed: </span>
+                    <span className="text-stealth-500">Evidence since prior review: </span>
                     {selectedDecisionReviews.latest_review.evidence_since_last}
                   </div>
                 )}
                 {selectedDecisionReviews.latest_review.continuation_condition && (
                   <div className="text-xs leading-relaxed text-stealth-300">
-                    <span className="text-stealth-500">Continue only if: </span>
+                    <span className="text-stealth-500">Continuation condition: </span>
                     {selectedDecisionReviews.latest_review.continuation_condition}
                   </div>
                 )}
@@ -5857,39 +5711,17 @@ export default function SecretOptions() {
                   </div>
                 </details>
                 </div>
-              </details>
-            ) : (
-              <div className="mt-2 rounded-md border border-dashed border-stealth-700 px-2 py-1.5 text-xs leading-relaxed text-stealth-400">
-                No confirmed review yet. Confirm the grade or record an override; neither action submits an order.
               </div>
-            )}
+            ) : desktopInspectorPanel === "history" ? (
+              <div id="desktop-decision-history" className="mt-2 rounded-md border border-dashed border-stealth-700 px-2 py-1.5 text-xs leading-relaxed text-stealth-400">
+                No confirmed review yet. Record the current assessment or an override; neither action submits an order.
+              </div>
+            ) : null}
           </div>
         )}
 
-        {selected && (
-          <button
-            type="button"
-            onClick={() => setShowRiskEvidence((current) => !current)}
-            aria-expanded={showRiskEvidence}
-            className="mb-2 flex w-full items-center justify-between gap-3 rounded-lg border border-stealth-700/70 bg-stealth-900/35 px-2.5 py-2 text-left transition hover:border-stealth-500"
-          >
-            <div className="min-w-0">
-              <div className="text-xs font-semibold text-stealth-200">
-                {showRiskEvidence ? "Hide market & risk evidence" : "Show market & risk evidence"}
-              </div>
-              <div className="mt-0.5 truncate text-xs text-stealth-500">
-                Rank {selectedOpportunityRead?.label ?? "—"} · IV {formatPointChange(selected.metrics.volatility_signal?.trend.contract_iv_change, 1)} · quote {formatRelativeTime(selected.metrics.market.last_updated)}
-              </div>
-            </div>
-            <ChevronDown
-              className={`h-4 w-4 shrink-0 text-stealth-400 transition-transform ${showRiskEvidence ? "rotate-180" : ""}`}
-              aria-hidden="true"
-            />
-          </button>
-        )}
-
         {showRiskEvidence && (
-          <>
+          <div id="desktop-market-contract">
         {selected && (
           <>
             {selected.metrics.opportunity ? (
@@ -6286,11 +6118,10 @@ export default function SecretOptions() {
           </div>
         )}
 
-          </>
+          </div>
         )}
 
       </div>
-      <div>{optionalityClustersCard}</div>
         </aside>
       </div>
       ) : null}
@@ -6488,16 +6319,16 @@ export default function SecretOptions() {
                       </label>
                     </div>
                     <label className="mt-3 block text-xs text-stealth-400">
-                      Continue only if
-                      <textarea rows={3} value={decisionReviewForm.continuation_condition} onChange={handleDecisionReviewFieldChange("continuation_condition")} placeholder="What evidence must remain true through this window?" className="mt-1 w-full rounded border border-sky-800/70 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
+                      Continuation condition
+                      <textarea rows={3} value={decisionReviewForm.continuation_condition} onChange={handleDecisionReviewFieldChange("continuation_condition")} placeholder="Evidence required through this window." className="mt-1 w-full rounded border border-sky-800/70 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
                     </label>
                   </section>
 
                   <section className="rounded-lg border border-stealth-800 bg-stealth-900/30 p-3">
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                       <label className="text-xs text-stealth-400">
-                        What changed?
-                        <textarea rows={3} value={decisionReviewForm.evidence_since_last} onChange={handleDecisionReviewFieldChange("evidence_since_last")} placeholder="Why should the window move now?" className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
+                        Evidence since prior review
+                        <textarea rows={3} value={decisionReviewForm.evidence_since_last} onChange={handleDecisionReviewFieldChange("evidence_since_last")} placeholder="Evidence supporting a window change." className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
                       </label>
                       <label className="text-xs text-stealth-400">
                         Window notes
@@ -6537,7 +6368,7 @@ export default function SecretOptions() {
                   <div className="mt-3 border-t border-stealth-800 pt-3">
                   <div className="mb-3">
                     <h3 className="text-sm font-semibold text-stealth-100">Mandate</h3>
-                    <p className="text-xs text-stealth-500">What was this trade supposed to accomplish? Carry these fields forward unless the mandate itself changed.</p>
+                    <p className="text-xs text-stealth-500">Original mandate and contract rationale. Carry these fields forward unless the mandate itself changed.</p>
                   </div>
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                     <label className="text-xs text-stealth-400">
@@ -6564,15 +6395,15 @@ export default function SecretOptions() {
                   <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                     <label className="text-xs text-stealth-400">
                       Original underlying thesis
-                      <textarea rows={3} value={decisionReviewForm.original_thesis} onChange={handleDecisionReviewFieldChange("original_thesis")} placeholder="Why should the underlying move?" className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
+                      <textarea rows={3} value={decisionReviewForm.original_thesis} onChange={handleDecisionReviewFieldChange("original_thesis")} placeholder="Underlying move thesis and supporting evidence." className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
                     </label>
                     <label className="text-xs text-stealth-400">
                       Exact contract thesis
-                      <textarea rows={3} value={decisionReviewForm.contract_thesis} onChange={handleDecisionReviewFieldChange("contract_thesis")} placeholder="Why this strike, expiration, and size?" className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
+                      <textarea rows={3} value={decisionReviewForm.contract_thesis} onChange={handleDecisionReviewFieldChange("contract_thesis")} placeholder="Strike, expiration, and size rationale." className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
                     </label>
                     <label className="text-xs text-stealth-400">
                       Expected path
-                      <textarea rows={2} value={decisionReviewForm.expected_path} onChange={handleDecisionReviewFieldChange("expected_path")} placeholder="What should happen along the way, and how quickly?" className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
+                      <textarea rows={2} value={decisionReviewForm.expected_path} onChange={handleDecisionReviewFieldChange("expected_path")} placeholder="Expected progression and timing." className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
                     </label>
                     <label className="text-xs text-stealth-400">
                       Catalyst or milestone
@@ -6599,7 +6430,7 @@ export default function SecretOptions() {
 
                 <section className="rounded-lg border border-stealth-800 bg-stealth-900/30 p-3">
                   <div className="mb-3">
-                    <h3 className="text-sm font-semibold text-stealth-100">2. Knowing what we know today</h3>
+                    <h3 className="text-sm font-semibold text-stealth-100">2. Fresh-capital assessment</h3>
                     <p className="text-xs text-stealth-500">Separate the underlying thesis from whether this exact contract is still a good use of the remaining capital.</p>
                   </div>
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
@@ -6615,7 +6446,7 @@ export default function SecretOptions() {
                       </select>
                     </label>
                     <label className="text-xs text-stealth-400 md:col-span-2">
-                      Would you open this exact contract today?
+                      Fresh-capital fit
                       <select value={decisionReviewForm.fresh_entry_answer} onChange={handleDecisionReviewFieldChange("fresh_entry_answer")} className="mt-1 w-full rounded border border-sky-800/70 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100">
                         <option value="unassessed">Unassessed</option>
                         <option value="yes">Yes, without qualification</option>
@@ -6628,7 +6459,7 @@ export default function SecretOptions() {
                   </div>
                   <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
                     <label className="text-xs text-stealth-400 md:col-span-2">
-                      What changed since the last review?
+                      Evidence since prior review
                       <textarea rows={3} value={decisionReviewForm.evidence_since_last} onChange={handleDecisionReviewFieldChange("evidence_since_last")} placeholder="Evidence, not just price movement." className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
                     </label>
                     <label className="text-xs text-stealth-400">
@@ -6708,7 +6539,7 @@ export default function SecretOptions() {
                       />
                     </label>
                     <label className="text-xs text-stealth-400 md:col-span-2">
-                      Continue only if
+                      Continuation condition
                       <textarea rows={2} value={decisionReviewForm.continuation_condition} onChange={handleDecisionReviewFieldChange("continuation_condition")} placeholder="Hold while A remains true; require B by the deadline; re-evaluate if D occurs." className="mt-1 w-full rounded border border-sky-800/70 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
                     </label>
                     <label className="text-xs text-stealth-400 md:col-span-2">
@@ -6716,8 +6547,8 @@ export default function SecretOptions() {
                       <textarea rows={2} value={decisionReviewForm.decision_notes} onChange={handleDecisionReviewFieldChange("decision_notes")} placeholder="Execution plan, limit-order notes, uncertainties, or conscious override." className="mt-1 w-full rounded border border-stealth-700 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
                     </label>
                     <label className="text-xs text-stealth-400 md:col-span-2">
-                      Why override the system? <span className="text-stealth-600">Recommended when you change its verdict or size</span>
-                      <textarea rows={2} value={decisionReviewForm.override_reason} onChange={handleDecisionReviewFieldChange("override_reason")} placeholder="What evidence or context does the automatic grade miss?" className="mt-1 w-full rounded border border-amber-800/60 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
+                      Override basis <span className="text-stealth-600">Recommended when changing verdict or size</span>
+                      <textarea rows={2} value={decisionReviewForm.override_reason} onChange={handleDecisionReviewFieldChange("override_reason")} placeholder="Evidence or context not reflected in the automatic grade." className="mt-1 w-full rounded border border-amber-800/60 bg-stealth-950 px-2.5 py-2 text-sm text-stealth-100" />
                     </label>
                   </div>
                 </section>
@@ -7281,7 +7112,7 @@ export default function SecretOptions() {
               </span>
               <div className="min-w-0">
                 <h2 className="text-xl font-semibold text-stealth-100">
-                  Restore {pendingClosedRestore.symbol}?
+                  Restore {pendingClosedRestore.symbol} position
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-stealth-300">
                   This returns the original contract to open positions, reconnects its thesis and
@@ -7344,7 +7175,7 @@ export default function SecretOptions() {
         },
         <div className="fixed inset-0 z-[70] flex min-h-[100dvh] items-center justify-center overflow-y-auto bg-stealth-950/95 p-4">
           <div className="w-full max-w-md rounded-lg border border-rose-500/35 bg-stealth-800 p-6 shadow-2xl">
-            <h2 className="text-xl font-semibold text-stealth-100">Delete closed trade?</h2>
+            <h2 className="text-xl font-semibold text-stealth-100">Delete closed trade</h2>
             <p className="mt-3 text-sm leading-6 text-stealth-300">
               Trade #{pendingClosedDeletion.id} for {pendingClosedDeletion.symbol}, closed{" "}
               {formatDate(pendingClosedDeletion.close_date)}, will be permanently removed from the

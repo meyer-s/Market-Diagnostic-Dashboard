@@ -11,7 +11,9 @@ def test_compute_optionality_metrics_from_provider_frames() -> None:
 
     assert metrics["iv30"] == 35.0
     assert metrics["avg_edr"] is not None
-    assert metrics["iv_percentile"] is not None
+    assert metrics["iv30_chain_percentile"] == 50.0
+    assert metrics["iv_percentile"] is None
+    assert metrics["component_usable"]["iv_percentile"] is False
     assert metrics["data_source"] == "fake_option_chain"
     assert metrics["price_source_counts"]["mid"] > 0
 

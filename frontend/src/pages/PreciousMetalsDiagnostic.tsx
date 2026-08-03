@@ -404,6 +404,8 @@ function ProjectionCard({ proj }: { proj: MetalProjection }) {
       <div className="mt-3">
         <OptionsStructureMap
           currentPrice={proj.current_price}
+          priceLabel="Spot price"
+          movingAverageType="SMA"
           supportLevels={proj.levels.support}
           resistanceLevels={proj.levels.resistance}
           sma50={proj.technicals.sma_50}

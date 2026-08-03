@@ -30,7 +30,13 @@ export type OptionalityLike = {
   iv30?: number | null;
   hv30?: number | null;
   iv_percentile?: number | null;
+  iv_percentile_kind?: string | null;
   avg_edr?: number | null;
+  mispricing_usable?: boolean;
+  component_usable?: {
+    mispricing?: boolean;
+  };
+  quality_status?: string | null;
 };
 
 export type TechnicalDataLike = {
@@ -50,17 +56,15 @@ type BuildSummaryInputParams = {
   asOf?: string | null;
 };
 
-const calcSmaSeries = (values: number[], window: number) => {
-  if (values.length < window) return Array(values.length).fill(null);
+const calcEmaSeries = (values: number[], span: number) => {
+  if (!values.length) return [];
+  const alpha = 2 / (span + 1);
   const result: Array<number | null> = [];
-  let sum = 0;
-  for (let i = 0; i < values.length; i += 1) {
-    sum += values[i];
-    if (i >= window) {
-      sum -= values[i - window];
-    }
-    result.push(i >= window - 1 ? sum / window : null);
-  }
+  let ema = values[0];
+  values.forEach((value, index) => {
+    if (index > 0) ema = value * alpha + ema * (1 - alpha);
+    result.push(index >= span - 1 ? ema : null);
+  });
   return result;
 };
 
@@ -121,8 +125,9 @@ export const buildSummaryInputFromSnapshot = ({
   if (!candles.length) return null;
 
   const closes = candles.map((c: CandleLike) => c.close).filter((v: number) => Number.isFinite(v));
-  const ma50Series = calcSmaSeries(closes, 50);
-  const ma200Series = calcSmaSeries(closes, 200);
+  // The API's historical `sma_*` field names contain EMA levels; keep slope basis consistent.
+  const ma50Series = calcEmaSeries(closes, 50);
+  const ma200Series = calcEmaSeries(closes, 200);
   const ma50Slope = calcSlopeFromSeries(ma50Series);
   const ma200Slope = calcSlopeFromSeries(ma200Series);
 
@@ -165,7 +170,7 @@ export const buildSummaryInputFromSnapshot = ({
 
   return {
     symbol: normalizedSymbol,
-    asOf: asOf || new Date().toISOString(),
+    asOf: asOf || null,
     technicals: {
       price: technicalData?.current_price ?? null,
       ma50: technicalData?.sma_50 ?? null,
@@ -203,8 +208,15 @@ export const buildSummaryInputFromSnapshot = ({
     options: {
       iv30: optionalityMetrics?.iv30 ?? null,
       hv30: optionalityMetrics?.hv30 ?? null,
-      iv_percentile: optionalityMetrics?.iv_percentile ?? null,
+      iv_percentile: optionalityMetrics?.iv_percentile_kind === "historical_time_series"
+        ? optionalityMetrics.iv_percentile ?? null
+        : null,
       avg_edr: optionalityMetrics?.avg_edr ?? null,
+      mispricing_usable:
+        optionalityMetrics?.mispricing_usable
+        ?? optionalityMetrics?.component_usable?.mispricing
+        ?? false,
+      quality_status: optionalityMetrics?.quality_status ?? null,
     },
   };
 };

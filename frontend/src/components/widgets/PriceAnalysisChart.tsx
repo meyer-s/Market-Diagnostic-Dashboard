@@ -6,10 +6,11 @@
  */
 
 interface PriceAnalysisChartProps {
-  currentPrice: number;
-  takeProfit: number;
+  latestClose: number;
+  closeLabel?: string;
+  upperReference: number;
   rawUpperReference?: number | null;
-  stopLoss: number;
+  lowerReference: number;
   trailingReturn: number;
   horizon: string;
   analystTarget?: number | null;
@@ -25,10 +26,11 @@ interface PriceAnalysisChartProps {
 }
 
 export function PriceAnalysisChart({
-  currentPrice,
-  takeProfit,
+  latestClose,
+  closeLabel = "Latest Close",
+  upperReference,
   rawUpperReference,
-  stopLoss,
+  lowerReference,
   trailingReturn,
   horizon,
   analystTarget,
@@ -37,11 +39,18 @@ export function PriceAnalysisChart({
   sanityFlags,
 }: PriceAnalysisChartProps) {
   // Calculate percentages for visualization
-  const safeStopLoss = Math.max(0, stopLoss);
-  const rawUpper = rawUpperReference && rawUpperReference > 0 ? rawUpperReference : takeProfit;
-  const tpUpside = ((takeProfit - currentPrice) / currentPrice) * 100;
-  const rawUpside = ((rawUpper - currentPrice) / currentPrice) * 100;
-  const slDownside = ((currentPrice - safeStopLoss) / currentPrice) * 100;
+  const safeLatestClose = Math.max(0.01, latestClose);
+  const safeLowerReference = Math.max(0, lowerReference);
+  const rawUpper = rawUpperReference && rawUpperReference > 0 ? rawUpperReference : upperReference;
+  const upperDistance = ((upperReference - safeLatestClose) / safeLatestClose) * 100;
+  const rawUpside = ((rawUpper - safeLatestClose) / safeLatestClose) * 100;
+  const lowerDistance = ((safeLowerReference - safeLatestClose) / safeLatestClose) * 100;
+  const upperVisualDistance = Math.max(0, upperDistance);
+  const lowerVisualDistance = Math.max(0, -lowerDistance);
+  const rangeRatio = upperDistance > 0 && lowerDistance < 0
+    ? upperDistance / Math.abs(lowerDistance)
+    : null;
+  const formatSignedPercent = (value: number) => `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
   const trailingPercent = trailingReturn;
 
   // Color coding
@@ -49,18 +58,20 @@ export function PriceAnalysisChart({
   const returnColor = isPositive ? "text-green-400" : "text-red-400";
   const returnBg = isPositive ? "bg-green-500/10" : "bg-red-500/10";
   const returnBorder = isPositive ? "border-green-500/50" : "border-red-500/50";
-  const maxRange = Math.max(slDownside, tpUpside) * 1.2;
-  const slHeight = (slDownside / maxRange) * 100;
-  const tpHeight = (tpUpside / maxRange) * 100;
+  const maxRange = Math.max(lowerVisualDistance, upperVisualDistance, 0.01) * 1.2;
+  const lowerHeight = Math.min(100, (lowerVisualDistance / maxRange) * 100);
+  const upperHeight = Math.min(100, (upperVisualDistance / maxRange) * 100);
   
-  const modelTarget = takeProfit;
-  const hasRawExtensionGap = rawUpper > takeProfit * 1.03;
-  const normalizedTargetRegime = (targetRegime || "technical_extension").replace(/_/g, " ");
+  const modelReference = upperReference;
+  const hasRawExtensionGap = rawUpper > upperReference * 1.03;
+  const normalizedTargetRegime = targetRegime?.trim()
+    ? targetRegime.trim().replace(/_/g, " ")
+    : null;
   const highSeverityFlags = (sanityFlags || []).filter((flag) => flag.severity === "high");
   const hasAnalystTarget =
     analystTarget !== null && analystTarget !== undefined && analystTarget > 0;
   const analystDiffPct = hasAnalystTarget
-    ? ((modelTarget - analystTarget) / analystTarget) * 100
+    ? ((modelReference - analystTarget) / analystTarget) * 100
     : null;
   let analystAlignment = "n/a";
   let analystColor = "text-stealth-400";
@@ -84,50 +95,57 @@ export function PriceAnalysisChart({
         <p className="text-xs text-stealth-400 mb-1">Price Analysis for {horizon}</p>
         <div className="flex items-end justify-between">
           <div>
-            <p className="text-xs text-stealth-400">Current Price</p>
-            <p className="text-xl font-bold text-white">${currentPrice.toFixed(2)}</p>
+            <p className="text-xs text-stealth-400">{closeLabel}</p>
+            <p className="text-xl font-bold text-white">${latestClose.toFixed(2)}</p>
           </div>
           <div className={`text-right px-2 py-1 rounded text-xs ${returnBg} border ${returnBorder}`}>
-            <p className="text-xs text-stealth-300 mb-0.5">Trailing Return</p>
+            <p className="text-xs text-stealth-300 mb-0.5">Trailing Price Return</p>
             <p className={`text-base font-bold ${returnColor}`}>
               {trailingReturn > 0 ? "+" : ""}{trailingPercent.toFixed(1)}%
             </p>
           </div>
         </div>
         {hasAnalystTarget && (
-          <div className="mt-2 flex items-center justify-between text-xs text-stealth-400">
+          <div
+            data-testid="analyst-reference-context"
+            className="mt-2 flex flex-col items-start gap-1 text-xs leading-5 text-stealth-400 sm:flex-row sm:items-center sm:justify-between"
+          >
             <span>
-              Analyst target: ${analystTarget!.toFixed(2)}
+              Analyst reference: ${analystTarget!.toFixed(2)}
               {analystCount ? ` (${analystCount})` : ""}
             </span>
             <span className={`font-semibold ${analystColor}`}>
-              Analyst Alignment: {analystAlignment}
+              Reference alignment: {analystAlignment}
             </span>
           </div>
         )}
-        <div className="mt-2 flex items-center justify-between text-xs text-stealth-400">
-          <span>Target Regime: <span className="text-stealth-200 capitalize">{normalizedTargetRegime}</span></span>
-          {highSeverityFlags.length > 0 && (
-            <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-xs uppercase tracking-wide text-amber-300">
-              valuation caution
-            </span>
-          )}
-        </div>
+        {(normalizedTargetRegime || highSeverityFlags.length > 0) && (
+          <div className={`mt-2 flex items-center text-xs text-stealth-400 ${normalizedTargetRegime ? "justify-between" : "justify-end"}`}>
+            {normalizedTargetRegime && (
+              <span>Reference basis: <span className="text-stealth-200 capitalize">{normalizedTargetRegime}</span></span>
+            )}
+            {highSeverityFlags.length > 0 && (
+              <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-xs uppercase tracking-wide text-amber-300">
+                reference caution
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="mb-3">
-        <div className="flex items-flex-end justify-between h-32 gap-2 px-1">
+        <div className="flex items-end justify-between h-32 gap-2 px-1">
           <div className="flex flex-col items-center flex-1">
             <div className="w-full flex flex-col-reverse items-center justify-end h-32 mb-1">
               <div
                 className="w-full bg-red-500/30 border border-red-500/50 rounded-sm transition-all"
-                style={{ height: `${slHeight}%`, minHeight: "3px" }}
+                style={{ height: `${lowerHeight}%`, minHeight: "3px" }}
               />
             </div>
             <div className="text-center">
-              <p className="text-xs text-red-400 font-semibold">Stop Loss</p>
-              <p className="text-xs text-red-300">${safeStopLoss.toFixed(2)}</p>
-              <p className="text-xs text-red-200">-{slDownside.toFixed(1)}%</p>
+              <p className="text-xs text-red-400 font-semibold">Lower Reference</p>
+              <p className="text-xs text-red-300">${safeLowerReference.toFixed(2)}</p>
+              <p className="text-xs text-red-200">{formatSignedPercent(lowerDistance)}</p>
             </div>
           </div>
 
@@ -135,16 +153,16 @@ export function PriceAnalysisChart({
             <div className="w-full flex flex-col-reverse items-center justify-end h-32 mb-1">
               <div
                 className="w-full bg-green-500/30 border border-green-500/50 rounded-sm transition-all"
-                style={{ height: `${tpHeight}%`, minHeight: "3px" }}
+                style={{ height: `${upperHeight}%`, minHeight: "3px" }}
               />
             </div>
             <div className="text-center">
-              <p className="text-xs text-green-400 font-semibold">Trade Target</p>
-              <p className="text-xs text-green-300">${takeProfit.toFixed(2)}</p>
-              <p className="text-xs text-green-200">+{tpUpside.toFixed(1)}%</p>
+              <p className="text-xs text-green-400 font-semibold">Upper Reference</p>
+              <p className="text-xs text-green-300">${upperReference.toFixed(2)}</p>
+              <p className="text-xs text-green-200">{formatSignedPercent(upperDistance)}</p>
               {hasRawExtensionGap && (
                 <p className="mt-0.5 text-xs text-amber-300">
-                  Raw ext ${rawUpper.toFixed(2)} (+{rawUpside.toFixed(1)}%)
+                  Raw ext ${rawUpper.toFixed(2)} ({formatSignedPercent(rawUpside)})
                 </p>
               )}
             </div>
@@ -154,13 +172,13 @@ export function PriceAnalysisChart({
 
       {hasRawExtensionGap && (
         <div className="mb-3 rounded border border-amber-500/35 bg-amber-500/10 px-2.5 py-2 text-xs text-amber-200">
-          Raw extension is shown for signal context and may not be valuation-adjusted.
+          Technical extension is shown for context and may not be valuation-adjusted.
         </div>
       )}
 
       {sanityFlags && sanityFlags.length > 0 && (
         <div className="mb-3 rounded border border-amber-500/35 bg-amber-500/10 px-2.5 py-2">
-          <p className="text-xs font-semibold uppercase tracking-wide text-amber-300">Sanity Flags</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-amber-300">Reference Checks</p>
           <p className="mt-1 text-xs text-amber-200">
             {sanityFlags.map((flag) => flag.message || flag.type.replace(/_/g, " ")).join("; ")}
           </p>
@@ -170,15 +188,15 @@ export function PriceAnalysisChart({
       {/* Stats */}
       <div className="grid grid-cols-2 gap-1 text-xs">
         <div className="bg-red-500/10 border border-red-500/30 rounded p-1.5">
-          <p className="text-red-300 text-xs mb-0.5">Risk/Reward</p>
+          <p className="text-red-300 text-xs mb-0.5">Upper / Lower</p>
           <p className="text-red-200 font-semibold text-xs">
-            1 : {(tpUpside / slDownside).toFixed(2)}
+            {rangeRatio === null ? "n/a" : `${rangeRatio.toFixed(2)}×`}
           </p>
         </div>
         <div className="bg-blue-500/10 border border-blue-500/30 rounded p-1.5">
-          <p className="text-blue-300 text-xs mb-0.5">Risk</p>
+          <p className="text-blue-300 text-xs mb-0.5">Lower Distance</p>
           <p className="text-blue-200 font-semibold text-xs">
-            {slDownside.toFixed(1)}%
+            {formatSignedPercent(lowerDistance)}
           </p>
         </div>
       </div>

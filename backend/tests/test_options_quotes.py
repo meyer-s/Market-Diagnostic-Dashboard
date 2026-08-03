@@ -49,6 +49,18 @@ def test_option_quote_flags_wide_spreads() -> None:
     assert quote["quality"] == "wide"
 
 
+def test_option_quote_rejects_crossed_bid_ask_market() -> None:
+    row = pd.Series({"bid": 2.0, "ask": 1.0, "lastPrice": 1.5})
+
+    quote = option_quote_from_row(row)
+
+    assert quote["mid"] is None
+    assert quote["premium"] is None
+    assert quote["price_source"] is None
+    assert quote["quality"] == "crossed"
+    assert option_premium_from_row(row) is None
+
+
 def test_select_optimal_contract_keeps_time_after_hold() -> None:
     provider = FakeProvider()
     selected = select_optimal_contract(

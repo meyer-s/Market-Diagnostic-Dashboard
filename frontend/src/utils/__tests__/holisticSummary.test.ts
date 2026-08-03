@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildHolisticSummary, _testHelpers } from "../holisticSummary";
+import { buildSummaryInputFromSnapshot } from "../summaryInput";
 import type { AxisScore, SummaryInput } from "../../types/holisticSummary";
 
 const baseInput: SummaryInput = {
@@ -38,6 +39,7 @@ const baseInput: SummaryInput = {
     hv30: 24,
     iv_percentile: 25,
     avg_edr: 35,
+    mispricing_usable: true,
   },
 };
 
@@ -58,6 +60,7 @@ describe("holistic summary options voting", () => {
         hv30: 25,
         iv_percentile: 80,
         avg_edr: 50,
+        mispricing_usable: true,
       },
     };
     const summary = buildHolisticSummary(input);
@@ -72,11 +75,48 @@ describe("holistic summary options voting", () => {
         hv30: null,
         iv_percentile: null,
         avg_edr: null,
+        mispricing_usable: true,
       },
     };
     const summary = buildHolisticSummary(input);
     expect(summary.debug?.options.bias).toBe("UNKNOWN");
     expect(summary.debug?.options.confidence).toBeLessThan(40);
+  });
+
+  it("fails closed when pricing inputs are present but unusable", () => {
+    const summary = buildHolisticSummary({
+      ...baseInput,
+      options: {
+        iv30: 12,
+        hv30: 30,
+        iv_percentile: 10,
+        avg_edr: 20,
+        mispricing_usable: false,
+        quality_status: "unusable",
+      },
+    });
+
+    expect(summary.debug?.options.bias).toBe("UNKNOWN");
+    expect(summary.debug?.options.confidence).toBe(0);
+    expect(summary.regime).not.toBe("Confirmed Strength");
+    expect(summary.narrative).toContain("Options evidence is insufficient");
+  });
+
+  it("does not infer an IV-versus-realized relationship from other cheap-pricing inputs", () => {
+    const summary = buildHolisticSummary({
+      ...baseInput,
+      options: {
+        iv30: 30,
+        hv30: 20,
+        iv_percentile: 10,
+        avg_edr: 20,
+        mispricing_usable: true,
+      },
+    });
+
+    expect(summary.debug?.options.bias).toBe("CHEAP");
+    expect(summary.narrative).toContain("available pricing inputs lean lower");
+    expect(summary.narrative).not.toContain("implied volatility is below realized");
   });
 });
 
@@ -146,9 +186,126 @@ describe("holistic summary watch line", () => {
         hv30: 20,
         iv_percentile: 80,
         avg_edr: 70,
+        mispricing_usable: true,
       },
     };
     const summary = buildHolisticSummary(input);
     expect(summary.watch).toMatch(/Near resistance/);
+    expect(summary.narrative).not.toContain(summary.watch);
+  });
+});
+
+describe("holistic summary evidence wording", () => {
+  it("describes neutral axes without assigning supportive trends", () => {
+    const summary = buildHolisticSummary({
+      ...baseInput,
+      technicals: {
+        ...baseInput.technicals,
+        price: null,
+        ma50: null,
+        ma200: null,
+        ma50_slope: null,
+        ma200_slope: null,
+        rsi14: null,
+        rsi14_slope: null,
+        macd: null,
+        macd_signal: null,
+        macd_hist: null,
+        macd_hist_slope: null,
+        atr14_pct: null,
+        atr14_pct_slope: null,
+        vol_vs_20d: null,
+      },
+      fundamentals: {},
+    });
+
+    expect(summary.debug?.technical.bias).toBe("NEUTRAL");
+    expect(summary.debug?.fundamental.bias).toBe("NEUTRAL");
+    expect(summary.narrative).toContain("Fundamentals read neutral. Technicals are neutral.");
+    expect(summary.narrative).not.toMatch(/holding up|supportive/);
+  });
+
+  it("keeps an unavailable source timestamp unknown", () => {
+    const input = buildSummaryInputFromSnapshot({
+      symbol: "TEST",
+      technicalData: {
+        candles: [{ close: 10, high: 11, low: 9, volume: 100 }],
+        current_price: 10,
+      },
+    });
+
+    expect(input?.asOf).toBeNull();
+  });
+
+  it("does not reinterpret a current-chain percentile as historical IV richness", () => {
+    const input = buildSummaryInputFromSnapshot({
+      symbol: "TEST",
+      technicalData: {
+        candles: [{ close: 10, high: 11, low: 9, volume: 100 }],
+        current_price: 10,
+      },
+      optionalityMetrics: {
+        iv30: 20,
+        hv30: 20,
+        iv_percentile: 5,
+        iv_percentile_kind: "current_chain_cross_section",
+        avg_edr: 50,
+        mispricing_usable: true,
+      },
+    });
+
+    expect(input?.options.iv_percentile).toBeNull();
+    expect(buildHolisticSummary(input as SummaryInput).debug?.options.bias).toBe("FAIR");
+  });
+
+  it("computes trend slopes on the API's EMA basis", () => {
+    const closes = Array.from({ length: 220 }, (_, index) =>
+      index < 205 ? 100 : 100 + (index - 204) ** 2
+    );
+    const expectedEmaSlope = (span: number) => {
+      const alpha = 2 / (span + 1);
+      let ema = closes[0];
+      const series = closes.map((value, index) => {
+        if (index > 0) ema = value * alpha + ema * (1 - alpha);
+        return ema;
+      }).slice(span - 1);
+      return (series[series.length - 1] - series[series.length - 11]) / 10;
+    };
+
+    const input = buildSummaryInputFromSnapshot({
+      symbol: "TEST",
+      technicalData: {
+        candles: closes.map((close) => ({ close, high: close + 1, low: close - 1, volume: 100 })),
+        current_price: closes[closes.length - 1],
+        sma_50: 110,
+        sma_200: 105,
+      },
+    });
+
+    expect(input?.technicals.ma50_slope).toBeCloseTo(expectedEmaSlope(50), 10);
+    expect(input?.technicals.ma200_slope).toBeCloseTo(expectedEmaSlope(200), 10);
+  });
+
+  it("describes a declining FCF series as falling", () => {
+    const summary = buildHolisticSummary({
+      ...baseInput,
+      fundamentals: { fcf_series: [500, 450, 400, 350, 300] },
+    });
+
+    expect(summary.debug?.fundamental.facts).toContain("FCF YoY -40.0% with falling momentum.");
+    expect(summary.debug?.fundamental.facts.join(" ")).not.toContain("flat momentum");
+  });
+
+  it("does not fabricate growth from a zero comparison baseline", () => {
+    const summary = buildHolisticSummary({
+      ...baseInput,
+      fundamentals: { eps_series: [0, 1, 2, 3, 4] },
+    });
+    const epsStats = summary.debug?.fundamental.debug?.eps as { yoy: number | null };
+    const rules = summary.debug?.fundamental.debug?.rules as string[];
+
+    expect(epsStats.yoy).toBeNull();
+    expect(rules).not.toContain("eps_improving");
+    expect(summary.debug?.fundamental.bias).toBe("NEUTRAL");
   });
 });

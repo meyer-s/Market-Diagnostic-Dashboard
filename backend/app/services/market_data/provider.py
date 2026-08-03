@@ -42,6 +42,10 @@ class OptionChainFrame:
     puts: pd.DataFrame
     source: str
     quote_source: Optional[str] = None
+    # Snapshot-level quote timing. This is intentionally distinct from an
+    # individual contract's last trade timestamp.
+    observed_at: Optional[str] = None
+    retrieved_at: Optional[str] = None
 
 
 class MarketDataProvider(Protocol):

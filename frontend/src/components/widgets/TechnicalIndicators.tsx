@@ -7,8 +7,16 @@
 import { OptionalityMispricingWidget } from "./OptionalityMispricingWidget";
 import { CHART_NEUTRAL } from "../../utils/chartUtils";
 import { getFamilyColor, statePalette } from "../../theme/metricColors";
-import { memo, useId } from "react";
+import { memo, useId, useRef, useState } from "react";
 import DataScroller from "../ui/DataScroller";
+import {
+  buildProxyEventClusters,
+  percentile,
+  proxyClusterHalo,
+  proxyEventRadius,
+  type ProxyClusterTone,
+  type ProxyEventInput,
+} from "../../utils/proxyEventClusters";
 
 interface Candle {
   date: string;
@@ -69,15 +77,7 @@ interface OptionalityMetrics {
   avg_edr: number | null;
 }
 
-interface FlowEventPoint {
-  date: string;
-  price: number;
-  volume: number;
-  notional: number;
-  volume_z: number;
-  side: "buy" | "sell" | "neutral";
-  strength: number;
-}
+type FlowEventPoint = ProxyEventInput;
 
 interface OhlcHistoryPoint {
   open: number;
@@ -96,7 +96,6 @@ interface IntradayHistoryPoint extends OhlcHistoryPoint {
 
 interface CandleChartPoint extends OhlcHistoryPoint {
   x: string;
-  eventPrice: number | null;
 }
 
 type HistoryWindow = "252d" | "1y" | "5y" | "max";
@@ -111,6 +110,7 @@ interface TechnicalIndicatorsProps {
   historyWindow?: HistoryWindow;
   onHistoryWindowChange?: (window: HistoryWindow) => void;
   hideOptionsContext?: boolean;
+  closeLabel?: string;
 }
 
 function aggregateCandles<T extends OhlcHistoryPoint>(
@@ -132,7 +132,6 @@ function aggregateCandles<T extends OhlcHistoryPoint>(
         high: point.high,
         low: point.low,
         close: point.close,
-        eventPrice: null,
       });
       order.push(bucketKey);
       return;
@@ -176,8 +175,11 @@ function TechnicalIndicatorsComponent({
   historyWindow = "252d",
   onHistoryWindowChange,
   hideOptionsContext = false,
+  closeLabel = "Latest Close",
 }: TechnicalIndicatorsProps) {
   const chartIdBase = `technical-${useId().replace(/:/g, "")}`;
+  const priceChartRef = useRef<SVGSVGElement | null>(null);
+  const [activeProxyClusterId, setActiveProxyClusterId] = useState<string | null>(null);
 
   if (!technicalData && !optionsFlow) {
     return (
@@ -200,7 +202,11 @@ function TechnicalIndicatorsComponent({
   const formatExpiry = (dateStr: string) => {
     const parsed = new Date(dateStr);
     if (Number.isNaN(parsed.getTime())) return dateStr;
-    return parsed.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    return parsed.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      timeZone: "UTC",
+    });
   };
 
   const formatDistance = (strike: number) => {
@@ -354,8 +360,6 @@ function TechnicalIndicatorsComponent({
   const maxVolume = Math.max(...volumes, 0);
 
   const isShortView = historyWindow === "252d";
-  const eventDates = new Set(flowEvents.filter((evt) => evt.side !== "neutral").map((evt) => evt.date));
-  const overlayEventCount = eventDates.size;
 
   const unifiedChartData: CandleChartPoint[] = (() => {
     if (isShortView && intradayHistory2h.length > 0) {
@@ -365,7 +369,16 @@ function TechnicalIndicatorsComponent({
         high: point.high,
         low: point.low,
         close: point.close,
-        eventPrice: eventDates.has(point.timestamp.slice(0, 10)) ? point.close : null,
+      }));
+    }
+
+    if (isShortView) {
+      return priceHistory.map((point) => ({
+        x: point.date,
+        open: point.open,
+        high: point.high,
+        low: point.low,
+        close: point.close,
       }));
     }
 
@@ -376,7 +389,6 @@ function TechnicalIndicatorsComponent({
         high: point.high,
         low: point.low,
         close: point.close,
-        eventPrice: null,
       }));
     }
 
@@ -422,38 +434,227 @@ function TechnicalIndicatorsComponent({
     return pricePaddingBox.left + (index / (unifiedChartData.length - 1)) * pricePlotWidth;
   };
 
+  const sessionKeys: string[] = [];
+  const sessionSequenceByDate = new Map<string, number>();
+  const finalChartIndexByDate = new Map<string, number>();
+  unifiedChartData.forEach((point, index) => {
+    const dateKey = point.x.slice(0, 10);
+    if (!sessionSequenceByDate.has(dateKey)) {
+      sessionSequenceByDate.set(dateKey, sessionKeys.length);
+      sessionKeys.push(dateKey);
+    }
+    // Daily proxy events represent the completed session, so intraday overlays
+    // anchor once at that session's final visible candle instead of every candle.
+    finalChartIndexByDate.set(dateKey, index);
+  });
+
+  const proxyClusters = isShortView
+    ? buildProxyEventClusters(flowEvents, (event) => {
+        const dateKey = event.date.slice(0, 10);
+        const chartIndex = finalChartIndexByDate.get(dateKey);
+        const sequence = sessionSequenceByDate.get(dateKey);
+        if (chartIndex === undefined || sequence === undefined) return null;
+        const y = scalePrice(event.price);
+        if (
+          y < pricePaddingBox.top ||
+          y > priceChartHeight - pricePaddingBox.bottom
+        ) {
+          return null;
+        }
+        return { x: scalePriceX(chartIndex), y, sequence };
+      })
+    : [];
+  const visibleProxyEvents = proxyClusters.flatMap((cluster) => cluster.events);
+  const proxyEventCount = visibleProxyEvents.length;
+  const proxyNotionalReference = percentile(
+    visibleProxyEvents.map((event) => event.weight),
+    0.75,
+  );
+  const medianClusterNotional = percentile(
+    proxyClusters.map((cluster) => cluster.totalNotional),
+    0.5,
+  );
+  const proxyClusterRank = new Map(
+    [...proxyClusters]
+      .sort((left, right) => right.totalNotional - left.totalNotional)
+      .map((cluster, index) => [cluster.id, index + 1]),
+  );
+
   const shortViewCloses = isShortView ? unifiedChartData.map((point) => point.close) : [];
   const ema50Series = isShortView ? calcEmaSeries(shortViewCloses, 50) : [];
   const ema200Series = isShortView ? calcEmaSeries(shortViewCloses, 200) : [];
 
   const candleIntervalLabel =
-    historyWindow === "252d" ? "2H candles" : historyWindow === "1y" ? "Daily candles" : historyWindow === "5y" ? "Weekly candles" : "Monthly candles";
+    historyWindow === "252d"
+      ? intradayHistory2h.length > 0 ? "2H candles" : "Daily candles"
+      : historyWindow === "1y" ? "Daily candles" : historyWindow === "5y" ? "Weekly candles" : "Monthly candles";
+  const usesIntradayCandles = isShortView && intradayHistory2h.length > 0;
+  const dailyDateOptions = { timeZone: "UTC" } as const;
+  const proxyOverlayLabel =
+    proxyEventCount === 0
+      ? "0 proxy bars"
+      : proxyEventCount === 1
+        ? "1 proxy bar · notional-scaled"
+        : `${proxyClusters.length} ${proxyClusters.length === 1 ? "cluster" : "clusters"} · ${proxyEventCount} bars · notional-scaled`;
+  const proxyToneStyle: Record<
+    ProxyClusterTone,
+    { color: string; dash?: string; label: string }
+  > = {
+    buy: { color: statePalette.green, label: "Positive-bar" },
+    sell: { color: statePalette.red, dash: "4 2", label: "Negative-bar" },
+    neutral: { color: "#94a3b8", dash: "1 2", label: "Neutral" },
+    mixed: { color: "#cbd5e1", dash: "2 2", label: "Mixed" },
+  };
+
+  const formatProxyDate = (date: string) => {
+    const parsed = new Date(`${date.slice(0, 10)}T00:00:00Z`);
+    if (Number.isNaN(parsed.getTime())) return date;
+    return parsed.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      timeZone: "UTC",
+    });
+  };
+
+  const proxyClusterDateRange = (cluster: (typeof proxyClusters)[number]) =>
+    cluster.startDate === cluster.endDate
+      ? formatProxyDate(cluster.startDate)
+      : `${formatProxyDate(cluster.startDate)}–${formatProxyDate(cluster.endDate)}`;
+
+  const proxyClusterMix = (cluster: (typeof proxyClusters)[number]) => {
+    const buyCount = cluster.events.filter((event) => event.side === "buy").length;
+    const sellCount = cluster.events.filter((event) => event.side === "sell").length;
+    const neutralCount = cluster.events.length - buyCount - sellCount;
+    return [
+      buyCount ? `${buyCount} positive` : null,
+      sellCount ? `${sellCount} negative` : null,
+      neutralCount ? `${neutralCount} neutral` : null,
+    ].filter(Boolean).join(", ");
+  };
+
+  const formatProxyClusterTitle = (cluster: (typeof proxyClusters)[number]) => {
+    const dateRange = proxyClusterDateRange(cluster);
+    const rank = proxyClusterRank.get(cluster.id) ?? proxyClusters.length;
+    const relativeMultiple =
+      medianClusterNotional > 0
+        ? cluster.totalNotional / medianClusterNotional
+        : 1;
+    const mix = proxyClusterMix(cluster);
+
+    return `${proxyToneStyle[cluster.tone].label} proxy cluster · ${dateRange} · ${cluster.events.length} qualifying ${cluster.events.length === 1 ? "bar" : "bars"} · ${formatCompact(cluster.totalNotional)} flagged-bar notional · ${relativeMultiple.toFixed(1)}× visible median · rank ${rank} of ${proxyClusters.length} · weighted price $${cluster.weightedPrice.toFixed(2)} · ${mix}`;
+  };
+
+  const activeProxyCluster =
+    proxyClusters.find((cluster) => cluster.id === activeProxyClusterId) ?? null;
+  const activeProxyClusterIndex = activeProxyCluster
+    ? proxyClusters.findIndex((cluster) => cluster.id === activeProxyCluster.id)
+    : -1;
+  const activeProxyRelativeMultiple =
+    activeProxyCluster && medianClusterNotional > 0
+      ? activeProxyCluster.totalNotional / medianClusterNotional
+      : 1;
+  const activeProxyRank = activeProxyCluster
+    ? proxyClusterRank.get(activeProxyCluster.id) ?? proxyClusters.length
+    : null;
+  const proxyTooltipWidth = 300;
+  const proxyTooltipHeight = 68;
+  const proxyTooltipXFor = (cluster: (typeof proxyClusters)[number]) =>
+    Math.max(
+      pricePaddingBox.left + 4,
+      Math.min(
+        chartWidth - pricePaddingBox.right - proxyTooltipWidth - 4,
+        cluster.centerX + 12,
+      ),
+    );
+  const proxyTooltipX = activeProxyCluster
+    ? proxyTooltipXFor(activeProxyCluster)
+    : 0;
+  const proxyTooltipY = activeProxyCluster
+    ? Math.max(
+        pricePaddingBox.top + 4,
+        Math.min(
+          priceChartHeight - pricePaddingBox.bottom - proxyTooltipHeight - 4,
+          activeProxyCluster.centerY - proxyTooltipHeight - 12,
+        ),
+      )
+    : 0;
+
+  const keepProxyTooltipVisible = (cluster: (typeof proxyClusters)[number]) => {
+    const chart = priceChartRef.current;
+    const scroller = chart?.closest<HTMLElement>(".data-scroller");
+    if (
+      !chart ||
+      !scroller ||
+      scroller.clientWidth <= 0 ||
+      typeof scroller.scrollTo !== "function"
+    ) {
+      return;
+    }
+
+    const chartRect = chart.getBoundingClientRect();
+    const scrollerRect = scroller.getBoundingClientRect();
+    if (chartRect.width <= 0) return;
+
+    const scale = chartRect.width / chartWidth;
+    const chartContentLeft = chartRect.left - scrollerRect.left + scroller.scrollLeft;
+    const tooltipLeft = chartContentLeft + proxyTooltipXFor(cluster) * scale;
+    const tooltipRight = tooltipLeft + proxyTooltipWidth * scale;
+    const visibleLeft = scroller.scrollLeft;
+    const visibleRight = visibleLeft + scroller.clientWidth;
+    const margin = 8;
+    let nextScrollLeft = visibleLeft;
+
+    if (tooltipLeft < visibleLeft + margin) {
+      nextScrollLeft = tooltipLeft - margin;
+    } else if (tooltipRight > visibleRight - margin) {
+      nextScrollLeft = tooltipRight - scroller.clientWidth + margin;
+    }
+
+    const maxScrollLeft = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+    const boundedScrollLeft = Math.max(0, Math.min(maxScrollLeft, nextScrollLeft));
+    if (Math.abs(boundedScrollLeft - visibleLeft) > 1) {
+      scroller.scrollTo({ left: boundedScrollLeft, behavior: "auto" });
+    }
+  };
+
+  const moveActiveProxyCluster = (nextIndex: number) => {
+    if (!proxyClusters.length) return;
+    const boundedIndex = Math.max(0, Math.min(proxyClusters.length - 1, nextIndex));
+    const nextCluster = proxyClusters[boundedIndex];
+    setActiveProxyClusterId(nextCluster.id);
+    keepProxyTooltipVisible(nextCluster);
+  };
 
   const formatTick = (value: string) => {
     const dt = new Date(value);
     if (Number.isNaN(dt.getTime())) return value;
-    if (isShortView) {
+    if (usesIntradayCandles) {
       return dt.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    }
+    if (isShortView) {
+      return dt.toLocaleDateString("en-US", { month: "short", day: "numeric", ...dailyDateOptions });
     }
     if (historyWindow === "1y") {
-      return dt.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      return dt.toLocaleDateString("en-US", { month: "short", day: "numeric", ...dailyDateOptions });
     }
     if (historyWindow === "5y") {
-      return dt.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+      return dt.toLocaleDateString("en-US", { month: "short", year: "2-digit", ...dailyDateOptions });
     }
-    return dt.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+    return dt.toLocaleDateString("en-US", { month: "short", year: "2-digit", ...dailyDateOptions });
   };
 
   const formatLabel = (value: string) => {
     const dt = new Date(value);
     if (Number.isNaN(dt.getTime())) return value;
-    if (isShortView) {
+    if (usesIntradayCandles) {
       return dt.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
     }
-    if (historyWindow === "1y") {
-      return dt.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
-    }
-    return dt.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+    return dt.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      ...dailyDateOptions,
+    });
   };
 
   const volumeChartHeight = 160;
@@ -469,11 +670,20 @@ function TechnicalIndicatorsComponent({
     <div className="space-y-4 mb-6">
       {/* Price History Chart */}
       <div className="surface-card-strong p-4 sm:p-6">
-        <div className="flex items-center justify-between mb-4">
+        <div
+          data-testid="price-history-header"
+          className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+        >
           <h3 className="text-base sm:text-lg font-semibold">Price History</h3>
-          <div className="flex items-center gap-2">
-            <div className="text-xs text-stealth-500">{isShortView ? `${overlayEventCount} flow markers` : candleIntervalLabel}</div>
-            <div className="flex items-center gap-1 rounded-full border border-stealth-700 bg-stealth-900/70 p-0.5">
+          <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
+            <div className="text-xs leading-4 text-stealth-500 sm:whitespace-nowrap">
+              {isShortView ? proxyOverlayLabel : candleIntervalLabel}
+            </div>
+            <div
+              className="flex items-center gap-1 rounded-full border border-stealth-700 bg-stealth-900/70 p-0.5"
+              role="group"
+              aria-label="Price history window"
+            >
               {([
                 { value: "252d", label: "252D" },
                 { value: "1y", label: "1Y" },
@@ -484,7 +694,8 @@ function TechnicalIndicatorsComponent({
                   key={opt.value}
                   type="button"
                   onClick={() => onHistoryWindowChange?.(opt.value)}
-                  className={`px-2 py-0.5 rounded-full text-xs font-semibold uppercase tracking-[0.08em] ${
+                  aria-pressed={historyWindow === opt.value}
+                  className={`min-h-11 min-w-11 rounded-full px-2 text-xs font-semibold uppercase tracking-[0.08em] ${
                     historyWindow === opt.value ? "bg-stealth-700 text-white" : "text-stealth-300 hover:text-white"
                   }`}
                 >
@@ -500,22 +711,90 @@ function TechnicalIndicatorsComponent({
           className="secondary-card mb-4 p-4"
           hint="Scroll horizontally to inspect the full price history."
         >
+          {isShortView && proxyEventCount > 0 && (
+            <p
+              id={`${chartIdBase}-proxy-live`}
+              data-testid="proxy-cluster-live-region"
+              className="sr-only"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              {activeProxyCluster
+                ? formatProxyClusterTitle(activeProxyCluster)
+                : `${proxyClusters.length} proximity ${proxyClusters.length === 1 ? "cluster" : "clusters"} contain ${proxyEventCount} qualifying bars. Focus the chart and use the arrow keys to inspect their relative size.`}
+            </p>
+          )}
           {unifiedChartData.length > 0 ? (
             <svg
+              ref={priceChartRef}
               role="img"
               aria-labelledby={`${chartIdBase}-price-title ${chartIdBase}-price-desc`}
+              aria-describedby={
+                isShortView && proxyEventCount > 0
+                  ? `${chartIdBase}-proxy-live`
+                  : undefined
+              }
+              aria-keyshortcuts={
+                isShortView && proxyEventCount > 0
+                  ? "ArrowLeft ArrowRight ArrowUp ArrowDown Home End Escape"
+                  : undefined
+              }
+              tabIndex={isShortView && proxyEventCount > 0 ? 0 : undefined}
+              onFocus={() => {
+                if (proxyClusters.length > 0 && activeProxyClusterIndex < 0) {
+                  moveActiveProxyCluster(0);
+                }
+              }}
+              onBlur={() => setActiveProxyClusterId(null)}
+              onKeyDown={(event) => {
+                if (!proxyClusters.length) return;
+                const currentIndex = activeProxyClusterIndex >= 0
+                  ? activeProxyClusterIndex
+                  : 0;
+                if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+                  event.preventDefault();
+                  moveActiveProxyCluster(currentIndex + 1);
+                } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+                  event.preventDefault();
+                  moveActiveProxyCluster(currentIndex - 1);
+                } else if (event.key === "Home") {
+                  event.preventDefault();
+                  moveActiveProxyCluster(0);
+                } else if (event.key === "End") {
+                  event.preventDefault();
+                  moveActiveProxyCluster(proxyClusters.length - 1);
+                } else if (event.key === "Escape") {
+                  event.preventDefault();
+                  setActiveProxyClusterId(null);
+                }
+              }}
               width="100%"
               height="100%"
               viewBox={`0 0 ${chartWidth} ${priceChartHeight}`}
               preserveAspectRatio="xMidYMid meet"
+              className="rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-stealth-950"
               style={{ minWidth: "800px" }}
             >
               <title id={`${chartIdBase}-price-title`}>Price history</title>
               <desc id={`${chartIdBase}-price-desc`}>
-                Price history for the selected {historyWindow} window. Current price is
+                Price history for the selected {historyWindow} window. {closeLabel} is
                 {" "}${technicalData.current_price.toFixed(2)} and the classified trend is
                 {" "}{technicalData.trend}.
+                {isShortView && proxyEventCount > 0
+                  ? ` ${proxyEventCount} qualifying high-volume bars are grouped into ${proxyClusters.length} proximity clusters. Child bubble area scales to flagged-bar notional relative to the visible window; enclosing halos identify nearby bars without moving them from their observed date and price.`
+                  : ""}
               </desc>
+              <defs>
+                <clipPath id={`${chartIdBase}-proxy-plot-clip`}>
+                  <rect
+                    x={pricePaddingBox.left}
+                    y={pricePaddingBox.top}
+                    width={pricePlotWidth}
+                    height={pricePlotHeight}
+                  />
+                </clipPath>
+              </defs>
               {[0, 0.25, 0.5, 0.75, 1].map((percent) => {
                 const y = pricePaddingBox.top + percent * pricePlotHeight;
                 const price = maxPrice + pricePadding - percent * (priceRange + pricePadding * 2);
@@ -587,18 +866,104 @@ function TechnicalIndicatorsComponent({
                       opacity="0.82"
                       rx="1"
                     />
-                    {isShortView && candle.eventPrice !== null && (
-                      <>
-                        <circle cx={x} cy={closeY} r="5.5" fill={color} opacity="0.12" />
-                        <circle cx={x} cy={closeY} r="3.2" fill={color} fillOpacity="0.54" stroke={isGreen ? "#bbf7d0" : "#fecaca"} strokeWidth="1" />
-                      </>
-                    )}
                     <title>
                       {`${formatLabel(candle.x)} | O ${candle.open.toFixed(2)} H ${candle.high.toFixed(2)} L ${candle.low.toFixed(2)} C ${candle.close.toFixed(2)}`}
                     </title>
                   </g>
                 );
               })}
+
+              {isShortView && [...proxyClusters]
+                .sort((left, right) => right.totalNotional - left.totalNotional)
+                .map((cluster) => {
+                  const halo = proxyClusterHalo(cluster, proxyNotionalReference);
+                  const clusterStyle = proxyToneStyle[cluster.tone];
+                  return (
+                    <g
+                      key={cluster.id}
+                      data-testid="proxy-cluster"
+                      data-cluster-events={cluster.events.length}
+                      data-cluster-notional={cluster.totalNotional}
+                      data-cluster-tone={cluster.tone}
+                      data-active={activeProxyClusterId === cluster.id ? "true" : undefined}
+                      role="presentation"
+                      onPointerEnter={() => setActiveProxyClusterId(cluster.id)}
+                      onPointerLeave={(event) => {
+                        if (event.pointerType === "mouse") {
+                          setActiveProxyClusterId(null);
+                        }
+                      }}
+                      onPointerDown={() => {
+                        setActiveProxyClusterId(cluster.id);
+                        keepProxyTooltipVisible(cluster);
+                      }}
+                      style={{ cursor: "pointer" }}
+                    >
+                      <title>{formatProxyClusterTitle(cluster)}</title>
+                      {halo && (
+                        <ellipse
+                          data-testid="proxy-cluster-halo"
+                          cx={halo.cx}
+                          cy={halo.cy}
+                          rx={halo.rx}
+                          ry={halo.ry}
+                          fill={clusterStyle.color}
+                          fillOpacity="0.07"
+                          stroke={clusterStyle.color}
+                          strokeOpacity="0.72"
+                          strokeWidth={activeProxyClusterId === cluster.id ? "1.8" : "1.2"}
+                          strokeDasharray={clusterStyle.dash}
+                          clipPath={`url(#${chartIdBase}-proxy-plot-clip)`}
+                        />
+                      )}
+                      {cluster.events.map((event, eventIndex) => {
+                        const radius = proxyEventRadius(
+                          event.weight,
+                          proxyNotionalReference,
+                        );
+                        const eventStyle = proxyToneStyle[event.side];
+                        return (
+                          <g
+                            key={`${cluster.id}-${event.date}-${eventIndex}`}
+                            data-testid="proxy-event-bubble"
+                            data-event-side={event.side}
+                            data-event-date={event.date}
+                            data-event-price={event.price}
+                            data-event-notional={event.weight}
+                          >
+                            <circle
+                              cx={event.x}
+                              cy={event.y}
+                              r={radius + 1.4}
+                              fill="none"
+                              stroke={eventStyle.color}
+                              strokeWidth="1"
+                              strokeDasharray={eventStyle.dash}
+                              strokeOpacity="0.72"
+                            />
+                            <circle
+                              cx={event.x}
+                              cy={event.y}
+                              r={radius}
+                              fill={eventStyle.color}
+                              fillOpacity="0.72"
+                              stroke="#f8fafc"
+                              strokeOpacity="0.82"
+                              strokeWidth="0.7"
+                            />
+                            <circle
+                              cx={event.x}
+                              cy={event.y}
+                              r={Math.max(10, radius + 3)}
+                              fill="transparent"
+                              pointerEvents="all"
+                            />
+                          </g>
+                        );
+                      })}
+                    </g>
+                  );
+                })}
 
               {isShortView && ema50Series.some((value) => value !== null) && (
                 <text x={chartWidth - pricePaddingBox.right + 6} y={scalePrice(ema50Series.filter((value): value is number => value !== null).slice(-1)[0]) + 4} fill="#f59e0b" fontSize="12">
@@ -631,6 +996,47 @@ function TechnicalIndicatorsComponent({
 
               <line x1={pricePaddingBox.left} y1={pricePaddingBox.top} x2={pricePaddingBox.left} y2={priceChartHeight - pricePaddingBox.bottom} stroke={chartColors.axis} strokeWidth="2" />
               <line x1={pricePaddingBox.left} y1={priceChartHeight - pricePaddingBox.bottom} x2={chartWidth - pricePaddingBox.right} y2={priceChartHeight - pricePaddingBox.bottom} stroke={chartColors.axis} strokeWidth="2" />
+
+              {activeProxyCluster && activeProxyRank !== null && (
+                <g data-testid="proxy-cluster-tooltip" pointerEvents="none">
+                  <rect
+                    x={proxyTooltipX}
+                    y={proxyTooltipY}
+                    width={proxyTooltipWidth}
+                    height={proxyTooltipHeight}
+                    rx="7"
+                    fill="#0f172a"
+                    fillOpacity="0.97"
+                    stroke={proxyToneStyle[activeProxyCluster.tone].color}
+                    strokeWidth="1.2"
+                  />
+                  <text
+                    x={proxyTooltipX + 10}
+                    y={proxyTooltipY + 18}
+                    fill="#f8fafc"
+                    fontSize="12"
+                    fontWeight="700"
+                  >
+                    {proxyToneStyle[activeProxyCluster.tone].label} · {proxyClusterDateRange(activeProxyCluster)} · {activeProxyCluster.events.length} {activeProxyCluster.events.length === 1 ? "bar" : "bars"}
+                  </text>
+                  <text
+                    x={proxyTooltipX + 10}
+                    y={proxyTooltipY + 37}
+                    fill="#cbd5e1"
+                    fontSize="12"
+                  >
+                    ${formatCompact(activeProxyCluster.totalNotional)} flagged · {activeProxyRelativeMultiple.toFixed(1)}× median · rank {activeProxyRank}/{proxyClusters.length}
+                  </text>
+                  <text
+                    x={proxyTooltipX + 10}
+                    y={proxyTooltipY + 56}
+                    fill="#cbd5e1"
+                    fontSize="12"
+                  >
+                    ${activeProxyCluster.weightedPrice.toFixed(2)} weighted price · {proxyClusterMix(activeProxyCluster)}
+                  </text>
+                </g>
+              )}
             </svg>
           ) : (
             <div className="h-64 flex items-center justify-center text-xs text-stealth-400">
@@ -642,7 +1048,7 @@ function TechnicalIndicatorsComponent({
         {/* Price Info Row */}
         <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-xs">
           <div className="secondary-card p-2">
-            <p className="text-stealth-400 mb-1">Current</p>
+            <p className="text-stealth-400 mb-1">{closeLabel}</p>
             <p className="text-sm font-bold text-blue-300">${technicalData.current_price.toFixed(2)}</p>
           </div>
           <div className="secondary-card p-2">
@@ -678,14 +1084,6 @@ function TechnicalIndicatorsComponent({
             </p>
           </div>
         </div>
-
-        {overlayEventCount > 0 && (
-          <div className="mt-3 flex flex-wrap gap-2 text-xs text-stealth-400">
-            <span className="rounded-full border border-green-500/30 bg-green-500/10 px-2 py-1 text-green-300">Buy events</span>
-            <span className="rounded-full border border-red-500/30 bg-red-500/10 px-2 py-1 text-red-300">Sell events</span>
-            <span className="rounded-full border border-stealth-600/40 bg-stealth-700/20 px-2 py-1 text-stealth-300">Neutral events</span>
-          </div>
-        )}
 
       {/* MACD — moved above Volume/RSI */}
       <div className="secondary-card p-4 mt-4">

@@ -27,7 +27,7 @@ export type HolisticSummary = {
 
 export type SummaryInput = {
   symbol: string;
-  asOf: string;
+  asOf: string | null;
   technicals: {
     price: number | null;
     ma50: number | null;
@@ -68,5 +68,7 @@ export type SummaryInput = {
     iv_percentile: number | null;
     avg_edr: number | null;
     mispricing_state?: OptBias;
+    mispricing_usable?: boolean;
+    quality_status?: string | null;
   };
 };

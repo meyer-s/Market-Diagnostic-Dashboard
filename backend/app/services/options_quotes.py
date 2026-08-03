@@ -63,11 +63,16 @@ def option_quote_from_row(row: Optional[pd.Series]) -> dict[str, object]:
     bid = quote_number(row.get("bid"))
     ask = quote_number(row.get("ask"))
     last = quote_number(row.get("lastPrice"))
-    mid = (bid + ask) / 2.0 if bid is not None and ask is not None and bid > 0 and ask > 0 else None
-    spread = (ask - bid) if mid is not None and bid is not None and ask is not None else None
+    two_sided = bid is not None and ask is not None and bid > 0 and ask > 0
+    crossed = bool(two_sided and ask < bid)
+    mid = (bid + ask) / 2.0 if two_sided and not crossed else None
+    spread = (ask - bid) if two_sided else None
     spread_pct = (spread / mid * 100.0) if spread is not None and mid else None
 
-    if mid is not None:
+    if crossed:
+        premium = None
+        price_source = None
+    elif mid is not None:
         premium = mid
         price_source = "mid"
     elif last is not None and last > 0:
@@ -77,8 +82,8 @@ def option_quote_from_row(row: Optional[pd.Series]) -> dict[str, object]:
         premium = None
         price_source = None
 
-    quality = "mid" if mid is not None else "last" if premium is not None else "missing"
-    if spread_pct is not None and spread_pct > 25:
+    quality = "crossed" if crossed else "mid" if mid is not None else "last" if premium is not None else "missing"
+    if not crossed and spread_pct is not None and spread_pct > 25:
         quality = "wide"
 
     return {
@@ -214,6 +219,7 @@ def select_atm_contract(
         quoted = frame[
             frame["bid"].apply(lambda value: (quote_number(value) or 0) > 0)
             & frame["ask"].apply(lambda value: (quote_number(value) or 0) > 0)
+            & (pd.to_numeric(frame["ask"], errors="coerce") >= pd.to_numeric(frame["bid"], errors="coerce"))
         ]
     else:
         quoted = pd.DataFrame()

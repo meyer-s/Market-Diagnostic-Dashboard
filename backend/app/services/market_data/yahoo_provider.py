@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Optional, Sequence
 
 import pandas as pd
@@ -87,12 +88,17 @@ class YahooProvider:
             puts = pd.DataFrame()
         elif right == "PUT":
             calls = pd.DataFrame()
+        retrieved_at = datetime.now(timezone.utc).isoformat()
         return OptionChainFrame(
             symbol=symbol.upper(),
             expiry=iso_expiry,
             calls=calls,
             puts=puts,
             source=self.name,
+            quote_source=self.name,
+            # Yahoo does not expose a chain-level bid/ask observation timestamp.
+            observed_at=None,
+            retrieved_at=retrieved_at,
         )
 
 

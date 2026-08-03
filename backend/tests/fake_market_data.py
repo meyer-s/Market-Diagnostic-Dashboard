@@ -13,7 +13,7 @@ class FakeProvider:
 
     def __init__(self) -> None:
         today = date.today()
-        self.near_expiry = (today + timedelta(days=46)).isoformat()
+        self.near_expiry = (today + timedelta(days=30)).isoformat()
         self.far_expiry = (today + timedelta(days=81)).isoformat()
         self.expiries = [self.near_expiry, self.far_expiry]
         self.strikes = [90.0, 95.0, 100.0, 105.0, 110.0]
@@ -63,7 +63,7 @@ class FakeProvider:
                         "volume": 100,
                         "openInterest": 1000,
                         "impliedVolatility": 0.35,
-                        "lastTradeDate": None,
+                        "lastTradeDate": pd.Timestamp.now(tz="UTC"),
                         "right": side,
                         "quoteSource": self.name,
                     }
@@ -73,6 +73,7 @@ class FakeProvider:
 
         calls = frame("CALL") if right in ("ALL", "CALL") else pd.DataFrame()
         puts = frame("PUT") if right in ("ALL", "PUT") else pd.DataFrame()
+        observed_at = pd.Timestamp.now(tz="UTC").isoformat()
         return OptionChainFrame(
             symbol=symbol.upper(),
             expiry=expiry,
@@ -80,4 +81,6 @@ class FakeProvider:
             puts=puts,
             source=self.name,
             quote_source=self.name,
+            observed_at=observed_at,
+            retrieved_at=observed_at,
         )

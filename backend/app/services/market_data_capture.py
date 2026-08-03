@@ -54,14 +54,14 @@ def _json_safe(value: Any) -> Any:
 def _parse_observed_at(value: Any) -> Optional[datetime]:
     if value is None:
         return None
-    if isinstance(value, datetime):
-        return value.replace(tzinfo=None)
     try:
         parsed = pd.Timestamp(value)
     except Exception:
         return None
     if pd.isna(parsed):
         return None
+    if parsed.tzinfo is not None:
+        parsed = parsed.tz_convert("UTC").tz_localize(None)
     return parsed.to_pydatetime().replace(tzinfo=None)
 
 
@@ -196,6 +196,8 @@ def record_option_chain(
     payload = {
         "requested_right": right,
         "requested_strikes": [float(value) for value in strikes] if strikes is not None else None,
+        "observed_at": chain.observed_at,
+        "retrieved_at": chain.retrieved_at,
         "truncated": calls_truncated or puts_truncated,
         "calls": call_records,
         "puts": put_records,
@@ -207,6 +209,7 @@ def record_option_chain(
         expiry=chain.expiry,
         right=right,
         quote_source=chain.quote_source,
+        observed_at=_parse_observed_at(chain.observed_at),
         payload=payload,
         row_count=len(calls) + len(puts),
     )

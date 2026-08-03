@@ -81,6 +81,8 @@ def test_record_option_chain_serializes_rows_and_replaces_nan(monkeypatch) -> No
         puts=pd.DataFrame(),
         source="ibkr",
         quote_source="delayed",
+        observed_at=None,
+        retrieved_at="2026-06-17T14:30:00+00:00",
     )
 
     assert market_data_capture.record_option_chain(provider="ibkr", chain=chain, right="CALL", strikes=[500.0])
@@ -92,6 +94,8 @@ def test_record_option_chain_serializes_rows_and_replaces_nan(monkeypatch) -> No
     assert row.row_count == 1
     assert row.payload["calls"][0]["ask"] is None
     assert row.payload["requested_strikes"] == [500.0]
+    assert row.observed_at is None
+    assert row.payload["retrieved_at"] == "2026-06-17T14:30:00+00:00"
 
 
 def test_daily_bars_frame_from_payload_round_trips_timestamped_records() -> None:
@@ -113,3 +117,13 @@ def test_daily_bars_frame_from_payload_round_trips_timestamped_records() -> None
     assert list(frame.columns) == ["Open", "High", "Low", "Close", "Volume"]
     assert frame.index[0] == pd.Timestamp("2026-06-16")
     assert frame.iloc[0]["Close"] == 10.5
+
+
+def test_observed_at_offsets_are_converted_to_utc_before_storage() -> None:
+    assert market_data_capture._parse_observed_at("2026-06-17T09:30:00-04:00") == datetime(
+        2026,
+        6,
+        17,
+        13,
+        30,
+    )

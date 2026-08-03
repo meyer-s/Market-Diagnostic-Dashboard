@@ -1,12 +1,15 @@
-import { useId } from "react";
+import { useId, useState } from "react";
 
 interface OptionsWall {
   strike: number;
   open_interest: number;
+  volume?: number;
 }
 
 export interface OptionsStructureMapProps {
   currentPrice: number;
+  priceLabel?: string;
+  movingAverageType?: "EMA" | "SMA";
   callWalls?: OptionsWall[];
   putWalls?: OptionsWall[];
   resistanceLevels?: number[];
@@ -24,6 +27,7 @@ interface StructureLevel {
   price: number;
   intensity: number;
   detail: string;
+  kind: "put-wall" | "call-wall" | "support-level" | "resistance-level";
 }
 
 interface ChartPoint {
@@ -31,11 +35,26 @@ interface ChartPoint {
   y: number;
 }
 
+interface InteractiveStructurePoint extends ChartPoint {
+  key: string;
+  side: "support" | "resistance";
+  level: StructureLevel;
+}
+
 function fmtPrice(price: number): string {
   if (price >= 10_000) return `$${(price / 1000).toFixed(1)}K`;
   if (price >= 1000) return `$${price.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
   if (price >= 100) return `$${price.toFixed(1)}`;
   return `$${price.toFixed(2)}`;
+}
+
+function fmtDetailedPrice(price: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: Math.abs(price) < 100 ? 2 : 0,
+    maximumFractionDigits: Math.abs(price) < 1 ? 4 : 2,
+  }).format(price);
 }
 
 function fmtCompact(value: number): string {
@@ -142,7 +161,13 @@ function buildSupportCluster(currentPrice: number, putWalls: OptionsWall[], supp
       .map((wall) => ({
         price: wall.strike,
         intensity: Math.max(0.18, wall.open_interest / maxOI),
-        detail: `OI ${fmtCompact(wall.open_interest)}`,
+        detail: [
+          `OI ${fmtCompact(wall.open_interest)}`,
+          typeof wall.volume === "number" && Number.isFinite(wall.volume)
+            ? `Volume ${fmtCompact(wall.volume)}`
+            : null,
+        ].filter(Boolean).join(" · "),
+        kind: "put-wall" as const,
       }));
   }
 
@@ -154,7 +179,8 @@ function buildSupportCluster(currentPrice: number, putWalls: OptionsWall[], supp
   return levels.map((price, index) => ({
     price,
     intensity: Math.max(0.38, 1 - index * 0.18),
-    detail: formatDistance(price, currentPrice),
+    detail: "Recent swing level",
+    kind: "support-level" as const,
   }));
 }
 
@@ -168,7 +194,13 @@ function buildResistanceCluster(currentPrice: number, callWalls: OptionsWall[], 
       .map((wall) => ({
         price: wall.strike,
         intensity: Math.max(0.18, wall.open_interest / maxOI),
-        detail: `OI ${fmtCompact(wall.open_interest)}`,
+        detail: [
+          `OI ${fmtCompact(wall.open_interest)}`,
+          typeof wall.volume === "number" && Number.isFinite(wall.volume)
+            ? `Volume ${fmtCompact(wall.volume)}`
+            : null,
+        ].filter(Boolean).join(" · "),
+        kind: "call-wall" as const,
       }));
   }
 
@@ -180,8 +212,26 @@ function buildResistanceCluster(currentPrice: number, callWalls: OptionsWall[], 
   return levels.map((price, index) => ({
     price,
     intensity: Math.max(0.38, 1 - index * 0.18),
-    detail: formatDistance(price, currentPrice),
+    detail: "Recent swing level",
+    kind: "resistance-level" as const,
   }));
+}
+
+function structureLevelLabel(level: StructureLevel): string {
+  if (level.kind === "call-wall") return "Call wall";
+  if (level.kind === "put-wall") return "Put wall";
+  if (level.kind === "support-level") return "Support level";
+  return "Resistance level";
+}
+
+function describeStructurePoint(
+  point: InteractiveStructurePoint,
+  currentPrice: number,
+  priceLabel: string,
+  position?: { index: number; count: number },
+): string {
+  const positionText = position ? ` Level ${position.index + 1} of ${position.count}.` : "";
+  return `${structureLevelLabel(point.level)} at ${fmtDetailedPrice(point.level.price)}, ${formatDistance(point.level.price, currentPrice)} ${priceLabel.toLocaleLowerCase()}, ${point.level.detail}.${positionText}`;
 }
 
 function formatChartPoint(point: ChartPoint): string {
@@ -291,6 +341,8 @@ function PcBadge({ ratio }: { ratio: number | null | undefined }) {
 function StructureBand({
   idPrefix,
   currentPrice,
+  priceLabel,
+  movingAverageType,
   supports,
   resistances,
   sma50,
@@ -300,6 +352,8 @@ function StructureBand({
 }: {
   idPrefix: string;
   currentPrice: number;
+  priceLabel: string;
+  movingAverageType: "EMA" | "SMA";
   supports: StructureLevel[];
   resistances: StructureLevel[];
   sma50?: number | null;
@@ -307,6 +361,8 @@ function StructureBand({
   primarySupport: number | null;
   primaryResistance: number | null;
 }) {
+  const [activeLevelKey, setActiveLevelKey] = useState<string | null>(null);
+  const [pinnedLevelKey, setPinnedLevelKey] = useState<string | null>(null);
   const allPrices = uniqueFinite([
     currentPrice,
     ...supports.map((level) => level.price),
@@ -415,19 +471,131 @@ function StructureBand({
   const primarySupportReach = primarySupport === null ? 0 : profileReach(supports, scaleY(primarySupport), supportProfileStyle);
   const primaryResistanceReach = primaryResistance === null ? 0 : profileReach(resistances, scaleY(primaryResistance), resistanceProfileStyle);
 
+  const interactivePoints: InteractiveStructurePoint[] = [
+    ...supports.map((level, index) => {
+      const y = scaleY(level.price);
+      return {
+        key: `${level.kind}-${level.price}-${index}`,
+        side: "support" as const,
+        level,
+        x: LEFT_SPINE_X - profileReach(supports, y, supportProfileStyle),
+        y,
+      };
+    }),
+    ...resistances.map((level, index) => {
+      const y = scaleY(level.price);
+      return {
+        key: `${level.kind}-${level.price}-${index}`,
+        side: "resistance" as const,
+        level,
+        x: RIGHT_SPINE_X + profileReach(resistances, y, resistanceProfileStyle),
+        y,
+      };
+    }),
+  ].sort((left, right) => left.y - right.y);
+  const displayedLevelKey = activeLevelKey ?? pinnedLevelKey;
+  const activePointIndex = interactivePoints.findIndex((point) => point.key === displayedLevelKey);
+  const activePoint = activePointIndex >= 0 ? interactivePoints[activePointIndex] : null;
+  const nearestPointIndex = interactivePoints.reduce((nearestIndex, point, index) => {
+    const nearestPoint = interactivePoints[nearestIndex];
+    return Math.abs(point.level.price - currentPrice) < Math.abs(nearestPoint.level.price - currentPrice)
+      ? index
+      : nearestIndex;
+  }, 0);
+  const inspectPoint = (index: number) => {
+    if (!interactivePoints.length) return;
+    const boundedIndex = Math.max(0, Math.min(interactivePoints.length - 1, index));
+    setActiveLevelKey(interactivePoints[boundedIndex].key);
+  };
+  const pointHitArea = (point: InteractiveStructurePoint) => {
+    const sidePoints = interactivePoints.filter((candidate) => candidate.side === point.side);
+    const sideIndex = sidePoints.findIndex((candidate) => candidate.key === point.key);
+    const previousPoint = sidePoints[sideIndex - 1];
+    const nextPoint = sidePoints[sideIndex + 1];
+    const top = previousPoint ? (previousPoint.y + point.y) / 2 : PLOT_TOP;
+    const bottom = nextPoint ? (point.y + nextPoint.y) / 2 : PLOT_BOTTOM;
+    return {
+      x: point.x - 22,
+      y: top,
+      width: 44,
+      height: Math.max(1, bottom - top),
+    };
+  };
+  const activeAnnouncement = activePoint
+    ? describeStructurePoint(activePoint, currentPrice, priceLabel, {
+        index: activePointIndex,
+        count: interactivePoints.length,
+      })
+    : `${interactivePoints.length} structure ${interactivePoints.length === 1 ? "level" : "levels"}. Focus the chart and use the up and down arrow keys to inspect each hump.`;
+  const tooltipWidth = 220;
+  const tooltipHeight = 78;
+  const tooltipX = activePoint?.side === "resistance" ? VW - tooltipWidth - 14 : 14;
+  const tooltipY = activePoint && activePoint.y < PLOT_TOP + PLOT_HEIGHT / 2
+    ? PLOT_BOTTOM - tooltipHeight - 4
+    : PLOT_TOP + 4;
+
   return (
-    <svg
-      viewBox={`0 0 ${VW} ${VH}`}
-      className="w-full"
-      style={{ height: 300 }}
-      role="img"
-      aria-labelledby={`${idPrefix}-structure-title ${idPrefix}-structure-desc`}
-    >
-      <title id={`${idPrefix}-structure-title`}>Options structure band</title>
+    <>
+      {interactivePoints.length > 0 ? (
+        <p
+          id={`${idPrefix}-structure-live`}
+          data-testid="structure-level-live-region"
+          className="sr-only"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {activeAnnouncement}
+        </p>
+      ) : null}
+      <svg
+        viewBox={`0 0 ${VW} ${VH}`}
+        className="w-full touch-pan-y rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-stealth-950"
+        style={{ height: 300 }}
+        role="img"
+        aria-labelledby={`${idPrefix}-structure-title ${idPrefix}-structure-desc`}
+        aria-describedby={interactivePoints.length > 0 ? `${idPrefix}-structure-live` : undefined}
+        aria-keyshortcuts={interactivePoints.length > 0 ? "ArrowUp ArrowDown Home End Escape" : undefined}
+        tabIndex={interactivePoints.length > 0 ? 0 : undefined}
+        onFocus={() => {
+          if (interactivePoints.length > 0 && activePointIndex < 0) inspectPoint(nearestPointIndex);
+        }}
+        onBlur={() => {
+          setActiveLevelKey(null);
+          setPinnedLevelKey(null);
+        }}
+        onKeyDown={(event) => {
+          if (!interactivePoints.length) return;
+          const currentIndex = activePointIndex >= 0 ? activePointIndex : nearestPointIndex;
+          if (event.key === "ArrowUp") {
+            event.preventDefault();
+            inspectPoint(currentIndex - 1);
+          } else if (event.key === "ArrowDown") {
+            event.preventDefault();
+            inspectPoint(currentIndex + 1);
+          } else if (event.key === "Home") {
+            event.preventDefault();
+            inspectPoint(0);
+          } else if (event.key === "End") {
+            event.preventDefault();
+            inspectPoint(interactivePoints.length - 1);
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            setActiveLevelKey(null);
+            setPinnedLevelKey(null);
+          }
+        }}
+      >
+      <title id={`${idPrefix}-structure-title`}>Market structure band</title>
       <desc id={`${idPrefix}-structure-desc`}>
-        Current price {fmtPrice(currentPrice)}, nearest support
+        {priceLabel} {fmtPrice(currentPrice)}, nearest support
         {" "}{primarySupport !== null ? fmtPrice(primarySupport) : "unavailable"}, and nearest
         resistance {primaryResistance !== null ? fmtPrice(primaryResistance) : "unavailable"}.
+        {interactivePoints.length > 0
+          ? ` Available humps: ${interactivePoints
+              .map((point) => describeStructurePoint(point, currentPrice, priceLabel))
+              .join(" ")}`
+          : ""}
       </desc>
       <defs>
         <linearGradient id={spineFillId} x1="0" x2="0" y1="0" y2="1">
@@ -565,7 +733,7 @@ function StructureBand({
               stroke="rgba(107,114,128,0.4)" strokeWidth="0.5" />
             <text x={CENTER_X} y={scaleY(sma200) + 4} textAnchor="middle"
               fill="#9ca3af" fontSize="12" fontFamily="monospace" fontWeight="600">
-              200D
+              {movingAverageType}200
             </text>
           </g>
         ) : null}
@@ -576,7 +744,7 @@ function StructureBand({
               stroke="rgba(167,139,250,0.45)" strokeWidth="0.5" />
             <text x={CENTER_X} y={scaleY(sma50) + 4} textAnchor="middle"
               fill="#c4b5fd" fontSize="12" fontFamily="monospace" fontWeight="600">
-              50D
+              {movingAverageType}50
             </text>
           </g>
         ) : null}
@@ -627,6 +795,121 @@ function StructureBand({
       <circle cx={CENTER_X} cy={currentY} r="11" fill="rgba(241,245,249,0.12)" />
       <circle cx={CENTER_X} cy={currentY} r="5.5" fill="#f8fafc" />
 
+      {activePoint ? (
+        <line
+          x1={GUIDE_LEFT}
+          x2={GUIDE_RIGHT}
+          y1={activePoint.y}
+          y2={activePoint.y}
+          stroke={activePoint.side === "support" ? "rgba(125,211,252,0.48)" : "rgba(253,186,116,0.48)"}
+          strokeWidth="1"
+          strokeDasharray="3 4"
+          pointerEvents="none"
+        />
+      ) : null}
+
+      {interactivePoints.map((point, index) => {
+        const isActive = point.key === displayedLevelKey;
+        const color = point.side === "support" ? "#7dd3fc" : "#fdba74";
+        const hitArea = pointHitArea(point);
+        return (
+          <g
+            key={point.key}
+            data-testid="structure-level"
+            data-side={point.side}
+            data-kind={point.level.kind}
+            data-price={point.level.price}
+            data-active={isActive ? "true" : undefined}
+            role="presentation"
+            onPointerEnter={() => setActiveLevelKey(point.key)}
+            onPointerLeave={() => setActiveLevelKey(null)}
+            onPointerDown={() => {
+              const shouldUnpin = pinnedLevelKey === point.key;
+              setPinnedLevelKey(shouldUnpin ? null : point.key);
+              setActiveLevelKey(shouldUnpin ? null : point.key);
+            }}
+            style={{ cursor: "crosshair" }}
+          >
+            <title>
+              {describeStructurePoint(point, currentPrice, priceLabel, {
+                index,
+                count: interactivePoints.length,
+              })}
+            </title>
+            <circle
+              cx={point.x}
+              cy={point.y}
+              r={isActive ? 6.5 : 4.5}
+              fill="#0f172a"
+              fillOpacity={isActive ? "0.96" : "0.72"}
+              stroke={color}
+              strokeWidth={isActive ? "2" : "1.2"}
+              strokeOpacity={isActive ? "1" : "0.72"}
+              pointerEvents="none"
+            />
+            <rect
+              x={hitArea.x}
+              y={hitArea.y}
+              width={hitArea.width}
+              height={hitArea.height}
+              fill="transparent"
+              pointerEvents="all"
+            />
+          </g>
+        );
+      })}
+
+      {activePoint ? (
+        <g data-testid="structure-level-tooltip" pointerEvents="none">
+          <rect
+            x={tooltipX}
+            y={tooltipY}
+            width={tooltipWidth}
+            height={tooltipHeight}
+            rx="8"
+            fill="#0f172a"
+            fillOpacity="0.97"
+            stroke={activePoint.side === "support" ? "#38bdf8" : "#fb923c"}
+            strokeWidth="1.2"
+          />
+          <text
+            x={tooltipX + 11}
+            y={tooltipY + 18}
+            fill={activePoint.side === "support" ? "#7dd3fc" : "#fdba74"}
+            fontSize="12"
+            fontWeight="700"
+            letterSpacing="0.8"
+          >
+            {structureLevelLabel(activePoint.level).toLocaleUpperCase()}
+          </text>
+          <text
+            x={tooltipX + tooltipWidth - 11}
+            y={tooltipY + 18}
+            textAnchor="end"
+            fill="#94a3b8"
+            fontSize="12"
+          >
+            {activePointIndex + 1}/{interactivePoints.length}
+          </text>
+          <text
+            x={tooltipX + 11}
+            y={tooltipY + 39}
+            fill="#f8fafc"
+            fontSize="15"
+            fontWeight="700"
+            fontFamily="monospace"
+          >
+            {fmtDetailedPrice(activePoint.level.price)}
+          </text>
+          <text x={tooltipX + 11} y={tooltipY + 56} fill="#cbd5e1" fontSize="12">
+            {formatDistance(activePoint.level.price, currentPrice)} {priceLabel.toLocaleLowerCase()}
+          </text>
+          <text x={tooltipX + 11} y={tooltipY + 71} fill="#94a3b8" fontSize="12">
+            {activePoint.level.detail}
+          </text>
+        </g>
+      ) : null}
+
       <g transform={`translate(0 ${VH - 54})`}>
         <text x={36} y="0" fill="#64748b" fontSize="12" fontFamily="monospace" letterSpacing="1.6">SUPPORT</text>
         <text x={CENTER_X} y="0" textAnchor="middle" fill="#64748b" fontSize="12" fontFamily="monospace" letterSpacing="1.6">CURRENT</text>
@@ -640,12 +923,20 @@ function StructureBand({
         <text x={CENTER_X} y="47" textAnchor="middle" fill="#94a3b8" fontSize="12">{describeRangePosition(currentPrice, primarySupport, primaryResistance)}</text>
         <text x={VW - 36} y="47" textAnchor="end" fill="#94a3b8" fontSize="12">{primaryResistance !== null ? formatDistance(primaryResistance, currentPrice) : "No nearby resistance"}</text>
       </g>
-    </svg>
+      </svg>
+      {interactivePoints.length > 0 ? (
+        <p className="mt-1 text-center text-xs text-stealth-400">
+          Hover or tap a hump for exact level details. Keyboard: focus the chart, then use ↑/↓.
+        </p>
+      ) : null}
+    </>
   );
 }
 
 export function OptionsStructureMap({
   currentPrice,
+  priceLabel = "Current price",
+  movingAverageType = "EMA",
   callWalls = [],
   putWalls = [],
   resistanceLevels = [],
@@ -687,6 +978,8 @@ export function OptionsStructureMap({
         <StructureBand
           idPrefix={idPrefix}
           currentPrice={currentPrice}
+          priceLabel={priceLabel}
+          movingAverageType={movingAverageType}
           supports={supports}
           resistances={resistances}
           sma50={sma50}
@@ -696,9 +989,9 @@ export function OptionsStructureMap({
         />
         {sma50 || sma200 ? (
           <p className="mt-2 text-center text-xs tabular-nums text-stealth-400">
-            {sma50 ? `50-day average ${fmtPrice(sma50)}` : "50-day average unavailable"}
+            {sma50 ? `${movingAverageType}50 ${fmtPrice(sma50)}` : `${movingAverageType}50 unavailable`}
             {" · "}
-            {sma200 ? `200-day average ${fmtPrice(sma200)}` : "200-day average unavailable"}
+            {sma200 ? `${movingAverageType}200 ${fmtPrice(sma200)}` : `${movingAverageType}200 unavailable`}
           </p>
         ) : null}
       </div>

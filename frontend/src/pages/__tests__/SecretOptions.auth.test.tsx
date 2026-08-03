@@ -536,6 +536,15 @@ describe("Secret Options authorization gate", () => {
     const user = userEvent.setup();
     renderPage();
 
+    const scannerDisclosure = await screen.findByRole("button", { name: /Scanner Control & Outcomes/i });
+    await waitFor(() => {
+      expect(apiFetchMock.mock.calls.some(([endpoint]) => String(endpoint).startsWith("/secret/options/scanner-summary"))).toBe(true);
+    });
+    expect(apiFetchMock.mock.calls.some(([endpoint]) => endpoint === "/secret/options/scanner-run/91")).toBe(false);
+    expect(apiFetchMock.mock.calls.some(([endpoint]) => endpoint === "/secret/options/scanner-impressions")).toBe(false);
+
+    await user.click(scannerDisclosure);
+
     await waitFor(() => {
       const types = apiFetchMock.mock.calls
         .filter(([endpoint]) => endpoint === "/secret/options/scanner-impressions")

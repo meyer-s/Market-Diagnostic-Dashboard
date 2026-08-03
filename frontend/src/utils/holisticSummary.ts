@@ -59,8 +59,11 @@ const seriesStats = (values?: number[]) => {
     };
   }
   const latest = series[series.length - 1];
-  const qoq = series.length >= 2 ? ((latest - series[series.length - 2]) / Math.abs(series[series.length - 2] || 1)) * 100 : null;
-  const yoy = series.length >= 5 ? ((latest - series[series.length - 5]) / Math.abs(series[series.length - 5] || 1)) * 100 : null;
+  const percentChange = (prior: number) => prior === 0
+    ? null
+    : ((latest - prior) / Math.abs(prior)) * 100;
+  const qoq = series.length >= 2 ? percentChange(series[series.length - 2]) : null;
+  const yoy = series.length >= 5 ? percentChange(series[series.length - 5]) : null;
   const slope6 = linearSlope(series.slice(-6));
   const slope3 = linearSlope(series.slice(-3));
   return { latest, qoq, yoy, slope6, slope3 };
@@ -326,7 +329,13 @@ const buildFundamentalAxis = (input: SummaryInput["fundamentals"]): AxisScore =>
     facts.push(`ROE ${formatPct(roeStats.latest)} and ${roeStats.slope6 > 0 ? "improving" : "softening"}.`);
   }
   if (isNumber(fcfStats.yoy)) {
-    facts.push(`FCF YoY ${formatPct(fcfStats.yoy)} with ${fcfStats.slope6 && fcfStats.slope6 > 0 ? "rising" : "flat"} momentum.`);
+    const slopeTolerance = 1e-6;
+    const fcfMomentum = !isNumber(fcfStats.slope6) || Math.abs(fcfStats.slope6) <= slopeTolerance
+      ? "flat"
+      : fcfStats.slope6 > 0
+        ? "rising"
+        : "falling";
+    facts.push(`FCF YoY ${formatPct(fcfStats.yoy)} with ${fcfMomentum} momentum.`);
   } else if (isNumber(revenueStats.latest)) {
     facts.push(`Revenue growth YoY ${formatPct(revenueStats.latest)}.`);
   }
@@ -350,6 +359,7 @@ const buildFundamentalAxis = (input: SummaryInput["fundamentals"]): AxisScore =>
 };
 
 const resolveOptionsBias = (input: SummaryInput["options"]): OptBias => {
+  if (input.mispricing_usable !== true || input.quality_status === "unusable") return "UNKNOWN";
   if (input.mispricing_state) return input.mispricing_state;
 
   const votes: OptBias[] = [];
@@ -381,32 +391,37 @@ const resolveOptionsBias = (input: SummaryInput["options"]): OptBias => {
 
 const buildOptionsAxis = (input: SummaryInput["options"]): AxisScore => {
   const rules: string[] = [];
+  const usable = input.mispricing_usable === true && input.quality_status !== "unusable";
   const bias = resolveOptionsBias(input);
   const score = bias === "CHEAP" ? 60 : bias === "EXPENSIVE" ? -60 : 0;
   const missing = [input.iv30, input.hv30, input.iv_percentile, input.avg_edr].filter(
     (value) => !isNumber(value)
   ).length;
-  const confidence = clamp(70 - missing * 20 - (bias === "UNKNOWN" ? 20 : 0), 0, 100);
+  const confidence = usable
+    ? clamp(70 - missing * 20 - (bias === "UNKNOWN" ? 20 : 0), 0, 100)
+    : 0;
 
-  if (isNumber(input.iv30) && isNumber(input.hv30)) {
+  if (!usable) rules.push("pricing_unusable");
+
+  if (usable && isNumber(input.iv30) && isNumber(input.hv30)) {
     rules.push(`iv_spread_${input.iv30 - input.hv30 > 0 ? "positive" : "negative"}`);
   }
-  if (isNumber(input.iv_percentile)) {
-    rules.push(`iv_percentile_${input.iv_percentile}`);
+  if (usable && isNumber(input.iv_percentile)) {
+    rules.push(`historical_iv_percentile_${input.iv_percentile}`);
   }
 
   const facts: string[] = [];
-  if (isNumber(input.iv30) && isNumber(input.hv30)) {
+  if (usable && isNumber(input.iv30) && isNumber(input.hv30)) {
     facts.push(`IV30 ${formatPoint(input.iv30)} vs HV30 ${formatPoint(input.hv30)} (spread ${formatPoint(input.iv30 - input.hv30)}).`);
   }
-  if (isNumber(input.iv_percentile) || isNumber(input.avg_edr)) {
+  if (usable && (isNumber(input.iv_percentile) || isNumber(input.avg_edr))) {
     facts.push(
-      `IV percentile ${formatPoint(input.iv_percentile)}; expected daily range ${formatPoint(input.avg_edr)}% → options ${bias.toLowerCase()}.`
+      `Historical IV percentile ${formatPoint(input.iv_percentile)}; extrinsic share ${formatPoint(input.avg_edr)}% → pricing ${bias.toLowerCase()}.`
     );
   }
 
   return {
-    label: "Options Mispricing",
+    label: "Options Pricing",
     bias,
     score,
     confidence,
@@ -428,7 +443,11 @@ const resolveRegime = (
   const fundBias = fundamental.bias as AxisBias;
   const optBias = options.bias as OptBias;
 
-  if (fundBias === "POSITIVE" && techBias === "BULLISH" && optBias !== "EXPENSIVE") {
+  if (
+    fundBias === "POSITIVE"
+    && techBias === "BULLISH"
+    && (optBias === "CHEAP" || optBias === "FAIR")
+  ) {
     rationale.push("fundamentals positive, tape bullish, options not expensive");
     return { key: "Confirmed Strength", rationale };
   }
@@ -495,15 +514,15 @@ export const buildHolisticSummary = (input: SummaryInput): HolisticSummary => {
   const regimeMatrix = resolveRegime(technical, fundamental, options);
   const watch = selectWatchLine(technical, fundamental, options);
 
-  const fundamentalSentence = `Fundamentals read ${fundamental.bias.toLowerCase()}, with key trends ${
-    fundamental.score >= 0 ? "holding up" : "softening"
-  }.`;
-  const technicalSentence = `Technicals are ${technical.bias.toLowerCase()}, with trend and momentum ${
-    technical.score >= 0 ? "supportive" : "fragile"
-  }.`;
-  const optionsSentence = `Options expectations look ${options.bias.toLowerCase()}, suggesting ${
-    options.bias === "CHEAP" ? "implied risk is below realized." : options.bias === "EXPENSIVE" ? "pricing looks rich." : "no clear mispricing."
-  }`;
+  const fundamentalSentence = `Fundamentals read ${fundamental.bias.toLowerCase()}.`;
+  const technicalSentence = `Technicals are ${technical.bias.toLowerCase()}.`;
+  const optionsSentence = options.bias === "UNKNOWN"
+    ? "Options evidence is insufficient for a pricing read."
+    : options.bias === "CHEAP"
+      ? "Options pricing looks cheap; the available pricing inputs lean lower."
+      : options.bias === "EXPENSIVE"
+        ? "Options pricing looks expensive; the available pricing inputs lean higher."
+        : "Options pricing looks fair; the available pricing inputs are balanced.";
 
   const bullets = [
     {
@@ -520,7 +539,7 @@ export const buildHolisticSummary = (input: SummaryInput): HolisticSummary => {
     },
   ];
 
-  const narrative = `Regime: ${regimeMatrix.key}. ${fundamentalSentence} ${technicalSentence} ${optionsSentence} Watch: ${watch}`;
+  const narrative = `Regime: ${regimeMatrix.key}. ${fundamentalSentence} ${technicalSentence} ${optionsSentence}`;
 
   return {
     regime: regimeMatrix.key,
