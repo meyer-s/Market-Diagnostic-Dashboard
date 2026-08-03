@@ -8,7 +8,7 @@ import threading
 import weakref
 from collections import Counter
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from typing import Iterator, Literal
 
@@ -17,7 +17,13 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.models.stock_price_bar import StockPriceBar
-from app.services.stock_price_cache import _coerce_ohlcv_frame, _upsert_frame
+from app.services.stock_price_cache import (
+    _coerce_ohlcv_frame,
+    _is_canonical_2h_timestamp,
+    _read_cached_frame,
+    _storage_timestamp,
+    _upsert_frame,
+)
 from app.utils.db_helpers import get_db_session
 
 logger = logging.getLogger(__name__)
@@ -71,6 +77,12 @@ _key_locks: weakref.WeakValueDictionary[tuple[str, str], threading.Lock] = (
     weakref.WeakValueDictionary()
 )
 _ADVISORY_LOCK_NAMESPACE = "market-weather-history-cache:v1"
+_deferred_refresh_guard = threading.Lock()
+_deferred_refresh_results: dict[
+    tuple[str, str, int, int, str, int, int],
+    tuple[datetime, int, "MarketWeatherHistoryResult"],
+] = {}
+_MAX_DEFERRED_REFRESH_RESULTS = 128
 
 
 CacheStatus = Literal["hit", "refreshed", "stale_fallback", "cache_bypass"]
@@ -228,6 +240,19 @@ def get_or_refresh_market_weather_history(
                 age_seconds=age_seconds,
                 reason=reason,
             )
+
+        deferred = _recent_deferred_refresh_result(
+            normalized_symbol,
+            storage_interval,
+            requested_rows,
+            required_rows,
+            _provider_cache_key(provider),
+            observed_now,
+            ttl_seconds,
+            max_stale_seconds,
+        )
+        if deferred is not None:
+            return deferred
 
         try:
             with _cross_process_refresh_lock(normalized_symbol, storage_interval):
@@ -505,6 +530,7 @@ def _refresh_cache_under_lock(
             before=cached,
             after=refreshed,
             fetched=fetched,
+            storage_interval=storage_interval,
             observed_now=observed_now,
             ttl=ttl,
             minimum_rows=minimum_rows,
@@ -532,6 +558,34 @@ def _refresh_cache_under_lock(
                 "cached_rows": refreshed.row_count,
             },
         )
+
+    if race_error is None and not _snapshot_advanced(cached, refreshed):
+        result = _cache_bypass_result(
+            frame=fetched,
+            source=source,
+            cache_error=RuntimeError("cache write did not advance durable data"),
+            reason="cache_write_not_applied",
+            symbol=symbol,
+            timeframe=timeframe,
+            storage_interval=storage_interval,
+            requested_rows=requested_rows,
+            minimum_rows=minimum_rows,
+            cached_rows_before=cached.row_count,
+            ttl_seconds=ttl_seconds,
+            max_stale_seconds=max_stale_seconds,
+        )
+        _remember_deferred_refresh_result(
+            symbol,
+            storage_interval,
+            requested_rows,
+            minimum_rows,
+            _provider_cache_key(provider),
+            observed_now,
+            ttl_seconds,
+            max_stale_seconds,
+            result,
+        )
+        return result
 
     if refreshed.row_count < minimum_rows:
         raise ValueError(
@@ -572,6 +626,7 @@ def _peer_refresh_is_visible(
     before: _CacheSnapshot,
     after: _CacheSnapshot,
     fetched: pd.DataFrame,
+    storage_interval: str,
     observed_now: datetime,
     ttl: timedelta,
     minimum_rows: int,
@@ -588,12 +643,22 @@ def _peer_refresh_is_visible(
         return False
     if fetched.empty or after.frame.empty:
         return False
-    fetched_latest = pd.Timestamp(fetched.index.max()).to_pydatetime().replace(tzinfo=None)
+    fetched_latest = _storage_timestamp(fetched.index.max(), storage_interval)
     after_indexes = {
         pd.Timestamp(index).to_pydatetime().replace(tzinfo=None)
         for index in after.frame.index
     }
     return fetched_latest in after_indexes
+
+
+def _snapshot_advanced(before: _CacheSnapshot, after: _CacheSnapshot) -> bool:
+    if after.row_count > before.row_count:
+        return True
+    if after.last_updated_at is None:
+        return False
+    if before.last_updated_at is None:
+        return True
+    return _as_naive_utc(after.last_updated_at) > _as_naive_utc(before.last_updated_at)
 
 
 def _advisory_lock_key(symbol: str, storage_interval: str) -> int:
@@ -753,6 +818,16 @@ def _lock_for(symbol: str, storage_interval: str) -> threading.Lock:
 
 def _read_latest_snapshot(symbol: str, interval: str, limit: int) -> _CacheSnapshot:
     with get_db_session() as db:
+        if interval in {"1d", "2h"}:
+            start = _canonical_read_start(db, symbol, interval, limit)
+            canonical = _read_cached_frame(
+                db,
+                symbol,
+                interval,
+                start,
+                datetime.utcnow() + timedelta(days=2),
+            )
+            return _snapshot_from_canonical_frame(canonical, limit)
         rows = (
             db.query(StockPriceBar)
             .filter(
@@ -764,6 +839,168 @@ def _read_latest_snapshot(symbol: str, interval: str, limit: int) -> _CacheSnaps
             .all()
         )
         return _snapshot_from_rows(rows)
+
+
+def _canonical_read_start(db, symbol: str, interval: str, limit: int) -> datetime:
+    requested = max(1, int(limit))
+    batch_size = max(256, min(5_000, requested * 3))
+    cursor: datetime | None = None
+    daily_sessions: set[object] = set()
+    canonical_timestamps: set[datetime] = set()
+
+    while True:
+        query = db.query(StockPriceBar.timestamp).filter(
+            StockPriceBar.symbol == symbol,
+            StockPriceBar.interval == interval,
+        )
+        if cursor is not None:
+            query = query.filter(StockPriceBar.timestamp < cursor)
+        timestamps = [
+            row[0]
+            for row in query.order_by(StockPriceBar.timestamp.desc()).limit(batch_size).all()
+        ]
+        if not timestamps:
+            break
+
+        if interval == "1d":
+            daily_sessions.update(value.date() for value in timestamps)
+            # The extra session proves the full oldest returned boundary date
+            # has been crossed, so a better duplicate cannot sit on the next page.
+            if len(daily_sessions) >= requested + 1:
+                boundary_date = sorted(daily_sessions, reverse=True)[requested - 1]
+                return datetime.combine(boundary_date, datetime.min.time())
+        else:
+            canonical_timestamps.update(
+                value for value in timestamps if _is_canonical_2h_timestamp(value)
+            )
+            if len(canonical_timestamps) >= requested:
+                return sorted(canonical_timestamps, reverse=True)[requested - 1]
+
+        cursor = timestamps[-1]
+        if len(timestamps) < batch_size:
+            break
+
+    if interval == "1d" and daily_sessions:
+        return datetime.combine(min(daily_sessions), datetime.min.time())
+    if canonical_timestamps:
+        return min(canonical_timestamps)
+    return datetime.utcnow() + timedelta(days=1)
+
+
+def _recent_deferred_refresh_result(
+    symbol: str,
+    storage_interval: str,
+    requested_rows: int,
+    minimum_rows: int,
+    provider_key: str,
+    observed_now: datetime,
+    ttl_seconds: int,
+    max_stale_seconds: int,
+) -> MarketWeatherHistoryResult | None:
+    key = (
+        symbol,
+        storage_interval,
+        requested_rows,
+        minimum_rows,
+        provider_key,
+        ttl_seconds,
+        max_stale_seconds,
+    )
+    with _deferred_refresh_guard:
+        entry = _deferred_refresh_results.get(key)
+        if entry is None:
+            return None
+        attempted_at, stored_ttl, result = entry
+        age_seconds = _age_seconds(observed_now, attempted_at)
+        if age_seconds is None or age_seconds >= min(stored_ttl, ttl_seconds):
+            _deferred_refresh_results.pop(key, None)
+            return None
+    return MarketWeatherHistoryResult(
+        frame=result.frame.copy(),
+        metadata=replace(
+            result.metadata,
+            provider_called=False,
+            refresh_reason="refresh_retry_deferred",
+        ),
+    )
+
+
+def _remember_deferred_refresh_result(
+    symbol: str,
+    storage_interval: str,
+    requested_rows: int,
+    minimum_rows: int,
+    provider_key: str,
+    observed_now: datetime,
+    ttl_seconds: int,
+    max_stale_seconds: int,
+    result: MarketWeatherHistoryResult,
+) -> None:
+    with _deferred_refresh_guard:
+        expired_keys = [
+            key
+            for key, (attempted_at, stored_ttl, _stored_result) in _deferred_refresh_results.items()
+            if (_age_seconds(observed_now, attempted_at) or 0.0) >= stored_ttl
+        ]
+        for key in expired_keys:
+            _deferred_refresh_results.pop(key, None)
+        if len(_deferred_refresh_results) >= _MAX_DEFERRED_REFRESH_RESULTS:
+            oldest_key = min(
+                _deferred_refresh_results,
+                key=lambda key: _deferred_refresh_results[key][0],
+            )
+            _deferred_refresh_results.pop(oldest_key, None)
+        key = (
+            symbol,
+            storage_interval,
+            requested_rows,
+            minimum_rows,
+            provider_key,
+            ttl_seconds,
+            max_stale_seconds,
+        )
+        _deferred_refresh_results[key] = (
+            observed_now,
+            max(1, ttl_seconds),
+            result,
+        )
+
+
+def _provider_cache_key(provider: object) -> str:
+    return str(getattr(provider, "name", type(provider).__name__)).strip().lower()
+
+
+def _snapshot_from_canonical_frame(frame: pd.DataFrame, limit: int) -> _CacheSnapshot:
+    if frame is None or frame.empty:
+        return _CacheSnapshot(
+            frame=pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"]),
+            row_count=0,
+            last_updated_at=None,
+            data_source="unknown",
+            source_counts={},
+        )
+
+    trimmed = frame.tail(limit).copy()
+    metadata = dict(frame.attrs.get("cache_metadata") or {})
+    start = max(0, len(frame) - len(trimmed))
+    sources = list(metadata.get("_row_sources") or [])[start:]
+    updated_values = [
+        value
+        for value in list(metadata.get("_row_updated_at") or [])[start:]
+        if value is not None
+    ]
+    if len(sources) != len(trimmed):
+        sources = [str(metadata.get("source") or "unknown")] * len(trimmed)
+    source_counts = dict(sorted(Counter(sources).items()))
+    data_source = next(iter(source_counts)) if len(source_counts) == 1 else "mixed"
+    columns = [column for column in ["Open", "High", "Low", "Close", "Volume"] if column in trimmed]
+    return _CacheSnapshot(
+        frame=trimmed[columns].copy(),
+        row_count=len(trimmed),
+        last_updated_at=max(updated_values) if updated_values else None,
+        data_source=data_source,
+        source_counts=source_counts,
+    )
 
 
 def _snapshot_from_rows(rows: list[StockPriceBar]) -> _CacheSnapshot:
@@ -826,7 +1063,7 @@ def _fetch_history(
             raise ValueError(f"Configured market-data provider does not support {timeframe} bars.")
         raw = _call_with_force_refresh(fetcher, symbol, timeframe, bars=bars)
 
-    frame = _coerce_ohlcv_frame(raw)
+    frame = _coerce_ohlcv_frame(raw, preserve_timezone=timeframe == "1D")
     if frame.empty:
         raise ValueError(f"Provider returned no {timeframe} historical bars for {symbol}.")
     frame = frame[~frame.index.duplicated(keep="last")].sort_index().tail(bars)

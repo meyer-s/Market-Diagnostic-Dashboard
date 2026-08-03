@@ -39,6 +39,7 @@ class FakeProvider:
 
 @pytest.fixture()
 def session_local(monkeypatch):
+    history_cache._deferred_refresh_results.clear()
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -57,6 +58,7 @@ def session_local(monkeypatch):
 
     monkeypatch.setattr(history_cache, "get_db_session", session_scope)
     yield testing_session_local
+    history_cache._deferred_refresh_results.clear()
     engine.dispose()
 
 
@@ -95,6 +97,12 @@ def _seed(
                     high=float(row["High"]),
                     low=float(row["Low"]),
                     close=float(row["Close"]),
+                    adjusted_close=(
+                        float(row["Adjusted Close"])
+                        if "Adjusted Close" in frame.columns
+                        and pd.notna(row.get("Adjusted Close"))
+                        else None
+                    ),
                     volume=float(row["Volume"]),
                     source=source,
                     created_at=updated_at,
@@ -263,7 +271,12 @@ def test_provider_failure_is_raised_when_cache_is_insufficient(session_local) ->
 def test_cache_supports_every_canonical_timeframe(session_local) -> None:
     now = datetime(2026, 7, 24, 15, 0)
     for timeframe in ("1m", "5m", "15m", "30m", "1h", "2h", "4h", "1D", "1W"):
-        frame = _frame("2026-07-01", periods=3)
+        if timeframe == "1D":
+            frame = _frame("2026-07-01", periods=3, freq="1D")
+        elif timeframe == "2h":
+            frame = _frame("2026-07-01 13:30", periods=3, freq="2h")
+        else:
+            frame = _frame("2026-07-01", periods=3)
         provider = FakeProvider(frame=frame)
         result = history_cache.get_or_refresh_market_weather_history(
             provider,
@@ -315,6 +328,152 @@ def test_daily_refresh_prefers_single_call_daily_provider_path(session_local) ->
     assert provider.daily_calls == [("SPY", 5, True)]
     assert provider.calls == []
     assert result.metadata.data_source == "fake-daily_bars"
+
+
+def test_daily_snapshot_deduplicates_legacy_session_rows_before_limiting(session_local) -> None:
+    updated_at = datetime(2026, 7, 24, 15, 0)
+    canonical = _frame("2026-07-01", periods=3, freq="1D")
+    canonical["Adjusted Close"] = canonical["Close"] - 0.25
+    legacy = canonical.copy()
+    legacy.index = legacy.index + pd.Timedelta(hours=4)
+    legacy[["Open", "High", "Low", "Close"]] -= 5.0
+    legacy["Adjusted Close"] = float("nan")
+    _seed(
+        session_local,
+        symbol="SPY",
+        interval="1d",
+        frame=canonical,
+        updated_at=updated_at - timedelta(minutes=1),
+        source="YAHOO",
+    )
+    _seed(
+        session_local,
+        symbol="SPY",
+        interval="1d",
+        frame=legacy,
+        updated_at=updated_at,
+        source="yahoo",
+    )
+
+    snapshot = history_cache._read_latest_snapshot("SPY", "1d", 3)
+
+    assert snapshot.row_count == 3
+    assert snapshot.frame.index.is_unique
+    assert list(snapshot.frame.index) == list(canonical.index)
+    assert snapshot.frame["Close"].tolist() == canonical["Close"].tolist()
+    assert snapshot.data_source == "YAHOO"
+
+
+def test_two_hour_snapshot_filters_legacy_grid_before_limiting(session_local) -> None:
+    canonical = _frame("2026-07-01 13:30", periods=4, freq="2h")
+    legacy = _frame("2026-07-01 12:00", periods=4, freq="2h", base=90.0)
+    _seed(
+        session_local,
+        symbol="SPY",
+        interval="2h",
+        frame=canonical,
+        updated_at=datetime(2026, 7, 24, 14, 0),
+        source="yahoo",
+    )
+    _seed(
+        session_local,
+        symbol="SPY",
+        interval="2h",
+        frame=legacy,
+        updated_at=datetime(2026, 7, 24, 15, 0),
+        source="legacy",
+    )
+
+    snapshot = history_cache._read_latest_snapshot("SPY", "2h", 4)
+
+    assert snapshot.row_count == 4
+    assert list(snapshot.frame.index) == list(canonical.index)
+    assert snapshot.data_source == "YAHOO"
+
+
+def test_rejected_lower_information_daily_write_returns_truthful_bypass(session_local) -> None:
+    now = datetime(2026, 7, 24, 15, 0)
+    cached = _frame("2026-07-01", periods=5, freq="1D")
+    cached["Adjusted Close"] = cached["Close"] - 0.25
+    _seed(
+        session_local,
+        symbol="SPY",
+        interval="1d",
+        frame=cached,
+        updated_at=now - timedelta(hours=2),
+        source="YAHOO",
+    )
+    fetched = _frame("2026-07-01", periods=5, freq="1D", base=200.0)
+    provider = FakeProvider(frame=fetched)
+
+    first = history_cache.get_or_refresh_market_weather_history(
+        provider,
+        "SPY",
+        "1D",
+        bars=3,
+        minimum_rows=3,
+        freshness=timedelta(minutes=5),
+        now=now,
+    )
+    second = history_cache.get_or_refresh_market_weather_history(
+        provider,
+        "SPY",
+        "1D",
+        bars=3,
+        minimum_rows=3,
+        freshness=timedelta(minutes=5),
+        now=now + timedelta(minutes=1),
+    )
+    third = history_cache.get_or_refresh_market_weather_history(
+        provider,
+        "SPY",
+        "1D",
+        bars=5,
+        minimum_rows=5,
+        freshness=timedelta(minutes=5),
+        now=now + timedelta(minutes=1),
+    )
+
+    assert provider.calls == [("SPY", "1D", 3), ("SPY", "1D", 5)]
+    assert first.metadata.status == "cache_bypass"
+    assert first.metadata.refresh_reason == "cache_write_not_applied"
+    assert first.metadata.data_source == "fake-history"
+    assert first.frame["Close"].tolist() == fetched.tail(3)["Close"].tolist()
+    assert second.metadata.status == "cache_bypass"
+    assert second.metadata.provider_called is False
+    assert second.metadata.refresh_reason == "refresh_retry_deferred"
+    assert second.frame["Close"].tolist() == fetched.tail(3)["Close"].tolist()
+    assert third.metadata.status == "cache_bypass"
+    assert third.metadata.provider_called is True
+    assert len(third.frame) == 5
+
+
+def test_daily_upsert_race_compares_canonical_session_identity(session_local, monkeypatch) -> None:
+    now = datetime(2026, 7, 24, 15, 0)
+    fetched = _frame("2026-07-21", periods=3, freq="1D")
+    fetched.index = fetched.index.tz_localize("America/New_York")
+    provider = FakeProvider(frame=fetched)
+    real_upsert = history_cache._upsert_frame
+
+    def peer_wins_then_conflicts(db, symbol, interval, frame, source="unknown"):
+        real_upsert(db, symbol, interval, frame, source=source)
+        raise IntegrityError("insert stock_price_bar", {}, RuntimeError("unique key race"))
+
+    monkeypatch.setattr(history_cache, "_upsert_frame", peer_wins_then_conflicts)
+
+    result = history_cache.get_or_refresh_market_weather_history(
+        provider,
+        "SPY",
+        "1D",
+        bars=3,
+        minimum_rows=3,
+        freshness=timedelta(minutes=5),
+        now=now,
+    )
+
+    assert result.metadata.status == "refreshed"
+    assert result.metadata.write_race_recovered is True
+    assert list(result.frame.index) == list(pd.date_range("2026-07-21", periods=3, freq="1D"))
 
 
 def test_stale_persistent_refresh_bypasses_provider_memory_cache(session_local) -> None:

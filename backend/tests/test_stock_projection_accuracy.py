@@ -15,6 +15,7 @@ from app.api.stock_projection import (
     _build_price_history,
     _build_intraday_history,
     _compute_projection_targets,
+    calculate_technical_indicators,
     _market_session_date,
     _price_on_or_before,
     _slice_price_history_window,
@@ -78,6 +79,63 @@ def test_price_history_windows_distinguish_sessions_from_calendar_years() -> Non
     assert five_year.index.min() >= five_year.index.max() - pd.DateOffset(years=5)
     assert 252 < len(one_year) < len(five_year) < len(maximum)
     assert len(maximum) == len(frame) - 1
+
+
+def test_price_history_window_counts_unique_sessions_before_slicing() -> None:
+    canonical = _price_frame(periods=300)
+    legacy = canonical.copy()
+    legacy.index = legacy.index + pd.Timedelta(hours=4)
+    legacy[["Open", "High", "Low", "Close"]] *= 0.95
+    # Both copies can carry valid adjusted values after a mixed-writer refresh;
+    # canonical raw OHLC must still win over the later legacy timestamp.
+    legacy["Adjusted Close"] = canonical["Adjusted Close"].to_numpy()
+    doubled = pd.concat([canonical, legacy]).sort_index()
+
+    sessions = _slice_price_history_window(doubled, "252d")
+    history = _build_price_history(sessions, days=None)
+
+    assert len(sessions) == 252
+    assert sessions.index.is_unique
+    assert sessions.index.normalize().nunique() == 252
+    assert sessions.index[0] == canonical.index[-252]
+    assert sessions.index[-1] == canonical.index[-1]
+    assert len({point["date"] for point in history}) == 252
+    assert sessions.iloc[-1]["Close"] == canonical.iloc[-1]["Close"]
+
+
+def test_technical_indicators_are_invariant_to_legacy_session_duplicates() -> None:
+    canonical = _price_frame(periods=300, raw_start=80.0, raw_end=120.0)
+    legacy = canonical.copy()
+    legacy.index = legacy.index + pd.Timedelta(hours=4)
+    legacy[["Open", "High", "Low", "Close"]] *= 0.95
+    legacy["Adjusted Close"] = np.nan
+    doubled = pd.concat([canonical, legacy]).sort_index()
+
+    expected = calculate_technical_indicators(canonical, 252)
+    actual = calculate_technical_indicators(doubled, 252)
+
+    assert actual["lookback_days"] == 252
+    assert len(actual["candles"]) == 252
+    assert len({candle["date"] for candle in actual["candles"]}) == 252
+    assert actual["current_price"] == pytest.approx(expected["current_price"])
+    assert actual["sma_50"] == pytest.approx(expected["sma_50"])
+    assert actual["sma_200"] == pytest.approx(expected["sma_200"])
+    assert actual["rsi"]["current"] == pytest.approx(expected["rsi"]["current"])
+
+
+def test_projection_adjusted_basis_rejects_nonfinite_adjusted_values() -> None:
+    stock = _price_frame()
+    spy = _price_frame(
+        raw_start=200.0,
+        raw_end=200.0,
+        adjusted_start=200.0,
+        adjusted_end=200.0,
+    )
+    stock.loc[stock.index[-5], "Adjusted Close"] = float("inf")
+
+    result = compute_stock_projection("TEST", stock, spy, 21, "YELLOW")
+
+    assert result["return_basis"] == "raw_close_fallback"
 
 
 def test_projection_uses_adjusted_total_return_but_raw_price_for_targets() -> None:
@@ -882,9 +940,25 @@ def test_projection_cache_rejects_pre_accuracy_payloads() -> None:
             "analysis_input_fingerprint": "input-hash",
         }
     )
-    assert _cache_matches_accuracy_contract(
+    assert not _cache_matches_accuracy_contract(
         {
             "schema_version": 3,
+            "optionality": {
+                "mispricing_usable": False,
+                "iv30_chain_percentile": None,
+                "iv30_chain_percentile_kind": "current_chain_cross_section",
+                "iv_percentile": None,
+            },
+            "projections": {
+                horizon: {"analysis_kind": "trailing_window"}
+                for horizon in HORIZONS
+            },
+            "analysis_input_fingerprint": "input-hash",
+        }
+    )
+    assert _cache_matches_accuracy_contract(
+        {
+            "schema_version": 4,
             "optionality": {
                 "mispricing_usable": False,
                 "iv30_chain_percentile": None,

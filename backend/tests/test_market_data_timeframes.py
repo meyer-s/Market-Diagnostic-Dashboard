@@ -10,6 +10,7 @@ from app.services.market_data.ibkr_cli_provider import (
 )
 from app.services.market_data.factory import FallbackMarketDataProvider
 from app.services.market_data.yahoo_provider import (
+    YahooProvider,
     _canonical_timeframe as canonical_yahoo_timeframe,
     _resample_session_bars,
     _yahoo_history_request,
@@ -79,6 +80,64 @@ def test_session_resampling_never_mixes_overnight_bars() -> None:
     assert result.iloc[0]["Close"] == 103.5
     assert result.iloc[1]["Open"] == 110
     assert result.iloc[1]["Close"] == 113.5
+
+
+def test_session_resampling_keeps_clock_bucket_when_opening_bar_is_missing() -> None:
+    index = pd.DatetimeIndex(
+        ["2026-08-03 10:30", "2026-08-03 11:30", "2026-08-03 12:30"],
+        tz="America/New_York",
+    )
+    frame = pd.DataFrame(
+        {
+            "Open": [101.0, 102.0, 103.0],
+            "High": [102.0, 103.0, 104.0],
+            "Low": [100.0, 101.0, 102.0],
+            "Close": [101.5, 102.5, 103.5],
+            "Volume": [200.0, 300.0, 400.0],
+        },
+        index=index,
+    )
+
+    result = _resample_session_bars(frame, 2)
+
+    assert list(result.index) == [
+        pd.Timestamp("2026-08-03 09:30", tz="America/New_York"),
+        pd.Timestamp("2026-08-03 11:30", tz="America/New_York"),
+    ]
+    assert result.iloc[0]["Close"] == 101.5
+    assert result.iloc[1]["Close"] == 103.5
+
+
+def test_yahoo_history_preserves_adjusted_ohlc_contract_explicitly(monkeypatch) -> None:
+    calls: list[dict[str, object]] = []
+    frame = pd.DataFrame(
+        {
+            "Open": [100.0],
+            "High": [101.0],
+            "Low": [99.0],
+            "Close": [100.5],
+            "Adj Close": [99.5],
+            "Volume": [1_000],
+        },
+        index=pd.DatetimeIndex(["2026-07-31"]),
+    )
+
+    class StubTicker:
+        def history(self, **kwargs):
+            calls.append(kwargs)
+            return frame.copy()
+
+    monkeypatch.setattr(
+        "app.services.market_data.yahoo_provider.yf.Ticker",
+        lambda _symbol: StubTicker(),
+    )
+    provider = YahooProvider()
+
+    provider.daily_bars("TEST", days=30)
+    provider.historical_bars("TEST", "1D", bars=30)
+
+    assert len(calls) == 2
+    assert all(call["auto_adjust"] is True for call in calls)
 
 
 def test_historical_bar_fallback_reports_the_provider_that_served_data(monkeypatch) -> None:

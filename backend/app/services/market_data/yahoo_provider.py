@@ -33,7 +33,7 @@ class YahooProvider:
         force_refresh: bool = False,
     ) -> pd.DataFrame:
         period = "1y" if days <= 365 else "2y" if days <= 730 else "5y"
-        return yf.Ticker(symbol).history(period=period).tail(days)
+        return yf.Ticker(symbol).history(period=period, auto_adjust=True).tail(days)
 
     def historical_bars(
         self,
@@ -46,7 +46,7 @@ class YahooProvider:
         canonical = _canonical_timeframe(timeframe)
         requested_bars = max(1, int(bars))
         interval, period = _yahoo_history_request(canonical, requested_bars)
-        frame = yf.Ticker(symbol).history(period=period, interval=interval)
+        frame = yf.Ticker(symbol).history(period=period, interval=interval, auto_adjust=True)
         if frame is None or frame.empty:
             return pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
         if canonical in {"2h", "4h"}:
@@ -138,9 +138,22 @@ def _yahoo_history_request(timeframe: str, bars: int) -> tuple[str, str]:
 
 def _resample_session_bars(frame: pd.DataFrame, group_size: int) -> pd.DataFrame:
     """Build 2h/4h bars without allowing an overnight gap into a bucket."""
+    if frame is None or frame.empty:
+        return pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
+    working = frame.copy()
+    if working.index.tz is None:
+        working.index = working.index.tz_localize("America/New_York")
+    else:
+        working.index = working.index.tz_convert("America/New_York")
+    working = working.between_time("09:30", "15:59")
     pieces: list[pd.DataFrame] = []
-    for _session, session_frame in frame.groupby(frame.index.date, sort=True):
-        bucket = pd.Series(range(len(session_frame)), index=session_frame.index) // group_size
+    for session_date, session_frame in working.groupby(working.index.date, sort=True):
+        session_frame = session_frame.sort_index()
+        session_open = pd.Timestamp(session_date, tz="America/New_York") + pd.Timedelta(hours=9, minutes=30)
+        bucket = pd.Series(
+            ((session_frame.index - session_open).total_seconds() // (group_size * 60 * 60)).astype(int),
+            index=session_frame.index,
+        )
         aggregated = session_frame.groupby(bucket).agg(
             Open=("Open", "first"),
             High=("High", "max"),
@@ -148,8 +161,9 @@ def _resample_session_bars(frame: pd.DataFrame, group_size: int) -> pd.DataFrame
             Close=("Close", "last"),
             Volume=("Volume", "sum"),
         )
-        first_indexes = [value.index[0] for _key, value in session_frame.groupby(bucket)]
-        aggregated.index = pd.DatetimeIndex(first_indexes)
+        aggregated.index = pd.DatetimeIndex(
+            [session_open + pd.Timedelta(hours=group_size * int(bucket_id)) for bucket_id in aggregated.index]
+        )
         pieces.append(aggregated)
     if not pieces:
         return pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])

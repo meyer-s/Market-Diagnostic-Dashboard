@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
+import math
 import os
+import threading
 from typing import Optional
 
 import pandas as pd
@@ -22,10 +24,21 @@ INTRADAY_CACHE_TTL_SECONDS = max(
     int(os.getenv("STOCK_INTRADAY_CACHE_TTL_SECONDS", "900")),
 )
 MAX_MISSING_BUSINESS_SESSIONS = 2
+CANONICAL_2H_SESSION_TIMES = {(9, 30), (11, 30), (13, 30), (15, 30)}
+_refresh_attempt_lock = threading.Lock()
+_refresh_attempts: dict[tuple[str, str], tuple[datetime, str]] = {}
+_MAX_REFRESH_ATTEMPTS = 1_024
 
 
 def _normalize_symbol(symbol: str) -> str:
     return (symbol or "").strip().upper()
+
+
+def _normalize_source_label(source: object) -> str:
+    cleaned = str(source or "UNKNOWN").strip()
+    if cleaned.lower() in {"yahoo", "ibkr"}:
+        return cleaned.upper()
+    return cleaned
 
 
 def _normalize_download_frame(df: pd.DataFrame, symbol: str) -> pd.DataFrame:
@@ -100,6 +113,97 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _storage_timestamp(value: object, interval: str) -> datetime:
+    """Return the canonical database identity for one market-data bar."""
+    timestamp = pd.Timestamp(value)
+    if pd.isna(timestamp):
+        raise ValueError("bar timestamp is missing")
+    if interval == "1d":
+        # Daily providers encode a market-session date, not an instant. Preserve
+        # that displayed date even when the source attaches an exchange offset.
+        return datetime.combine(timestamp.date(), time.min)
+    if timestamp.tzinfo is not None:
+        timestamp = timestamp.tz_convert("UTC").tz_localize(None)
+    return timestamp.to_pydatetime().replace(tzinfo=None)
+
+
+def _is_canonical_2h_timestamp(value: object) -> bool:
+    timestamp = pd.Timestamp(value)
+    if pd.isna(timestamp):
+        return False
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.tz_localize("UTC")
+    else:
+        timestamp = timestamp.tz_convert("UTC")
+    exchange_time = timestamp.tz_convert("America/New_York")
+    return (
+        (exchange_time.hour, exchange_time.minute) in CANONICAL_2H_SESSION_TIMES
+        and exchange_time.second == 0
+        and exchange_time.microsecond == 0
+    )
+
+
+def _has_valid_adjusted_close(value: object) -> bool:
+    try:
+        adjusted = float(value)
+    except (TypeError, ValueError):
+        return False
+    return math.isfinite(adjusted) and adjusted > 0
+
+
+def _valid_adjusted_close_mask(frame: pd.DataFrame) -> pd.Series:
+    if frame is None or frame.empty or "Adjusted Close" not in frame.columns:
+        index = frame.index if isinstance(frame, pd.DataFrame) else None
+        return pd.Series(False, index=index, dtype=bool)
+    adjusted = pd.to_numeric(frame["Adjusted Close"], errors="coerce")
+    return adjusted.map(_has_valid_adjusted_close).astype(bool)
+
+
+def _has_complete_adjusted_history(frame: pd.DataFrame) -> bool:
+    valid = _valid_adjusted_close_mask(frame)
+    return bool(len(valid) > 0 and valid.all())
+
+
+def _canonicalize_incoming_frame(frame: pd.DataFrame, interval: str) -> pd.DataFrame:
+    """Choose one quality-ranked writer row before assigning storage identity."""
+    working = frame.copy()
+    working.index.name = None
+    original_index = list(working.index)
+    storage_timestamps = [_storage_timestamp(value, interval) for value in original_index]
+
+    if interval == "1d":
+        timestamp_column = "__cache_storage_timestamp"
+        adjusted_column = "__cache_has_adjusted"
+        canonical_column = "__cache_is_canonical"
+        order_column = "__cache_source_order"
+        adjusted_values = (
+            working["Adjusted Close"].tolist()
+            if "Adjusted Close" in working.columns
+            else [None] * len(working)
+        )
+        working[timestamp_column] = storage_timestamps
+        working[adjusted_column] = [
+            _has_valid_adjusted_close(value) for value in adjusted_values
+        ]
+        working[canonical_column] = [
+            pd.Timestamp(value).time() == time.min for value in original_index
+        ]
+        working[order_column] = range(len(working))
+        working = working.sort_values(
+            [timestamp_column, adjusted_column, canonical_column, order_column],
+            kind="stable",
+        ).drop_duplicates(subset=[timestamp_column], keep="last")
+        working.index = pd.DatetimeIndex(working.pop(timestamp_column), name=None)
+        working = working.drop(
+            columns=[adjusted_column, canonical_column, order_column]
+        )
+    else:
+        working.index = pd.DatetimeIndex(storage_timestamps, name=None)
+        working = working[~working.index.duplicated(keep="last")]
+
+    return working.sort_index()
+
+
 def _utc_iso(value: Optional[datetime | pd.Timestamp]) -> Optional[str]:
     if value is None or pd.isna(value):
         return None
@@ -142,6 +246,101 @@ def _business_session_lag(
     return max(0, len(pd.bdate_range(observed.normalize(), current.normalize())) - 1)
 
 
+def _intraday_coverage_incomplete(
+    frame: pd.DataFrame,
+    requested_start: datetime,
+) -> bool:
+    if frame is None or frame.empty:
+        return True
+    index = pd.to_datetime(frame.index, errors="coerce", utc=True)
+    index = index[~pd.isna(index)]
+    if len(index) == 0 or pd.Timestamp(index.min()).tz_convert(None) > requested_start + timedelta(days=7):
+        return True
+
+    local_session_dates = [
+        pd.Timestamp(value).tz_convert("America/New_York").date()
+        for value in index
+    ]
+    session_counts = pd.Series(local_session_dates, dtype=object).value_counts()
+    session_dates = sorted(session_counts.index)
+    for previous, current in zip(session_dates, session_dates[1:]):
+        # Weekends and ordinary exchange holidays are expected. A gap larger
+        # than five business dates indicates a materially sparse cache.
+        missing_business_dates = max(
+            0,
+            len(pd.bdate_range(previous, current)) - 2,
+        )
+        if missing_business_dates > 5:
+            return True
+    completed_counts = session_counts.drop(labels=[session_dates[-1]], errors="ignore")
+    if len(completed_counts) >= 3 and float(completed_counts.mean()) < 3.0:
+        return True
+    return False
+
+
+def _claim_refresh_attempt(
+    symbol: str,
+    interval: str,
+    now: datetime,
+    cooldown_seconds: int,
+) -> tuple[bool, Optional[str]]:
+    key = (symbol, interval)
+    with _refresh_attempt_lock:
+        _prune_refresh_attempts(now)
+        previous = _refresh_attempts.get(key)
+        if previous is not None:
+            attempted_at, error = previous
+            age_seconds = _age_seconds(now, attempted_at)
+            if age_seconds is not None and age_seconds < cooldown_seconds:
+                return False, error
+        _make_refresh_attempt_room(key)
+        _refresh_attempts[key] = (now, "refresh recently attempted")
+    return True, None
+
+
+def _record_refresh_failure(
+    symbol: str,
+    interval: str,
+    now: datetime,
+    error: str,
+) -> None:
+    with _refresh_attempt_lock:
+        _prune_refresh_attempts(now)
+        _make_refresh_attempt_room((symbol, interval))
+        _refresh_attempts[(symbol, interval)] = (now, error)
+
+
+def _clear_refresh_attempt(symbol: str, interval: str) -> None:
+    with _refresh_attempt_lock:
+        _refresh_attempts.pop((symbol, interval), None)
+
+
+def _prune_refresh_attempts(now: datetime) -> None:
+    expired = []
+    for key, (attempted_at, _error) in _refresh_attempts.items():
+        interval = key[1]
+        cooldown = (
+            DAILY_CACHE_TTL_SECONDS
+            if interval == "1d"
+            else INTRADAY_CACHE_TTL_SECONDS
+        )
+        age_seconds = _age_seconds(now, attempted_at)
+        if age_seconds is None or age_seconds >= cooldown:
+            expired.append(key)
+    for key in expired:
+        _refresh_attempts.pop(key, None)
+
+
+def _make_refresh_attempt_room(key: tuple[str, str]) -> None:
+    if key in _refresh_attempts or len(_refresh_attempts) < _MAX_REFRESH_ATTEMPTS:
+        return
+    oldest_key = min(
+        _refresh_attempts,
+        key=lambda candidate: _refresh_attempts[candidate][0],
+    )
+    _refresh_attempts.pop(oldest_key, None)
+
+
 def _frame_metadata(
     frame: pd.DataFrame,
     *,
@@ -159,16 +358,14 @@ def _frame_metadata(
     business_session_lag = _business_session_lag(retrieved_at, observed_at)
     adjusted_coverage = None
     if interval == "1d" and not frame.empty:
-        adjusted = frame.get("Adjusted Close")
-        adjusted_coverage = (
-            round(float(adjusted.notna().mean() * 100.0), 1)
-            if adjusted is not None
-            else 0.0
+        adjusted_coverage = round(
+            float(_valid_adjusted_close_mask(frame).mean() * 100.0),
+            1,
         )
     return {
         "symbol": symbol,
         "interval": interval,
-        "source": stored.get("source") or "YAHOO",
+        "source": _normalize_source_label(stored.get("source") or "YAHOO"),
         "observed_at": _utc_iso(observed_at),
         "retrieved_at": _utc_iso(retrieved_at),
         "cache_updated_at": _utc_iso(cache_updated_at),
@@ -189,6 +386,8 @@ def _frame_metadata(
         "refresh_error": refresh_error,
         "adjusted_close_coverage_pct": adjusted_coverage,
         "partial_session_withheld": bool(stored.get("partial_session_withheld")),
+        "discarded_duplicate_session_rows": int(stored.get("discarded_duplicate_session_rows") or 0),
+        "discarded_noncanonical_rows": int(stored.get("discarded_noncanonical_rows") or 0),
     }
 
 
@@ -219,12 +418,17 @@ def _fetch_daily(symbol: str, start: datetime, end: datetime, full_history: bool
     errors: list[str] = []
     for attempt in attempts:
         try:
-            frame = _coerce_ohlcv_frame(attempt())
+            frame = _coerce_ohlcv_frame(attempt(), preserve_timezone=True)
             if not frame.empty:
                 # Yahoo daily indices are exchange-midnight timestamps. Persist
                 # canonical session dates rather than UTC-shifted wall times.
-                frame.index = pd.DatetimeIndex(frame.index).normalize()
-                return frame
+                frame.index = pd.DatetimeIndex(
+                    [datetime.combine(pd.Timestamp(value).date(), time.min) for value in frame.index]
+                )
+                if _has_complete_adjusted_history(frame):
+                    return frame
+                errors.append("incomplete adjusted-close history")
+                continue
             errors.append("no rows")
         except Exception as exc:
             errors.append(str(exc))
@@ -282,8 +486,9 @@ def _resample_2h_sessions(frame: pd.DataFrame) -> pd.DataFrame:
             Close=("Close", "last"),
             Volume=("Volume", lambda values: values.sum(min_count=1)),
         )
-        first_indexes = [group.index[0] for _, group in session_frame.groupby(bucket)]
-        aggregated.index = pd.DatetimeIndex(first_indexes)
+        aggregated.index = pd.DatetimeIndex(
+            [session_open + pd.Timedelta(hours=2 * int(bucket_id)) for bucket_id in aggregated.index]
+        )
         pieces.append(aggregated)
     if not pieces:
         return pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
@@ -356,6 +561,46 @@ def _read_cached_frame(db: Session, symbol: str, interval: str, start: datetime,
     if not rows:
         return pd.DataFrame()
 
+    duplicate_session_rows = 0
+    noncanonical_rows = 0
+    if interval == "1d":
+        rows_by_session: dict[object, list[StockPriceBar]] = {}
+        for row in rows:
+            rows_by_session.setdefault(row.timestamp.date(), []).append(row)
+
+        selected_rows: list[StockPriceBar] = []
+        for session_rows in rows_by_session.values():
+            duplicate_session_rows += max(0, len(session_rows) - 1)
+
+            def daily_rank(candidate: StockPriceBar) -> tuple[bool, bool, datetime, int]:
+                has_adjusted = _has_valid_adjusted_close(candidate.adjusted_close)
+                updated_at = candidate.updated_at or candidate.created_at or datetime.min
+                is_canonical = candidate.timestamp.time() == time.min
+                return has_adjusted, is_canonical, updated_at, int(candidate.id or 0)
+
+            selected_rows.append(max(session_rows, key=daily_rank))
+        rows = sorted(selected_rows, key=lambda row: row.timestamp.date())
+        frame_index = pd.DatetimeIndex(
+            [datetime.combine(row.timestamp.date(), time.min) for row in rows]
+        )
+    elif interval == "2h":
+        canonical_rows = [row for row in rows if _is_canonical_2h_timestamp(row.timestamp)]
+        noncanonical_rows = len(rows) - len(canonical_rows)
+        rows = canonical_rows
+        frame_index = pd.DatetimeIndex([row.timestamp for row in rows])
+    else:
+        frame_index = pd.DatetimeIndex([row.timestamp for row in rows])
+
+    if not rows:
+        frame = pd.DataFrame()
+        frame.attrs["cache_metadata"] = {
+            "discarded_duplicate_session_rows": duplicate_session_rows,
+            "discarded_noncanonical_rows": noncanonical_rows,
+            "_row_sources": [],
+            "_row_updated_at": [],
+        }
+        return frame
+
     frame = pd.DataFrame(
         {
             "Open": [float(row.open) for row in rows],
@@ -368,15 +613,19 @@ def _read_cached_frame(db: Session, symbol: str, interval: str, start: datetime,
             ],
             "Volume": [float(row.volume) if row.volume is not None else None for row in rows],
         },
-        index=pd.DatetimeIndex([row.timestamp for row in rows]),
+        index=frame_index,
     )
     frame = frame.sort_index()
     latest_row = max(rows, key=lambda row: row.timestamp)
     updated_values = [row.updated_at for row in rows if row.updated_at is not None]
     frame.attrs["cache_metadata"] = {
-        "source": latest_row.source,
-        "observed_at": latest_row.timestamp,
+        "source": _normalize_source_label(latest_row.source),
+        "observed_at": frame.index.max(),
         "cache_updated_at": max(updated_values) if updated_values else None,
+        "discarded_duplicate_session_rows": duplicate_session_rows,
+        "discarded_noncanonical_rows": noncanonical_rows,
+        "_row_sources": [_normalize_source_label(row.source) for row in rows],
+        "_row_updated_at": [row.updated_at for row in rows],
     }
     return frame
 
@@ -385,7 +634,7 @@ def _upsert_frame(db: Session, symbol: str, interval: str, frame: pd.DataFrame, 
     if frame is None or frame.empty:
         return 0
 
-    frame = frame.sort_index()
+    frame = _canonicalize_incoming_frame(frame, interval)
     ts_values = [pd.Timestamp(idx).to_pydatetime().replace(tzinfo=None) for idx in frame.index]
     if not ts_values:
         return 0
@@ -405,28 +654,48 @@ def _upsert_frame(db: Session, symbol: str, interval: str, frame: pd.DataFrame, 
     existing_by_ts = {row.timestamp: row for row in existing}
 
     inserts = 0
+    normalized_source = _normalize_source_label(source)
+    has_adjusted_column = "Adjusted Close" in frame.columns
     for idx, row in frame.iterrows():
         ts = pd.Timestamp(idx).to_pydatetime().replace(tzinfo=None)
         now_utc = datetime.utcnow()
         adjusted_close = row.get("Adjusted Close")
+        normalized_adjusted_close = (
+            float(adjusted_close)
+            if has_adjusted_column and _has_valid_adjusted_close(adjusted_close)
+            else None
+        )
         payload = {
             "open": float(row["Open"]),
             "high": float(row["High"]),
             "low": float(row["Low"]),
             "close": float(row["Close"]),
-            "adjusted_close": float(adjusted_close) if pd.notna(adjusted_close) else None,
+            "adjusted_close": normalized_adjusted_close,
             "volume": float(row["Volume"]) if pd.notna(row.get("Volume")) else None,
-            "source": source,
+            "source": normalized_source,
             "updated_at": now_utc,
         }
 
         existing_row = existing_by_ts.get(ts)
         if existing_row is not None:
+            existing_has_adjusted = _has_valid_adjusted_close(existing_row.adjusted_close)
+            incoming_has_adjusted = _has_valid_adjusted_close(payload["adjusted_close"])
+            # Adjusted closes are provider-relative. Never combine an existing
+            # complete row with raw-only replacement values. Keeping the whole
+            # last-known-good row avoids a stale adjustment/raw-price mismatch,
+            # even when both writes name the same provider.
+            if (
+                interval == "1d"
+                and existing_has_adjusted
+                and not incoming_has_adjusted
+            ):
+                continue
             existing_row.open = payload["open"]
             existing_row.high = payload["high"]
             existing_row.low = payload["low"]
             existing_row.close = payload["close"]
-            existing_row.adjusted_close = payload["adjusted_close"]
+            if incoming_has_adjusted or not existing_has_adjusted:
+                existing_row.adjusted_close = payload["adjusted_close"]
             existing_row.volume = payload["volume"]
             existing_row.source = payload["source"]
             existing_row.updated_at = payload["updated_at"]
@@ -469,6 +738,8 @@ def ensure_symbol_history(
 
     with get_db_session() as db:
         daily_frame = _fetch_daily(symbol, daily_start, daily_end, full_history=full_history)
+        if not _has_complete_adjusted_history(daily_frame):
+            raise RuntimeError("upstream returned incomplete adjusted-close history")
         daily_inserts = _upsert_frame(db, symbol, "1d", daily_frame)
 
         intraday_inserts = 0
@@ -508,10 +779,17 @@ def get_or_refresh_daily_frame(symbol: str, days: int = 2000) -> pd.DataFrame:
         interval="1d",
         retrieved_at=now_aware,
     )
+    adjusted_missing = bool(
+        not cached.empty and not _has_complete_adjusted_history(cached)
+    )
+    cache_expired = bool(
+        metadata.get("cache_age_seconds") is None
+        or float(metadata["cache_age_seconds"]) >= DAILY_CACHE_TTL_SECONDS
+    )
     refresh_needed = (
         cached.empty
-        or metadata.get("cache_age_seconds") is None
-        or float(metadata["cache_age_seconds"]) >= DAILY_CACHE_TTL_SECONDS
+        or adjusted_missing
+        or cache_expired
         or _needs_daily_finalization_refresh(
             cached,
             now_aware,
@@ -521,49 +799,81 @@ def get_or_refresh_daily_frame(symbol: str, days: int = 2000) -> pd.DataFrame:
     refresh_attempted = False
     refresh_succeeded: Optional[bool] = None
     refresh_error: Optional[str] = None
+    refresh_deferred = False
 
-    if cached.empty:
+    if refresh_needed:
+        claimed, recent_error = _claim_refresh_attempt(
+            symbol,
+            "1d",
+            now_aware,
+            DAILY_CACHE_TTL_SECONDS,
+        )
+        if not claimed:
+            refresh_needed = False
+            refresh_succeeded = False
+            refresh_error = recent_error
+            refresh_deferred = True
+
+    if cached.empty and refresh_needed:
         # First hit for a symbol: build durable full available daily history.
         refresh_attempted = True
-        ensure_symbol_history(symbol, years=10, full_history=True, include_2h=False, intraday_days=252)
-        refresh_succeeded = True
-        with get_db_session() as db:
-            cached = _read_cached_frame(db, symbol, "1d", start, end)
+        try:
+            ensure_symbol_history(
+                symbol,
+                years=10,
+                full_history=True,
+                include_2h=False,
+                intraday_days=252,
+            )
+            refresh_succeeded = True
+            _clear_refresh_attempt(symbol, "1d")
+            with get_db_session() as db:
+                cached = _read_cached_frame(db, symbol, "1d", start, end)
+        except Exception as exc:
+            refresh_succeeded = False
+            refresh_error = str(exc)
+            _record_refresh_failure(symbol, "1d", now_aware, refresh_error)
+            raise
     elif refresh_needed:
         refresh_attempted = True
         try:
-            adjusted = cached.get("Adjusted Close")
-            adjusted_missing = adjusted is None or bool(adjusted.isna().any())
             latest_ts = pd.Timestamp(cached.index.max()).to_pydatetime().replace(tzinfo=None)
-            # A migration-era cache can contain no adjusted closes. Re-fetch the
-            # requested history once its TTL expires so total-return coverage is
-            # repaired, rather than only refreshing the newest overlap.
+            # A migration-era or lower-information writer can leave no adjusted
+            # closes. Re-fetch the requested history rather than only refreshing
+            # the newest overlap.
             refresh_start = start if adjusted_missing else latest_ts - timedelta(days=7)
             refreshed = _fetch_daily(symbol, refresh_start, end, full_history=False)
             if refreshed.empty:
                 raise RuntimeError("upstream returned no daily bars")
+            if not _has_complete_adjusted_history(refreshed):
+                raise RuntimeError("upstream returned incomplete adjusted-close history")
             with get_db_session() as db:
                 _upsert_frame(db, symbol, "1d", refreshed)
                 cached = _read_cached_frame(db, symbol, "1d", start, end)
+            if not _has_complete_adjusted_history(cached):
+                raise RuntimeError("cache refresh did not restore adjusted-close history")
             refresh_succeeded = True
+            _clear_refresh_attempt(symbol, "1d")
         except Exception as exc:
             # Existing rows are the last-known-good fallback. The error remains
             # attached to the frame so API callers cannot mistake it for fresh.
             refresh_succeeded = False
             refresh_error = str(exc)
+            _record_refresh_failure(symbol, "1d", now_aware, refresh_error)
 
     if cached.empty:
+        if refresh_deferred and refresh_error:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Daily price refresh deferred after recent failure: {refresh_error}",
+            )
         raise HTTPException(status_code=404, detail=f"No cached daily candles available for {symbol}")
 
     cached = _completed_daily_frame(cached.sort_index(), _utc_now())
     if cached.empty:
         raise HTTPException(status_code=404, detail=f"No completed daily candles available for {symbol}")
     adjusted = cached.get("Adjusted Close")
-    adjusted_complete = bool(
-        adjusted is not None
-        and adjusted.notna().all()
-        and (pd.to_numeric(adjusted, errors="coerce") > 0).all()
-    )
+    adjusted_complete = _has_complete_adjusted_history(cached)
     total_return_price = adjusted if adjusted_complete else cached["Close"]
     cached["price_returns"] = cached["Close"].pct_change()
     cached["returns"] = total_return_price.pct_change()
@@ -579,6 +889,7 @@ def get_or_refresh_daily_frame(symbol: str, days: int = 2000) -> pd.DataFrame:
     cached.attrs["metadata"]["return_basis"] = (
         "adjusted_close" if adjusted_complete else "raw_close_fallback"
     )
+    cached.attrs["metadata"]["refresh_deferred"] = refresh_deferred
     return cached
 
 
@@ -597,20 +908,39 @@ def get_cached_intraday_frame(symbol: str, days: int = 252) -> pd.DataFrame:
         interval="2h",
         retrieved_at=now_aware,
     )
+    coverage_incomplete = _intraday_coverage_incomplete(cached, start)
+    cache_expired = bool(
+        metadata.get("cache_age_seconds") is None
+        or float(metadata["cache_age_seconds"]) >= INTRADAY_CACHE_TTL_SECONDS
+    )
     refresh_needed = (
         cached.empty
-        or metadata.get("cache_age_seconds") is None
-        or float(metadata["cache_age_seconds"]) >= INTRADAY_CACHE_TTL_SECONDS
+        or coverage_incomplete
+        or cache_expired
     )
     refresh_attempted = False
     refresh_succeeded: Optional[bool] = None
     refresh_error: Optional[str] = None
+    refresh_deferred = False
+
+    if refresh_needed:
+        claimed, recent_error = _claim_refresh_attempt(
+            symbol,
+            "2h",
+            now_aware,
+            INTRADAY_CACHE_TTL_SECONDS,
+        )
+        if not claimed:
+            refresh_needed = False
+            refresh_succeeded = False
+            refresh_error = recent_error
+            refresh_deferred = True
 
     if refresh_needed:
         refresh_attempted = True
         try:
             fetch_start = start
-            if not cached.empty:
+            if not cached.empty and not coverage_incomplete:
                 fetch_start = pd.Timestamp(cached.index.max()).to_pydatetime().replace(tzinfo=None) - timedelta(days=7)
             refreshed = _fetch_2h(symbol, fetch_start, end)
             if refreshed.empty:
@@ -618,10 +948,14 @@ def get_cached_intraday_frame(symbol: str, days: int = 252) -> pd.DataFrame:
             with get_db_session() as db:
                 _upsert_frame(db, symbol, "2h", refreshed)
                 cached = _read_cached_frame(db, symbol, "2h", start, end)
+            if _intraday_coverage_incomplete(cached, start):
+                raise RuntimeError("cache refresh did not restore complete intraday history")
             refresh_succeeded = True
+            _clear_refresh_attempt(symbol, "2h")
         except Exception as exc:
             refresh_succeeded = False
             refresh_error = str(exc)
+            _record_refresh_failure(symbol, "2h", now_aware, refresh_error)
 
     if cached.empty:
         empty = pd.DataFrame()
@@ -634,6 +968,9 @@ def get_cached_intraday_frame(symbol: str, days: int = 252) -> pd.DataFrame:
             refresh_succeeded=refresh_succeeded,
             refresh_error=refresh_error,
         )
+        empty.attrs["metadata"]["coverage_incomplete"] = True
+        empty.attrs["metadata"]["refresh_deferred"] = refresh_deferred
+        empty.attrs["metadata"]["stale_reason"] = "incomplete_intraday_history"
         return empty
 
     cached = cached.sort_index()
@@ -646,4 +983,10 @@ def get_cached_intraday_frame(symbol: str, days: int = 252) -> pd.DataFrame:
         refresh_succeeded=refresh_succeeded,
         refresh_error=refresh_error,
     )
+    coverage_incomplete = _intraday_coverage_incomplete(cached, start)
+    cached.attrs["metadata"]["coverage_incomplete"] = coverage_incomplete
+    cached.attrs["metadata"]["refresh_deferred"] = refresh_deferred
+    if coverage_incomplete:
+        cached.attrs["metadata"]["stale"] = True
+        cached.attrs["metadata"]["stale_reason"] = "incomplete_intraday_history"
     return cached

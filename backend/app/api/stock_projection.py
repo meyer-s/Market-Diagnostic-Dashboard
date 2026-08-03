@@ -48,7 +48,7 @@ HORIZONS = {
 }
 
 _STOCK_PROJECTION_CACHE_TTL_SECONDS = 5 * 60
-_STOCK_PROJECTION_PAYLOAD_SCHEMA_VERSION = 3
+_STOCK_PROJECTION_PAYLOAD_SCHEMA_VERSION = 4
 _stock_projection_cache: dict[str, dict[str, Any]] = {}
 _stock_projection_cache_lock = threading.Lock()
 _MARKET_TIMEZONE = ZoneInfo("America/New_York")
@@ -471,6 +471,64 @@ def _sync_institutional_flow_history(db, symbol: str, df: pd.DataFrame, latest_p
     }
 
 
+def _canonicalize_daily_sessions(df: pd.DataFrame) -> pd.DataFrame:
+    """Collapse alternate timestamp encodings to one deterministic market session."""
+    if df is None or df.empty:
+        return df.copy() if isinstance(df, pd.DataFrame) else pd.DataFrame()
+
+    attrs = dict(df.attrs)
+    ordered = df.sort_index().copy()
+    ordered.index.name = None
+    parsed_index = pd.to_datetime(ordered.index, errors="coerce")
+    valid_index = ~pd.isna(parsed_index)
+    ordered = ordered.loc[valid_index].copy()
+    parsed_index = parsed_index[valid_index]
+    if ordered.empty:
+        ordered.attrs.update(attrs)
+        return ordered
+
+    # Keep this as plain Python dates so pandas cannot reuse the source index
+    # name and make ``_session_date`` ambiguous during ``sort_values``.
+    ordered["_session_date"] = [
+        pd.Timestamp(value).date() for value in parsed_index
+    ]
+    adjusted = ordered.get("Adjusted Close")
+    if adjusted is not None:
+        adjusted_numeric = pd.to_numeric(adjusted, errors="coerce")
+        ordered["_has_adjusted_close"] = (
+            adjusted_numeric.notna()
+            & np.isfinite(adjusted_numeric)
+            & adjusted_numeric.gt(0)
+        )
+    else:
+        ordered["_has_adjusted_close"] = False
+    ordered["_is_canonical_midnight"] = [
+        pd.Timestamp(value).time() == datetime.min.time()
+        for value in parsed_index
+    ]
+    ordered["_source_order"] = range(len(ordered))
+    ordered = ordered.sort_values(
+        [
+            "_session_date",
+            "_has_adjusted_close",
+            "_is_canonical_midnight",
+            "_source_order",
+        ],
+        kind="stable",
+    )
+    ordered = ordered.drop_duplicates(subset=["_session_date"], keep="last")
+    ordered.index = pd.DatetimeIndex(ordered.pop("_session_date"), name=None)
+    ordered = ordered.drop(
+        columns=[
+            "_has_adjusted_close",
+            "_is_canonical_midnight",
+            "_source_order",
+        ]
+    ).sort_index()
+    ordered.attrs.update(attrs)
+    return ordered
+
+
 def _slice_price_history_window(
     df: pd.DataFrame,
     history_window: Literal["252d", "1y", "5y", "max"],
@@ -480,7 +538,7 @@ def _slice_price_history_window(
     if df is None or df.empty or not set(required).issubset(df.columns):
         return pd.DataFrame(columns=df.columns if isinstance(df, pd.DataFrame) else required)
 
-    ordered = df.sort_index().copy()
+    ordered = _canonicalize_daily_sessions(df)
     parsed_index = pd.to_datetime(ordered.index, errors="coerce")
     valid_index = ~pd.isna(parsed_index)
     ordered = ordered.loc[valid_index].copy()
@@ -2650,7 +2708,8 @@ def calculate_macd(df: pd.DataFrame, lookback_days: int = 252) -> dict:
 
 def calculate_technical_indicators(df: pd.DataFrame, lookback_days: int = 252) -> dict:
     """Calculate all technical indicators for 252-day lookback"""
-    
+
+    df = _canonicalize_daily_sessions(df)
     # Get last 252 days of data
     lookback_df = df.tail(lookback_days).copy()
     
@@ -2718,15 +2777,12 @@ def calculate_technical_indicators(df: pd.DataFrame, lookback_days: int = 252) -
 def _trading_return_frame(df: pd.DataFrame, prefix: str) -> pd.DataFrame:
     if df is None or df.empty or "Close" not in df.columns:
         return pd.DataFrame()
-    frame = df.copy()
-    index = pd.to_datetime(frame.index, errors="coerce", utc=True)
-    frame = frame[index.notna()].copy()
-    index = index[index.notna()].tz_convert(None).normalize()
-    frame.index = index
+    frame = _canonicalize_daily_sessions(df)
     raw_close = pd.to_numeric(frame["Close"], errors="coerce")
     adjusted = frame.get("Adjusted Close")
     if adjusted is not None:
-        adjusted = pd.to_numeric(adjusted, errors="coerce").where(lambda values: values > 0)
+        adjusted = pd.to_numeric(adjusted, errors="coerce")
+        adjusted = adjusted.where(np.isfinite(adjusted) & (adjusted > 0))
     else:
         adjusted = pd.Series(index=frame.index, dtype=float)
     normalized = pd.DataFrame(
@@ -2749,7 +2805,9 @@ def compute_stock_projection(
     fundamentals: Optional[dict] = None,
 ) -> dict:
     """Compute projection scores for a single stock at a given horizon"""
-    
+
+    df = _canonicalize_daily_sessions(df)
+    spy_df = _canonicalize_daily_sessions(spy_df)
     stock_returns = _trading_return_frame(df, "stock")
     benchmark_returns = _trading_return_frame(spy_df, "benchmark")
     stock_latest = stock_returns.index.max() if not stock_returns.empty else None
