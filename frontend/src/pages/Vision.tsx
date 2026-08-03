@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import Dialog from "../components/ui/Dialog";
 
 type PrincipleMotif = "board" | "curve" | "decision";
 
@@ -422,7 +423,33 @@ function FrameworkHouseGraphic() {
 
 export default function Vision() {
   const [activeHighlight, setActiveHighlight] = useState<VisionHighlightId>("goal");
+  const [constellationOpen, setConstellationOpen] = useState(false);
+  const [constellationStatus, setConstellationStatus] = useState<"loading" | "ready" | "error">("loading");
+  const constellationFrameRef = useRef<HTMLIFrameElement | null>(null);
   const activeHeroHighlight = heroHighlights.find((item) => item.id === activeHighlight) ?? heroHighlights[1];
+
+  useEffect(() => {
+    const handleConstellationMessage = (event: MessageEvent) => {
+      if (event.source === constellationFrameRef.current?.contentWindow) {
+        if (event.data?.type === "architecture-constellation-ready" && event.data?.view === "interactive") {
+          setConstellationStatus("ready");
+        } else if (event.data?.type === "architecture-constellation-close") {
+          setConstellationOpen(false);
+        }
+      }
+    };
+
+    window.addEventListener("message", handleConstellationMessage);
+    return () => window.removeEventListener("message", handleConstellationMessage);
+  }, []);
+
+  useEffect(() => {
+    if (!constellationOpen || constellationStatus !== "loading") return undefined;
+    const readinessTimeout = window.setTimeout(() => {
+      setConstellationStatus((current) => current === "loading" ? "error" : current);
+    }, 10_000);
+    return () => window.clearTimeout(readinessTimeout);
+  }, [constellationOpen, constellationStatus]);
 
   return (
     <div className="bg-stealth-950 text-stealth-100">
@@ -589,6 +616,69 @@ export default function Vision() {
         </div>
       </section>
 
+      <section id="vision-architecture" className="scroll-mt-28 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-14 sm:pb-16">
+        <div className="vision-architecture-field overflow-hidden rounded-xl border border-stealth-600 bg-stealth-850 shadow-[0_24px_64px_-44px_rgba(0,0,0,0.92)]">
+          <div className="grid lg:grid-cols-[minmax(280px,0.62fr)_minmax(0,1fr)] lg:items-stretch">
+            <div className="flex flex-col justify-center p-6 sm:p-8 lg:p-10">
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-300">
+                Open Architecture
+              </div>
+              <h2 className="mt-3 max-w-xl text-3xl font-semibold leading-tight text-white sm:text-4xl">
+                Inspect how the research system fits together.
+              </h2>
+              <p className="mt-5 max-w-2xl text-base leading-7 text-stealth-200">
+                The constellation maps extracted relationships across backend, data, frontend, tests, and tooling. Search a symbol, inspect its direct neighborhood, and follow likely ownership paths without flattening the repository into a file list.
+              </p>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-stealth-400">
+                Connections are static-analysis leads, not proof of runtime behavior.
+              </p>
+
+              <dl className="mt-7 border-y border-stealth-700 text-sm sm:grid sm:grid-cols-3 sm:divide-x sm:divide-stealth-700">
+                <div className="py-3 sm:px-3 sm:first:pl-0">
+                  <dt className="font-semibold text-stealth-100">Radius</dt>
+                  <dd className="mt-1 text-stealth-400">Inbound reuse</dd>
+                </div>
+                <div className="border-t border-stealth-700 py-3 sm:border-t-0 sm:px-3">
+                  <dt className="font-semibold text-stealth-100">Color</dt>
+                  <dd className="mt-1 text-stealth-400">Repository layer</dd>
+                </div>
+                <div className="border-t border-stealth-700 py-3 sm:border-t-0 sm:px-3 sm:last:pr-0">
+                  <dt className="font-semibold text-stealth-100">Shape</dt>
+                  <dd className="mt-1 text-stealth-400">Symbol kind</dd>
+                </div>
+              </dl>
+
+              <button
+                type="button"
+                className="mt-7 inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-emerald-300 px-5 py-3 text-sm font-semibold text-stealth-950 transition-colors hover:bg-emerald-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 sm:w-fit"
+                onClick={() => {
+                  setConstellationStatus("loading");
+                  setConstellationOpen(true);
+                }}
+              >
+                Open interactive constellation
+              </button>
+            </div>
+
+            <figure className="vision-constellation-preview-shell">
+              <iframe
+                className="vision-constellation-preview"
+                src="/_graphify/constellation.html#preview"
+                title="Preview of the Market Diagnostic Dashboard architecture constellation"
+                sandbox="allow-scripts"
+                referrerPolicy="no-referrer"
+                loading="lazy"
+                tabIndex={-1}
+                aria-hidden="true"
+              />
+              <figcaption className="vision-constellation-preview-caption">
+                Center = higher inbound reuse <span aria-hidden="true">·</span> Surface = local code and entrypoints
+              </figcaption>
+            </figure>
+          </div>
+        </div>
+      </section>
+
       <section id="vision-audience" className="scroll-mt-28 border-y border-stealth-700 bg-stealth-850/60">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-14 sm:py-16 grid gap-10 lg:grid-cols-[1.1fr_0.9fr] items-start">
           <div>
@@ -669,6 +759,60 @@ export default function Vision() {
           </div>
         </div>
       </section>
+
+      <Dialog
+        open={constellationOpen}
+        onClose={() => setConstellationOpen(false)}
+        title="Architecture Constellation"
+        description="Search the code-only map, orbit its reuse layers, or reduce a selected node to its direct neighborhood. Treat every connection as a lead to verify in source."
+        className="vision-constellation-dialog"
+        backdropClassName="vision-constellation-backdrop"
+        closeOnBackdrop={false}
+        footer={(
+          <>
+            <span className="vision-constellation-footer-note">
+              Static analysis, generated from the repository snapshot.
+            </span>
+            <a
+              href="/_graphify/constellation.html"
+              target="_blank"
+              rel="noreferrer"
+              className="field-button field-button-secondary"
+            >
+              Open standalone
+            </a>
+            <button
+              type="button"
+              className="field-button field-button-primary"
+              onClick={() => setConstellationOpen(false)}
+            >
+              Close
+            </button>
+          </>
+        )}
+      >
+        <div className="vision-constellation-frame-shell" data-status={constellationStatus}>
+          {constellationStatus === "loading" ? (
+            <div className="vision-constellation-frame-state" role="status">
+              Loading the architecture map…
+            </div>
+          ) : null}
+          {constellationStatus === "error" ? (
+            <div className="vision-constellation-frame-state" role="alert">
+              The architecture map could not be loaded. Open the standalone view or try again after refreshing this page.
+            </div>
+          ) : null}
+          <iframe
+            ref={constellationFrameRef}
+            className="vision-constellation-frame"
+            src="/_graphify/constellation.html"
+            title="Interactive architecture constellation"
+            sandbox="allow-scripts"
+            referrerPolicy="no-referrer"
+            onError={() => setConstellationStatus("error")}
+          />
+        </div>
+      </Dialog>
     </div>
   );
 }

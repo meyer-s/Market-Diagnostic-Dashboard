@@ -83,16 +83,21 @@ test-only definitions, unresolved internal-looking bindings, and likely framewor
 or CLI roots. Stronger signals are shown by default; lower-confidence groups are
 available as explicit filters.
 
-The `sync` action updates the graph and receipt and regenerates the viewer in one
-command. When extraction changes the graph, the wrapper retains the prior changed
-graph in the same local cache. That baseline lets later syncs identify a `Recently
+The `sync` action updates the graph and receipt and regenerates both the full local
+viewer and the sanitized public Vision-page snapshot in one command. When
+extraction changes the graph, the wrapper retains the prior changed graph in the
+same local cache. That baseline lets later syncs identify a `Recently
 stranded` (widow) lead only when a stable production node had extracted inbound
 ownership before and has none now. History begins with the first changed update
 after this feature is installed; it is local and is not committed.
 
-The generated HTML stays beside the local graph cache and is never part of the app
-or deployment bundle. Use `orphans -Category detached`, `orphans -Category orphan-file`,
-or `orphans -Category widow` for the same hygiene evidence in the terminal.
+The full generated HTML stays beside the local graph cache and is never deployed.
+The one allowed application artifact is the deterministic public profile at
+`frontend/public/_graphify/constellation.html`, embedded from `/vision`. It contains
+only the current code graph and strips machine paths, timestamps, Git/history
+metadata, rationale/concept text, and ownership-hygiene leads. Use
+`orphans -Category detached`, `orphans -Category orphan-file`, or
+`orphans -Category widow` for the richer local hygiene evidence.
 
 Use graph and hygiene results as leads, then verify them against source, tests, and
 runtime evidence. Exact relative dynamic imports are augmented, but decorators,

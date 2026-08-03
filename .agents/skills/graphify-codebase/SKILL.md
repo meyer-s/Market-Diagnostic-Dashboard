@@ -69,13 +69,19 @@ Use Graphify as an architectural hypothesis tool. Treat direct source reads, `rg
    .\.agents\skills\graphify-codebase\scripts\graphify.ps1 sync
    ```
 
+   `sync` also refreshes the deterministic, sanitized public constellation at
+   `frontend/public/_graphify/constellation.html` for the Vision page. Include a
+   changed snapshot in the same commit as the architecture it represents.
+
 ## Guardrails
 
 - The wrapper pins `graphifyy[sql]==0.9.31` and graph state in a per-repository cache under local application data, outside the OneDrive workspace. It never modifies the project Python environment.
 - Builds always use local AST-only `--code-only --no-cluster` extraction. Query logging is forcibly disabled.
 - Generated graph state is local cache, not documentation. Never copy it into the repository or commit it.
 - The local history retains one prior changed graph and receipt for widow comparison. It is not a Git substitute and must remain outside the repository.
-- The generated constellation is a local, offline HTML artifact beside the graph cache. It embeds compact graph data, makes no network requests, and should not be deployed with the application.
+- The full generated constellation beside the graph cache is local-only. It includes machine-local history and ownership-hygiene leads and must never be copied into the repository or deployed.
+- The only deployable exception is the wrapper's explicit `--public` export at `frontend/public/_graphify/constellation.html`. That profile is deterministic, code-only, current-snapshot-only, and removes repository roots, timestamps, Git heads, rationale/concept text, and hygiene data. Never replace it with the raw local viewer.
+- Public export source paths must remain canonical repository-relative paths. The builder fails closed on absolute, URL-like, control-character, empty-segment, or traversal paths and refuses a raw local output inside the repository.
 - Never run `graphify install`, `graphify codex install`, hooks, watch mode, MCP, `--mode deep`, semantic document/media extraction, `save-result`, `reflect`, global graphs, or Obsidian export unless the user explicitly asks for that expansion.
 - Keep reverse traversal shallow. Depth greater than 2 often walks through module imports and exaggerates impact.
 - Graphify cannot prove frontend URL-to-FastAPI wiring, dynamic framework behavior, SQLAlchemy effects, scheduler execution, production health, or data correctness. Validate those through their native evidence paths.

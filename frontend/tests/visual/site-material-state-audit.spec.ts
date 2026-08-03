@@ -117,6 +117,19 @@ const stateTargets: StateTarget[] = [
     },
   },
   {
+    id: "state-04b-vision-architecture-modal",
+    name: "Vision — Architecture Constellation modal",
+    path: "/vision",
+    action: async (page) => {
+      await page.getByRole("button", { name: "Open interactive constellation" }).click();
+      await page.getByRole("dialog", { name: "Architecture Constellation" }).waitFor();
+      const graph = page.frameLocator('iframe[title="Interactive architecture constellation"]');
+      await expect(graph.getByRole("button", { name: "Sphere" })).toBeVisible();
+      await expect(graph.getByRole("button", { name: "Neighborhood" })).toBeVisible();
+      await expect(graph.getByRole("button", { name: "Hygiene" })).toBeHidden();
+    },
+  },
+  {
     id: "state-05-system-breakdown-disclosures",
     name: "System Breakdown — methodology, weights, and composite details expanded",
     path: "/system-breakdown",

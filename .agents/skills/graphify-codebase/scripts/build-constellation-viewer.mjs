@@ -61,6 +61,22 @@ function normalizePath(value) {
   return typeof value === "string" ? value.replaceAll("\\", "/") : "";
 }
 
+function normalizePublicSourcePath(value) {
+  const normalized = normalizePath(value).trim();
+  if (!normalized) return "";
+  const segments = normalized.split("/");
+  if (
+    /[\u0000-\u001f\u007f]/.test(normalized)
+    || /^[a-zA-Z]:/.test(normalized)
+    || normalized.startsWith("/")
+    || /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(normalized)
+    || segments.some((segment) => !segment || segment === "." || segment === "..")
+  ) {
+    fail(`Public snapshot contains an unsafe source path: ${JSON.stringify(normalized)}`);
+  }
+  return normalized;
+}
+
 function classifyDomain(sourceFile, isExternal) {
   if (isExternal) return "unresolved";
   const source = normalizePath(sourceFile).toLowerCase();
@@ -108,6 +124,14 @@ const graphPath = path.resolve(args.graph);
 const outputPath = args.output ? path.resolve(args.output) : "";
 const repoRoot = args.repo ? path.resolve(args.repo) : "";
 const productLabel = args.label || "Codebase";
+const publicMode = args.public === true;
+
+if (outputPath && repoRoot && !publicMode) {
+  const outputRelativeToRepo = path.relative(repoRoot, outputPath);
+  if (!outputRelativeToRepo.startsWith("..") && !path.isAbsolute(outputRelativeToRepo)) {
+    fail("Refusing to write a raw local constellation inside the repository. Use --public for the sanitized export profile.");
+  }
+}
 
 if (!fs.existsSync(graphPath)) fail(`Graph file does not exist: ${graphPath}`);
 
@@ -124,6 +148,23 @@ if (!Array.isArray(graph.nodes) || !Array.isArray(graph.edges)) {
   fail("Graphify graph must contain nodes and edges arrays.");
 }
 
+const publicExcludedNodeIds = new Set(
+  publicMode
+    ? graph.nodes
+      .filter((node) => String(node.file_type || "") !== "code")
+      .map((node) => String(node.id))
+    : [],
+);
+const graphNodes = publicMode
+  ? graph.nodes.filter((node) => !publicExcludedNodeIds.has(String(node.id)))
+  : graph.nodes;
+const graphEdges = publicMode
+  ? graph.edges.filter((edge) => (
+    !publicExcludedNodeIds.has(String(edge.source))
+    && !publicExcludedNodeIds.has(String(edge.target))
+  ))
+  : graph.edges;
+
 const previousGraphPath = args["previous-graph"] ? path.resolve(args["previous-graph"]) : "";
 const previousGraphText = previousGraphPath && fs.existsSync(previousGraphPath)
   ? fs.readFileSync(previousGraphPath, "utf8")
@@ -136,19 +177,21 @@ const currentReceipt = readOptionalJson(args.receipt, "current Graphify receipt"
 const previousReceipt = readOptionalJson(args["previous-receipt"], "previous Graphify receipt");
 const hasDistinctBaseline = Boolean(previousGraph && previousGraphText !== graphText);
 
-const sourceNodes = graph.nodes.map((node) => ({
+const sourceNodes = graphNodes.map((node) => ({
   id: String(node.id),
   label: String(node.label || node.id),
   fileType: String(node.file_type || ""),
-  sourceFile: normalizePath(node.source_file),
-  sourceLocation: String(node.source_location || ""),
+  sourceFile: publicMode ? normalizePublicSourcePath(node.source_file) : normalizePath(node.source_file),
+  sourceLocation: publicMode && !/^L\d+$/.test(String(node.source_location || ""))
+    ? ""
+    : String(node.source_location || ""),
   isExternal: !normalizePath(node.source_file),
   isSynthesized: false,
 }));
 const knownIds = new Set(sourceNodes.map((node) => node.id));
 const externalIds = new Set();
 
-for (const edge of graph.edges) {
+for (const edge of graphEdges) {
   const source = String(edge.source);
   const target = String(edge.target);
   if (!knownIds.has(source)) externalIds.add(source);
@@ -171,7 +214,7 @@ for (const id of [...externalIds].sort((left, right) => left.localeCompare(right
 const nodeIndex = new Map(sourceNodes.map((node, index) => [node.id, index]));
 const inDegree = new Uint32Array(sourceNodes.length);
 const outDegree = new Uint32Array(sourceNodes.length);
-const relationNames = [...new Set(graph.edges.map((edge) => String(edge.relation || "related")))].sort();
+const relationNames = [...new Set(graphEdges.map((edge) => String(edge.relation || "related")))].sort();
 const relationIndex = new Map(relationNames.map((relation, index) => [relation, index]));
 const compactEdges = [];
 let suppressedCrossLanguage = 0;
@@ -183,7 +226,7 @@ function languageFamily(sourceFile) {
   return "";
 }
 
-for (const edge of graph.edges) {
+for (const edge of graphEdges) {
   const source = nodeIndex.get(String(edge.source));
   const target = nodeIndex.get(String(edge.target));
   if (!Number.isInteger(source) || !Number.isInteger(target)) continue;
@@ -676,11 +719,12 @@ if (wantsHygieneReport) {
 const payload = {
   meta: {
     label: productLabel,
-    repo: repoRoot,
-    indexedNodes: graph.nodes.length,
+    publicMode,
+    repo: publicMode ? "" : repoRoot,
+    indexedNodes: graphNodes.length,
     unresolvedTargets: sourceNodes.filter((node) => node.isExternal).length,
     relationships: compactEdges.length,
-    rawRelationships: graph.edges.length,
+    rawRelationships: graphEdges.length,
     suppressedCrossLanguage,
     scope: {
       model: "inbound-reuse-v1",
@@ -692,7 +736,14 @@ const payload = {
       excludedRelations: [...SCOPE_STRUCTURAL_RELATIONS],
       excludedNeighborDomains: [...SCOPE_EXCLUDED_NEIGHBOR_DOMAINS],
     },
-    hygiene: {
+    hygiene: publicMode ? {
+      model: "",
+      counts: HYGIENE_DEFINITIONS.map(() => 0),
+      hasDistinctBaseline: false,
+      currentHead: "",
+      previousHead: "",
+      defaultTypes: [],
+    } : {
       model: "ownership-leads-v1",
       counts: hygieneCounts,
       hasDistinctBaseline,
@@ -700,13 +751,13 @@ const payload = {
       previousHead: previousReceipt?.git_head ? String(previousReceipt.git_head).slice(0, 12) : "",
       defaultTypes: ["widow", "detached", "orphan-file"],
     },
-    generatedAt: new Date().toISOString(),
+    generatedAt: publicMode ? "" : new Date().toISOString(),
   },
   domains: DOMAIN_DEFINITIONS,
   kinds: KIND_NAMES,
   scopeShells: SCOPE_SHELL_DEFINITIONS,
-  hygieneTypes: HYGIENE_DEFINITIONS,
-  hygiene: hygieneItems,
+  hygieneTypes: publicMode ? [] : HYGIENE_DEFINITIONS,
+  hygiene: publicMode ? [] : hygieneItems,
   relations: relationNames,
   nodes: compactNodes,
   edges: compactEdges,
@@ -717,14 +768,17 @@ const embeddedPayload = JSON.stringify(payload)
   .replaceAll("\u2028", "\\u2028")
   .replaceAll("\u2029", "\\u2029");
 
-const html = `<!doctype html>
-<!--
+const designIntentComment = publicMode ? "" : `<!--
 THESIS: Make a large code graph navigable as an architecture field whose radius distinguishes inbound reuse from local code and entrypoints, refusing both the vertical tree and the all-edge hairball.
 OWN-WORLD: Evidence Field dark surfaces, crisp structural borders, layer color, symbol shape, semantic radial shells, and one restrained selected-node ring.
 STORY: Read extracted reuse from center to surface, find any symbol, then reduce the graph to a verifiable one-hop neighborhood.
 FIRST VIEWPORT: A rotatable constellation owns the canvas; search and mode controls sit above it; a source-and-relationship inspector stays visible at right.
 FORM: A focused operational constellation, directly shaped as a local extension of the established product world; no concept seed was needed.
 -->
+`;
+
+const html = `<!doctype html>
+${designIntentComment}
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -732,6 +786,7 @@ FORM: A focused operational constellation, directly shaped as a local extension 
   <meta name="referrer" content="no-referrer">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; connect-src 'none'">
   <title>Architecture Constellation · ${escapeHtml(productLabel)}</title>
+  ${publicMode ? `<script>if (window.parent !== window.self) document.documentElement.classList.add("embedded-viewer"); if (location.hash === "#preview") document.documentElement.classList.add("embed-preview");</script>` : ""}
   <style>
     :root {
       color-scheme: dark;
@@ -1559,19 +1614,57 @@ FORM: A focused operational constellation, directly shaped as a local extension 
       .hygiene-row { min-height: 76px; padding-block: 11px; }
     }
 
+    .public-constellation .mode-switch { grid-template-columns: repeat(2, 1fr); }
+    .public-constellation #hygieneMode,
+    .public-constellation .hygiene-readout { display: none; }
+
+    html.embedded-viewer .topbar { display: none; }
+
+    html.embed-preview body { overflow: hidden; }
+    html.embed-preview .skip-link,
+    html.embed-preview .topbar,
+    html.embed-preview .command-deck,
+    html.embed-preview .stage-hud,
+    html.embed-preview .scope-legend,
+    html.embed-preview .layer-deck,
+    html.embed-preview .inspector,
+    html.embed-preview .statusbar { display: none; }
+    html.embed-preview .app-shell {
+      display: block;
+      height: 100vh;
+      height: 100dvh;
+      min-height: 0;
+    }
+    html.embed-preview .workspace,
+    html.embed-preview .graph-region,
+    html.embed-preview .stage {
+      display: block;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+    }
+    html.embed-preview .graph-region {
+      border: 0;
+    }
+    html.embed-preview .stage,
+    html.embed-preview canvas {
+      cursor: default;
+      pointer-events: none;
+    }
+
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { scroll-behavior: auto !important; }
     }
   </style>
 </head>
-<body>
+<body class="${publicMode ? "public-constellation" : ""}">
   <a class="skip-link" href="#inspectorTitle">Skip to graph details</a>
   <div class="app-shell">
-    <header class="topbar">
+    <header class="topbar" aria-label="Architecture constellation header">
       <div class="identity">
         <div class="identity-mark" aria-hidden="true"></div>
         <div>
-          <p class="kicker">${escapeHtml(productLabel)} · local graph</p>
+          <p class="kicker">${escapeHtml(productLabel)} · ${publicMode ? "architecture model" : "local graph"}</p>
           <h1>Architecture Constellation</h1>
         </div>
       </div>
@@ -1701,7 +1794,7 @@ FORM: A focused operational constellation, directly shaped as a local extension 
       </aside>
     </main>
 
-    <footer class="statusbar">
+    <footer class="statusbar" aria-label="Architecture constellation status">
       <span><strong>Graph connections are leads.</strong> Verify source before treating them as runtime truth. <span id="suppressionSummary"></span></span>
       <span class="keyboard-help" id="keyboardHelp">Drag to orbit · Wheel to zoom · Arrow keys rotate · Home resets</span>
     </footer>
@@ -1714,6 +1807,8 @@ FORM: A focused operational constellation, directly shaped as a local extension 
 
     (() => {
       "use strict";
+
+      const PREVIEW = DATA.meta.publicMode && document.documentElement.classList.contains("embed-preview");
 
       const rowToNode = (row, index) => ({
         index,
@@ -1794,6 +1889,7 @@ FORM: A focused operational constellation, directly shaped as a local extension 
       const liveStatus = document.getElementById("liveStatus");
       const emptyState = document.getElementById("emptyState");
       const selectionPanel = document.getElementById("selectionPanel");
+      if (PREVIEW) canvas.tabIndex = -1;
       let logicalWidth = 0;
       let logicalHeight = 0;
       let frameRequest = null;
@@ -2804,6 +2900,7 @@ FORM: A focused operational constellation, directly shaped as a local extension 
           event.preventDefault();
           selectNode(state.searchResults[state.searchActive >= 0 ? state.searchActive : 0], true, true);
         } else if (event.key === "Escape") {
+          event.stopPropagation();
           closeSearch();
         }
       });
@@ -2829,6 +2926,11 @@ FORM: A focused operational constellation, directly shaped as a local extension 
 
       document.addEventListener("visibilitychange", invalidate);
       document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && DATA.meta.publicMode && window.parent !== window.self) {
+          event.preventDefault();
+          window.parent.postMessage({ type: "architecture-constellation-close" }, "*");
+          return;
+        }
         const target = event.target;
         const isTyping = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement;
         if (event.key === "/" && !isTyping) {
@@ -2849,13 +2951,21 @@ FORM: A focused operational constellation, directly shaped as a local extension 
       renderInspector();
       syncRotationButton();
       resizeCanvas();
+      if (DATA.meta.publicMode && window.parent !== window.self) {
+        window.parent.postMessage({
+          type: "architecture-constellation-ready",
+          view: PREVIEW ? "preview" : "interactive",
+        }, "*");
+      }
     })();
   </script>
 </body>
 </html>`;
 
 fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-fs.writeFileSync(outputPath, html, "utf8");
+if (!fs.existsSync(outputPath) || fs.readFileSync(outputPath, "utf8") !== html) {
+  fs.writeFileSync(outputPath, html, "utf8");
+}
 process.stdout.write(`Architecture constellation written to ${outputPath}\n`);
 
 function escapeHtml(value) {

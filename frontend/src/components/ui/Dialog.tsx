@@ -15,6 +15,7 @@ type DialogProps = {
   description?: string;
   footer?: ReactNode;
   className?: string;
+  backdropClassName?: string;
   initialFocusRef?: RefObject<HTMLElement>;
   closeOnBackdrop?: boolean;
 };
@@ -25,6 +26,7 @@ const FOCUSABLE_SELECTOR = [
   "input:not([disabled])",
   "select:not([disabled])",
   "textarea:not([disabled])",
+  "iframe",
   "[tabindex]:not([tabindex='-1'])",
 ].join(",");
 
@@ -36,6 +38,7 @@ export default function Dialog({
   description,
   footer,
   className = "",
+  backdropClassName = "",
   initialFocusRef,
   closeOnBackdrop = true,
 }: DialogProps) {
@@ -50,7 +53,14 @@ export default function Dialog({
       ? document.activeElement
       : null;
     const previousOverflow = document.body.style.overflow;
+    const appRoot = document.getElementById("root");
+    const previousRootInert = appRoot?.inert ?? false;
+    const previousRootAriaHidden = appRoot?.getAttribute("aria-hidden") ?? null;
     document.body.style.overflow = "hidden";
+    if (appRoot) {
+      appRoot.inert = true;
+      appRoot.setAttribute("aria-hidden", "true");
+    }
 
     const frame = window.requestAnimationFrame(() => {
       const requested = initialFocusRef?.current;
@@ -91,6 +101,11 @@ export default function Dialog({
       window.cancelAnimationFrame(frame);
       document.removeEventListener("keydown", handleKeyDown);
       document.body.style.overflow = previousOverflow;
+      if (appRoot) {
+        appRoot.inert = previousRootInert;
+        if (previousRootAriaHidden === null) appRoot.removeAttribute("aria-hidden");
+        else appRoot.setAttribute("aria-hidden", previousRootAriaHidden);
+      }
       priorFocus?.focus();
     };
   }, [initialFocusRef, onClose, open]);
@@ -99,7 +114,7 @@ export default function Dialog({
 
   return createPortal(
     <div
-      className="field-dialog-backdrop"
+      className={`field-dialog-backdrop ${backdropClassName}`.trim()}
       role="presentation"
       onMouseDown={(event) => {
         if (closeOnBackdrop && event.currentTarget === event.target) onClose();

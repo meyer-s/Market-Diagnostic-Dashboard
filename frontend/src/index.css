@@ -1139,6 +1139,140 @@ body {
   border-top: 1px solid var(--field-border);
 }
 
+.vision-constellation-preview-shell {
+  position: relative;
+  min-height: 420px;
+  margin: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--field-border-strong);
+  background: #0e1520;
+}
+
+.vision-constellation-preview {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  pointer-events: none;
+}
+
+.vision-constellation-preview-caption {
+  position: absolute;
+  z-index: 1;
+  left: 16px;
+  right: 16px;
+  bottom: 14px;
+  width: fit-content;
+  max-width: calc(100% - 32px);
+  padding: 7px 10px;
+  border: 1px solid rgba(131, 191, 255, 0.22);
+  border-radius: 8px;
+  background: rgba(14, 21, 32, 0.9);
+  color: var(--field-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.vision-constellation-backdrop {
+  overflow: hidden;
+  padding: 16px;
+}
+
+.vision-constellation-dialog {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(1500px, calc(100vw - 32px));
+  height: calc(100dvh - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow: hidden;
+  border-radius: 12px;
+}
+
+.vision-constellation-dialog .field-dialog-body {
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.vision-constellation-frame-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: #0e1520;
+}
+
+.vision-constellation-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  background: #0e1520;
+  opacity: 0;
+}
+
+.vision-constellation-frame-shell[data-status="ready"] .vision-constellation-frame {
+  opacity: 1;
+}
+
+.vision-constellation-frame-state {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: var(--field-text-muted);
+  font-size: 14px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.vision-constellation-footer-note {
+  align-self: center;
+  margin-right: auto;
+  color: var(--field-text-subtle);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+@media (max-width: 780px) {
+  .vision-constellation-preview-shell {
+    min-height: 340px;
+    border-top: 1px solid var(--field-border-strong);
+    border-left: 0;
+  }
+
+  .vision-constellation-backdrop {
+    padding: 0;
+  }
+
+  .vision-constellation-dialog {
+    width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .vision-constellation-dialog .field-dialog-header,
+  .vision-constellation-dialog .field-dialog-footer {
+    padding: 14px;
+  }
+
+  .vision-constellation-dialog .field-dialog-footer > :is(a, button) {
+    flex: 1 1 140px;
+  }
+
+  .vision-constellation-footer-note {
+    display: none;
+  }
+}
+
 /* ── Evidence Field structure, rhythm, and responsive hierarchy ── */
 
 .site-footer {

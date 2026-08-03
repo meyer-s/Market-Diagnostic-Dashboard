@@ -8,4 +8,5 @@
 /docs/
 /devops/
 /graphify-out/
+/frontend/public/_graphify/
 /backend/app/data/ticker_presets.json

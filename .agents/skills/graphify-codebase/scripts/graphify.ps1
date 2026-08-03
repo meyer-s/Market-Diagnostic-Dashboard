@@ -78,6 +78,7 @@ $PreviousGraphPath = Join-Path $OutputRoot "graphify-out\graph.previous.json"
 $PreviousReceiptPath = Join-Path $OutputRoot "graphify-out\codex-receipt.previous.json"
 $ViewerBuilder = Join-Path $PSScriptRoot "build-constellation-viewer.mjs"
 $ViewerPath = Join-Path $OutputRoot "graphify-out\ARCHITECTURE_CONSTELLATION.html"
+$PublicViewerPath = Join-Path $RepoRoot "frontend\public\_graphify\constellation.html"
 
 # Graphify v0.9.31 is opt-in for query logs. Force the setting off so a caller's
 # user-level environment cannot record proprietary questions outside the repo.
@@ -391,6 +392,30 @@ function Invoke-ConstellationViewer {
     }
 }
 
+function Write-PublicConstellation {
+    Require-Graph
+    if (-not (Test-Path -LiteralPath $ViewerBuilder)) {
+        throw "Constellation viewer builder is missing: $ViewerBuilder"
+    }
+
+    $nodeExecutable = Get-NodeExecutable
+    $viewerArguments = @(
+        $ViewerBuilder,
+        "--graph", $GraphPath,
+        "--output", $PublicViewerPath,
+        "--repo", $RepoRoot,
+        "--label", "Market Diagnostic Dashboard",
+        "--public"
+    )
+    $LASTEXITCODE = 0
+    & $nodeExecutable @viewerArguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "Public architecture constellation generation exited with code $LASTEXITCODE."
+    }
+
+    Write-Output "Public viewer: $PublicViewerPath"
+}
+
 function Require-Text {
     param([string]$Value, [string]$Name)
 
@@ -460,6 +485,15 @@ function Write-Status {
         else {
             Write-Output "History: current snapshot only; the first changed update establishes a widow baseline"
         }
+
+        if (Test-Path -LiteralPath $PublicViewerPath) {
+            $publicViewerFile = Get-Item -LiteralPath $PublicViewerPath
+            $publicViewerSizeMiB = [math]::Round($publicViewerFile.Length / 1MB, 2)
+            Write-Output "Public: $PublicViewerPath ($publicViewerSizeMiB MiB)"
+        }
+        else {
+            Write-Output "Public: not generated - run the sync action"
+        }
     }
     else {
         Write-Output "Graph: not built"
@@ -480,6 +514,8 @@ switch ($Action) {
     }
     "sync" {
         Invoke-LocalGraphExtraction -RequireExistingGraph (Test-Path -LiteralPath $GraphPath)
+        Write-PublicConstellation
+        Write-Receipt
         Invoke-ConstellationViewer -OpenViewer $false
         Write-Status
     }
