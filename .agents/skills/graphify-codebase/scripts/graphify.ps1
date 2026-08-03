@@ -6,7 +6,7 @@ Builds, synchronizes, queries, and inspects the repository's guarded local code 
 Graphify state and the offline Architecture Constellation remain in local application data. Use graph and hygiene output as static leads, then verify source, tests, and runtime evidence.
 
 .PARAMETER Action
-Operation to run. Use sync after architecture changes; use orphans for ownership-hygiene leads.
+Operation to run. Use sync after architecture changes; use recent for the latest semantic source delta; use orphans for ownership-hygiene leads.
 
 .PARAMETER Text
 Symbol or query text for scope/query actions. For backward compatibility, orphans also accepts a category through Text.
@@ -19,11 +19,14 @@ Hygiene group for the orphans action: all, widow, detached, orphan-file, unrefer
 
 .EXAMPLE
 .\.agents\skills\graphify-codebase\scripts\graphify.ps1 orphans -Category widow -Top 30
+
+.EXAMPLE
+.\.agents\skills\graphify-codebase\scripts\graphify.ps1 recent -Top 30
 #>
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("status", "build", "update", "sync", "view", "scope", "orphans", "query", "explain", "affected", "path", "god-nodes", "diagnose", "benchmark")]
+    [ValidateSet("status", "build", "update", "sync", "view", "scope", "recent", "orphans", "query", "explain", "affected", "path", "god-nodes", "diagnose", "benchmark")]
     [string]$Action = "status",
 
     [Parameter(Position = 1)]
@@ -73,8 +76,10 @@ $VenvPython = Join-Path $VenvRoot "Scripts\python.exe"
 $GraphifyExe = Join-Path $VenvRoot "Scripts\graphify.exe"
 $OutputRoot = Join-Path $StateRoot "state\$GraphifyVersion"
 $GraphPath = Join-Path $OutputRoot "graphify-out\graph.json"
+$ManifestPath = Join-Path $OutputRoot "graphify-out\manifest.json"
 $ReceiptPath = Join-Path $OutputRoot "graphify-out\codex-receipt.json"
 $PreviousGraphPath = Join-Path $OutputRoot "graphify-out\graph.previous.json"
+$PreviousManifestPath = Join-Path $OutputRoot "graphify-out\manifest.previous.json"
 $PreviousReceiptPath = Join-Path $OutputRoot "graphify-out\codex-receipt.previous.json"
 $ViewerBuilder = Join-Path $PSScriptRoot "build-constellation-viewer.mjs"
 $ViewerPath = Join-Path $OutputRoot "graphify-out\ARCHITECTURE_CONSTELLATION.html"
@@ -109,6 +114,33 @@ function Get-TextSha256 {
     finally {
         $hasher.Dispose()
     }
+}
+
+function Get-SemanticManifestFingerprint {
+    param([string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return ""
+    }
+
+    try {
+        $manifest = Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json
+    }
+    catch {
+        throw "Unable to read Graphify semantic manifest '$Path': $($_.Exception.Message)"
+    }
+
+    $entries = @(
+        $manifest.PSObject.Properties | ForEach-Object {
+            $hashProperty = $_.Value.PSObject.Properties["semantic_hash"]
+            if ($null -eq $hashProperty -or [string]::IsNullOrWhiteSpace([string]$hashProperty.Value)) {
+                throw "Graphify semantic manifest entry '$($_.Name)' has no semantic_hash."
+            }
+            "$($_.Name.Replace('\', '/'))`:$([string]$hashProperty.Value)"
+        } | Sort-Object
+    )
+
+    return Get-TextSha256 -Value ($entries -join "`n")
 }
 
 function Get-WorkspaceFingerprint {
@@ -280,12 +312,22 @@ function Invoke-LocalGraphExtraction {
     $graphDirectory = Split-Path -Parent $GraphPath
     New-Item -ItemType Directory -Force -Path $graphDirectory | Out-Null
     $beforeGraphPath = Join-Path $graphDirectory ".graph.before-$PID.json"
+    $beforeManifestPath = Join-Path $graphDirectory ".manifest.before-$PID.json"
+    $beforePreviousManifestPath = Join-Path $graphDirectory ".manifest.previous.before-$PID.json"
     $beforeReceiptPath = Join-Path $graphDirectory ".receipt.before-$PID.json"
     $hadGraph = Test-Path -LiteralPath $GraphPath
+    $hadManifest = Test-Path -LiteralPath $ManifestPath
+    $hadPreviousManifest = Test-Path -LiteralPath $PreviousManifestPath
     $hadReceipt = Test-Path -LiteralPath $ReceiptPath
 
     if ($hadGraph) {
         Copy-Item -LiteralPath $GraphPath -Destination $beforeGraphPath -Force
+    }
+    if ($hadManifest) {
+        Copy-Item -LiteralPath $ManifestPath -Destination $beforeManifestPath -Force
+    }
+    if ($hadPreviousManifest) {
+        Copy-Item -LiteralPath $PreviousManifestPath -Destination $beforePreviousManifestPath -Force
     }
     if ($hadReceipt) {
         Copy-Item -LiteralPath $ReceiptPath -Destination $beforeReceiptPath -Force
@@ -300,7 +342,21 @@ function Invoke-LocalGraphExtraction {
         }
         Invoke-Graphify $arguments
         Remove-WorkspaceStatIndexScratch
+        if (-not (Test-Path -LiteralPath $ManifestPath)) {
+            throw "Graphify extraction completed without its semantic manifest: $ManifestPath"
+        }
         Write-Receipt
+
+        if ($hadManifest) {
+            $beforeSemanticFingerprint = Get-SemanticManifestFingerprint -Path $beforeManifestPath
+            $afterSemanticFingerprint = Get-SemanticManifestFingerprint -Path $ManifestPath
+            if ($beforeSemanticFingerprint -ne $afterSemanticFingerprint) {
+                Copy-Item -LiteralPath $beforeManifestPath -Destination $PreviousManifestPath -Force
+            }
+        }
+        elseif (Test-Path -LiteralPath $PreviousManifestPath) {
+            Remove-Item -LiteralPath $PreviousManifestPath -Force
+        }
 
         if ($hadGraph) {
             $beforeHash = (Get-FileHash -LiteralPath $beforeGraphPath -Algorithm SHA256).Hash
@@ -320,6 +376,18 @@ function Invoke-LocalGraphExtraction {
         if ($hadGraph -and (Test-Path -LiteralPath $beforeGraphPath)) {
             Copy-Item -LiteralPath $beforeGraphPath -Destination $GraphPath -Force
         }
+        if ($hadManifest -and (Test-Path -LiteralPath $beforeManifestPath)) {
+            Copy-Item -LiteralPath $beforeManifestPath -Destination $ManifestPath -Force
+        }
+        elseif (-not $hadManifest -and (Test-Path -LiteralPath $ManifestPath)) {
+            Remove-Item -LiteralPath $ManifestPath -Force
+        }
+        if ($hadPreviousManifest -and (Test-Path -LiteralPath $beforePreviousManifestPath)) {
+            Copy-Item -LiteralPath $beforePreviousManifestPath -Destination $PreviousManifestPath -Force
+        }
+        elseif (-not $hadPreviousManifest -and (Test-Path -LiteralPath $PreviousManifestPath)) {
+            Remove-Item -LiteralPath $PreviousManifestPath -Force
+        }
         if ($hadReceipt -and (Test-Path -LiteralPath $beforeReceiptPath)) {
             Copy-Item -LiteralPath $beforeReceiptPath -Destination $ReceiptPath -Force
         }
@@ -328,6 +396,12 @@ function Invoke-LocalGraphExtraction {
     finally {
         if (Test-Path -LiteralPath $beforeGraphPath) {
             Remove-Item -LiteralPath $beforeGraphPath -Force
+        }
+        if (Test-Path -LiteralPath $beforeManifestPath) {
+            Remove-Item -LiteralPath $beforeManifestPath -Force
+        }
+        if (Test-Path -LiteralPath $beforePreviousManifestPath) {
+            Remove-Item -LiteralPath $beforePreviousManifestPath -Force
         }
         if (Test-Path -LiteralPath $beforeReceiptPath) {
             Remove-Item -LiteralPath $beforeReceiptPath -Force
@@ -347,7 +421,10 @@ function Invoke-ConstellationViewer {
     $viewerNeedsRefresh = -not (Test-Path -LiteralPath $ViewerPath)
     if (-not $viewerNeedsRefresh) {
         $viewerModified = (Get-Item -LiteralPath $ViewerPath).LastWriteTimeUtc
-        $viewerInputs = @($GraphPath, $ReceiptPath, $ViewerBuilder)
+        $viewerInputs = @($GraphPath, $ManifestPath, $ReceiptPath, $ViewerBuilder)
+        if (Test-Path -LiteralPath $PreviousManifestPath) {
+            $viewerInputs += $PreviousManifestPath
+        }
         if (Test-Path -LiteralPath $PreviousGraphPath) {
             $viewerInputs += $PreviousGraphPath
         }
@@ -372,6 +449,12 @@ function Invoke-ConstellationViewer {
         )
         if (Test-Path -LiteralPath $ReceiptPath) {
             $viewerArguments += @("--receipt", $ReceiptPath)
+        }
+        if (Test-Path -LiteralPath $ManifestPath) {
+            $viewerArguments += @("--manifest", $ManifestPath)
+        }
+        if (Test-Path -LiteralPath $PreviousManifestPath) {
+            $viewerArguments += @("--previous-manifest", $PreviousManifestPath)
         }
         if (Test-Path -LiteralPath $PreviousGraphPath) {
             $viewerArguments += @("--previous-graph", $PreviousGraphPath)
@@ -407,6 +490,12 @@ function Write-PublicConstellation {
         "--label", "Market Diagnostic Dashboard",
         "--public"
     )
+    if (Test-Path -LiteralPath $ManifestPath) {
+        $viewerArguments += @("--manifest", $ManifestPath)
+    }
+    if (Test-Path -LiteralPath $PreviousManifestPath) {
+        $viewerArguments += @("--previous-manifest", $PreviousManifestPath)
+    }
     $LASTEXITCODE = 0
     & $nodeExecutable @viewerArguments
     if ($LASTEXITCODE -ne 0) {
@@ -540,6 +629,31 @@ switch ($Action) {
         & $nodeExecutable @scopeArguments
         if ($LASTEXITCODE -ne 0) {
             throw "Architecture scope analysis exited with code $LASTEXITCODE."
+        }
+    }
+    "recent" {
+        Require-Graph
+        Write-GraphFreshnessWarning
+        if (-not (Test-Path -LiteralPath $ViewerBuilder)) {
+            throw "Constellation recent-change analyzer is missing: $ViewerBuilder"
+        }
+        $nodeExecutable = Get-NodeExecutable
+        $recentArguments = @(
+            $ViewerBuilder,
+            "--graph", $GraphPath,
+            "--recent-report",
+            "--recent-top", "$Top"
+        )
+        if (Test-Path -LiteralPath $ManifestPath) {
+            $recentArguments += @("--manifest", $ManifestPath)
+        }
+        if (Test-Path -LiteralPath $PreviousManifestPath) {
+            $recentArguments += @("--previous-manifest", $PreviousManifestPath)
+        }
+        $LASTEXITCODE = 0
+        & $nodeExecutable @recentArguments
+        if ($LASTEXITCODE -ne 0) {
+            throw "Architecture recent-change analysis exited with code $LASTEXITCODE."
         }
     }
     "orphans" {

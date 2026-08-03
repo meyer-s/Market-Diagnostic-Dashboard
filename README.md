@@ -71,6 +71,7 @@ per-repository cache under local application data, outside the OneDrive workspac
 .\.agents\skills\graphify-codebase\scripts\graphify.ps1 build
 .\.agents\skills\graphify-codebase\scripts\graphify.ps1 view
 .\.agents\skills\graphify-codebase\scripts\graphify.ps1 explain -Text compute_optionality_metrics
+.\.agents\skills\graphify-codebase\scripts\graphify.ps1 recent -Top 30
 .\.agents\skills\graphify-codebase\scripts\graphify.ps1 orphans
 .\.agents\skills\graphify-codebase\scripts\graphify.ps1 sync
 ```
@@ -91,11 +92,18 @@ stranded` (widow) lead only when a stable production node had extracted inbound
 ownership before and has none now. History begins with the first changed update
 after this feature is installed; it is local and is not committed.
 
+The wrapper separately retains the prior semantic manifest only when source
+semantics change. The viewer's compact **Recent** replay and the `recent` terminal
+report use that baseline, ignoring mtimes, Git commits, and raw graph serialization.
+Added and modified files receive a visual signal; removed file identities remain
+local-only.
+
 The full generated HTML stays beside the local graph cache and is never deployed.
 The one allowed application artifact is the deterministic public profile at
 `frontend/public/_graphify/constellation.html`, embedded from `/vision`. It contains
-only the current code graph and strips machine paths, timestamps, Git/history
-metadata, rationale/concept text, and ownership-hygiene leads. Use
+the current code graph, deterministic added/modified node flags, and aggregate
+latest-delta counts. It strips semantic hashes, removed filenames, machine paths,
+timestamps, Git/history metadata, rationale/concept text, and ownership-hygiene leads. Use
 `orphans -Category detached`, `orphans -Category orphan-file`, or
 `orphans -Category widow` for the richer local hygiene evidence.
 

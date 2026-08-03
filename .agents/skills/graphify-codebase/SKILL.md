@@ -30,6 +30,14 @@ Use Graphify as an architectural hypothesis tool. Treat direct source reads, `rg
 
    The sphere shows a balanced, stable sample of nodes for orientation; search reaches the full graph. Radius has three semantic shells: high inbound reuse is nearer the center, cross-file reused code is in the middle, and local code or entrypoints are nearer the surface. Only shell membership has meaning; deterministic offsets within a shell are visual packing. Double, single, or absent keylines repeat those three bands when perspective compresses distance. Node size still reflects total extracted degree, so a large entrypoint can remain prominent without being mistaken for reusable code. Select a node to inspect the inbound file/layer evidence, then switch to **Neighborhood** for a bounded one-hop dependency view and use the DOM relationship ledger as the precise, keyboard-accessible reading layer. Color denotes repository scope and shape is a heuristic symbol-kind cue. Containment edges are withheld from the visual layer, unresolved targets are labeled explicitly, and suspicious cross-language symbol matches are suppressed.
 
+   The compact **Recent** action briefly emphasizes one representative node per added or modified source file, then settles to a static gold signal. It is a replay, not a graph mode or filter. "Recent" compares Graphify semantic source hashes across the two latest semantic-changing extractions, so mtime, AST-hash-only churn, Git commits, and raw graph serialization do not create false changes. Use the terminal report when exact source paths are more useful:
+
+   ```powershell
+   .\.agents\skills\graphify-codebase\scripts\graphify.ps1 recent -Top 30
+   ```
+
+   Removed sources appear in the local report, but only their aggregate count enters the sanitized public snapshot. With no semantic baseline, the viewer reports the current snapshot without inventing recent changes.
+
    Use the same radial evidence without opening the viewer:
 
    ```powershell
@@ -78,9 +86,9 @@ Use Graphify as an architectural hypothesis tool. Treat direct source reads, `rg
 - The wrapper pins `graphifyy[sql]==0.9.31` and graph state in a per-repository cache under local application data, outside the OneDrive workspace. It never modifies the project Python environment.
 - Builds always use local AST-only `--code-only --no-cluster` extraction. Query logging is forcibly disabled.
 - Generated graph state is local cache, not documentation. Never copy it into the repository or commit it.
-- The local history retains one prior changed graph and receipt for widow comparison. It is not a Git substitute and must remain outside the repository.
+- The local history retains one prior changed graph and receipt for widow comparison, plus one prior semantic manifest for recent-source comparison. It is not a Git substitute and must remain outside the repository.
 - The full generated constellation beside the graph cache is local-only. It includes machine-local history and ownership-hygiene leads and must never be copied into the repository or deployed.
-- The only deployable exception is the wrapper's explicit `--public` export at `frontend/public/_graphify/constellation.html`. That profile is deterministic, code-only, current-snapshot-only, and removes repository roots, timestamps, Git heads, rationale/concept text, and hygiene data. Never replace it with the raw local viewer.
+- The only deployable exception is the wrapper's explicit `--public` export at `frontend/public/_graphify/constellation.html`. That profile is deterministic and code-only. It contains current topology plus per-node added/modified flags from the latest semantic source delta and aggregate added/modified/removed counts; it removes semantic hashes, removed identities, prior topology, repository roots, timestamps, Git heads, rationale/concept text, and hygiene data. Never replace it with the raw local viewer.
 - Public export source paths must remain canonical repository-relative paths. The builder fails closed on absolute, URL-like, control-character, empty-segment, or traversal paths and refuses a raw local output inside the repository.
 - Never run `graphify install`, `graphify codex install`, hooks, watch mode, MCP, `--mode deep`, semantic document/media extraction, `save-result`, `reflect`, global graphs, or Obsidian export unless the user explicitly asks for that expansion.
 - Keep reverse traversal shallow. Depth greater than 2 often walks through module imports and exaggerates impact.

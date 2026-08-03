@@ -630,7 +630,7 @@ export default function Vision() {
                 The constellation maps extracted relationships across backend, data, frontend, tests, and tooling. Search a symbol, inspect its direct neighborhood, and follow likely ownership paths without flattening the repository into a file list.
               </p>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-stealth-400">
-                Connections are static-analysis leads, not proof of runtime behavior.
+                Gold signals mark source files added or modified in the latest semantic change set. Connections remain static-analysis leads, not proof of runtime behavior.
               </p>
 
               <dl className="mt-7 border-y border-stealth-700 text-sm sm:grid sm:grid-cols-3 sm:divide-x sm:divide-stealth-700">
@@ -672,7 +672,7 @@ export default function Vision() {
                 aria-hidden="true"
               />
               <figcaption className="vision-constellation-preview-caption">
-                Center = higher inbound reuse <span aria-hidden="true">·</span> Surface = local code and entrypoints
+                Gold = latest semantic change set <span aria-hidden="true">·</span> Center = higher inbound reuse <span aria-hidden="true">·</span> Surface = local code and entrypoints
               </figcaption>
             </figure>
           </div>
@@ -764,7 +764,7 @@ export default function Vision() {
         open={constellationOpen}
         onClose={() => setConstellationOpen(false)}
         title="Architecture Constellation"
-        description="Search the code-only map, orbit its reuse layers, or reduce a selected node to its direct neighborhood. Treat every connection as a lead to verify in source."
+        description="Search the code-only map, replay its latest semantic change set, or reduce a selected node to its direct neighborhood. Treat every connection as a lead to verify in source."
         className="vision-constellation-dialog"
         backdropClassName="vision-constellation-backdrop"
         closeOnBackdrop={false}
@@ -781,13 +781,6 @@ export default function Vision() {
             >
               Open standalone
             </a>
-            <button
-              type="button"
-              className="field-button field-button-primary"
-              onClick={() => setConstellationOpen(false)}
-            >
-              Close
-            </button>
           </>
         )}
       >

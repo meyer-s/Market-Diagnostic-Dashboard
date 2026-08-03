@@ -118,7 +118,10 @@ const args = parseArgs(process.argv.slice(2));
 if (!args.graph) fail("--graph is required");
 const wantsScopeReport = typeof args["scope-query"] === "string" || args["scope-top"] !== undefined;
 const wantsHygieneReport = args["hygiene-report"] === true || typeof args["hygiene-category"] === "string";
-if (!args.output && !wantsScopeReport && !wantsHygieneReport) fail("--output is required unless a scope or hygiene report is requested");
+const wantsRecentReport = args["recent-report"] === true;
+if (!args.output && !wantsScopeReport && !wantsHygieneReport && !wantsRecentReport) {
+  fail("--output is required unless a scope, recent, or hygiene report is requested");
+}
 
 const graphPath = path.resolve(args.graph);
 const outputPath = args.output ? path.resolve(args.output) : "";
@@ -177,6 +180,52 @@ const currentReceipt = readOptionalJson(args.receipt, "current Graphify receipt"
 const previousReceipt = readOptionalJson(args["previous-receipt"], "previous Graphify receipt");
 const hasDistinctBaseline = Boolean(previousGraph && previousGraphText !== graphText);
 
+function semanticManifestEntries(manifest, description, isPresent) {
+  if (!isPresent) return new Map();
+  if (manifest === null || typeof manifest !== "object" || Array.isArray(manifest)) {
+    fail(`${description} must be a path-keyed object.`);
+  }
+  const entries = new Map();
+  Object.entries(manifest)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .forEach(([sourcePath, value]) => {
+      const normalized = normalizePublicSourcePath(sourcePath);
+      if (!normalized) fail(`${description} contains an empty source path.`);
+      if (entries.has(normalized)) fail(`${description} contains duplicate normalized source path ${JSON.stringify(normalized)}.`);
+      const semanticHash = value && typeof value.semantic_hash === "string" ? value.semantic_hash.trim() : "";
+      if (!semanticHash) fail(`${description} entry ${JSON.stringify(normalized)} has no semantic_hash.`);
+      entries.set(normalized, semanticHash);
+    });
+  return entries;
+}
+
+const currentSemanticManifestPresent = Boolean(args.manifest && fs.existsSync(path.resolve(args.manifest)));
+const previousSemanticManifestPresent = Boolean(args["previous-manifest"] && fs.existsSync(path.resolve(args["previous-manifest"])));
+const currentSemanticManifest = semanticManifestEntries(
+  readOptionalJson(args.manifest, "current Graphify semantic manifest"),
+  "Current Graphify semantic manifest",
+  currentSemanticManifestPresent,
+);
+const previousSemanticManifest = semanticManifestEntries(
+  readOptionalJson(args["previous-manifest"], "previous Graphify semantic manifest"),
+  "Previous Graphify semantic manifest",
+  previousSemanticManifestPresent,
+);
+const hasRecentBaseline = currentSemanticManifestPresent && previousSemanticManifestPresent;
+const recentAddedSources = new Set();
+const recentModifiedSources = new Set();
+const recentRemovedSources = new Set();
+
+if (hasRecentBaseline) {
+  currentSemanticManifest.forEach((semanticHash, sourcePath) => {
+    if (!previousSemanticManifest.has(sourcePath)) recentAddedSources.add(sourcePath);
+    else if (previousSemanticManifest.get(sourcePath) !== semanticHash) recentModifiedSources.add(sourcePath);
+  });
+  previousSemanticManifest.forEach((_, sourcePath) => {
+    if (!currentSemanticManifest.has(sourcePath)) recentRemovedSources.add(sourcePath);
+  });
+}
+
 const sourceNodes = graphNodes.map((node) => ({
   id: String(node.id),
   label: String(node.label || node.id),
@@ -210,6 +259,13 @@ for (const id of [...externalIds].sort((left, right) => left.localeCompare(right
   });
   knownIds.add(id);
 }
+
+const nodeRecentKinds = sourceNodes.map((node) => {
+  if (!hasRecentBaseline || node.isExternal || node.isSynthesized || !node.sourceFile) return 0;
+  if (recentAddedSources.has(node.sourceFile)) return 1;
+  if (recentModifiedSources.has(node.sourceFile)) return 2;
+  return 0;
+});
 
 const nodeIndex = new Map(sourceNodes.map((node, index) => [node.id, index]));
 const inDegree = new Uint32Array(sourceNodes.length);
@@ -600,6 +656,7 @@ const compactNodes = sourceNodes.map((node, index) => {
     scope.layers,
     scope.inbound,
     scope.outbound,
+    nodeRecentKinds[index],
   ];
 });
 
@@ -716,6 +773,31 @@ if (wantsHygieneReport) {
   process.exit(0);
 }
 
+if (wantsRecentReport) {
+  const requestedTop = Number.parseInt(args["recent-top"], 10);
+  const limit = Number.isInteger(requestedTop) && requestedTop > 0 ? requestedTop : 15;
+  process.stdout.write("Latest semantic source delta\n\n");
+  process.stdout.write("Recent means Graphify's semantic hash changed between the two most recent changed extractions. Timestamps, Git metadata, and raw graph serialization do not affect this report.\n\n");
+  if (!hasRecentBaseline) {
+    process.stdout.write("Current snapshot only. The next semantic source change will establish a comparison baseline.\n");
+    process.exit(0);
+  }
+  process.stdout.write(`Added ${recentAddedSources.size.toLocaleString()} | Modified ${recentModifiedSources.size.toLocaleString()} | Removed ${recentRemovedSources.size.toLocaleString()}\n\n`);
+  const rows = [
+    ...[...recentAddedSources].map((sourcePath) => ["Added", sourcePath]),
+    ...[...recentModifiedSources].map((sourcePath) => ["Modified", sourcePath]),
+    ...[...recentRemovedSources].map((sourcePath) => ["Removed", sourcePath]),
+  ].sort((left, right) => left[0].localeCompare(right[0]) || left[1].localeCompare(right[1]));
+  rows.slice(0, limit).forEach(([kind, sourcePath]) => process.stdout.write(`${kind.padEnd(8)} ${sourcePath}\n`));
+  if (rows.length > limit) process.stdout.write(`\n${(rows.length - limit).toLocaleString()} more source file${rows.length - limit === 1 ? "" : "s"}; rerun with -Top up to 100.\n`);
+  process.exit(0);
+}
+
+const recentNodeCounts = [1, 2].map((kind) => nodeRecentKinds.reduce(
+  (count, nodeKind) => count + (nodeKind === kind ? 1 : 0),
+  0,
+));
+
 const payload = {
   meta: {
     label: productLabel,
@@ -735,6 +817,12 @@ const payload = {
       sharedCoreThreshold: sharedCoreScopeThreshold,
       excludedRelations: [...SCOPE_STRUCTURAL_RELATIONS],
       excludedNeighborDomains: [...SCOPE_EXCLUDED_NEIGHBOR_DOMAINS],
+    },
+    recent: {
+      model: "semantic-source-delta-v1",
+      hasBaseline: hasRecentBaseline,
+      fileCounts: [recentAddedSources.size, recentModifiedSources.size, recentRemovedSources.size],
+      nodeCounts: recentNodeCounts,
     },
     hygiene: publicMode ? {
       model: "",
@@ -825,7 +913,7 @@ ${designIntentComment}
       color: var(--text);
     }
 
-    button:focus-visible, input:focus-visible, select:focus-visible, canvas:focus-visible {
+    button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible, canvas:focus-visible {
       outline: 3px solid rgba(131, 191, 255, 0.72);
       outline-offset: 2px;
     }
@@ -949,7 +1037,7 @@ ${designIntentComment}
       position: relative;
       z-index: 5;
       display: grid;
-      grid-template-columns: minmax(240px, 1fr) auto auto auto auto;
+      grid-template-columns: minmax(240px, 1fr) auto auto auto;
       gap: 10px;
       padding: 12px 16px;
       border-bottom: 1px solid var(--border-soft);
@@ -1037,7 +1125,7 @@ ${designIntentComment}
     .mode-switch {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      min-width: 318px;
+      min-width: 304px;
       padding: 3px;
       border: 1px solid var(--border);
       border-radius: 10px;
@@ -1072,7 +1160,61 @@ ${designIntentComment}
     .tool-button[aria-pressed="true"] { border-color: #5f7899; color: var(--evidence); }
     .tool-button:disabled { cursor: not-allowed; opacity: 0.48; }
 
+    .recent-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border-color: rgba(243, 203, 105, 0.36);
+      color: var(--caution);
+    }
+
+    .recent-button[hidden] { display: none; }
+    .recent-button:hover { border-color: rgba(243, 203, 105, 0.64); color: #ffe2a0; }
+    .recent-signal { width: 7px; height: 7px; border-radius: 50%; background: var(--caution); box-shadow: 0 0 0 3px rgba(243, 203, 105, 0.12); }
+
+    .view-menu { position: relative; }
+    .view-menu > summary { list-style: none; }
+    .view-menu > summary::-webkit-details-marker { display: none; }
+
+    .view-summary {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 44px;
+      padding: 8px 13px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--muted);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .view-summary::after { content: ""; width: 7px; height: 7px; transform: rotate(45deg) translateY(-2px); border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; }
+    .view-menu[open] .view-summary { border-color: #5f7899; background: var(--surface-raised); color: var(--text); }
+    .view-menu[open] .view-summary::after { transform: rotate(225deg) translate(-2px, -1px); }
+
+    .view-panel {
+      position: absolute;
+      z-index: 30;
+      top: calc(100% + 8px);
+      right: 0;
+      width: min(390px, calc(100vw - 24px));
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--surface-raised);
+      box-shadow: 0 18px 44px rgba(4, 9, 15, 0.38);
+    }
+
+    .view-panel-section + .view-panel-section { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-soft); }
+    .view-panel-label { display: block; margin-bottom: 8px; color: var(--muted); font-size: 12px; font-weight: 650; }
+    .view-panel-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+    .view-panel-actions .tool-button { width: 100%; }
+
     .density-select {
+      width: 100%;
       min-height: 44px;
       padding: 8px 34px 8px 12px;
       border: 1px solid var(--border);
@@ -1103,61 +1245,55 @@ ${designIntentComment}
     canvas.is-dragging { cursor: grabbing; }
     .stage.is-hygiene canvas { visibility: hidden; pointer-events: none; }
 
-    .stage-hud {
+    .stage-guide {
       position: absolute;
       left: 16px;
+      right: 16px;
       top: 14px;
       display: flex;
       align-items: center;
-      gap: 8px;
+      justify-content: space-between;
+      gap: 16px;
       min-height: 32px;
       padding: 6px 10px;
       border: 1px solid var(--border-soft);
       border-radius: 8px;
       background: rgba(18, 28, 42, 0.9);
+      pointer-events: none;
+    }
+
+    .stage-hud {
+      display: flex;
+      align-items: center;
+      gap: 8px;
       color: var(--muted);
       font-size: 12px;
-      pointer-events: none;
+      white-space: nowrap;
     }
 
     .hud-signal { width: 7px; height: 7px; border-radius: 50%; background: var(--evidence); }
 
     .scope-legend {
-      position: absolute;
-      right: 16px;
-      top: 14px;
-      width: min(310px, calc(100% - 210px));
-      padding: 8px 10px 9px;
-      border: 1px solid var(--border-soft);
-      border-radius: 8px;
-      background: rgba(18, 28, 42, 0.9);
-      pointer-events: none;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
     }
 
     .scope-legend-head {
       display: flex;
       align-items: baseline;
-      justify-content: space-between;
-      gap: 12px;
+      gap: 6px;
       color: var(--muted);
       font-size: 12px;
+      white-space: nowrap;
     }
 
     .scope-legend-head strong { color: var(--text); font-size: 12px; font-weight: 650; }
-    .scope-legend-axis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; margin-top: 7px; }
-
-    .scope-legend-segment {
-      position: relative;
-      height: 3px;
-      border-radius: 1px;
-      background: var(--border);
-    }
-
-    .scope-legend-segment:first-child { background: var(--evidence); }
-    .scope-legend-labels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 7px; color: var(--dim); font-size: 12px; }
+    .scope-legend-head > span, .scope-legend-axis { display: none; }
+    .scope-legend-labels { display: flex; align-items: center; gap: 10px; color: var(--dim); font-size: 12px; }
     .scope-legend-labels span { display: flex; align-items: center; gap: 7px; }
-    .scope-legend-labels span:nth-child(2) { justify-content: center; text-align: center; }
-    .scope-legend-labels span:last-child { justify-content: flex-end; text-align: right; }
+    .scope-legend-labels span + span::before { content: "→"; margin-right: 3px; color: var(--border); }
     .scope-key { flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
     .scope-key.high { box-shadow: 0 0 0 1px var(--surface-quiet), 0 0 0 2px rgba(131, 191, 255, 0.82), 0 0 0 3px var(--surface-quiet), 0 0 0 4px rgba(131, 191, 255, 0.55); }
     .scope-key.cross-file { box-shadow: 0 0 0 1px var(--surface-quiet), 0 0 0 2px rgba(131, 191, 255, 0.72); }
@@ -1274,32 +1410,14 @@ ${designIntentComment}
     .hygiene-detail { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.4; }
     .hygiene-empty { margin: 30px 0 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
 
-    .layer-deck {
-      position: absolute;
-      left: 16px;
-      right: 16px;
-      bottom: 14px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 8px 10px;
-      border: 1px solid var(--border-soft);
-      border-radius: 10px;
-      background: rgba(18, 28, 42, 0.93);
-      box-shadow: 0 10px 24px rgba(4, 9, 15, 0.2);
-    }
-
-    .stage.is-hygiene > .layer-deck { display: none; }
-
     .layer-label { flex: 0 0 auto; color: var(--muted); font-size: 12px; font-weight: 650; }
 
     .domain-filters {
       display: flex;
       align-items: center;
+      flex-wrap: wrap;
       gap: 6px;
       min-width: 0;
-      overflow-x: auto;
-      scrollbar-width: thin;
     }
 
     .domain-chip { position: relative; flex: 0 0 auto; }
@@ -1309,7 +1427,7 @@ ${designIntentComment}
       display: inline-flex;
       align-items: center;
       gap: 7px;
-      min-height: 34px;
+      min-height: 44px;
       padding: 6px 9px;
       border: 1px solid transparent;
       border-radius: 8px;
@@ -1343,38 +1461,7 @@ ${designIntentComment}
 
     .empty-state { padding-top: 24px; }
     .empty-state.is-hygiene-context { padding-top: 18px; }
-    .empty-state.is-hygiene-context .empty-map,
     .empty-state.is-hygiene-context .hub-list { display: none; }
-
-    .empty-map {
-      position: relative;
-      width: 96px;
-      height: 96px;
-      margin: 4px 0 22px;
-      border: 1px solid var(--border);
-      border-radius: 50%;
-    }
-
-    .empty-map::before,
-    .empty-map::after {
-      content: "";
-      position: absolute;
-      border: 1px solid var(--border-soft);
-      border-radius: 50%;
-    }
-
-    .empty-map::before { inset: 17px -1px; }
-    .empty-map::after { inset: -1px 28px; }
-
-    .empty-map i {
-      position: absolute;
-      left: 43px;
-      top: 43px;
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--evidence);
-    }
 
     .empty-title { margin: 0; font-size: 16px; font-weight: 650; }
     .empty-copy { margin: 8px 0 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
@@ -1424,6 +1511,10 @@ ${designIntentComment}
       color: var(--muted);
       font-size: 12px;
     }
+
+    .recent-tag { border-color: rgba(243, 203, 105, 0.44); color: var(--caution); }
+    .recent-tag[hidden] { display: none; }
+    .recent-tag::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--caution); }
 
     .node-title {
       margin: 0;
@@ -1547,11 +1638,11 @@ ${designIntentComment}
     }
 
     @media (max-width: 1040px) {
-      .command-deck { grid-template-columns: minmax(220px, 1fr) auto auto auto; }
-      .density-select { display: none; }
+      .command-deck { grid-template-columns: minmax(0, 1fr) auto auto; }
+      .search-wrap { grid-column: 1 / -1; }
       .graph-summary { display: none; }
       .workspace { grid-template-columns: minmax(0, 1fr) 320px; }
-      .mode-switch { min-width: 280px; }
+      .mode-switch { min-width: 260px; }
     }
 
     @media (max-width: 780px) {
@@ -1563,21 +1654,11 @@ ${designIntentComment}
       .identity-mark::after { inset: 13px; }
       .workspace { display: block; }
       .graph-region { height: min(68dvh, 640px); min-height: 510px; border-right: 0; border-bottom: 1px solid var(--border); }
-      .command-deck { grid-template-columns: 1fr auto; padding: 10px; }
+      .command-deck { grid-template-columns: minmax(0, 1fr) auto auto; padding: 10px; }
       .search-wrap { grid-column: 1 / -1; }
       .mode-switch { min-width: 0; }
       .tool-button { padding-inline: 12px; }
-      .stage-hud { left: 10px; top: 10px; }
-      .scope-legend {
-        left: 10px;
-        right: 10px;
-        top: 50px;
-        display: flex;
-        align-items: center;
-        width: auto;
-        gap: 10px;
-        padding: 7px 9px;
-      }
+      .stage-guide { left: 10px; right: 10px; top: 10px; gap: 10px; }
       .scope-legend.is-hidden { display: none; }
       .hygiene-board { padding-inline: 10px; }
       .hygiene-heading { display: block; }
@@ -1586,14 +1667,10 @@ ${designIntentComment}
       .hygiene-evidence { grid-column: 2; padding-bottom: 2px; }
       .hygiene-layers { display: block; padding-inline: 0; }
       .hygiene-layers .layer-label { display: block; margin-bottom: 5px; padding: 0; }
-      .scope-legend-head { flex: 0 0 auto; }
-      .scope-legend-head > span, .scope-legend-axis { display: none; }
-      .scope-legend-labels { display: flex; flex: 1 1 auto; align-items: center; justify-content: space-between; gap: 7px; margin-top: 0; }
+      .scope-legend-labels { gap: 7px; }
       .scope-legend-labels span { font-size: 0; text-align: left !important; white-space: nowrap; }
       .scope-legend-labels span::after { content: attr(data-short); font-size: 12px; }
       .scope-legend-labels span + span::before { content: "→"; margin-right: 7px; color: var(--border); font-size: 12px; }
-      .layer-deck { left: 10px; right: 10px; bottom: 10px; align-items: flex-start; }
-      .layer-label { padding-top: 9px; }
       .inspector { overflow: visible; }
       .inspector-inner { padding: 22px 16px 34px; }
       .statusbar { align-items: flex-start; flex-direction: column; }
@@ -1605,11 +1682,13 @@ ${designIntentComment}
       h1 { font-size: 18px; }
       .command-deck { grid-template-columns: 1fr 1fr; }
       .search-wrap, .mode-switch { grid-column: 1 / -1; }
-      .tool-button { grid-column: auto; }
+      .recent-button { grid-column: 1; }
+      .view-menu { grid-column: 2; justify-self: stretch; }
+      .view-summary { width: 100%; }
+      .view-panel { width: calc(100vw - 20px); }
       .graph-region { height: 72dvh; min-height: 570px; }
-      .layer-deck { display: block; padding: 8px; }
-      .layer-label { display: block; margin-bottom: 6px; padding: 0; }
-      .domain-filters { padding-bottom: 2px; }
+      .stage-guide { align-items: flex-start; flex-direction: column; gap: 5px; }
+      .scope-legend-head { display: none; }
       .hygiene-board { padding-top: 56px; }
       .hygiene-row { min-height: 76px; padding-block: 11px; }
     }
@@ -1618,15 +1697,14 @@ ${designIntentComment}
     .public-constellation #hygieneMode,
     .public-constellation .hygiene-readout { display: none; }
 
-    html.embedded-viewer .topbar { display: none; }
+    html.embedded-viewer .topbar,
+    html.embedded-viewer .statusbar { display: none; }
 
     html.embed-preview body { overflow: hidden; }
     html.embed-preview .skip-link,
     html.embed-preview .topbar,
     html.embed-preview .command-deck,
-    html.embed-preview .stage-hud,
-    html.embed-preview .scope-legend,
-    html.embed-preview .layer-deck,
+    html.embed-preview .stage-guide,
     html.embed-preview .inspector,
     html.embed-preview .statusbar { display: none; }
     html.embed-preview .app-shell {
@@ -1690,26 +1768,44 @@ ${designIntentComment}
             <button class="mode-button" id="hygieneMode" type="button" aria-pressed="false">Hygiene</button>
           </div>
 
-          <button class="tool-button" id="rotationToggle" type="button" aria-pressed="false">Rotate</button>
+          <button class="tool-button recent-button" id="recentButton" type="button" hidden>
+            <span class="recent-signal" aria-hidden="true"></span>
+            <span id="recentButtonLabel">Recent</span>
+          </button>
 
-          <button class="tool-button" id="resetButton" type="button">Reset</button>
-
-          <label class="sr-only" for="densitySelect">Sphere node density</label>
-          <select class="density-select" id="densitySelect">
-            <option value="140">140 hubs</option>
-            <option value="240" selected>240 hubs</option>
-            <option value="360">360 hubs</option>
-            <option value="480">480 hubs</option>
-          </select>
+          <details class="view-menu" id="viewMenu">
+            <summary class="view-summary">View</summary>
+            <div class="view-panel">
+              <div class="view-panel-section">
+                <span class="view-panel-label">Architecture layers</span>
+                <div class="domain-filters" id="domainFilters" aria-label="Architecture layer filters"></div>
+              </div>
+              <div class="view-panel-section" id="sphereOptions">
+                <label class="view-panel-label" for="densitySelect">Sphere detail</label>
+                <select class="density-select" id="densitySelect">
+                  <option value="140">Fewer nodes</option>
+                  <option value="240" selected>Balanced</option>
+                  <option value="360">More nodes</option>
+                </select>
+                <div class="view-panel-actions">
+                  <button class="tool-button" id="rotationToggle" type="button" aria-pressed="false">Auto-rotate · off</button>
+                  <button class="tool-button" id="resetButton" type="button">Reset camera</button>
+                </div>
+              </div>
+            </div>
+          </details>
         </div>
 
         <div class="stage" id="stage">
-          <canvas id="graphCanvas" tabindex="0" role="img" aria-label="Rotatable sphere showing a balanced sample of code nodes. Radial shell represents extracted inbound reuse: high-reuse nodes sit nearer the center and local code or entrypoints nearer the surface. Double, single, and absent keylines repeat high-reuse, cross-file, and local shell membership. Use search or select a point to inspect its evidence and relationships."></canvas>
-          <div class="stage-hud" aria-hidden="true"><span class="hud-signal"></span><span id="stageStatus">Sphere · 240 hubs</span></div>
-          <div class="scope-legend" id="scopeLegend" aria-hidden="true">
-            <div class="scope-legend-head"><strong>Radial reuse</strong><span>center → surface</span></div>
-            <div class="scope-legend-axis"><i class="scope-legend-segment"></i><i class="scope-legend-segment"></i><i class="scope-legend-segment"></i></div>
-            <div class="scope-legend-labels"><span data-short="High"><i class="scope-key high"></i>High reuse</span><span data-short="Cross-file"><i class="scope-key cross-file"></i>Cross-file</span><span data-short="Local"><i class="scope-key"></i>Local / entry</span></div>
+          <canvas id="graphCanvas" tabindex="0" role="img" aria-describedby="recentDescription" aria-label="Rotatable sphere showing a balanced sample of code nodes. Radial shell represents extracted inbound reuse: high-reuse nodes sit nearer the center and local code or entrypoints nearer the surface. Double, single, and absent blue keylines repeat high-reuse, cross-file, and local shell membership. Gold signals mark source files in the latest semantic change set. Use search or select a point to inspect its evidence and relationships."></canvas>
+          <p class="sr-only" id="recentDescription"></p>
+          <div class="stage-guide" aria-hidden="true">
+            <div class="stage-hud"><span class="hud-signal"></span><span id="stageStatus">Sphere · 240 hubs</span></div>
+            <div class="scope-legend" id="scopeLegend">
+              <div class="scope-legend-head"><strong>Radial reuse</strong><span>center → surface</span></div>
+              <div class="scope-legend-axis"><i class="scope-legend-segment"></i><i class="scope-legend-segment"></i><i class="scope-legend-segment"></i></div>
+              <div class="scope-legend-labels"><span data-short="High"><i class="scope-key high"></i>High reuse</span><span data-short="Cross-file"><i class="scope-key cross-file"></i>Cross-file</span><span data-short="Local"><i class="scope-key"></i>Local / entry</span></div>
+            </div>
           </div>
           <section class="hygiene-board" id="hygieneBoard" aria-labelledby="hygieneTitle" aria-hidden="true">
             <div class="hygiene-inner">
@@ -1730,22 +1826,17 @@ ${designIntentComment}
               <p class="hygiene-empty" id="hygieneEmpty" hidden>No candidates in the enabled signals and layers. This does not prove dead-code absence.</p>
             </div>
           </section>
-          <div class="layer-deck">
-            <span class="layer-label">Architecture layers</span>
-            <div class="domain-filters" id="domainFilters" aria-label="Architecture layer filters"></div>
-          </div>
         </div>
       </section>
 
       <aside class="inspector" aria-labelledby="inspectorTitle">
         <div class="inspector-inner">
           <h2 id="inspectorTitle">Graph details</h2>
-          <p class="inspector-intro" id="inspectorIntro">The sphere is for orientation. Radial shell shows inbound reuse: high near the center, local or entrypoint near the surface. Only bands matter; offsets prevent overlap. Double, single, or absent keylines repeat high, cross-file, or local membership when perspective compresses depth.</p>
+          <p class="inspector-intro" id="inspectorIntro">Select a node to inspect its scope and direct relationships.</p>
 
           <div class="empty-state" id="emptyState">
-            <div class="empty-map" aria-hidden="true"><i></i></div>
-            <p class="empty-title" id="emptyTitle">Start with a hub or search</p>
-            <p class="empty-copy" id="emptyCopy">Radius estimates inbound reuse, color identifies layer, and shape estimates symbol kind. These are navigation leads—not runtime truth.</p>
+            <p class="empty-title" id="emptyTitle">Choose a starting point</p>
+            <p class="empty-copy" id="emptyCopy">Search by symbol or begin with a connected hub.</p>
             <div class="hub-list" id="hubList" aria-label="Highest-connectivity nodes"></div>
           </div>
 
@@ -1754,6 +1845,7 @@ ${designIntentComment}
               <div class="node-tags">
                 <span class="node-tag"><i class="chip-swatch" id="nodeDomainSwatch"></i><span id="nodeDomain"></span></span>
                 <span class="node-tag" id="nodeKind"></span>
+                <span class="node-tag recent-tag" id="nodeRecent" hidden></span>
               </div>
               <h3 class="node-title" id="nodeTitle"></h3>
               <code class="source-path" id="nodeSource"></code>
@@ -1828,6 +1920,7 @@ ${designIntentComment}
         scopeLayers: row[13],
         scopeInbound: row[14],
         scopeOutbound: row[15],
+        recentKind: row[16] || 0,
         search: (row[1] + " " + row[0] + " " + row[2]).toLowerCase(),
         point: null,
       });
@@ -1850,6 +1943,23 @@ ${designIntentComment}
       });
       const rankedByDomain = DATA.domains.map((_, domain) => ranked.filter((index) => nodes[index].domain === domain));
       const rankedByScopeShell = DATA.scopeShells.map((_, shell) => ranked.filter((index) => nodes[index].scopeShell === shell));
+      const recentAnchorBySource = new Map();
+      nodes.forEach((node) => {
+        if (node.recentKind === 0 || !node.source) return;
+        const current = recentAnchorBySource.get(node.source);
+        if (current === undefined || node.kind === 0 || (nodes[current].kind !== 0 && node.degree > nodes[current].degree)) {
+          recentAnchorBySource.set(node.source, node.index);
+        }
+      });
+      const recentAnchors = [...recentAnchorBySource.values()].sort((left, right) => (
+        nodes[left].recentKind - nodes[right].recentKind
+        || nodes[right].degree - nodes[left].degree
+        || nodes[left].source.localeCompare(nodes[right].source)
+      ));
+      const recentAnchorSet = new Set(recentAnchors);
+      const recentSourceCount = recentAnchors.length;
+      const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const RECENT_PULSE_DURATION = 3400;
       const state = {
         mode: "sphere",
         selected: null,
@@ -1868,6 +1978,7 @@ ${designIntentComment}
         screenNodes: [],
         visibleSphere: [],
         neighborhood: [],
+        recentPulseStartedAt: !PREVIEW && !prefersReducedMotion && recentAnchors.length > 0 ? performance.now() : null,
       };
 
       const canvas = document.getElementById("graphCanvas");
@@ -1878,6 +1989,11 @@ ${designIntentComment}
       const sphereModeButton = document.getElementById("sphereMode");
       const neighborhoodModeButton = document.getElementById("neighborhoodMode");
       const hygieneModeButton = document.getElementById("hygieneMode");
+      const recentButton = document.getElementById("recentButton");
+      const recentButtonLabel = document.getElementById("recentButtonLabel");
+      const recentDescription = document.getElementById("recentDescription");
+      const viewMenu = document.getElementById("viewMenu");
+      const sphereOptions = document.getElementById("sphereOptions");
       const rotationToggle = document.getElementById("rotationToggle");
       const resetButton = document.getElementById("resetButton");
       const densitySelect = document.getElementById("densitySelect");
@@ -1890,10 +2006,46 @@ ${designIntentComment}
       const emptyState = document.getElementById("emptyState");
       const selectionPanel = document.getElementById("selectionPanel");
       if (PREVIEW) canvas.tabIndex = -1;
+      densitySelect.value = String(state.density);
+      canvas.dataset.recentFiles = String(recentSourceCount);
+      canvas.dataset.recentPulse = state.recentPulseStartedAt === null ? "settled" : "active";
+      const removedSourceCount = DATA.meta.recent.fileCounts[2];
+      recentDescription.textContent = recentSourceCount > 0
+        ? recentSourceCount.toLocaleString() + " source file" + (recentSourceCount === 1 ? " is" : "s are") + " added or modified in the latest semantic change set." + (removedSourceCount > 0 ? " " + removedSourceCount.toLocaleString() + " source file" + (removedSourceCount === 1 ? " was" : "s were") + " removed in that change set." : "")
+        : DATA.meta.recent.hasBaseline
+          ? (removedSourceCount > 0 ? removedSourceCount.toLocaleString() + " source file" + (removedSourceCount === 1 ? " was" : "s were") + " removed in the latest semantic change set; no current nodes can be highlighted." : "The latest semantic comparison contains no source changes.")
+          : "No prior semantic change set is available for comparison yet.";
+      if (recentSourceCount > 0) {
+        recentButton.hidden = false;
+        recentButtonLabel.textContent = "Recent · " + recentSourceCount.toLocaleString();
+        recentButton.setAttribute("aria-label", "Highlight " + recentSourceCount.toLocaleString() + " recently changed source file" + (recentSourceCount === 1 ? "" : "s"));
+      }
       let logicalWidth = 0;
       let logicalHeight = 0;
       let frameRequest = null;
       let lastFrame = performance.now();
+      let frameTime = lastFrame;
+
+      function recentPulseIsActive(now = frameTime) {
+        return state.recentPulseStartedAt !== null
+          && !document.hidden
+          && now - state.recentPulseStartedAt < RECENT_PULSE_DURATION;
+      }
+
+      function startRecentPulse(announce = true) {
+        if (recentSourceCount === 0) return;
+        if (PREVIEW || prefersReducedMotion) {
+          state.recentPulseStartedAt = null;
+          canvas.dataset.recentPulse = "settled";
+          invalidate();
+          if (announce) liveStatus.textContent = "Recent source files are marked with a static gold signal. Motion is reduced.";
+          return;
+        }
+        state.recentPulseStartedAt = performance.now();
+        canvas.dataset.recentPulse = "active";
+        invalidate();
+        if (announce) liveStatus.textContent = "Highlighting " + recentSourceCount.toLocaleString() + " recently changed source file" + (recentSourceCount === 1 ? "." : "s.");
+      }
 
       function hashUnit(value) {
         let hash = 2166136261;
@@ -1987,6 +2139,12 @@ ${designIntentComment}
         const enabledDomains = state.domains.map((enabled, index) => enabled ? index : -1).filter((index) => index >= 0);
         const selected = new Set();
         const floor = Math.max(6, Math.floor(limit * 0.055));
+        const recentLimit = Math.min(20, Math.max(8, Math.floor(limit * 0.08)));
+
+        recentAnchors
+          .filter((index) => enabledNode(index))
+          .slice(0, recentLimit)
+          .forEach((index) => selected.add(index));
 
         enabledDomains.forEach((domain) => {
           rankedByDomain[domain].slice(0, floor).forEach((index) => selected.add(index));
@@ -2100,11 +2258,35 @@ ${designIntentComment}
 
       function drawNodeShape(node, screen, isSelected, isHovered) {
         const color = DATA.domains[node.domain][2];
-        const depthAlpha = 0.34 + ((screen.z + 1) / 2) * 0.64;
+        const recentAnchor = recentAnchorSet.has(node.index);
+        const pulseActive = recentPulseIsActive();
+        const subdued = pulseActive && !recentAnchor && !isSelected && !isHovered;
+        const depthAlpha = (0.34 + ((screen.z + 1) / 2) * 0.64) * (subdued ? 0.28 : 1);
         const baseRadius = Math.max(3.3, Math.min(10.5, 3.2 + Math.log2(node.degree + 1) * 0.95));
         const radius = baseRadius * (0.74 + screen.scale * 0.33);
         context.save();
         context.translate(screen.x, screen.y);
+
+        if (recentAnchor) {
+          context.beginPath();
+          context.arc(0, 0, radius + 6, 0, Math.PI * 2);
+          context.strokeStyle = colorWithAlpha("#f3cb69", Math.max(0.42, depthAlpha * 0.72));
+          context.lineWidth = 1.25;
+          context.stroke();
+          if (pulseActive) {
+            const elapsed = frameTime - state.recentPulseStartedAt;
+            [0, 560].forEach((delay) => {
+              if (elapsed < delay) return;
+              const progress = ((elapsed - delay) % 1280) / 1280;
+              context.beginPath();
+              context.arc(0, 0, radius + 8 + progress * 20, 0, Math.PI * 2);
+              context.strokeStyle = colorWithAlpha("#f3cb69", (1 - progress) * 0.42);
+              context.lineWidth = 1.25;
+              context.stroke();
+            });
+          }
+        }
+
         context.beginPath();
         if (node.kind === 0) {
           const side = radius * 1.72;
@@ -2140,6 +2322,13 @@ ${designIntentComment}
           context.strokeStyle = "#f4f7fb";
           context.lineWidth = 1.5;
           context.stroke();
+        }
+
+        if (recentAnchor) {
+          context.beginPath();
+          context.arc(radius * 0.72, -radius * 0.72, 2.2, 0, Math.PI * 2);
+          context.fillStyle = "#f3cb69";
+          context.fill();
         }
 
         if (!node.external && node.scopeShell < 2) {
@@ -2367,11 +2556,14 @@ ${designIntentComment}
         frameRequest = null;
         const elapsed = Math.min(50, now - lastFrame);
         lastFrame = now;
+        frameTime = now;
         if (state.autoRotate && state.mode === "sphere" && !state.dragging && !document.hidden) {
           state.yaw += elapsed * 0.000055;
         }
         draw();
-        if (state.autoRotate && state.mode === "sphere" && !document.hidden) invalidate();
+        const pulseActive = recentPulseIsActive(now);
+        if (!pulseActive && canvas.dataset.recentPulse === "active") canvas.dataset.recentPulse = "settled";
+        if ((state.autoRotate && state.mode === "sphere" && !document.hidden) || pulseActive) invalidate();
       }
 
       function invalidate() {
@@ -2435,11 +2627,12 @@ ${designIntentComment}
         neighborhoodModeButton.setAttribute("aria-pressed", String(mode === "neighborhood"));
         hygieneModeButton.setAttribute("aria-pressed", String(mode === "hygiene"));
         rotationToggle.disabled = mode !== "sphere";
-        rotationToggle.hidden = mode !== "sphere";
         resetButton.disabled = mode === "hygiene";
-        resetButton.hidden = mode === "hygiene";
         densitySelect.disabled = mode !== "sphere";
-        densitySelect.hidden = mode !== "sphere";
+        sphereOptions.hidden = mode !== "sphere";
+        recentButton.hidden = recentSourceCount === 0 || mode === "hygiene";
+        viewMenu.hidden = mode === "hygiene";
+        if (mode === "hygiene") viewMenu.open = false;
         scopeLegend.classList.toggle("is-hidden", mode !== "sphere");
         stage.classList.toggle("is-hygiene", mode === "hygiene");
         hygieneBoard.classList.toggle("is-visible", mode === "hygiene");
@@ -2449,15 +2642,15 @@ ${designIntentComment}
         if (mode === "neighborhood" && state.selected === null) selectNode(ranked.find((index) => enabledNode(index)) ?? ranked[0], false);
         if (mode === "hygiene") renderHygieneBoard();
         document.getElementById("inspectorIntro").textContent = mode === "hygiene"
-          ? "Hygiene signals are extraction leads, not proof of dead code. Select one, inspect its evidence, then verify direct relationships and source."
+          ? "Select a hygiene lead, then verify its relationships and source."
           : mode === "neighborhood"
-            ? "Neighborhood reduces the graph to one selected node and its bounded direct relationships. The ledger below retains every extracted row."
-            : "The sphere is for orientation. Radial shell shows inbound reuse: high near the center, local or entrypoint near the surface. Only bands matter; offsets prevent overlap.";
+            ? "Inspect one node and its bounded direct relationships."
+            : "Select a node to inspect its scope and direct relationships.";
         emptyState.classList.toggle("is-hygiene-context", mode === "hygiene");
-        document.getElementById("emptyTitle").textContent = mode === "hygiene" ? "Select a hygiene lead" : "Start with a hub or search";
+        document.getElementById("emptyTitle").textContent = mode === "hygiene" ? "Select a hygiene lead" : "Choose a starting point";
         document.getElementById("emptyCopy").textContent = mode === "hygiene"
           ? "Choose a row to see its exact extraction evidence. Verify the named source and runtime path before changing or removing anything."
-          : "Radius estimates inbound reuse, color identifies layer, and shape estimates symbol kind. These are navigation leads—not runtime truth.";
+          : "Search by symbol or begin with a connected hub.";
         document.getElementById("keyboardHelp").textContent = mode === "hygiene"
           ? "Filter signals · Select a lead · Verify relationships and source"
           : mode === "neighborhood"
@@ -2477,7 +2670,8 @@ ${designIntentComment}
 
       function syncRotationButton() {
         rotationToggle.setAttribute("aria-pressed", String(state.autoRotate));
-        rotationToggle.textContent = state.autoRotate ? "Pause" : "Rotate";
+        rotationToggle.textContent = state.autoRotate ? "Auto-rotate · on" : "Auto-rotate · off";
+        rotationToggle.setAttribute("aria-label", state.autoRotate ? "Disable auto-rotate" : "Enable auto-rotate");
       }
 
       function buildDomainFilters() {
@@ -2619,7 +2813,7 @@ ${designIntentComment}
       function renderHubList() {
         const container = document.getElementById("hubList");
         container.replaceChildren();
-        ranked.filter((index) => enabledNode(index)).slice(0, 7).forEach((index) => container.append(createHubButton(index)));
+        ranked.filter((index) => enabledNode(index)).slice(0, 3).forEach((index) => container.append(createHubButton(index)));
       }
 
       function uniqueRelationshipRows(selectedIndex) {
@@ -2661,6 +2855,9 @@ ${designIntentComment}
         document.getElementById("nodeDomain").textContent = DATA.domains[node.domain][1];
         document.getElementById("nodeDomainSwatch").style.backgroundColor = DATA.domains[node.domain][2];
         document.getElementById("nodeKind").textContent = DATA.kinds[node.kind];
+        const recentTag = document.getElementById("nodeRecent");
+        recentTag.hidden = node.recentKind === 0;
+        recentTag.textContent = node.recentKind === 1 ? "Source added in latest semantic change set" : node.recentKind === 2 ? "Source modified in latest semantic change set" : "";
         document.getElementById("nodeTitle").textContent = node.label;
         document.getElementById("nodeSource").textContent = node.source ? node.source + (node.location ? ":" + node.location : "") : "Unresolved graph target";
         document.getElementById("degreeValue").textContent = node.degree.toLocaleString();
@@ -2783,7 +2980,8 @@ ${designIntentComment}
             degree.className = "result-degree";
             const shortScope = node.scopeShell === 0 ? "High reuse" : node.scopeShell === 1 ? "Cross-file" : "Local / entry";
             const hygieneLabel = hygieneByNode[index].length > 0 ? DATA.hygieneTypes[hygieneByNode[index][0].type][1] + " · " : "";
-            degree.textContent = hygieneLabel + shortScope + " · " + node.degree.toLocaleString() + " relationships";
+            const recentLabel = node.recentKind === 1 ? "Added source · " : node.recentKind === 2 ? "Modified source · " : "";
+            degree.textContent = recentLabel + hygieneLabel + shortScope + " · " + node.degree.toLocaleString() + " relationships";
             button.append(swatch, copy, degree);
             button.addEventListener("click", () => selectNode(index, true, true));
             searchResultsElement.append(button);
@@ -2907,18 +3105,27 @@ ${designIntentComment}
 
       document.addEventListener("pointerdown", (event) => {
         if (!event.target.closest(".search-wrap")) closeSearch();
+        if (viewMenu.open && !event.target.closest(".view-menu")) viewMenu.open = false;
       });
 
-      sphereModeButton.addEventListener("click", () => setMode("sphere"));
-      neighborhoodModeButton.addEventListener("click", () => setMode("neighborhood"));
-      hygieneModeButton.addEventListener("click", () => setMode("hygiene"));
+      sphereModeButton.addEventListener("click", () => { viewMenu.open = false; setMode("sphere"); });
+      neighborhoodModeButton.addEventListener("click", () => { viewMenu.open = false; setMode("neighborhood"); });
+      hygieneModeButton.addEventListener("click", () => { viewMenu.open = false; setMode("hygiene"); });
+      recentButton.addEventListener("click", () => {
+        if (state.mode !== "sphere") setMode("sphere");
+        startRecentPulse();
+      });
       document.getElementById("verifyRelationships").addEventListener("click", () => setMode("neighborhood"));
       rotationToggle.addEventListener("click", () => {
         state.autoRotate = !state.autoRotate;
         syncRotationButton();
         invalidate();
       });
-      resetButton.addEventListener("click", resetView);
+      resetButton.addEventListener("click", () => {
+        resetView();
+        viewMenu.open = false;
+        viewMenu.querySelector("summary").focus();
+      });
       densitySelect.addEventListener("change", () => {
         state.density = Number(densitySelect.value);
         invalidate();
@@ -2926,6 +3133,13 @@ ${designIntentComment}
 
       document.addEventListener("visibilitychange", invalidate);
       document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && viewMenu.open) {
+          event.preventDefault();
+          event.stopPropagation();
+          viewMenu.open = false;
+          viewMenu.querySelector("summary").focus();
+          return;
+        }
         if (event.key === "Escape" && DATA.meta.publicMode && window.parent !== window.self) {
           event.preventDefault();
           window.parent.postMessage({ type: "architecture-constellation-close" }, "*");
