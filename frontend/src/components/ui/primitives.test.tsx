@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import AccessibleChartFrame from "./AccessibleChartFrame";
+import DataScroller from "./DataScroller";
 import FormField from "./FormField";
 import PageState, { type PageStateVariant } from "./PageState";
 import SectionNav from "./SectionNav";
@@ -11,6 +12,7 @@ import SupportingContextTooltip from "./SupportingContextTooltip";
 describe("shared interface primitives", () => {
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
@@ -77,6 +79,31 @@ describe("shared interface primitives", () => {
     expect(screen.getByRole("button", { name: "1 month" }).getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "1 year" }));
     expect(onChange).toHaveBeenCalledWith("1y");
+  });
+
+  it("can open overflowing evidence at its current end without a redundant visible hint", () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(320);
+    vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(800);
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      callback(0);
+      return 1;
+    });
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => undefined);
+
+    render(
+      <DataScroller
+        label="Recent price evidence"
+        hint=""
+        initialInlinePosition="end"
+      >
+        <div>Price chart</div>
+      </DataScroller>,
+    );
+
+    const region = screen.getByRole("region", { name: "Recent price evidence" });
+    expect(region.scrollLeft).toBe(480);
+    expect(region.hasAttribute("aria-describedby")).toBe(false);
+    expect(screen.queryByText(/Scroll horizontally/i)).toBeNull();
   });
 
   it("keeps supporting context visually compact without shrinking its hit target", () => {

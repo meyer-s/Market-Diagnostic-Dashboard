@@ -603,7 +603,7 @@ function FlowFocusCard({
   const timeline = buildFlowTimeline(events);
 
   return (
-    <div className="surface-card-strong space-y-3 p-4">
+    <div className="min-w-0 space-y-3 p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <div className="text-xs uppercase tracking-[0.22em] text-stealth-500">High-Volume Bar Proxy</div>
@@ -1019,7 +1019,7 @@ export default function StockAnalysis() {
   );
 
   return (
-    <div className="page-shell-narrow page-stack">
+    <div className="page-shell stock-analysis-page space-y-5 md:space-y-6">
       <div className="flex flex-col">
         <span className="page-kicker">Single Name Lens</span>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-4xl">Stock Analysis</h1>
@@ -1075,7 +1075,7 @@ export default function StockAnalysis() {
 
       {/* Results */}
       {chartData && (
-        <>
+        <div className="space-y-5 md:space-y-6">
           {/* Fundamentals Summary */}
           {projections["T"] && (
             <section id="stock-current-read" aria-label="Current stock read" className="surface-card-strong scroll-mt-32 p-4 sm:p-6">
@@ -1091,58 +1091,58 @@ export default function StockAnalysis() {
 
                 return (
                   <>
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex-1">
-                  <div className="mb-1 flex flex-wrap items-center gap-3">
-                    <h2 className="text-xl font-bold">{chartData.ticker}</h2>
-                    {provenanceLabel && (
-                      <span className="rounded-full bg-stealth-950/90 px-2 py-0.5 text-xs capitalize text-stealth-500">
-                        {provenanceLabel}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-stealth-400">{chartData.name}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs text-stealth-400">{closeLabel}</p>
-                  <p className="text-2xl font-bold text-blue-400">${projectionNow.current_price.toFixed(2)}</p>
-                </div>
-              </div>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0 flex-1">
+                        <div className="mb-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+                          <h2 className="text-xl font-bold">{chartData.ticker}</h2>
+                          {provenanceLabel && (
+                            <span className="max-w-full break-words rounded-lg bg-stealth-950/90 px-2 py-1 text-xs capitalize leading-5 text-stealth-500">
+                              {provenanceLabel}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-stealth-400">{chartData.name}</p>
+                      </div>
+                      <div className="shrink-0 text-left sm:text-right">
+                        <p className="text-xs text-stealth-400">{closeLabel}</p>
+                        <p className="text-2xl font-bold text-blue-400">${projectionNow.current_price.toFixed(2)}</p>
+                      </div>
+                    </div>
 
-              <dl className="mt-4 grid grid-cols-1 gap-px overflow-hidden rounded-xl border border-stealth-800 bg-stealth-800 text-xs sm:grid-cols-3">
-                <div className="bg-stealth-950/70 px-3 py-2.5">
-                  <dt className="text-stealth-400" title="52-week low and high range">52W Range</dt>
-                  <dd className="mt-0.5 font-semibold text-stealth-100">
-                    {technicalData?.low_52w !== undefined && technicalData?.high_52w !== undefined
-                      ? `$${Number(technicalData.low_52w).toFixed(2)} - $${Number(technicalData.high_52w).toFixed(2)}`
-                      : "n/a"}
-                  </dd>
-                </div>
-                <div className="bg-stealth-950/70 px-3 py-2.5">
-                  <dt className="text-stealth-400" title="Price momentum and exponential moving averages">Trend</dt>
-                  <dd
-                    className={`font-semibold capitalize ${
-                      technicalData?.trend === "uptrend"
-                        ? "text-green-400"
-                        : technicalData?.trend === "downtrend"
-                          ? "text-red-400"
-                          : "text-stealth-200"
-                    }`}
-                  >
-                    {technicalData?.trend ?? "n/a"}
-                  </dd>
-                </div>
-                <div className="bg-stealth-950/70 px-3 py-2.5">
-                  <dt className="text-stealth-400">Return basis</dt>
-                  <dd className={`mt-0.5 font-semibold ${projectionNow.return_basis === "raw_close_fallback" ? "text-amber-300" : "text-stealth-100"}`}>
-                    {projectionNow.return_basis === "adjusted_close"
-                      ? "Adjusted close"
-                      : projectionNow.return_basis === "raw_close_fallback"
-                        ? "Raw-close fallback"
-                        : "Unavailable"}
-                  </dd>
-                </div>
-              </dl>
+                    <dl className="mt-4 grid grid-cols-1 gap-px overflow-hidden rounded-xl border border-stealth-800 bg-stealth-800 text-xs sm:grid-cols-3">
+                      <div className="bg-stealth-950/70 px-3 py-2.5">
+                        <dt className="text-stealth-400" title="52-week low and high range">52W Range</dt>
+                        <dd className="mt-0.5 font-semibold text-stealth-100">
+                          {technicalData?.low_52w !== undefined && technicalData?.high_52w !== undefined
+                            ? `$${Number(technicalData.low_52w).toFixed(2)} - $${Number(technicalData.high_52w).toFixed(2)}`
+                            : "n/a"}
+                        </dd>
+                      </div>
+                      <div className="bg-stealth-950/70 px-3 py-2.5">
+                        <dt className="text-stealth-400" title="Price momentum and exponential moving averages">Trend</dt>
+                        <dd
+                          className={`font-semibold capitalize ${
+                            technicalData?.trend === "uptrend"
+                              ? "text-green-400"
+                              : technicalData?.trend === "downtrend"
+                                ? "text-red-400"
+                                : "text-stealth-200"
+                          }`}
+                        >
+                          {technicalData?.trend ?? "n/a"}
+                        </dd>
+                      </div>
+                      <div className="bg-stealth-950/70 px-3 py-2.5">
+                        <dt className="text-stealth-400">Return basis</dt>
+                        <dd className={`mt-0.5 font-semibold ${projectionNow.return_basis === "raw_close_fallback" ? "text-amber-300" : "text-stealth-100"}`}>
+                          {projectionNow.return_basis === "adjusted_close"
+                            ? "Adjusted close"
+                            : projectionNow.return_basis === "raw_close_fallback"
+                              ? "Raw-close fallback"
+                              : "Unavailable"}
+                        </dd>
+                      </div>
+                    </dl>
                   </>
                 );
               })()}
@@ -1151,8 +1151,8 @@ export default function StockAnalysis() {
 
           {/* Price analysis and signal-quality grid */}
           {projections[selectedHorizon] && (
-            <section id="stock-price-evidence" aria-label="Price evidence and signal quality" className="scroll-mt-32">
-              <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <section id="stock-price-evidence" aria-label="Price evidence and signal quality" className="surface-card-strong scroll-mt-32 p-4 sm:p-5">
+              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                   <h2 className="text-base font-semibold text-stealth-100">{horizonLabel(selectedHorizon)} evidence</h2>
                   <p className="mt-0.5 text-xs text-stealth-400">
@@ -1181,33 +1181,33 @@ export default function StockAnalysis() {
                   ))}
                 </div>
               </div>
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              {(() => {
-                const selectedProjection = projections[selectedHorizon];
-                const upperReference = selectedProjection.trade_target ?? selectedProjection.take_profit;
+              <div className="grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1.08fr)_minmax(22rem,0.92fr)]">
+                {(() => {
+                  const selectedProjection = projections[selectedHorizon];
+                  const upperReference = selectedProjection.trade_target ?? selectedProjection.take_profit;
 
-                return (
-              <PriceAnalysisChart
-                latestClose={selectedProjection.current_price}
-                closeLabel={priceMetadata?.stale ? "Last Available Close" : "Latest Close"}
-                upperReference={upperReference}
-                rawUpperReference={selectedProjection.raw_upper_reference ?? selectedProjection.take_profit}
-                lowerReference={selectedProjection.stop_loss}
-                trailingReturn={selectedProjection.trailing_price_return_pct ?? selectedProjection.trailing_return_pct}
-                horizon={horizonLabel(selectedHorizon)}
-                analystTarget={analystTarget}
-                analystCount={analystCount}
-                targetRegime={selectedProjection.target_regime}
-                sanityFlags={selectedProjection.sanity_flags}
-              />
-                );
-              })()}
-              <ConvictionSnapshot
-                signalQuality={projections[selectedHorizon].conviction}
-                score={projections[selectedHorizon].score_total}
-                volatility={projections[selectedHorizon].volatility}
-                horizon={horizonLabel(selectedHorizon)}
-              />
+                  return (
+                    <PriceAnalysisChart
+                      latestClose={selectedProjection.current_price}
+                      closeLabel={priceMetadata?.stale ? "Last Available Close" : "Latest Close"}
+                      upperReference={upperReference}
+                      rawUpperReference={selectedProjection.raw_upper_reference ?? selectedProjection.take_profit}
+                      lowerReference={selectedProjection.stop_loss}
+                      trailingReturn={selectedProjection.trailing_price_return_pct ?? selectedProjection.trailing_return_pct}
+                      horizon={horizonLabel(selectedHorizon)}
+                      analystTarget={analystTarget}
+                      analystCount={analystCount}
+                      targetRegime={selectedProjection.target_regime}
+                      sanityFlags={selectedProjection.sanity_flags}
+                    />
+                  );
+                })()}
+                <ConvictionSnapshot
+                  signalQuality={projections[selectedHorizon].conviction}
+                  score={projections[selectedHorizon].score_total}
+                  volatility={projections[selectedHorizon].volatility}
+                  horizon={horizonLabel(selectedHorizon)}
+                />
               </div>
             </section>
           )}
@@ -1229,58 +1229,62 @@ export default function StockAnalysis() {
           )}
 
           {projections["T"] && (
-            <div className="grid grid-cols-1 gap-4 mb-6 xl:grid-cols-2">
-              <div className="surface-card-strong p-4 sm:p-5">
-                <div>
-                  <h3 className="text-sm sm:text-base font-semibold text-stealth-100">Options and Structure</h3>
-                  <p className="mt-1 text-xs capitalize text-stealth-400">
-                    {[
-                      optionsFlow?.expiry ? `expiry ${formatObservedDate(optionsFlow.expiry)}` : null,
-                      optionsFlow?.quote_source || optionsFlow?.data_source,
-                      optionsFlow?.observed_at || optionsFlow?.as_of
-                        ? `observed ${formatObservedDate(optionsFlow.observed_at || optionsFlow.as_of)}`
-                        : null,
-                    ].filter(Boolean).join(" · ") || "Options chain unavailable"}
-                  </p>
-                </div>
+            <section className="stock-analysis-positioning surface-card-strong overflow-hidden">
+              <div className="grid min-w-0 grid-cols-1 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+                <div className="min-w-0 p-4 sm:p-5">
+                  <div>
+                    <h3 className="text-sm sm:text-base font-semibold text-stealth-100">Options and Structure</h3>
+                    <p className="mt-1 text-xs capitalize text-stealth-400">
+                      {[
+                        optionsFlow?.expiry ? `expiry ${formatObservedDate(optionsFlow.expiry)}` : null,
+                        optionsFlow?.quote_source || optionsFlow?.data_source,
+                        optionsFlow?.observed_at || optionsFlow?.as_of
+                          ? `observed ${formatObservedDate(optionsFlow.observed_at || optionsFlow.as_of)}`
+                          : null,
+                      ].filter(Boolean).join(" · ") || "Options chain unavailable"}
+                    </p>
+                  </div>
 
-                <div className="mt-3">
-                  <OptionsStructureMap
-                    currentPrice={projections["T"].current_price}
-                    priceLabel={priceMetadata?.stale ? "Last available close" : "Latest close"}
-                    callWalls={optionsFlow?.call_walls ?? []}
-                    putWalls={optionsFlow?.put_walls ?? []}
-                    sma50={technicalData?.sma_50 ?? null}
-                    sma200={technicalData?.sma_200 ?? null}
-                    putCallRatio={optionsFlow?.put_call_oi_ratio ?? null}
-                    label={searchTicker}
-                  />
-                </div>
+                  <div className="mt-3">
+                    <OptionsStructureMap
+                      currentPrice={projections["T"].current_price}
+                      priceLabel={priceMetadata?.stale ? "Last available close" : "Latest close"}
+                      callWalls={optionsFlow?.call_walls ?? []}
+                      putWalls={optionsFlow?.put_walls ?? []}
+                      sma50={technicalData?.sma_50 ?? null}
+                      sma200={technicalData?.sma_200 ?? null}
+                      putCallRatio={optionsFlow?.put_call_oi_ratio ?? null}
+                      label={searchTicker}
+                    />
+                  </div>
 
-                <div className="mt-3">
-                  <OptionalityMispricingWidget
-                    metrics={optionalityMetrics}
-                  />
-                </div>
-              </div>
-
-              {institutionalFlow ? (
-                <FlowFocusCard
-                  flow={institutionalFlow}
-                  events={institutionalFlow.event_history ?? []}
-                  ticker={searchTicker}
-                  currentPrice={projections["T"]?.current_price ?? null}
-                  closeLabel={priceMetadata?.stale ? "Last Available Close" : "Latest Close"}
-                />
-              ) : (
-                <div className="surface-card-strong p-4 sm:p-5">
-                  <div className="text-xs uppercase tracking-[0.2em] text-stealth-500">High-Volume Bar Proxy</div>
-                  <div className="mt-2 rounded-xl border border-dashed border-stealth-700 bg-stealth-900/35 px-3 py-2 text-xs text-stealth-400">
-                    High-volume proxy events are unavailable for this symbol.
+                  <div className="mt-3">
+                    <OptionalityMispricingWidget
+                      metrics={optionalityMetrics}
+                    />
                   </div>
                 </div>
-              )}
-            </div>
+
+                <div className="min-w-0 border-t border-stealth-700 lg:border-l lg:border-t-0">
+                  {institutionalFlow ? (
+                    <FlowFocusCard
+                      flow={institutionalFlow}
+                      events={institutionalFlow.event_history ?? []}
+                      ticker={searchTicker}
+                      currentPrice={projections["T"]?.current_price ?? null}
+                      closeLabel={priceMetadata?.stale ? "Last Available Close" : "Latest Close"}
+                    />
+                  ) : (
+                    <div className="p-4 sm:p-5">
+                      <div className="text-xs uppercase tracking-[0.2em] text-stealth-500">High-Volume Bar Proxy</div>
+                      <div className="mt-2 rounded-xl border border-dashed border-stealth-700 bg-stealth-900/35 px-3 py-2 text-xs text-stealth-400">
+                        High-volume proxy events are unavailable for this symbol.
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </section>
           )}
 
           {/* Fundamental Analysis — consolidated */}
@@ -1414,7 +1418,7 @@ export default function StockAnalysis() {
 
             return (
               <section id="stock-fundamentals" className="surface-card-strong scroll-mt-32 p-4 sm:p-6">
-                <div className="flex items-center justify-between mb-4">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                   <h3 className="text-base sm:text-lg font-semibold">Fundamental Analysis</h3>
                   <div className="flex items-center gap-1 rounded-full border border-stealth-700 bg-stealth-900/60 p-0.5">
                     {(["1Y", "5Y"] as const).map((v) => (
@@ -1432,7 +1436,7 @@ export default function StockAnalysis() {
                 </div>
 
                 {/* ── Snapshot Strip ── */}
-                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-5">
+                <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
                   {snapMetrics.map((m) => (
                     <div key={m.label} className="secondary-card px-3 py-2 text-center">
                       <div className="mb-1 text-xs uppercase tracking-wider text-stealth-400">{m.label}</div>
@@ -1453,22 +1457,22 @@ export default function StockAnalysis() {
                 </div>
 
                 {/* ── Dual-Axis Charts ── */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
 
                   {/* Revenue & Earnings */}
                   {revEpsData.length > 0 && (
-                    <div className="secondary-card p-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-3 text-sm font-semibold text-stealth-100">
+                    <div className="secondary-card min-w-0 overflow-hidden p-4">
+                      <div className="mb-3 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="flex min-w-0 items-center gap-2 text-sm font-semibold text-stealth-100">
                           <span>Revenue &amp; Earnings</span>
                           <InfoTooltip id="fund-rev-eps" text="Revenue bars (left axis) overlaid with EPS line (right axis) to show top-line growth alongside per-share profitability." />
                         </div>
-                        <div className="flex items-center gap-3 text-xs text-stealth-500">
+                        <div className="flex shrink-0 flex-wrap items-center gap-3 text-xs text-stealth-500">
                           <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm" style={{ background: getFamilyColor("equity"), opacity: 0.35 }} /> Rev</span>
                           <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full" style={{ background: getFamilyColor("growth") }} /> EPS</span>
                         </div>
                       </div>
-                      <div className="h-44" style={{ minWidth: 0, minHeight: 0 }}>
+                      <div className="h-44 min-h-0 min-w-0 overflow-hidden">
                         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                           <ComposedChart
                             accessibilityLayer
@@ -1504,18 +1508,18 @@ export default function StockAnalysis() {
 
                   {/* Profitability — ROE & FCF */}
                   {roeFcfData.length > 0 && (
-                    <div className="secondary-card p-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-3 text-sm font-semibold text-stealth-100">
+                    <div className="secondary-card min-w-0 overflow-hidden p-4">
+                      <div className="mb-3 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="flex min-w-0 items-center gap-2 text-sm font-semibold text-stealth-100">
                           <span>Profitability</span>
                           <InfoTooltip id="fund-roe-fcf" text="ROE line (left axis, %) and FCF bars (right axis, $) show how efficiently equity is deployed and how much cash the business generates." />
                         </div>
-                        <div className="flex items-center gap-3 text-xs text-stealth-500">
+                        <div className="flex shrink-0 flex-wrap items-center gap-3 text-xs text-stealth-500">
                           <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full" style={{ background: getFamilyColor("growth") }} /> ROE</span>
                           <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm" style={{ background: getFamilyColor("liquidity"), opacity: 0.35 }} /> FCF</span>
                         </div>
                       </div>
-                      <div className="h-44" style={{ minWidth: 0, minHeight: 0 }}>
+                      <div className="h-44 min-h-0 min-w-0 overflow-hidden">
                         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                           <ComposedChart
                             accessibilityLayer
@@ -1551,18 +1555,18 @@ export default function StockAnalysis() {
 
                   {/* Valuation — P/E & Market Cap */}
                   {peMcapData.length > 0 && (
-                    <div className="secondary-card p-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-3 text-sm font-semibold text-stealth-100">
+                    <div className="secondary-card min-w-0 overflow-hidden p-4">
+                      <div className="mb-3 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="flex min-w-0 items-center gap-2 text-sm font-semibold text-stealth-100">
                           <span>Valuation &amp; Scale</span>
                           <InfoTooltip id="fund-pe-mcap" text="P/E ratio (left axis) over market cap area (right axis) shows how valuation multiples move against total company size." />
                         </div>
-                        <div className="flex items-center gap-3 text-xs text-stealth-500">
+                        <div className="flex shrink-0 flex-wrap items-center gap-3 text-xs text-stealth-500">
                           <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full" style={{ background: getFamilyColor("sentiment") }} /> P/E</span>
                           <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm" style={{ background: getFamilyColor("financials"), opacity: 0.2 }} /> MCap</span>
                         </div>
                       </div>
-                      <div className="h-44" style={{ minWidth: 0, minHeight: 0 }}>
+                      <div className="h-44 min-h-0 min-w-0 overflow-hidden">
                         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                           <ComposedChart
                             accessibilityLayer
@@ -1598,14 +1602,14 @@ export default function StockAnalysis() {
 
                   {/* Revenue YoY Growth */}
                   {yoySeries.length > 0 && (
-                    <div className="secondary-card p-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-3 text-sm font-semibold text-stealth-100">
+                    <div className="secondary-card min-w-0 overflow-hidden p-4">
+                      <div className="mb-3 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="flex min-w-0 items-center gap-2 text-sm font-semibold text-stealth-100">
                           <span>Revenue Growth (YoY)</span>
                           <InfoTooltip id="fund-yoy" text="Year-over-year revenue growth comparing each quarter to the same quarter one year prior. Green bars indicate growth, red bars indicate contraction." />
                         </div>
                       </div>
-                      <div className="h-44" style={{ minWidth: 0, minHeight: 0 }}>
+                      <div className="h-44 min-h-0 min-w-0 overflow-hidden">
                         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                           <ComposedChart
                             accessibilityLayer
@@ -1648,21 +1652,21 @@ export default function StockAnalysis() {
           {/* Holistic Summary */}
           {holisticSummary && (
             <div className="surface-card-strong p-4 sm:p-6">
-              <div className="mb-3 flex items-center justify-between">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-base sm:text-lg font-semibold">Holistic Summary</h3>
                 <span className="text-xs sm:text-xs text-stealth-200 bg-stealth-900/70 border border-stealth-700 px-2 py-1 rounded-full">
                   {holisticSummary.regime}
                 </span>
               </div>
-              <div className="grid overflow-hidden rounded-xl border border-stealth-800 bg-stealth-800 sm:grid-cols-3 sm:gap-px">
+              <div className="grid overflow-hidden rounded-xl border border-stealth-800 bg-stealth-800 lg:grid-cols-3 lg:gap-px">
                 {holisticSummary.bullets.map((bullet) => (
-                  <div key={bullet.axis} className="border-b border-stealth-800 bg-stealth-950/65 px-3 py-2.5 last:border-b-0 sm:border-b-0">
+                  <div key={bullet.axis} className="border-b border-stealth-800 bg-stealth-950/65 px-3 py-2.5 last:border-b-0 lg:border-b-0">
                     <div className="text-xs font-semibold text-stealth-300">{bullet.axis}</div>
                     <div className="mt-1 text-xs leading-5 text-stealth-400">{bullet.text}</div>
                   </div>
                 ))}
               </div>
-              <div className="mt-3 flex gap-2 text-sm text-stealth-300">
+              <div className="mt-3 flex flex-col gap-1 text-sm text-stealth-300 sm:flex-row sm:gap-2">
                 <span className="shrink-0 font-semibold text-stealth-500">Watch</span>
                 <span>{holisticSummary.watch}</span>
               </div>
@@ -1676,26 +1680,27 @@ export default function StockAnalysis() {
               <span className="text-xs text-stealth-500">Independent lookbacks · 0–100</span>
             </div>
             <div
-              className="relative grid h-48 grid-cols-4 items-end gap-3 border-b border-stealth-700 px-3 pt-5 sm:gap-6 sm:px-8"
+              className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-stealth-800 bg-stealth-800 sm:grid-cols-4"
               role="img"
               aria-label={`Trailing scores: 21 days ${Math.round(chartData.scores.T)}, 3 months ${Math.round(chartData.scores["3m"])}, 6 months ${Math.round(chartData.scores["6m"])}, 12 months ${Math.round(chartData.scores["12m"])}`}
             >
-              <div className="pointer-events-none absolute inset-x-3 bottom-1/2 border-t border-dashed border-stealth-700 sm:inset-x-8" aria-hidden="true" />
               {HORIZON_OPTIONS.map((option) => {
                 const score = Math.max(0, Math.min(100, chartData.scores[option.value]));
                 const active = selectedHorizon === option.value;
                 return (
-                  <div key={option.value} className="relative z-10 flex h-full flex-col items-center justify-end gap-1.5">
-                    <span className={`text-sm font-semibold tabular-nums ${active ? "text-white" : "text-stealth-300"}`}>
-                      {Math.round(score)}
-                    </span>
-                    <div className="flex h-32 w-full max-w-16 items-end rounded-t-lg bg-stealth-950/70">
+                  <div key={option.value} className={`min-w-0 bg-stealth-950/65 px-3 py-3 ${active ? "bg-stealth-900" : ""}`}>
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <span className={`text-xs font-semibold ${active ? "text-sky-300" : "text-stealth-400"}`}>{option.label}</span>
+                      <span className={`text-sm font-semibold tabular-nums ${active ? "text-white" : "text-stealth-300"}`}>
+                        {Math.round(score)}
+                      </span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-stealth-800">
                       <div
-                        className={`w-full rounded-t-lg transition-[height] ${active ? "bg-sky-400" : "bg-sky-700/65"}`}
-                        style={{ height: `${score}%` }}
+                        className={`h-full rounded-full transition-[width] ${active ? "bg-sky-400" : "bg-sky-700/65"}`}
+                        style={{ width: `${score}%` }}
                       />
                     </div>
-                    <span className={`text-xs font-semibold ${active ? "text-sky-300" : "text-stealth-500"}`}>{option.label}</span>
                   </div>
                 );
               })}
@@ -1709,7 +1714,7 @@ export default function StockAnalysis() {
               if (!projection) return null;
 
               return (
-                <div key={selectedHorizon} className="surface-card-strong p-6">
+                <div key={selectedHorizon} className="surface-card-strong p-4 sm:p-6">
                   <h3 className="mb-4 text-lg font-semibold">{horizonLabel(selectedHorizon)} Component Read</h3>
                   
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-4">
@@ -1789,19 +1794,19 @@ export default function StockAnalysis() {
             })()}
           </section>
 
-        {visibleDataWarnings.length > 0 && (
-          <div className="mt-6 flex flex-wrap gap-x-2 gap-y-1 rounded-lg border border-yellow-700/50 bg-yellow-900/20 p-3 text-xs text-yellow-200/90">
-            <strong>Data quality</strong>
-            <span>{visibleDataWarnings.map((warning) => warning.type.replace(/_/g, " ")).join(" · ")}</span>
-          </div>
-        )}
+          {visibleDataWarnings.length > 0 && (
+            <div className="flex flex-wrap gap-x-2 gap-y-1 rounded-lg border border-yellow-700/50 bg-yellow-900/20 p-3 text-xs text-yellow-200/90">
+              <strong>Data quality</strong>
+              <span>{visibleDataWarnings.map((warning) => warning.type.replace(/_/g, " ")).join(" · ")}</span>
+            </div>
+          )}
 
           {/* Methodology */}
-          <div id="stock-methodology" className="mt-6 scroll-mt-32 surface-card-strong">
+          <div id="stock-methodology" className="scroll-mt-32 surface-card-strong">
             <button
               type="button"
               onClick={() => setMethodologyOpen(!methodologyOpen)}
-              className="flex min-h-11 w-full items-center justify-between rounded-lg px-6 py-4 transition-colors hover:bg-stealth-800/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+              className="flex min-h-11 w-full items-center justify-between gap-3 rounded-lg px-4 py-4 text-left transition-colors hover:bg-stealth-800/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 sm:px-6"
               aria-expanded={methodologyOpen}
               aria-controls="stock-methodology-content"
             >
@@ -1861,7 +1866,7 @@ export default function StockAnalysis() {
           </div>
 
           {/* Disclaimer */}
-          <div className="mt-6 bg-yellow-900/20 border border-yellow-700/50 rounded-lg p-4">
+          <div className="rounded-lg border border-yellow-700/50 bg-yellow-900/20 p-4">
             <p className="text-xs text-yellow-200/90 leading-relaxed">
               <strong>Disclaimer:</strong> These analysis signals are theoretical models for educational and informational purposes only. 
               They are not financial advice, investment recommendations, or guarantees of future performance. 
@@ -1869,7 +1874,7 @@ export default function StockAnalysis() {
               financial advisor before making investment decisions.
             </p>
           </div>
-        </>
+        </div>
       )}
 
       {loading && (
@@ -1880,8 +1885,8 @@ export default function StockAnalysis() {
 
       {/* Recent News */}
       {news.length > 0 && (
-        <div className="mt-6 surface-card-strong p-4 sm:p-6">
-          <div className="flex items-center justify-between mb-4">
+        <div className="surface-card-strong p-4 sm:p-6">
+          <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-base sm:text-lg font-semibold">Recent News for {searchTicker}</h2>
             {latestNewsPublishedAt && (
               <span className="text-xs text-stealth-500">
@@ -1889,14 +1894,14 @@ export default function StockAnalysis() {
               </span>
             )}
           </div>
-          <div className="space-y-2 sm:space-y-3">
+          <div className="grid grid-cols-1 gap-2 sm:gap-3 lg:grid-cols-2">
             {news.map((article) => (
               <a
                 key={article.id}
                 href={article.link}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="block secondary-card secondary-card-hover p-3 sm:p-4 min-h-20 sm:min-h-24 hover:border-blue-500/50"
+                className="secondary-card secondary-card-hover block min-w-0 p-3 hover:border-blue-500/50 sm:p-4"
               >
                 <h3 className="text-xs sm:text-sm font-semibold text-blue-400 mb-2 line-clamp-2">
                   {article.title}

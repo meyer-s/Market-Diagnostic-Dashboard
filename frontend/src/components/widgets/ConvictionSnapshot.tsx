@@ -52,7 +52,7 @@ export function ConvictionSnapshot({
       : "near-neutral direction";
   
   return (
-    <div className={`rounded-lg p-3 sm:p-4 border ${qualityLevel.border} ${qualityLevel.bg}`}>
+    <div className={`secondary-card stock-conviction-panel flex h-full min-w-0 flex-col p-3 sm:p-4 ${qualityLevel.border} ${qualityLevel.bg}`}>
       {/* Header */}
       <div className="mb-3">
         <p className="text-xs text-stealth-400 mb-1">Signal Quality</p>
@@ -117,8 +117,8 @@ export function ConvictionSnapshot({
       </div>
       
       {/* The weighted composition answers the quality basis without explanatory prose. */}
-      <div className="rounded border border-stealth-700/30 bg-stealth-800/20 p-2 text-xs text-stealth-300">
-        <div className="mb-1.5 flex items-center justify-between gap-3">
+      <div className="mt-auto rounded border border-stealth-700/30 bg-stealth-800/20 p-2 text-xs text-stealth-300">
+        <div className="mb-1.5 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
           <span className="font-semibold">Quality drivers</span>
           <span className="text-right text-stealth-400">{volStatus.label} volatility · {directionLabel}</span>
         </div>
@@ -131,10 +131,10 @@ export function ConvictionSnapshot({
           <span className="h-full w-[35%] bg-violet-400/75" />
           <span className="h-full w-[25%] bg-amber-300/75" />
         </div>
-        <div className="mt-1.5 grid grid-cols-[40fr_35fr_25fr] gap-1 text-stealth-400">
-          <span>Components 40%</span>
-          <span>Volatility 35%</span>
-          <span className="text-right">Direction 25%</span>
+        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-stealth-400">
+          <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-sky-400/80" />Components 40%</span>
+          <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-violet-400/75" />Volatility 35%</span>
+          <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-amber-300/75" />Direction 25%</span>
         </div>
       </div>
     </div>

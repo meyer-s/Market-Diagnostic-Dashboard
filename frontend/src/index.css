@@ -875,6 +875,29 @@ body {
   font-size: 12px;
 }
 
+.stock-analysis-positioning .options-structure-widget {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.stock-analysis-positioning .optionality-pricing-widget {
+  padding: 1rem 0 0;
+  border: 0;
+  border-top: 1px solid var(--field-border);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+@media (min-width: 1024px) {
+  .stock-analysis-page .data-scroller-hint {
+    display: none;
+  }
+}
+
 .segmented-control {
   display: inline-flex;
   max-width: 100%;

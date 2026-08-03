@@ -89,16 +89,16 @@ export function PriceAnalysisChart({
   }
 
   return (
-    <div className="bg-stealth-900 rounded-lg p-3 sm:p-4 border border-stealth-700">
+    <div className="secondary-card stock-price-analysis-panel h-full min-w-0 p-3 sm:p-4">
       {/* Header */}
       <div className="mb-3">
         <p className="text-xs text-stealth-400 mb-1">Price Analysis for {horizon}</p>
-        <div className="flex items-end justify-between">
-          <div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
             <p className="text-xs text-stealth-400">{closeLabel}</p>
             <p className="text-xl font-bold text-white">${latestClose.toFixed(2)}</p>
           </div>
-          <div className={`text-right px-2 py-1 rounded text-xs ${returnBg} border ${returnBorder}`}>
+          <div className={`w-fit shrink-0 rounded border px-2 py-1 text-left text-xs sm:text-right ${returnBg} ${returnBorder}`}>
             <p className="text-xs text-stealth-300 mb-0.5">Trailing Price Return</p>
             <p className={`text-base font-bold ${returnColor}`}>
               {trailingReturn > 0 ? "+" : ""}{trailingPercent.toFixed(1)}%
@@ -120,7 +120,7 @@ export function PriceAnalysisChart({
           </div>
         )}
         {(normalizedTargetRegime || highSeverityFlags.length > 0) && (
-          <div className={`mt-2 flex items-center text-xs text-stealth-400 ${normalizedTargetRegime ? "justify-between" : "justify-end"}`}>
+          <div className={`mt-2 flex flex-wrap items-center gap-2 text-xs text-stealth-400 ${normalizedTargetRegime ? "justify-between" : "justify-end"}`}>
             {normalizedTargetRegime && (
               <span>Reference basis: <span className="text-stealth-200 capitalize">{normalizedTargetRegime}</span></span>
             )}
@@ -134,9 +134,9 @@ export function PriceAnalysisChart({
       </div>
 
       <div className="mb-3">
-        <div className="flex items-end justify-between h-32 gap-2 px-1">
-          <div className="flex flex-col items-center flex-1">
-            <div className="w-full flex flex-col-reverse items-center justify-end h-32 mb-1">
+        <div className="grid grid-cols-2 items-start gap-3 px-1">
+          <div className="flex min-w-0 flex-col items-center">
+            <div className="mb-2 flex h-20 w-full flex-col-reverse items-center justify-end sm:h-24">
               <div
                 className="w-full bg-red-500/30 border border-red-500/50 rounded-sm transition-all"
                 style={{ height: `${lowerHeight}%`, minHeight: "3px" }}
@@ -149,8 +149,8 @@ export function PriceAnalysisChart({
             </div>
           </div>
 
-          <div className="flex flex-col items-center flex-1">
-            <div className="w-full flex flex-col-reverse items-center justify-end h-32 mb-1">
+          <div className="flex min-w-0 flex-col items-center">
+            <div className="mb-2 flex h-20 w-full flex-col-reverse items-center justify-end sm:h-24">
               <div
                 className="w-full bg-green-500/30 border border-green-500/50 rounded-sm transition-all"
                 style={{ height: `${upperHeight}%`, minHeight: "3px" }}

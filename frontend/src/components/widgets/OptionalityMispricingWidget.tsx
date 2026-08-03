@@ -74,7 +74,7 @@ const formatObservedAt = (value: string | null | undefined) => {
 export function OptionalityMispricingWidget({ metrics }: OptionalityMispricingWidgetProps) {
   if (!metrics) {
     return (
-      <div className="rounded-2xl border border-stealth-700 bg-stealth-950/55 p-3">
+      <div className="optionality-pricing-widget rounded-2xl border border-stealth-700 bg-stealth-950/55 p-3">
         <div className="text-sm font-semibold text-stealth-100">Options Pricing Context</div>
         <p className="mt-2 text-xs text-stealth-400">Options data unavailable.</p>
       </div>
@@ -134,7 +134,7 @@ export function OptionalityMispricingWidget({ metrics }: OptionalityMispricingWi
   ].filter(Boolean).join(" · ");
 
   return (
-    <div className="rounded-2xl border border-stealth-700 bg-stealth-950/55 p-3">
+    <div className="optionality-pricing-widget rounded-2xl border border-stealth-700 bg-stealth-950/55 p-3">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="text-sm font-semibold text-stealth-100">Options Pricing Context</div>

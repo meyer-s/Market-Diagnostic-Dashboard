@@ -183,7 +183,7 @@ function TechnicalIndicatorsComponent({
 
   if (!technicalData && !optionsFlow) {
     return (
-      <div className="surface-card-strong p-4 sm:p-6 mb-6">
+      <div className="surface-card-strong p-4 sm:p-6">
         <p className="text-stealth-400">Loading technical analysis...</p>
       </div>
     );
@@ -314,7 +314,7 @@ function TechnicalIndicatorsComponent({
 
   if (!technicalData) {
     return (
-      <div className="space-y-4 mb-6">
+      <div className="space-y-4">
         <div className="surface-card-strong p-4 sm:p-6">
           <p className="text-stealth-400">Technical analysis unavailable for this ticker.</p>
         </div>
@@ -667,7 +667,7 @@ function TechnicalIndicatorsComponent({
   };
 
   return (
-    <div className="space-y-4 mb-6">
+    <div className="space-y-4">
       {/* Price History Chart */}
       <div className="surface-card-strong p-4 sm:p-6">
         <div
@@ -680,7 +680,7 @@ function TechnicalIndicatorsComponent({
               {isShortView ? proxyOverlayLabel : candleIntervalLabel}
             </div>
             <div
-              className="flex items-center gap-1 rounded-full border border-stealth-700 bg-stealth-900/70 p-0.5"
+              className="flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-stealth-700 bg-stealth-900/70 p-0.5"
               role="group"
               aria-label="Price history window"
             >
@@ -708,8 +708,9 @@ function TechnicalIndicatorsComponent({
 
         <DataScroller
           label="Price history chart"
-          className="secondary-card mb-4 p-4"
-          hint="Scroll horizontally to inspect the full price history."
+          className="secondary-card mb-4 min-w-0 p-3 sm:p-4"
+          hint="Scroll for earlier history."
+          initialInlinePosition="end"
         >
           {isShortView && proxyEventCount > 0 && (
             <p
@@ -1046,7 +1047,7 @@ function TechnicalIndicatorsComponent({
         </DataScroller>
 
         {/* Price Info Row */}
-        <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-xs">
+        <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3 lg:grid-cols-6">
           <div className="secondary-card p-2">
             <p className="text-stealth-400 mb-1">{closeLabel}</p>
             <p className="text-sm font-bold text-blue-300">${technicalData.current_price.toFixed(2)}</p>
@@ -1086,13 +1087,14 @@ function TechnicalIndicatorsComponent({
         </div>
 
       {/* MACD — moved above Volume/RSI */}
-      <div className="secondary-card p-4 mt-4">
+      <div className="secondary-card mt-4 min-w-0 p-3 sm:p-4">
         <p className="text-xs text-stealth-400 mb-3 font-semibold">MACD</p>
 
         <DataScroller
           label="MACD chart"
           className="rounded-lg border border-stealth-800 bg-stealth-950/85 p-3"
-          hint="Scroll horizontally to inspect the MACD, signal, and histogram history."
+          hint=""
+          initialInlinePosition="end"
         >
           <svg
             role="img"
@@ -1245,10 +1247,10 @@ function TechnicalIndicatorsComponent({
       </div>
 
       {/* Volume + RSI overlay (dual-axis) */}
-      <div className="secondary-card p-4 mt-4">
-        <div className="flex items-center justify-between mb-3">
+      <div className="secondary-card mt-4 min-w-0 p-3 sm:p-4">
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs text-stealth-400 font-semibold">Volume &amp; RSI (14)</p>
-          <div className="flex items-center gap-3 text-xs text-stealth-500">
+          <div className="flex flex-wrap items-center gap-3 text-xs text-stealth-500">
             <span className="flex items-center gap-1.5"><span className="inline-block w-2 h-2 rounded-sm bg-emerald-500/60" /> Vol</span>
             <span className="flex items-center gap-1.5"><span className="inline-block w-2 h-2 rounded-full" style={{ background: "#a855f7" }} /> RSI</span>
             <span style={{ color: rsi.current > 70 ? "#f87171" : rsi.current < 30 ? "#4ade80" : "#eab308", fontWeight: 600 }}>
@@ -1259,7 +1261,8 @@ function TechnicalIndicatorsComponent({
         <DataScroller
           label="Volume and RSI chart"
           className="rounded-lg border border-stealth-800 bg-stealth-950/85 p-3"
-          hint="Scroll horizontally to inspect volume and RSI history."
+          hint=""
+          initialInlinePosition="end"
         >
           <svg
             role="img"
