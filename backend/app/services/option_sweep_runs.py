@@ -487,7 +487,12 @@ def _run_dashboard_sweep(run_id: int, universe_key: str, threshold: float, stop_
         _clear_dashboard_sweep(run_id, stop_event)
 
 
-def start_dashboard_sweep(universe_key: str, threshold: float) -> dict[str, object]:
+def start_dashboard_sweep(
+    universe_key: str,
+    threshold: float,
+    *,
+    trigger_source: str = "dashboard",
+) -> dict[str, object]:
     canonical = canonical_universe_key(universe_key)
     if not canonical:
         supported = ", ".join(SUPPORTED_SWEEP_UNIVERSES.keys())
@@ -513,7 +518,7 @@ def start_dashboard_sweep(universe_key: str, threshold: float) -> dict[str, obje
         universe_key=canonical,
         universe_label=SUPPORTED_SWEEP_UNIVERSES[canonical],
         threshold=threshold,
-        trigger_source="dashboard",
+        trigger_source=trigger_source.strip().lower() or "dashboard",
         status="queued",
     )
     stop_event = threading.Event()

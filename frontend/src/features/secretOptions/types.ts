@@ -992,7 +992,7 @@ export interface EvaluationInsight {
 
 export type EvalUrgency = EvaluationInsight["urgency"];
 export type PositionFilter = "all" | "attention" | "matched" | "watch" | "due" | "overdue" | "lowConfidence" | "losing";
-export type MobileOptionsWorkspace = "positions" | "scanner" | "insights";
+export type OptionsWorkspace = "positions" | "scanner" | "insights";
 export type MobileScannerView = "history" | "hits" | "repeated" | "earnings";
 export interface TimelineLane {
   laneId: string;

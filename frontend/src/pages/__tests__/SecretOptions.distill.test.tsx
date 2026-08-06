@@ -513,21 +513,24 @@ describe("Secret Options desktop distillation", () => {
     expect(await screen.findByText("Recorded decision · review #1")).not.toBeNull();
     expect(await screen.findByText("Reduce to 1")).not.toBeNull();
     expect((await screen.findAllByLabelText(/ALPHA\. confirmed decision window.*Next review Aug 2, 2026.*Decision deadline Aug 15, 2026/)).length).toBeGreaterThan(0);
-    expect((await screen.findAllByText("1d review overdue")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(/\d+d review overdue/)).length).toBeGreaterThan(0);
   });
 
-  it("collapses scanner controls until the user asks for them", async () => {
+  it("keeps the scanner on a separate desktop workspace tab", async () => {
     const user = userEvent.setup();
     renderDesktopWorkspace();
 
-    const scannerDisclosure = await screen.findByRole("button", { name: /Scanner Control & Outcomes/i });
-    expect(scannerDisclosure.getAttribute("aria-expanded")).toBe("false");
+    const scannerTab = await screen.findByRole("tab", { name: "scanner" });
+    expect(scannerTab.getAttribute("aria-selected")).toBe("false");
+    expect(screen.queryByRole("heading", { name: /Scanner Control & Outcomes/i })).toBeNull();
     expect(screen.queryByRole("button", { name: "Run Scan" })).toBeNull();
 
-    await user.click(scannerDisclosure);
+    await user.click(scannerTab);
 
-    expect(scannerDisclosure.getAttribute("aria-expanded")).toBe("true");
+    expect(scannerTab.getAttribute("aria-selected")).toBe("true");
+    expect(await screen.findByRole("heading", { name: /Scanner Control & Outcomes/i })).not.toBeNull();
     expect(await screen.findByRole("button", { name: "Run Scan" })).not.toBeNull();
+    expect(screen.getByText(/Automatic S&P 500 scans · 10:00 AM, 12:00 PM, and 2:00 PM ET/i)).not.toBeNull();
 
     await user.click(screen.getByRole("button", { name: "Themes" }));
     expect(await screen.findByLabelText("10 hits relative to 10 in the largest theme")).not.toBeNull();

@@ -416,6 +416,20 @@ const stateTargets: StateTarget[] = [
     action: async (page) => unlockSecretWorkspace(page, "read"),
   },
   {
+    id: "state-36b-secret-read-desktop-scanner",
+    name: "Secret Options — desktop read-only scanner workspace",
+    path: "/secret/options",
+    only: "desktop",
+    fixture: "read",
+    action: async (page) => {
+      await unlockSecretWorkspace(page, "read");
+      await page
+        .getByRole("tablist", { name: "Secret Options view" })
+        .getByRole("tab", { name: "scanner", exact: true })
+        .click();
+    },
+  },
+  {
     id: "state-37-secret-read-mobile-positions",
     name: "Secret Options — mobile read-only positions workspace",
     path: "/secret/options",

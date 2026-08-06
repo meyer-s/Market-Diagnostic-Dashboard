@@ -14,6 +14,7 @@ from app.services.ingestion.etl_runner import ETLRunner
 from app.services.market_context.agriculture_adapters import refresh_agriculture_report_caches
 from app.services.options_alerts import run_options_alert_scan
 from app.services.option_trade_reminders import send_due_trade_sell_reminders
+from app.services.option_sweep_runs import start_dashboard_sweep
 from app.services.option_decision_jobs import (
     refresh_due_option_assessments,
     update_option_learning_outcomes,
@@ -269,6 +270,31 @@ def scheduled_option_learning_job():
         logger.error("Option decision learning job failed: %s", exc, exc_info=True)
 
 
+def scheduled_sp500_option_scanner_job():
+    """Start the persisted S&P 500 options scanner on its intraday cadence."""
+    try:
+        with scheduler_job_lock("scheduled_sp500_option_scanner") as acquired:
+            if not acquired:
+                return
+            threshold = float(os.getenv("SCHEDULED_SP500_SCANNER_THRESHOLD", "30"))
+            try:
+                run = start_dashboard_sweep(
+                    "SP500",
+                    threshold,
+                    trigger_source="scheduled",
+                )
+            except RuntimeError as exc:
+                logger.info("Scheduled S&P 500 options scan skipped: %s", exc)
+                return
+            logger.info(
+                "Scheduled S&P 500 options scan queued: run_id=%s threshold=%.1f",
+                run.get("id"),
+                threshold,
+            )
+    except Exception as exc:
+        logger.error("Scheduled S&P 500 options scan failed: %s", exc, exc_info=True)
+
+
 def start_scheduler():
     """
     Initialize and start the background scheduler.
@@ -366,6 +392,20 @@ def start_scheduler():
             ),
             id="option_decision_learning",
             name="Option Decision Outcome Learning",
+            replace_existing=True,
+        )
+
+    if scheduler.get_job("sp500_options_scanner") is None:
+        scheduler.add_job(
+            scheduled_sp500_option_scanner_job,
+            CronTrigger(
+                day_of_week="mon-fri",
+                hour="10,12,14",
+                minute=0,
+                timezone="America/New_York",
+            ),
+            id="sp500_options_scanner",
+            name="S&P 500 Options Scanner",
             replace_existing=True,
         )
 

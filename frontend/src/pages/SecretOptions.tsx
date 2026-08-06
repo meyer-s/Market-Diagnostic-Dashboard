@@ -68,6 +68,8 @@ import {
   clusterMomentumClass,
   scannerStatusClass,
   isActiveScannerRun,
+  formatScannerRunTime,
+  groupScannerRunsByDay,
   opportunityScoreClass,
   compactOpportunityGrade,
   OpportunityRankBadge,
@@ -116,7 +118,7 @@ import type {
   EvaluationInsight,
   EvalUrgency,
   PositionFilter,
-  MobileOptionsWorkspace,
+  OptionsWorkspace,
   MobileScannerView,
   TimelineLane,
   RawPositionPayload,
@@ -1586,9 +1588,8 @@ export default function SecretOptions() {
   const [decisionReviewSubmitting, setDecisionReviewSubmitting] = useState(false);
   const [confirmingDecisionReview, setConfirmingDecisionReview] = useState(false);
   const [desktopInspectorPanel, setDesktopInspectorPanel] = useState<DesktopInspectorPanel | null>(null);
-  const [desktopScannerExpanded, setDesktopScannerExpanded] = useState(false);
   const [desktopScannerSummaryView, setDesktopScannerSummaryView] = useState<DesktopScannerSummaryView>("names");
-  const [mobileWorkspace, setMobileWorkspace] = useState<MobileOptionsWorkspace>("positions");
+  const [optionsWorkspace, setOptionsWorkspace] = useState<OptionsWorkspace>("positions");
   const [mobileScannerView, setMobileScannerView] = useState<MobileScannerView>("hits");
   const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
   const [mobileMonitoringOpen, setMobileMonitoringOpen] = useState(false);
@@ -1669,7 +1670,6 @@ export default function SecretOptions() {
     setShowTrainingOutcomes(false);
     setShowDecisionReviewModal(false);
     setDesktopInspectorPanel(null);
-    setDesktopScannerExpanded(false);
     setDesktopScannerSummaryView("names");
     setExpandedScannerHitId(null);
     setEditingPositionId(null);
@@ -2080,7 +2080,7 @@ export default function SecretOptions() {
   const loadScannerSummary = async () => {
     try {
       const data = await apiFetch<ScannerSummaryResponse>(
-        "/secret/options/scanner-summary?lookback_days=45&run_limit=8"
+        "/secret/options/scanner-summary?lookback_days=45&run_limit=24"
       );
       setScannerData(data);
       if (data.supported_universes.length > 0 && !data.supported_universes.some((item) => item.key === scannerUniverse)) {
@@ -2094,7 +2094,7 @@ export default function SecretOptions() {
         || null;
       const preferredRunId = preferredRun?.id ?? null;
       setSelectedScannerRunIdStable(preferredRunId);
-      if (isMobileWorkflow || desktopScannerExpanded || (preferredRun ? isActiveScannerRun(preferredRun) : false)) {
+      if (isMobileWorkflow || optionsWorkspace === "scanner" || (preferredRun ? isActiveScannerRun(preferredRun) : false)) {
         await loadScannerRunDetail(preferredRunId, {
           quiet: scannerRunDetailRef.current?.run.id === preferredRunId,
         });
@@ -2232,6 +2232,15 @@ export default function SecretOptions() {
           : "",
     });
     setShowAddModal(true);
+  };
+
+  const selectOptionsWorkspace = (workspace: OptionsWorkspace) => {
+    setOptionsWorkspace(workspace);
+    if (workspace !== "scanner") return;
+    const runId = selectedScannerRunIdRef.current;
+    if (runId && scannerRunDetailRef.current?.run.id !== runId) {
+      void loadScannerRunDetail(runId);
+    }
   };
 
   const unlockSecretOptions = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -3224,9 +3233,9 @@ export default function SecretOptions() {
     () => scannerData?.runs.find(isActiveScannerRun) ?? null,
     [scannerData]
   );
-  const desktopScannerOpen = desktopScannerExpanded || Boolean(activeScannerRun);
+  const desktopScannerOpen = !isMobileWorkflow && optionsWorkspace === "scanner";
   const scannerRankingVisible = isMobileWorkflow
-    ? mobileWorkspace === "scanner" && mobileScannerView === "hits"
+    ? optionsWorkspace === "scanner" && mobileScannerView === "hits"
     : desktopScannerOpen;
   const scannerUniverses = scannerData?.supported_universes ?? [
     { key: "SP500", label: "S&P 500" },
@@ -3235,6 +3244,10 @@ export default function SecretOptions() {
   ];
   const topScannerSymbols = scannerData?.top_symbols ?? [];
   const recentScannerRuns = scannerData?.runs ?? [];
+  const scannerRunDayGroups = useMemo(
+    () => groupScannerRunsByDay(recentScannerRuns),
+    [recentScannerRuns],
+  );
   const selectedScannerRun = scannerRunDetail?.run ?? recentScannerRuns.find((run) => run.id === selectedScannerRunId) ?? null;
   const selectedScannerHits = scannerRunDetail?.hits ?? [];
   const selectedPositionReplacementHit = useMemo(() => {
@@ -3446,7 +3459,7 @@ export default function SecretOptions() {
     desktopScannerOpen,
     isMobileWorkflow,
     mobileScannerView,
-    mobileWorkspace,
+    optionsWorkspace,
     recordScannerImpressions,
     scannerRunDetail,
     secretAuthRequired,
@@ -4186,6 +4199,44 @@ export default function SecretOptions() {
         </div>
       </div>
 
+      <div
+        className="hidden w-fit rounded-xl border border-stealth-700/80 bg-stealth-950/70 p-1 xl:flex"
+        role="tablist"
+        aria-label="Secret Options view"
+      >
+        {(["positions", "scanner"] as OptionsWorkspace[]).map((workspace, index, workspaces) => (
+          <button
+            key={workspace}
+            id={`desktop-options-tab-${workspace}`}
+            type="button"
+            role="tab"
+            aria-selected={optionsWorkspace === workspace}
+            aria-controls={`desktop-options-${workspace}-panel`}
+            tabIndex={optionsWorkspace === workspace ? 0 : -1}
+            onClick={() => selectOptionsWorkspace(workspace)}
+            onKeyDown={(event) => {
+              if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+              event.preventDefault();
+              const nextIndex = event.key === "Home"
+                ? 0
+                : event.key === "End"
+                  ? workspaces.length - 1
+                  : (index + (event.key === "ArrowRight" ? 1 : -1) + workspaces.length) % workspaces.length;
+              const nextWorkspace = workspaces[nextIndex];
+              selectOptionsWorkspace(nextWorkspace);
+              window.requestAnimationFrame(() => document.getElementById(`desktop-options-tab-${nextWorkspace}`)?.focus());
+            }}
+            className={`min-h-11 rounded-lg px-5 text-sm font-semibold capitalize transition ${
+              optionsWorkspace === workspace
+                ? "bg-sky-500/15 text-sky-100 shadow-[inset_0_0_0_1px_rgba(125,211,252,0.25)]"
+                : "text-stealth-400 hover:bg-stealth-800/70 hover:text-stealth-200"
+            }`}
+          >
+            {workspace}
+          </button>
+        ))}
+      </div>
+
       {secretOptionsReadOnly ? (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-sky-700/50 bg-sky-950/25 px-3 py-2 text-xs text-sky-100">
           <span>Read-only session: portfolio and research data are available; mutations are blocked before an API request is sent.</span>
@@ -4310,20 +4361,20 @@ export default function SecretOptions() {
         </div>
 
         <nav className="sticky top-16 z-30 grid grid-cols-3 rounded-xl border border-stealth-700/80 bg-stealth-950/95 p-1 shadow-lg backdrop-blur" aria-label="Options workspaces">
-          {(["positions", "scanner", "insights"] as MobileOptionsWorkspace[]).map((workspace) => (
+          {(["positions", "scanner", "insights"] as OptionsWorkspace[]).map((workspace) => (
             <button
               key={workspace}
               type="button"
-              onClick={() => setMobileWorkspace(workspace)}
-              aria-current={mobileWorkspace === workspace ? "page" : undefined}
-              className={`min-h-11 rounded-lg px-2 text-sm font-semibold capitalize transition ${mobileWorkspace === workspace ? "bg-sky-500/15 text-sky-100 shadow-inner" : "text-stealth-400"}`}
+              onClick={() => selectOptionsWorkspace(workspace)}
+              aria-current={optionsWorkspace === workspace ? "page" : undefined}
+              className={`min-h-11 rounded-lg px-2 text-sm font-semibold capitalize transition ${optionsWorkspace === workspace ? "bg-sky-500/15 text-sky-100 shadow-inner" : "text-stealth-400"}`}
             >
               {workspace}
             </button>
           ))}
         </nav>
 
-        {mobileWorkspace === "positions" ? (
+        {optionsWorkspace === "positions" ? (
           <div className="space-y-3">
             <section className="surface-card-strong p-3" aria-labelledby="mobile-position-summary">
               <div className="flex items-center justify-between gap-3">
@@ -4406,7 +4457,7 @@ export default function SecretOptions() {
           </div>
         ) : null}
 
-        {mobileWorkspace === "scanner" ? (
+        {optionsWorkspace === "scanner" ? (
           <div className="space-y-3">
             <section className="surface-card-strong p-3">
               <div className="flex items-center justify-between gap-3">
@@ -4468,7 +4519,26 @@ export default function SecretOptions() {
 
             <section id="mobile-scanner-view-panel" role="tabpanel" aria-labelledby={`mobile-scanner-tab-${mobileScannerView}`} className="surface-card-strong p-3">
               {mobileScannerView === "history" ? (
-                <div className="space-y-2">{recentScannerRuns.length === 0 ? <p className="text-sm text-stealth-400">No scanner runs yet.</p> : recentScannerRuns.slice(0, 8).map((run) => <button key={run.id} type="button" onClick={() => void handleSelectScannerRun(run.id)} className={`w-full rounded-lg border p-3 text-left ${selectedScannerRunId === run.id ? "border-sky-500/40 bg-sky-500/10" : "border-stealth-800 bg-stealth-950/30"}`}><div className="flex items-center justify-between gap-2"><span className="truncate text-sm font-semibold text-stealth-100">{run.universe_label}</span><span className={`rounded-full border px-2 py-0.5 text-xs ${scannerStatusClass(run.status)}`}>{run.status}</span></div><div className="mt-1 flex justify-between text-xs text-stealth-500"><span>{formatRelativeTime(run.started_at)}</span><span>{run.hits} hits · {run.scanned_symbols} scanned</span></div></button>)}</div>
+                <div className="space-y-4">
+                  {scannerRunDayGroups.length === 0 ? (
+                    <p className="text-sm text-stealth-400">No scanner runs yet.</p>
+                  ) : scannerRunDayGroups.map((group) => (
+                    <section key={group.dateKey} aria-labelledby={`mobile-scanner-day-${group.dateKey}`}>
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <h3 id={`mobile-scanner-day-${group.dateKey}`} className="text-sm font-semibold text-stealth-200">{group.label}</h3>
+                        <span className="text-xs text-stealth-500">{group.runs.length} {group.runs.length === 1 ? "scan" : "scans"}</span>
+                      </div>
+                      <div className="space-y-2">
+                        {group.runs.map((run) => (
+                          <button key={run.id} type="button" onClick={() => void handleSelectScannerRun(run.id)} className={`w-full rounded-lg border p-3 text-left ${selectedScannerRunId === run.id ? "border-sky-500/40 bg-sky-500/10" : "border-stealth-800 bg-stealth-950/30"}`}>
+                            <div className="flex items-center justify-between gap-2"><span className="truncate text-sm font-semibold text-stealth-100">{run.universe_label}</span><span className={`rounded-full border px-2 py-0.5 text-xs ${scannerStatusClass(run.status)}`}>{run.status}</span></div>
+                            <div className="mt-1 flex justify-between gap-2 text-xs text-stealth-500"><span>{formatScannerRunTime(run.started_at)} · {run.trigger_source}</span><span>{run.hits} hits · {run.scanned_symbols} scanned</span></div>
+                          </button>
+                        ))}
+                      </div>
+                    </section>
+                  ))}
+                </div>
               ) : null}
               {mobileScannerView === "hits" ? (
                 <div className="space-y-2">
@@ -4530,7 +4600,7 @@ export default function SecretOptions() {
           </div>
         ) : null}
 
-        {mobileWorkspace === "insights" ? (
+        {optionsWorkspace === "insights" ? (
           <div className="space-y-3">
             <section className="surface-card-strong p-3">
               <div className="flex items-center justify-between gap-3"><div><h2 className="text-base font-semibold text-stealth-100">Optionality clusters</h2><p className="mt-0.5 text-xs text-stealth-400">Where repeat scanner evidence is concentrating.</p></div><button type="button" onClick={() => void loadOptionalityClusters()} className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-stealth-700 text-stealth-300" aria-label="Refresh optionality clusters"><RefreshCw className="h-4 w-4" aria-hidden="true" /></button></div>
@@ -4548,9 +4618,21 @@ export default function SecretOptions() {
       ) : null}
 
       {!isMobileWorkflow ? (
-      <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_420px] 2xl:grid-cols-[minmax(0,1fr)_440px]">
+      <div
+        id={`desktop-options-${optionsWorkspace}-panel`}
+        role="tabpanel"
+        aria-labelledby={`desktop-options-tab-${optionsWorkspace}`}
+        tabIndex={0}
+        className={`grid items-start gap-3 ${
+          optionsWorkspace === "positions"
+            ? "xl:grid-cols-[minmax(0,1fr)_420px] 2xl:grid-cols-[minmax(0,1fr)_440px]"
+            : "grid-cols-1"
+        }`}
+      >
         {!isMobileWorkflow ? (
         <section className="min-w-0 space-y-3">
+      {optionsWorkspace === "positions" ? (
+      <>
       <div className="surface-card-strong p-3">
         <span className="sr-only" role="status" aria-live="polite">
           {listRefreshPending ? `${listRefreshProgressLabel}.` : listRefreshSettled ? "Position list updated." : ""}
@@ -4825,40 +4907,38 @@ export default function SecretOptions() {
         )}
       </div>
 
-      <div className="surface-card-strong p-3">
-        <button
-          type="button"
-          disabled={Boolean(activeScannerRun)}
-          onClick={() => {
-            const nextOpen = !desktopScannerOpen;
-            setDesktopScannerExpanded(nextOpen);
-            if (nextOpen && selectedScannerRunId && scannerRunDetail?.run.id !== selectedScannerRunId) {
-              void loadScannerRunDetail(selectedScannerRunId);
-            }
-          }}
-          aria-expanded={desktopScannerOpen}
-          aria-controls="desktop-scanner-workspace"
-          title={activeScannerRun ? "Scanner controls remain open while a scan is active" : undefined}
-          className="flex min-h-11 w-full items-center justify-between gap-3 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 disabled:cursor-default"
-        >
-          <span className="flex min-w-0 items-center gap-2">
-            <Activity className={`h-4 w-4 shrink-0 ${activeScannerRun ? "animate-pulse text-sky-300 motion-reduce:animate-none" : "text-emerald-300"}`} aria-hidden="true" />
-            <span className="min-w-0">
-              <span className="block text-base font-semibold text-stealth-100">Scanner Control &amp; Outcomes</span>
-              <span className="block truncate text-xs text-stealth-400">
-                {activeScannerRun
-                  ? `${activeScannerRun.universe_label} · ${activeScannerRun.scanned_symbols}/${activeScannerRun.total_symbols} scanned`
-                  : scannerError
-                    ? "Scanner error · open details"
-                  : `${scannerData?.summary.event_count ?? 0} hits · ${scannerData?.summary.symbol_count ?? 0} names · 45d`}
-              </span>
-            </span>
-          </span>
-          <ChevronDown className={`h-4 w-4 shrink-0 text-stealth-400 transition-transform ${desktopScannerOpen ? "rotate-180" : ""}`} aria-hidden="true" />
-        </button>
+      </>
+      ) : null}
 
-        {desktopScannerOpen ? (
-        <div id="desktop-scanner-workspace" className="mt-3">
+      {optionsWorkspace === "scanner" ? (
+      <div className="surface-card-strong p-3">
+        <div className="flex flex-col gap-3 border-b border-stealth-800 pb-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <Activity className={`h-4 w-4 shrink-0 ${activeScannerRun ? "animate-pulse text-sky-300 motion-reduce:animate-none" : "text-emerald-300"}`} aria-hidden="true" />
+              <h2 className="text-lg font-semibold text-stealth-100">Scanner Control &amp; Outcomes</h2>
+            </div>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-stealth-400">
+              Review each persisted sweep as a dated evidence set, then open a run to inspect its ranked opportunities.
+            </p>
+            <p className="mt-2 flex items-center gap-1.5 text-xs font-medium text-sky-200">
+              <CalendarClock className="h-3.5 w-3.5" aria-hidden="true" />
+              Automatic S&amp;P 500 scans · 10:00 AM, 12:00 PM, and 2:00 PM ET · weekdays
+            </p>
+          </div>
+          <div className="shrink-0 text-left text-xs text-stealth-400 lg:text-right">
+            <div className="font-semibold text-stealth-200">
+              {activeScannerRun
+                ? `${activeScannerRun.universe_label} · ${activeScannerRun.scanned_symbols}/${activeScannerRun.total_symbols} scanned`
+                : scannerError
+                  ? "Scanner error"
+                  : `${scannerData?.summary.event_count ?? 0} hits · ${scannerData?.summary.symbol_count ?? 0} names`}
+            </div>
+            <div className="mt-0.5">45-day evidence window</div>
+          </div>
+        </div>
+
+        <div id="desktop-scanner-workspace" className="mt-4">
         <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-end">
           <div className="grid items-end gap-2 sm:grid-cols-[minmax(150px,1fr)_112px_auto] lg:w-[660px]">
             <label className="grid gap-1 text-xs text-stealth-300">
@@ -4949,67 +5029,72 @@ export default function SecretOptions() {
                 Refresh
               </button>
             </div>
-            {recentScannerRuns.length === 0 ? (
+            {scannerRunDayGroups.length === 0 ? (
               <div className="min-h-[220px] rounded-lg border border-stealth-700/70 bg-stealth-950/35 px-3 py-4 text-sm text-stealth-400">
                 No persisted scanner runs yet.
               </div>
             ) : (
-              <div className="max-h-[460px] space-y-2 overflow-y-auto pr-1">
-                {recentScannerRuns.slice(0, 8).map((run) => {
-                  const scanned = run.total_symbols > 0 ? `${run.scanned_symbols}/${run.total_symbols}` : `${run.scanned_symbols}`;
-                  const progress =
-                    run.total_symbols > 0
-                      ? Math.max(0, Math.min(100, (run.scanned_symbols / run.total_symbols) * 100))
-                      : 0;
-                  const runActive = isActiveScannerRun(run);
-                  const progressWidth = Math.max(runActive ? 4 : 0, progress);
-                  return (
-                    <button
-                      key={run.id}
-                      type="button"
-                      onClick={() => handleSelectScannerRun(run.id)}
-                      className={`block min-h-[88px] w-full rounded-md border px-2 py-2 text-left transition-colors duration-200 ${
-                        selectedScannerRunId === run.id
-                          ? "border-sky-500/35 bg-sky-500/10"
-                          : "border-stealth-800/70 bg-stealth-950/20 hover:border-stealth-700 hover:bg-stealth-900/30"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="min-w-0 truncate text-xs font-semibold text-stealth-100">
-                          {run.universe_label}
-                          <span className="ml-1 text-xs font-normal uppercase text-stealth-500">{run.trigger_source}</span>
-                        </div>
-                        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold ${scannerStatusClass(run.status)}`}>
-                          {run.status}
-                        </span>
-                      </div>
-                      <div className="relative mt-2 h-1.5 overflow-hidden rounded-full bg-stealth-900">
-                        <div
-                          className={`h-full rounded-full transition-[width] duration-700 ease-out ${
-                            runActive ? "bg-sky-300/80" : "bg-emerald-300/70"
-                          }`}
-                          style={{ width: `${progressWidth}%` }}
-                        />
-                        {runActive ? (
-                          <div className="absolute inset-y-0 left-0 w-1/2 animate-[updatesIndeterminate_1200ms_ease-in-out_infinite] motion-reduce:animate-none rounded-full bg-sky-200/20" />
-                        ) : null}
-                      </div>
-                      <div className="mt-2 flex items-center justify-between gap-2 text-xs text-stealth-400 tabular-nums">
-                        <span>{formatRelativeTime(run.started_at)} · {scanned} scanned</span>
-                        <span>{run.hits} hits / {run.errors} errors</span>
-                      </div>
-                      <div className="mt-1 min-h-[14px] truncate text-xs text-stealth-500">
-                        {run.hit_symbols.length > 0
-                          ? `${run.hit_symbols.slice(0, 8).join(" ")}${run.hit_symbols.length > 8 ? ` +${run.hit_symbols.length - 8}` : ""}`
-                          : run.hits > 0
-                            ? `${run.hits} hits recorded`
-                            : runActive
-                              ? "Waiting for first persisted hit"
-                              : ""}
-                      </div>
-                    </button>
-                  );
-                })}
+              <div className="max-h-[460px] space-y-4 overflow-y-auto pr-1">
+                {scannerRunDayGroups.map((group) => (
+                  <section key={group.dateKey} aria-labelledby={`desktop-scanner-day-${group.dateKey}`}>
+                    <div className="mb-2 flex items-center justify-between gap-2 px-0.5">
+                      <h3 id={`desktop-scanner-day-${group.dateKey}`} className="text-xs font-semibold text-stealth-300">{group.label}</h3>
+                      <span className="text-xs text-stealth-500">{group.runs.length} {group.runs.length === 1 ? "scan" : "scans"}</span>
+                    </div>
+                    <div className="space-y-2">
+                      {group.runs.map((run) => {
+                        const scanned = run.total_symbols > 0 ? `${run.scanned_symbols}/${run.total_symbols}` : `${run.scanned_symbols}`;
+                        const progress = run.total_symbols > 0
+                          ? Math.max(0, Math.min(100, (run.scanned_symbols / run.total_symbols) * 100))
+                          : 0;
+                        const runActive = isActiveScannerRun(run);
+                        const progressWidth = Math.max(runActive ? 4 : 0, progress);
+                        return (
+                          <button
+                            key={run.id}
+                            type="button"
+                            onClick={() => handleSelectScannerRun(run.id)}
+                            className={`block min-h-[88px] w-full rounded-md border px-2 py-2 text-left transition-colors duration-200 ${
+                              selectedScannerRunId === run.id
+                                ? "border-sky-500/35 bg-sky-500/10"
+                                : "border-stealth-800/70 bg-stealth-950/20 hover:border-stealth-700 hover:bg-stealth-900/30"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="min-w-0 truncate text-xs font-semibold text-stealth-100">
+                                {formatScannerRunTime(run.started_at)}
+                                <span className="ml-1 text-xs font-normal uppercase text-stealth-500">{run.trigger_source}</span>
+                              </div>
+                              <span className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold ${scannerStatusClass(run.status)}`}>
+                                {run.status}
+                              </span>
+                            </div>
+                            <div className="relative mt-2 h-1.5 overflow-hidden rounded-full bg-stealth-900">
+                              <div
+                                className={`h-full rounded-full transition-[width] duration-700 ease-out ${runActive ? "bg-sky-300/80" : "bg-emerald-300/70"}`}
+                                style={{ width: `${progressWidth}%` }}
+                              />
+                              {runActive ? <div className="absolute inset-y-0 left-0 w-1/2 animate-[updatesIndeterminate_1200ms_ease-in-out_infinite] motion-reduce:animate-none rounded-full bg-sky-200/20" /> : null}
+                            </div>
+                            <div className="mt-2 flex items-center justify-between gap-2 text-xs text-stealth-400 tabular-nums">
+                              <span>{run.universe_label} · {scanned} scanned</span>
+                              <span>{run.hits} hits / {run.errors} errors</span>
+                            </div>
+                            <div className="mt-1 min-h-[14px] truncate text-xs text-stealth-500">
+                              {run.hit_symbols.length > 0
+                                ? `${run.hit_symbols.slice(0, 8).join(" ")}${run.hit_symbols.length > 8 ? ` +${run.hit_symbols.length - 8}` : ""}`
+                                : run.hits > 0
+                                  ? `${run.hits} hits recorded`
+                                  : runActive
+                                    ? "Waiting for first persisted hit"
+                                    : ""}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ))}
               </div>
             )}
           </div>
@@ -5247,12 +5332,13 @@ export default function SecretOptions() {
           </div>
         </div>
         </div>
-        ) : null}
       </div>
+      ) : null}
 
         </section>
         ) : null}
 
+        {optionsWorkspace === "positions" ? (
         <aside className="min-w-0 space-y-3 xl:sticky xl:top-4">
       <div id="desktop-position-inspector" className="surface-card-strong max-h-[calc(100vh-2rem)] overflow-y-auto p-2.5">
         <div className="mb-2 flex items-start justify-between gap-2">
@@ -6123,6 +6209,7 @@ export default function SecretOptions() {
 
       </div>
         </aside>
+        ) : null}
       </div>
       ) : null}
 

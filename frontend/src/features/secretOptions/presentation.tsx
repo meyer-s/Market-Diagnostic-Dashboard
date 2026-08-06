@@ -226,6 +226,80 @@ export const scannerStatusClass = (status: string) => {
 
 export const SCANNER_ACTIVE_STALE_MS = 12 * 60 * 60 * 1000;
 
+const SCANNER_HISTORY_TIME_ZONE = "America/New_York";
+const SCANNER_TIMESTAMP_HAS_ZONE = /(?:Z|[+-]\d{2}:?\d{2})$/i;
+
+const parseScannerTimestamp = (value?: string | null) => {
+  if (!value) return null;
+  const normalized = SCANNER_TIMESTAMP_HAS_ZONE.test(value) ? value : `${value}Z`;
+  const parsed = new Date(normalized);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const scannerDayKey = (date: Date) => {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: SCANNER_HISTORY_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((item) => item.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+};
+
+export interface ScannerRunDayGroup {
+  dateKey: string;
+  label: string;
+  runs: ScannerRun[];
+}
+
+export const formatScannerRunTime = (value?: string | null) => {
+  const parsed = parseScannerTimestamp(value);
+  if (!parsed) return "Time unavailable";
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: SCANNER_HISTORY_TIME_ZONE,
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  }).format(parsed);
+};
+
+export const groupScannerRunsByDay = (
+  runs: ScannerRun[],
+  now: Date = new Date(),
+): ScannerRunDayGroup[] => {
+  const todayKey = scannerDayKey(now);
+  const grouped = new Map<string, ScannerRunDayGroup>();
+
+  runs.forEach((run) => {
+    const parsed = parseScannerTimestamp(run.started_at ?? run.updated_at);
+    const dateKey = parsed ? scannerDayKey(parsed) : "unknown";
+    const existing = grouped.get(dateKey);
+    if (existing) {
+      existing.runs.push(run);
+      return;
+    }
+    grouped.set(dateKey, {
+      dateKey,
+      label: parsed
+        ? dateKey === todayKey
+          ? "Today"
+          : new Intl.DateTimeFormat("en-US", {
+              timeZone: SCANNER_HISTORY_TIME_ZONE,
+              weekday: "long",
+              month: "long",
+              day: "numeric",
+              year: "numeric",
+            }).format(parsed)
+        : "Date unavailable",
+      runs: [run],
+    });
+  });
+
+  return Array.from(grouped.values());
+};
+
 export const isActiveScannerRun = (run: ScannerRun) => {
   if (run.status !== "queued" && run.status !== "running") return false;
   const timestamp = run.updated_at || run.started_at;

@@ -15,6 +15,10 @@ Current API surface includes:
 - `GET /secret/options/greeks/{position_id}`
 - `GET /secret/options/closed-positions`
 - `POST /secret/options/attribution/backfill`
+- `GET /secret/options/scanner-summary`
+- `POST /secret/options/scanner-run`
+- `GET /secret/options/scanner-run/{run_id}`
+- `POST /secret/options/scanner-run/{run_id}/stop`
 
 ## Trade Management
 
@@ -37,6 +41,20 @@ Relevant backend pieces:
 Relevant frontend page:
 
 - `frontend/src/pages/SecretOptions.tsx`
+
+## Scanner Workspace
+
+Desktop Secret Options has separate **Positions** and **Scanner** tabs. Mobile
+retains the Positions / Scanner / Insights workspace switcher. Scanner history
+groups persisted runs by the America/New_York calendar day and labels each run
+with its Eastern time and trigger source, so intraday sweeps can be reviewed as
+one daily evidence set.
+
+The scheduler worker starts an S&P 500 sweep on market weekdays at 10:00 AM,
+12:00 PM, and 2:00 PM America/New_York. Scheduled sweeps use the same persisted
+run and hit pipeline as manually started dashboard sweeps. The IV percentile
+threshold defaults to 30 and can be overridden with
+`SCHEDULED_SP500_SCANNER_THRESHOLD`.
 
 ## Greeks Model
 

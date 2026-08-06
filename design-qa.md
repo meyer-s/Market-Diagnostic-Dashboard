@@ -1,7 +1,7 @@
-# Options mobile workflow design QA
+# Options responsive workflow design QA
 
 - Source truth: the July 15, 2026 mobile screenshot and written mobile information-architecture review supplied in the conversation.
-- Implementation: dedicated responsive presentation in `frontend/src/pages/SecretOptions.tsx`; the desktop workflow is preserved and no longer mounts on narrow viewports.
+- Implementation: dedicated responsive presentation in `frontend/src/pages/SecretOptions.tsx`; narrow viewports keep the task-focused mobile composition, while desktop separates Positions and Scanner into peer workspace tabs.
 - Target states: position list with inline decision detail, scanner workspace, and portfolio insights.
 - Visual capture: unavailable in this run. The source screenshot is not exposed as a local image and the Product Design workflow requires approval before using the Playwright CLI directly.
 
@@ -16,15 +16,16 @@ The source showed the desktop dashboard compressed into a long phone page. The n
 - A card tap expands a compact decision panel directly below that card; a second tap collapses it. The selected symbol remains stored in `?position=SYMBOL` for refresh and browser navigation without locking document scrolling.
 - The inline detail prioritizes the recommendation, review/deadline clocks, four market fields, and decision actions. Grade rationale and journal context stay collapsed until requested; Edit and Close sit with the other position-specific actions.
 - Scanner history, hits, repeated evidence, and earnings are mutually exclusive subviews. Active-run progress remains sticky.
+- Desktop scanner controls, daily history groups, selected hits, and cross-run evidence mount only in the Scanner tab rather than below the position table.
 - Optionality clusters move to Insights and initially show four rows.
 - The global footer and low-value route metadata are removed from the narrow workflow.
 
 ## Performance and responsive checks
 
 - The mobile and desktop presentations are conditionally mounted from a media-query state; hidden desktop tables, scanner results, inspector charts, and cluster cards do not remain in the mobile DOM.
-- The desktop presentation still mounts at the existing `xl` breakpoint and retains its two-column layout.
+- The desktop presentation still mounts at the existing `xl` breakpoint. Positions retain the two-column list/detail layout; Scanner uses the full analytical width.
 - Primary mobile controls use 44–48px minimum heights, cards use 12px padding, metadata remains at 12px, and status text is explicit.
-- Lint, TypeScript production build, and all 26 frontend tests pass.
+- Lint, TypeScript production build, and the full frontend unit/component suite pass.
 - The existing Vite bundle-size warning remains; this change avoids duplicate responsive rendering but does not introduce route-level code splitting.
 
 ## Remaining visual evidence gap

@@ -293,8 +293,10 @@ describe("Secret Options authorization gate", () => {
       })),
     });
     apiFetchMock.mockImplementation(readWorkspaceWithActiveScanner);
+    const user = userEvent.setup();
     renderPage();
 
+    await user.click(await screen.findByRole("tab", { name: "scanner" }));
     expect((await screen.findByRole("button", { name: "Running" })).hasAttribute("disabled")).toBe(true);
     expect((screen.getByRole("button", { name: "Stop" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByLabelText("Universe") as HTMLSelectElement).disabled).toBe(true);
@@ -536,14 +538,14 @@ describe("Secret Options authorization gate", () => {
     const user = userEvent.setup();
     renderPage();
 
-    const scannerDisclosure = await screen.findByRole("button", { name: /Scanner Control & Outcomes/i });
+    const scannerTab = await screen.findByRole("tab", { name: "scanner" });
     await waitFor(() => {
       expect(apiFetchMock.mock.calls.some(([endpoint]) => String(endpoint).startsWith("/secret/options/scanner-summary"))).toBe(true);
     });
     expect(apiFetchMock.mock.calls.some(([endpoint]) => endpoint === "/secret/options/scanner-run/91")).toBe(false);
     expect(apiFetchMock.mock.calls.some(([endpoint]) => endpoint === "/secret/options/scanner-impressions")).toBe(false);
 
-    await user.click(scannerDisclosure);
+    await user.click(scannerTab);
 
     await waitFor(() => {
       const types = apiFetchMock.mock.calls

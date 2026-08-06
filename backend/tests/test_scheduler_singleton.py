@@ -8,6 +8,7 @@ import pytest
 from app.core.config import settings
 from app.main import app
 from app.services.scheduler_lock import scheduler_job_lock
+from app.services import scheduler as scheduler_module
 from app.services import scheduler_worker
 
 
@@ -69,3 +70,50 @@ def test_scheduler_worker_registers_jobs_before_startup_etl(monkeypatch: pytest.
         asyncio.run(scheduler_worker.run_scheduler_worker())
 
     assert order == ["start_scheduler", "initial_etl", "stop_scheduler"]
+
+
+def test_scheduled_sp500_scanner_uses_persisted_dashboard_sweep(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, float, str]] = []
+
+    monkeypatch.setenv("SCHEDULED_SP500_SCANNER_THRESHOLD", "30")
+    monkeypatch.setattr(
+        scheduler_module,
+        "start_dashboard_sweep",
+        lambda universe, threshold, *, trigger_source: (
+            calls.append((universe, threshold, trigger_source)) or {"id": 42}
+        ),
+    )
+
+    scheduler_module.scheduled_sp500_option_scanner_job()
+
+    assert calls == [("SP500", 30.0, "scheduled")]
+
+
+def test_scheduler_registers_three_weekday_sp500_scans(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class SchedulerProbe:
+        running = True
+
+        def __init__(self) -> None:
+            self.jobs: dict[str, object] = {}
+
+        def get_job(self, _job_id: str):
+            return None
+
+        def add_job(self, _func, trigger, *, id: str, **_kwargs) -> None:
+            self.jobs[id] = trigger
+
+    probe = SchedulerProbe()
+    monkeypatch.setattr(scheduler_module, "scheduler", probe)
+    monkeypatch.delenv("OPTIONS_ALERTS_ENABLED", raising=False)
+
+    scheduler_module.start_scheduler()
+
+    trigger = probe.jobs["sp500_options_scanner"]
+    assert "day_of_week='mon-fri'" in str(trigger)
+    assert "hour='10,12,14'" in str(trigger)
+    assert "minute='0'" in str(trigger)
+    assert str(trigger.timezone) == "America/New_York"
