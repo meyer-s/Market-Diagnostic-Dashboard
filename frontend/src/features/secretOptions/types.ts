@@ -271,6 +271,16 @@ export interface PositionDecisionReviewResponse {
   history: PositionDecisionReview[];
 }
 
+export interface PositionDecisionReviewCreateResponse {
+  review: PositionDecisionReview;
+  assessment: PositionThesisAssessment;
+  mandate: OptionPositionMandate;
+  status: PositionDecisionStatus;
+  recorded_with_warnings: boolean;
+  snapshot_source: "position_cache" | "live_fallback";
+  automated_execution_enabled: false;
+}
+
 export interface PositionDecisionWindowRevision {
   id: number;
   position_id: number;

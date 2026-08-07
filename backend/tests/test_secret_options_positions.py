@@ -96,6 +96,14 @@ def test_positions_endpoint_replaces_non_finite_metrics(monkeypatch: pytest.Monk
         scheduled_refreshes += 1
         return True
 
+    cached_metrics = compute_metrics(object())
+    cache_key = secret_options._position_metrics_cache_key(object())
+    with secret_options._POSITION_METRICS_CACHE_LOCK:
+        secret_options._POSITION_METRICS_CACHE[cache_key] = (
+            secret_options.time_lib.monotonic(),
+            cached_metrics,
+        )
+
     monkeypatch.setattr(secret_options, "get_db_session", _fake_db_session)
     monkeypatch.setattr(secret_options, "_schedule_position_metrics_refresh", schedule_refresh)
     monkeypatch.setattr(
@@ -196,6 +204,50 @@ def test_position_refresh_runs_sequentially_and_commits_each_row(
     assert progress["completed_position_ids"] == [1, 2, 3]
     with secret_options._POSITION_METRICS_CACHE_LOCK:
         assert len(secret_options._POSITION_METRICS_CACHE) == 3
+        secret_options._POSITION_METRICS_CACHE.clear()
+
+
+def test_positions_cold_cache_returns_a_shell_and_queues_market_work(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = FastAPI()
+    app.include_router(secret_options.router)
+    scheduled_batches: list[list[object]] = []
+
+    monkeypatch.setattr(secret_options, "get_db_session", _fake_db_session)
+    monkeypatch.setattr(
+        secret_options,
+        "_serialize_position",
+        lambda _position, _evaluation_window=None: {
+            "id": 1,
+            "symbol": "COLD",
+            "trade_date": "2026-06-17",
+            "expiration": "2026-07-17",
+            "strike": 10.0,
+            "option_type": "call",
+        },
+    )
+    monkeypatch.setattr(
+        secret_options,
+        "_compute_position_metrics",
+        lambda *_args, **_kwargs: pytest.fail("cold list reads must not compute market metrics inline"),
+    )
+    monkeypatch.setattr(
+        secret_options,
+        "_schedule_position_metrics_refresh",
+        lambda positions: scheduled_batches.append(positions) is None,
+    )
+    with secret_options._POSITION_METRICS_CACHE_LOCK:
+        secret_options._POSITION_METRICS_CACHE.clear()
+
+    response = TestClient(app).get("/secret/options/positions")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["positions"][0]["metrics"]["refresh_pending"] is True
+    assert body["metrics_cache"]["status"] == "stale"
+    assert len(scheduled_batches) == 1
+    with secret_options._POSITION_METRICS_CACHE_LOCK:
         secret_options._POSITION_METRICS_CACHE.clear()
 
 
@@ -476,11 +528,6 @@ def test_read_scope_get_matrix_does_not_mutate_database(
     monkeypatch.setattr(settings, "SECRET_OPTIONS_READ_API_KEY", read_key)
     monkeypatch.setattr(settings, "SECRET_OPTIONS_WRITE_API_KEY", write_key)
     monkeypatch.setattr(settings, "SECRET_OPTIONS_READ_ACTOR", "read-invariance-test")
-    monkeypatch.setattr(
-        secret_options,
-        "_compute_position_metrics_batch",
-        lambda positions: [secret_options._empty_position_metrics("test fixture") for _ in positions],
-    )
     monkeypatch.setattr(secret_options, "_schedule_position_metrics_refresh", lambda _positions: False)
 
     with session_local() as db:
@@ -761,10 +808,12 @@ def test_decision_reviews_are_append_only_and_capture_market_snapshot(
         json={**_position_payload(), "expiration": "2026-08-21"},
     )
     position_id = created.json()["position"]["id"]
-    monkeypatch.setattr(
-        secret_options,
-        "_compute_position_metrics",
-        lambda *_args, **_kwargs: {
+    metrics_compute_count = 0
+
+    def position_metrics(*_args, **_kwargs):
+        nonlocal metrics_compute_count
+        metrics_compute_count += 1
+        return {
             "market": {"current_price": 79.5, "last_updated": "2026-07-15T15:30:00Z"},
             "option_price": 1.1,
             "quote": {"implied_volatility": 0.31, "quality": "live"},
@@ -772,8 +821,9 @@ def test_decision_reviews_are_append_only_and_capture_market_snapshot(
             "dte": 2,
             "greeks": {"delta": 0.45, "theta": -0.08},
             "pnl": {"dollar": -50.0, "percent": -18.52},
-        },
-    )
+        }
+
+    monkeypatch.setattr(secret_options, "_compute_position_metrics", position_metrics)
 
     first = client.post(
         f"/secret/options/positions/{position_id}/decision-reviews",
@@ -801,6 +851,9 @@ def test_decision_reviews_are_append_only_and_capture_market_snapshot(
 
     assert first.status_code == 200
     assert second.status_code == 200
+    assert first.json()["snapshot_source"] == "live_fallback"
+    assert second.json()["snapshot_source"] == "position_cache"
+    assert metrics_compute_count == 1
     assert history.status_code == 200
     assert rail_windows.status_code == 200
     first_review = first.json()["review"]

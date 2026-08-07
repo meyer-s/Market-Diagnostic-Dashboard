@@ -2630,6 +2630,41 @@ def _position_metrics_snapshot(position: OptionPosition) -> SimpleNamespace:
     )
 
 
+def _pending_position_metrics() -> Dict[str, object]:
+    """Return a stable placeholder while a cold cache entry warms in the worker."""
+    metrics = _empty_position_metrics("Position metrics are refreshing in the background.")
+    metrics["refresh_pending"] = True
+    return metrics
+
+
+def _cached_position_metrics(position: Any) -> Optional[Dict[str, object]]:
+    """Read the latest completed backend snapshot used by the positions UI."""
+    cache_key = _position_metrics_cache_key(position)
+    with _POSITION_METRICS_CACHE_LOCK:
+        cached = _POSITION_METRICS_CACHE.get(cache_key)
+    if cached is None:
+        return None
+    metrics = cached[1]
+    if metrics.get("refresh_pending") is True:
+        return None
+    return metrics
+
+
+def _position_metrics_for_review(position: Any) -> tuple[Dict[str, object], str]:
+    """Prefer the visible backend snapshot and only block when no completed snapshot exists."""
+    cached = _cached_position_metrics(position)
+    if cached is not None:
+        return cached, "position_cache"
+
+    metrics = _compute_position_metrics_safely(position, get_market_data_provider())
+    with _POSITION_METRICS_CACHE_LOCK:
+        _POSITION_METRICS_CACHE[_position_metrics_cache_key(position)] = (
+            time_lib.monotonic(),
+            metrics,
+        )
+    return metrics, "live_fallback"
+
+
 def _compute_position_metrics_safely(
     position: Any,
     provider: MarketDataProvider,
@@ -2642,22 +2677,6 @@ def _compute_position_metrics_safely(
         # existing data-quality UI.
         traceback.print_exc()
         return _empty_position_metrics(str(perr))
-
-
-def _compute_position_metrics_batch(
-    positions: list[Any],
-    provider: Optional[MarketDataProvider] = None,
-) -> Dict[int, Dict[str, object]]:
-    if not positions:
-        return {}
-    market_provider = provider or get_market_data_provider()
-    metrics_by_position_index: Dict[int, Dict[str, object]] = {}
-    for position_index, position in enumerate(positions):
-        metrics_by_position_index[position_index] = _compute_position_metrics_safely(
-            position,
-            market_provider,
-        )
-    return metrics_by_position_index
 
 
 def _position_metrics_cache_ttl_seconds() -> float:
@@ -2817,31 +2836,33 @@ def get_positions(refresh: bool = Query(False)):
                     if cache_key not in _POSITION_METRICS_CACHE
                 ]
 
-            # A new or edited position has no compatible snapshot, so compute
-            # only those misses before returning. Established positions render
-            # from their last complete snapshot immediately.
+            # Cold and edited positions return a stable shell immediately. The
+            # single-worker refresh queue fills each row in the background, so
+            # opening this workspace never waits on every market-data provider.
             if missing_indices:
-                missing_positions = [positions[position_index] for position_index in missing_indices]
-                computed = _compute_position_metrics_batch(missing_positions)
-                computed_at = time_lib.monotonic()
                 with _POSITION_METRICS_CACHE_LOCK:
-                    for batch_index, position_index in enumerate(missing_indices):
+                    for position_index in missing_indices:
                         _POSITION_METRICS_CACHE[cache_keys[position_index]] = (
-                            computed_at,
-                            computed[batch_index],
+                            now,
+                            _pending_position_metrics(),
                         )
 
             with _POSITION_METRICS_CACHE_LOCK:
                 cache_entries = [_POSITION_METRICS_CACHE[cache_key] for cache_key in cache_keys]
 
-            stale_indices = (
-                list(range(len(positions)))
-                if refresh
-                else [
-                    position_index
-                    for position_index, (cached_at, _metrics) in enumerate(cache_entries)
-                    if now - cached_at >= cache_ttl
-                ]
+            stale_indices = list(
+                dict.fromkeys(
+                    missing_indices
+                    + (
+                        list(range(len(positions)))
+                        if refresh
+                        else [
+                            position_index
+                            for position_index, (cached_at, _metrics) in enumerate(cache_entries)
+                            if now - cached_at >= cache_ttl
+                        ]
+                    )
+                )
             )
             refresh_started = _schedule_position_metrics_refresh(
                 [positions[position_index] for position_index in stale_indices]
@@ -3652,10 +3673,7 @@ def create_position_decision_review(
             .order_by(OptionPositionReview.review_sequence.desc(), OptionPositionReview.id.desc())
             .first()
         )
-        try:
-            metrics = _compute_position_metrics(position, get_market_data_provider())
-        except Exception as exc:
-            metrics = _empty_position_metrics(str(exc))
+        metrics, snapshot_source = _position_metrics_for_review(position)
 
         assessment = None
         if payload.selected_assessment_id is not None:
@@ -3883,6 +3901,7 @@ def create_position_decision_review(
                 "mandate": serialize_mandate(confirmed_mandate),
                 "status": status,
                 "recorded_with_warnings": bool(status["warnings"] or status["addition_blockers"]),
+                "snapshot_source": snapshot_source,
                 "automated_execution_enabled": False,
             }
         )

@@ -516,6 +516,52 @@ describe("Secret Options desktop distillation", () => {
     expect((await screen.findAllByText(/\d+d review overdue/)).length).toBeGreaterThan(0);
   });
 
+  it("applies a recorded review response without refetching the position workspace", async () => {
+    const user = userEvent.setup();
+    const position = positions[0];
+    const assessment = assessmentFor(position);
+    const createdReview: PositionDecisionReview = {
+      ...reviewFor(position),
+      id: 999,
+      supersedes_review_id: reviewFor(position).id,
+      review_sequence: 2,
+      selected_assessment_id: assessment.assessment.id,
+      decision_source: "human_confirmed_auto",
+      human_override: "none",
+    };
+    apiFetchMock.mockImplementation((endpoint: string, init?: RequestInit) => {
+      if (
+        endpoint === `/secret/options/positions/${position.id}/decision-reviews`
+        && init?.method === "POST"
+      ) {
+        return Promise.resolve({
+          review: createdReview,
+          assessment: assessment.assessment,
+          mandate: assessment.mandate,
+          status: decisionReviewsFor(position).status,
+          recorded_with_warnings: false,
+          snapshot_source: "position_cache",
+          automated_execution_enabled: false,
+        });
+      }
+      return workspaceResponse(endpoint);
+    });
+    renderDesktopWorkspace();
+
+    const recordReview = await screen.findByRole("button", { name: "Record review" });
+    const callsBeforeSave = apiFetchMock.mock.calls.length;
+    await user.click(recordReview);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Review recorded" })).not.toBeNull();
+      expect(screen.getByText("Recorded decision · review #2")).not.toBeNull();
+    });
+    const saveCalls = apiFetchMock.mock.calls.slice(callsBeforeSave);
+    expect(saveCalls).toHaveLength(1);
+    expect(saveCalls[0][0]).toBe(`/secret/options/positions/${position.id}/decision-reviews`);
+    expect(saveCalls[0][1]?.method).toBe("POST");
+  });
+
   it("keeps the scanner on a separate desktop workspace tab", async () => {
     const user = userEvent.setup();
     renderDesktopWorkspace();

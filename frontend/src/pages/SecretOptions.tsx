@@ -90,6 +90,7 @@ import type {
   PositionPayload,
   SecretOptionsAccess,
   PositionRowContext,
+  PositionDecisionReviewCreateResponse,
   PositionDecisionReviewResponse,
   PositionDecisionWindowRevision,
   PositionDecisionWindowResponse,
@@ -1897,10 +1898,85 @@ export default function SecretOptions() {
     setListRefreshInFlight(true);
     try {
       await loadPositions({ quiet: true, force: true });
-      await loadDecisionReviewWindows();
-      await loadPositionRowContexts();
+      await Promise.all([loadDecisionReviewWindows(), loadPositionRowContexts()]);
     } finally {
       setListRefreshInFlight(false);
+    }
+  };
+
+  const applyCreatedDecisionReview = (
+    positionId: number,
+    result: PositionDecisionReviewCreateResponse,
+  ) => {
+    const review = result.review;
+    setDecisionReviewsByPosition((prev) => {
+      const existing = prev[positionId];
+      const history = [
+        review,
+        ...(existing?.history ?? []).filter((item) => item.id !== review.id),
+      ];
+      return {
+        ...prev,
+        [positionId]: {
+          position_id: positionId,
+          review_count: Math.max(history.length, review.review_sequence),
+          latest_review: review,
+          status: result.status,
+          history,
+        },
+      };
+    });
+    setDecisionWindowsByPosition((prev) => ({
+      ...prev,
+      [String(positionId)]: [
+        {
+          id: review.id,
+          position_id: review.position_id,
+          review_sequence: review.review_sequence,
+          review_date: review.review_date,
+          next_review_date: review.next_review_date,
+          decision_deadline: review.decision_deadline,
+        },
+        ...(prev[String(positionId)] ?? []).filter((item) => item.id !== review.id),
+      ],
+    }));
+    setThesisAssessmentsByPosition((prev) => {
+      const existing = prev[positionId];
+      if (!existing) return prev;
+      return {
+        ...prev,
+        [positionId]: {
+          ...existing,
+          assessment: result.assessment,
+          mandate: result.mandate,
+        },
+      };
+    });
+    if (review.next_review_date) {
+      const reviewDate = toDate(review.review_date);
+      const nextReviewDate = toDate(review.next_review_date);
+      const holdDays = reviewDate && nextReviewDate
+        ? Math.max(Math.round((nextReviewDate.getTime() - reviewDate.getTime()) / 86_400_000), 1)
+        : 1;
+      setPositions((prev) => prev.map((item) => (
+        item.position.id === positionId
+          ? {
+              ...item,
+              position: {
+                ...item.position,
+                evaluation_min_hold_days: 1,
+                evaluation_hold_days: holdDays,
+                evaluation_start_date: review.review_date,
+                evaluation_due_date: review.next_review_date,
+                evaluation_decision_deadline: review.decision_deadline,
+                evaluation_source: "decision_review",
+                evaluation_window_basis:
+                  review.continuation_condition
+                  || `decision review #${review.review_sequence}: ${review.verdict}`,
+              },
+            }
+          : item
+      )));
     }
   };
 
@@ -2461,7 +2537,8 @@ export default function SecretOptions() {
       if (!assessmentResponse?.assessment) {
         throw new Error("The automatic assessment is not ready yet.");
       }
-      await apiFetch(`/secret/options/positions/${selected.position.id}/decision-reviews`, {
+      const result = await apiFetch<PositionDecisionReviewCreateResponse>(
+        `/secret/options/positions/${selected.position.id}/decision-reviews`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -2471,8 +2548,7 @@ export default function SecretOptions() {
         }),
       });
       const positionId = selected.position.id;
-      await loadDecisionReviews(positionId);
-      void loadPositions();
+      applyCreatedDecisionReview(positionId, result);
     } catch (err: unknown) {
       setThesisAssessmentError(err instanceof Error ? err.message : "Failed to confirm the automatic grade.");
     } finally {
@@ -2546,7 +2622,8 @@ export default function SecretOptions() {
     setDecisionReviewSubmitting(true);
     setDecisionReviewError(null);
     try {
-      await apiFetch(`/secret/options/positions/${selected.position.id}/decision-reviews`, {
+      const result = await apiFetch<PositionDecisionReviewCreateResponse>(
+        `/secret/options/positions/${selected.position.id}/decision-reviews`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -2573,9 +2650,8 @@ export default function SecretOptions() {
         }),
       });
       const positionId = selected.position.id;
+      applyCreatedDecisionReview(positionId, result);
       closeDecisionReviewModal();
-      await Promise.all([loadDecisionReviews(positionId), loadThesisAssessment(positionId)]);
-      void loadPositions();
     } catch (err: unknown) {
       setDecisionReviewError(err instanceof Error ? err.message : "Failed to record decision review.");
     } finally {
@@ -6645,8 +6721,8 @@ export default function SecretOptions() {
               <div className="sticky bottom-0 mt-4 flex items-center justify-between gap-3 border-t border-stealth-800 bg-stealth-950/95 py-3">
                 <div className="text-xs text-stealth-500">
                   {decisionReviewMode === "window"
-                    ? "Saving appends a new window version and captures a fresh market snapshot."
-                    : "A fresh quote, Greeks, P/L, DTE, and remaining-capital snapshot will be captured on save."}
+                    ? "Saving appends a new window version with the latest completed backend market snapshot."
+                    : "The backend captures the current quote, Greeks, P/L, DTE, and remaining-capital snapshot on save."}
                 </div>
                 <div className="flex shrink-0 gap-2">
                   <button type="button" onClick={closeDecisionReviewModal} className="min-h-11 rounded-md px-3 text-sm text-stealth-400 hover:text-stealth-100">Cancel</button>

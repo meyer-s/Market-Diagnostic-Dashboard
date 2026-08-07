@@ -13,3 +13,10 @@ Use `$graphify-codebase` for work that adds, removes, renames, moves, or rewires
 - Never remove code only because Graphify calls it an orphan or widow. Dynamic imports, decorators, framework registration, reflection, configuration, and CLI entrypoints can hide ownership; verify the source and native runtime/test evidence first.
 
 Skip Graphify when the entire task is documentation, comments, copy, or purely visual CSS/theme/spacing/layout work that does not change executable relationships, component or prop contracts, imports, routes, or data flow.
+
+## Deployment
+
+- After completing and validating requested project changes, deploy this project unless the user explicitly says not to deploy.
+- Use the production SSH target `ubuntu@100.49.90.221` with the identity file `C:\TempSSH\LightsailDefaultKey-us-east-1.pem`.
+- Connect with `ssh -i "C:\TempSSH\LightsailDefaultKey-us-east-1.pem" ubuntu@100.49.90.221` and follow the repository's established deployment procedure on that host.
+- A read-only request such as review, diagnosis, explanation, or status does not itself create deployable changes and must not trigger a deployment.
