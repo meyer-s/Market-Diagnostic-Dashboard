@@ -52,7 +52,8 @@ one daily evidence set. After basic data validation, candidate admission uses
 one rule: the canonical 30-day IV current-chain percentile must be at or below
 the selected threshold. IV/HV, EDR, contract quality, execution quality,
 recurrence, and learned context rank and explain admitted candidates; they do
-not veto admission.
+not veto admission. Bounded sweeps select expiries nearest the 30-day target
+instead of consuming their budget on the first few daily or weekly expiries.
 
 The scheduler worker starts an S&P 500 sweep on market weekdays at 10:00 AM,
 12:00 PM, and 2:00 PM America/New_York. Scheduled sweeps use the same persisted

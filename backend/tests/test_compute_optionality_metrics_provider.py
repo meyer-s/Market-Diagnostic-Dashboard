@@ -1,3 +1,5 @@
+from datetime import date, timedelta
+
 from app.api.stock_projection import compute_historical_volatility, compute_optionality_metrics
 from tests.fake_market_data import FakeProvider
 
@@ -58,3 +60,38 @@ def test_compute_optionality_metrics_can_limit_expiries_for_sweeps() -> None:
     assert metrics["expiries_scanned"] == 1
     assert provider.option_chain_calls == 1
     assert metrics["quote_source"] == "fake"
+
+
+def test_compute_optionality_metrics_bounded_scan_targets_the_30_day_window() -> None:
+    class DailyExpiryProvider(FakeProvider):
+        def __init__(self) -> None:
+            super().__init__()
+            today = date.today()
+            self.expiries = [
+                (today + timedelta(days=days)).isoformat()
+                for days in (1, 2, 3, 4, 7, 8, 28, 35, 60)
+            ]
+            self.scanned_expiries: list[str] = []
+
+        def option_chain(self, symbol: str, expiry: str, **kwargs):
+            self.scanned_expiries.append(expiry)
+            return super().option_chain(symbol, expiry, **kwargs)
+
+    provider = DailyExpiryProvider()
+
+    metrics = compute_optionality_metrics(
+        provider,
+        "FAKE",
+        100.0,
+        20.0,
+        max_expiries=3,
+        strike_thresholds=[0.08],
+    )
+
+    assert metrics["iv30"] == 35.0
+    assert metrics["iv30_method"] == "total_variance_interpolation"
+    assert provider.scanned_expiries == [
+        (date.today() + timedelta(days=8)).isoformat(),
+        (date.today() + timedelta(days=28)).isoformat(),
+        (date.today() + timedelta(days=35)).isoformat(),
+    ]

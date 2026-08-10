@@ -1990,7 +1990,10 @@ def compute_optionality_metrics(
 
     expiry_candidates.sort(key=lambda x: x[1])
     expiry_limit = max_expiries if max_expiries is not None and max_expiries > 0 else 6
-    front_expiries = expiry_candidates[:expiry_limit]
+    selected_expiries = sorted(
+        sorted(expiry_candidates, key=lambda item: (abs(item[1] - 30), item[1]))[:expiry_limit],
+        key=lambda item: item[1],
+    )
     iv_values = []
     raw_iv_values = []
     edr_values = []
@@ -2021,7 +2024,7 @@ def compute_optionality_metrics(
                 raw_iv_values.append(numeric * 100)
 
     expiries_scanned = 0
-    for expiry, expiry_dte in front_expiries:
+    for expiry, expiry_dte in selected_expiries:
         try:
             all_strikes = provider.option_strikes(symbol, expiry)
         except Exception:
