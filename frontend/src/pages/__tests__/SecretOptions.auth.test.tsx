@@ -262,7 +262,7 @@ describe("Secret Options authorization gate", () => {
     expect((await screen.findByRole("button", { name: "Running" })).hasAttribute("disabled")).toBe(true);
     expect((screen.getByRole("button", { name: "Stop scan" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByLabelText("Universe") as HTMLSelectElement).disabled).toBe(true);
-    expect((screen.getByLabelText("30D chain pct max") as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText("IV/HV max %") as HTMLInputElement).disabled).toBe(true);
     expect(screen.getByText(/Scanner controls require write scope/i)).not.toBeNull();
 
     await user.click(screen.getByRole("button", { name: "Running" }));
@@ -300,7 +300,7 @@ describe("Secret Options authorization gate", () => {
     expect((await screen.findByRole("button", { name: "Running" })).hasAttribute("disabled")).toBe(true);
     expect((screen.getByRole("button", { name: "Stop" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByLabelText("Universe") as HTMLSelectElement).disabled).toBe(true);
-    expect((screen.getByLabelText("30D chain pct max") as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText("IV/HV max %") as HTMLInputElement).disabled).toBe(true);
     expect(screen.getByText(/Scanner controls require write scope/i)).not.toBeNull();
   });
 
@@ -316,7 +316,7 @@ describe("Secret Options authorization gate", () => {
     const run = await screen.findByRole("button", { name: /^Run$/ });
     expect((run as HTMLButtonElement).disabled).toBe(false);
     expect((screen.getByLabelText("Universe") as HTMLSelectElement).disabled).toBe(false);
-    expect((screen.getByLabelText("30D chain pct max") as HTMLInputElement).disabled).toBe(false);
+    expect((screen.getByLabelText("IV/HV max %") as HTMLInputElement).disabled).toBe(false);
 
     await user.click(run);
     await waitFor(() => {
@@ -330,7 +330,7 @@ describe("Secret Options authorization gate", () => {
       });
       expect(JSON.parse(String(request?.[1]?.body))).toEqual({
         universe_key: "SP500",
-        threshold: 30,
+        threshold: 100,
       });
     });
   });

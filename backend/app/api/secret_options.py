@@ -225,7 +225,7 @@ class ClosedPositionUpdate(BaseModel):
 
 class ScannerRunRequest(BaseModel):
     universe_key: str = "SP500"
-    threshold: float = 30.0
+    threshold: float = 100.0
 
 
 class ScannerImpressionCreate(BaseModel):

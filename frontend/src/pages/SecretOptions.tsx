@@ -1534,7 +1534,7 @@ export default function SecretOptions() {
   const [optionalityClusters, setOptionalityClusters] = useState<OptionalityCluster[]>([]);
   const [scannerData, setScannerData] = useState<ScannerSummaryResponse | null>(null);
   const [scannerUniverse, setScannerUniverse] = useState("SP500");
-  const [scannerThreshold, setScannerThreshold] = useState("30");
+  const [scannerThreshold, setScannerThreshold] = useState("100");
   const [scannerRunning, setScannerRunning] = useState(false);
   const [scannerStopping, setScannerStopping] = useState(false);
   const [scannerError, setScannerError] = useState<string | null>(null);
@@ -2762,8 +2762,8 @@ export default function SecretOptions() {
     }
     if (scannerRunning) return;
     const threshold = Number(scannerThreshold);
-    if (!Number.isFinite(threshold) || threshold <= 0 || threshold >= 100) {
-      setScannerError("Threshold must be between 1 and 99.");
+    if (!Number.isFinite(threshold) || threshold <= 0 || threshold > 100) {
+      setScannerError("IV/HV maximum must be between 1 and 100.");
       return;
     }
     setScannerRunning(true);
@@ -4546,8 +4546,8 @@ export default function SecretOptions() {
                   <select value={scannerUniverse} onChange={(event) => setScannerUniverse(event.target.value)} disabled={secretMutationDisabled || scannerRunning || Boolean(activeScannerRun)} aria-describedby={scannerWriteAccessMessage ? "mobile-scanner-write-scope" : undefined} className="min-h-11 rounded-lg border border-stealth-700 bg-stealth-950 px-3 text-sm text-stealth-100">{scannerUniverses.map((universe) => <option key={universe.key} value={universe.key}>{universe.label}</option>)}</select>
                 </label>
                 <label className="grid gap-1 text-xs text-stealth-300">
-                  30D chain pct max
-                  <input type="number" min="1" max="99" step="1" value={scannerThreshold} onChange={(event) => setScannerThreshold(event.target.value)} disabled={secretMutationDisabled || scannerRunning || Boolean(activeScannerRun)} aria-describedby={scannerWriteAccessMessage ? "mobile-scanner-write-scope" : undefined} className="min-h-11 rounded-lg border border-stealth-700 bg-stealth-950 px-3 text-sm text-stealth-100" />
+                  IV/HV max %
+                  <input type="number" min="1" max="100" step="1" value={scannerThreshold} onChange={(event) => setScannerThreshold(event.target.value)} disabled={secretMutationDisabled || scannerRunning || Boolean(activeScannerRun)} aria-describedby={scannerWriteAccessMessage ? "mobile-scanner-write-scope" : undefined} className="min-h-11 rounded-lg border border-stealth-700 bg-stealth-950 px-3 text-sm text-stealth-100" />
                 </label>
               </div>
               {scannerWriteAccessMessage ? <p id="mobile-scanner-write-scope" className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 text-xs leading-5 text-amber-100">{scannerWriteAccessMessage}</p> : null}
@@ -5034,11 +5034,11 @@ export default function SecretOptions() {
               </select>
             </label>
             <label className="grid gap-1 text-xs text-stealth-300">
-              30D chain pct max
+              IV/HV max %
               <input
                 type="number"
                 min="1"
-                max="99"
+                max="100"
                 step="1"
                 value={scannerThreshold}
                 onChange={(event) => setScannerThreshold(event.target.value)}

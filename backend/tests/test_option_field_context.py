@@ -498,7 +498,7 @@ def test_sweep_persists_field_snapshot_on_every_emitted_hit(monkeypatch: pytest.
         options_chain_sweep,
         "compute_optionality_metrics",
         lambda *args, **kwargs: {
-            "iv30_chain_percentile": 10.0,
+            "iv30_chain_percentile": 90.0,
             "iv_percentile": None,
             "iv30": 23.0,
             "hv30": 24.0,
@@ -517,7 +517,7 @@ def test_sweep_persists_field_snapshot_on_every_emitted_hit(monkeypatch: pytest.
     hits = options_chain_sweep._scan_tickers(
         ["SPY"],
         "Test",
-        threshold=20.0,
+        threshold=100.0,
         max_count=1,
         pause_seconds=0.0,
         market_data_provider="test",
@@ -526,7 +526,7 @@ def test_sweep_persists_field_snapshot_on_every_emitted_hit(monkeypatch: pytest.
     assert hits == 1
     assert len(session.events) == 1
     event = session.events[0]
-    assert event.iv_percentile == 10.0
+    assert event.iv_percentile == 90.0
     assert event.field_context_version == OPTION_FIELD_SCHEMA_VERSION
     snapshot = json.loads(event.field_context_json)
     assert snapshot["quality"]["available"] is True

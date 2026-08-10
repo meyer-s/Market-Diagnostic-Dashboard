@@ -18,8 +18,7 @@ from app.services.options_alerts import (
     _direction_hint,
     _format_horizon_summary,
     _get_current_price,
-    _is_iv_data_valid,
-    _passes_scanner_threshold,
+    _passes_scanner_iv_hv_threshold,
     _scanner_iv_percentile,
 )
 
@@ -106,9 +105,7 @@ def _scan_tickers_for_discord(
             iv_percentile = _scanner_iv_percentile(metrics)
             iv30 = metrics.get("iv30")
             
-            if not _is_iv_data_valid(iv30, hv30, iv_percentile):
-                continue
-            if not _passes_scanner_threshold(iv_percentile, threshold):
+            if not _passes_scanner_iv_hv_threshold(iv30, hv30, threshold):
                 continue
             
             bias, votes = _compute_option_bias(iv30, hv30, iv_percentile, metrics.get("avg_edr"))
@@ -143,7 +140,7 @@ def _format_discord_embed(symbol: str, alerts: List[dict], threshold: float, sca
         return {
             "embeds": [{
                 "title": f"📊 {symbol} Options Sweep Complete",
-                "description": f"No options found below {threshold}% 30D IV chain percentile",
+                "description": f"No options found at or below {threshold}% IV30/HV30",
                 "color": 0x6c757d,  # Gray
                 "fields": [
                     {
@@ -187,7 +184,7 @@ def _format_discord_embed(symbol: str, alerts: List[dict], threshold: float, sca
     return {
         "embeds": [{
             "title": f"🎯 {symbol} Options Sweep - {len(alerts)} Cheap Options Found!",
-            "description": f"Found {len(alerts)} options below {threshold}% 30D IV chain percentile",
+            "description": f"Found {len(alerts)} options at or below {threshold}% IV30/HV30",
             "color": 0x28a745,  # Green
             "fields": fields,
             "footer": {"text": f"Scanned {scanned} tickers • Market Diagnostic Dashboard"}

@@ -184,7 +184,7 @@ async def execute_sweep(
 
         start_content = (
             f"Options sweep started. {label} "
-            f"Tickers: {len(tickers)} Threshold: {threshold:.1f}% "
+            f"Tickers: {len(tickers)} IV/HV max: {threshold:.1f}% "
             f"Data: {provider_name} "
             f"Pause: {pause_seconds:.2f}s "
             f"Rate-limit backoff: {rate_limit_backoff_seconds:.0f}s"

@@ -3,13 +3,15 @@ from types import SimpleNamespace
 from app.services.options_alerts import (
     _compute_option_bias,
     _format_alert_message,
+    _passes_scanner_iv_hv_threshold,
+    _scanner_iv_hv_ratio,
     _scanner_iv_percentile,
     _should_trigger,
 )
 from tests.fake_market_data import FakeProvider
 
 
-def test_scanner_admission_uses_canonical_percentile_without_consensus_veto() -> None:
+def test_watch_admission_uses_canonical_percentile_without_consensus_veto() -> None:
     percentile = _scanner_iv_percentile(
         {
             "iv30_chain_percentile": 12.0,
@@ -24,12 +26,23 @@ def test_scanner_admission_uses_canonical_percentile_without_consensus_veto() ->
     assert _should_trigger(watch, percentile) is True
 
 
-def test_scanner_admission_rejects_missing_above_threshold_or_inactive_inputs() -> None:
+def test_watch_admission_rejects_missing_above_threshold_or_inactive_inputs() -> None:
     watch = SimpleNamespace(active=True, iv_percentile_max=20.0)
 
     assert _should_trigger(watch, None) is False
     assert _should_trigger(watch, 20.1) is False
     assert _should_trigger(SimpleNamespace(active=False, iv_percentile_max=20.0), 12.0) is False
+
+
+def test_scanner_admission_uses_only_the_iv_hv_ratio() -> None:
+    percentile = 90.0
+    bias, _votes = _compute_option_bias(23.0, 24.0, percentile, 65.0)
+
+    assert bias == "EXPENSIVE"
+    assert _scanner_iv_hv_ratio(23.0, 24.0) == 95.8
+    assert _passes_scanner_iv_hv_threshold(23.0, 24.0, 100.0) is True
+    assert _passes_scanner_iv_hv_threshold(23.0, 24.0, 95.0) is False
+    assert _passes_scanner_iv_hv_threshold(23.0, None, 100.0) is False
 
 
 def test_alert_message_includes_scan_and_contract_sources() -> None:

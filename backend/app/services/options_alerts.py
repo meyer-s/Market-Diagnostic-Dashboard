@@ -144,6 +144,40 @@ def _passes_scanner_threshold(iv_percentile: Optional[float], threshold: Optiona
         return False
 
 
+def _scanner_iv_hv_ratio(iv30: Optional[float], hv30: Optional[float]) -> Optional[float]:
+    """Return IV30 as a percentage of HV30 for simple scanner admission."""
+    try:
+        iv_value = float(iv30) if iv30 is not None else None
+        hv_value = float(hv30) if hv30 is not None else None
+    except (TypeError, ValueError):
+        return None
+    if (
+        iv_value is None
+        or hv_value is None
+        or not math.isfinite(iv_value)
+        or not math.isfinite(hv_value)
+        or iv_value <= 0
+        or hv_value <= 0
+    ):
+        return None
+    return round((iv_value / hv_value) * 100.0, 1)
+
+
+def _passes_scanner_iv_hv_threshold(
+    iv30: Optional[float],
+    hv30: Optional[float],
+    threshold: Optional[float],
+) -> bool:
+    ratio = _scanner_iv_hv_ratio(iv30, hv30)
+    if ratio is None or threshold is None:
+        return False
+    try:
+        limit = float(threshold)
+    except (TypeError, ValueError):
+        return False
+    return math.isfinite(limit) and ratio <= limit
+
+
 def _compute_option_bias(
     iv30: Optional[float],
     hv30: Optional[float],
@@ -198,9 +232,16 @@ def _build_alert_reason(
     threshold: Optional[float],
     bias: Optional[str],
     votes: Optional[list[str]],
+    *,
+    admission_metric: str = "chain_percentile",
 ) -> str:
     reasons = []
-    if iv_percentile is not None:
+    if admission_metric == "iv_hv_ratio":
+        ratio = _scanner_iv_hv_ratio(iv30, hv30)
+        if ratio is not None:
+            limit = threshold if threshold is not None else 100.0
+            reasons.append(f"IV30/HV30 {ratio:.1f}% <= {limit:.1f}%")
+    elif iv_percentile is not None:
         limit = threshold if threshold is not None else 0
         reasons.append(f"30D IV chain percentile {iv_percentile:.1f}% <= {limit:.1f}%")
     if iv30 is not None and hv30 is not None:
@@ -878,14 +919,16 @@ def _format_alert_message(
     options_data_source: Optional[object] = None,
     options_quote_source: Optional[object] = None,
     review_window: Optional[ReviewWindow] = None,
+    admission_metric: str = "chain_percentile",
 ) -> str:
     threshold_text = _format_value(threshold, 1) if threshold is not None else "n/a"
+    chain_context_threshold = threshold if admission_metric == "chain_percentile" else 30.0
     exceptional = _is_exceptional_sweep_setup(
         iv_percentile=iv_percentile,
         iv30=iv30,
         hv30=hv30,
         avg_edr=avg_edr,
-        threshold=threshold,
+        threshold=chain_context_threshold,
         votes=votes,
     )
     direction_label = "NEUTRAL"
@@ -912,7 +955,7 @@ def _format_alert_message(
         iv30=iv30,
         hv30=hv30,
         avg_edr=avg_edr,
-        threshold=threshold,
+        threshold=chain_context_threshold,
         horizon_returns=horizon_returns,
         history=history,
         provider=provider,
@@ -927,7 +970,14 @@ def _format_alert_message(
         else "────────────────────────────────────────────────────────"
     )
     accent_line = _ansi("▓" * len(separator_line), 93) if exceptional else None
-    iv_line = f"  30D Ch Pct: {_format_value(iv_percentile, 1)}% (<= {threshold_text}%)"
+    if admission_metric == "iv_hv_ratio":
+        ratio_text = _format_value(_scanner_iv_hv_ratio(iv30, hv30), 1)
+        iv_line = (
+            f"  IV/HV     : {ratio_text}% (<= {threshold_text}%) | "
+            f"30D Ch Pct: {_format_value(iv_percentile, 1)}%"
+        )
+    else:
+        iv_line = f"  30D Ch Pct: {_format_value(iv_percentile, 1)}% (<= {threshold_text}%)"
     if exceptional:
         iv_line = _ansi(iv_line, 92)
     metrics_source_text = _format_source_text(

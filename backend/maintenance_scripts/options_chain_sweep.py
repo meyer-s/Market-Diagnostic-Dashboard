@@ -14,8 +14,7 @@ from app.services.options_alerts import (
     _compute_horizon_bias,
     _direction_hint,
     _format_alert_message,
-    _is_iv_data_valid,
-    _passes_scanner_threshold,
+    _passes_scanner_iv_hv_threshold,
     _provider_source,
     _review_window_for_plan,
     _scanner_iv_percentile,
@@ -225,14 +224,19 @@ def _scan_tickers(
         iv_percentile = _scanner_iv_percentile(metrics)
         iv30 = metrics.get("iv30")
 
-        if not _is_iv_data_valid(iv30, hv30, iv_percentile):
-            return
-
-        if not _passes_scanner_threshold(iv_percentile, threshold):
+        if not _passes_scanner_iv_hv_threshold(iv30, hv30, threshold):
             return
         bias, votes = _compute_option_bias(iv30, hv30, iv_percentile, metrics.get("avg_edr"))
 
-        reason = _build_alert_reason(iv30, hv30, iv_percentile, threshold, bias, votes)
+        reason = _build_alert_reason(
+            iv30,
+            hv30,
+            iv_percentile,
+            threshold,
+            bias,
+            votes,
+            admission_metric="iv_hv_ratio",
+        )
         direction, direction_reason = _direction_hint(history)
         horizon_labels, horizon_returns = _compute_horizon_bias(history)
         plan = _training_plan_inputs(direction, iv30, hv30, horizon_returns, history)
@@ -298,6 +302,7 @@ def _scan_tickers(
             options_data_source=metrics.get("data_source"),
             options_quote_source=metrics.get("quote_source"),
             review_window=review_window,
+            admission_metric="iv_hv_ratio",
         )
         delivered, channel, error = _send_webhook(
             message,
@@ -460,14 +465,14 @@ def _is_transient_market_data_error(exc: Exception) -> bool:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--threshold", type=float, default=20.0)
+    parser.add_argument("--threshold", type=float, default=100.0, help="Maximum IV30/HV30 ratio percent.")
     parser.add_argument("--max", type=int, default=0, help="Limit tickers scanned (0 = all).")
     parser.add_argument("--pause", type=float, default=float(os.getenv("IBKR_SWEEP_PAUSE_SECONDS", "0.25")))
     args = parser.parse_args()
 
     max_count = args.max if args.max and args.max > 0 else None
     _send_webhook(
-        f":mag: Options sweep started (S&P 500). Threshold {args.threshold:.1f}%"
+        f":mag: Options sweep started (S&P 500). IV/HV max {args.threshold:.1f}%"
         f"{'' if max_count is None else f', max {max_count}'}."
     )
     sp500 = _fetch_tickers([SP500_URL])

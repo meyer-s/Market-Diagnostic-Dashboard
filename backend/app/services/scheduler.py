@@ -276,7 +276,7 @@ def scheduled_sp500_option_scanner_job():
         with scheduler_job_lock("scheduled_sp500_option_scanner") as acquired:
             if not acquired:
                 return
-            threshold = float(os.getenv("SCHEDULED_SP500_SCANNER_THRESHOLD", "30"))
+            threshold = float(os.getenv("SCHEDULED_SP500_SCANNER_THRESHOLD", "100"))
             try:
                 run = start_dashboard_sweep(
                     "SP500",

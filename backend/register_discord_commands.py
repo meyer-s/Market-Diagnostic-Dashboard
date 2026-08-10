@@ -53,11 +53,11 @@ commands = [
             },
             {
                 "name": "threshold",
-                "description": "IV percentile threshold (default: 30%)",
+                "description": "Maximum IV30/HV30 ratio (default: 100%)",
                 "type": 10,  # NUMBER type
                 "required": False,
-                "min_value": 5.0,
-                "max_value": 50.0,
+                "min_value": 1.0,
+                "max_value": 100.0,
             },
         ],
     },
@@ -83,8 +83,8 @@ try:
     print("\nYou can now use /sweep and /stop in your Discord server!")
     print("\nExample usage:")
     print("  /sweep symbol:SP500")
-    print("  /sweep symbol:ALL threshold:25")
-    print("  /sweep symbol:TOP_OPT_VOL_200 threshold:25")
+    print("  /sweep symbol:ALL threshold:100")
+    print("  /sweep symbol:TOP_OPT_VOL_200 threshold:100")
     print("  /stop")
 
 except requests.exceptions.HTTPError as e:

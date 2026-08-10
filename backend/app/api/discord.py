@@ -88,13 +88,13 @@ async def discord_interactions(request: Request):
         if command_name == "sweep":
             options = interaction.data.get("options", [])
             symbol = None
-            threshold = 30.0  # Default threshold
+            threshold = 100.0  # Default maximum IV30/HV30 ratio
 
             for option in options:
                 if option.get("name") == "symbol":
                     symbol = str(option.get("value", "")).upper()
                 elif option.get("name") == "threshold":
-                    threshold = float(option.get("value", 30.0))
+                    threshold = float(option.get("value", 100.0))
 
             if not symbol:
                 supported = ", ".join(SUPPORTED_SWEEP_UNIVERSES.keys())

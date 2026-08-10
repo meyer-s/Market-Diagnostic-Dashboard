@@ -498,7 +498,7 @@ def start_dashboard_sweep(
         supported = ", ".join(SUPPORTED_SWEEP_UNIVERSES.keys())
         raise ValueError(f"Unsupported universe '{universe_key}'. Supported: {supported}")
 
-    threshold = max(1.0, min(99.0, float(threshold)))
+    threshold = max(1.0, min(100.0, float(threshold)))
     expire_stale_sweep_runs()
     with get_db_session() as db:
         active = (

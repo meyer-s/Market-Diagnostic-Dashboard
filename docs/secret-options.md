@@ -49,16 +49,18 @@ retains the Positions / Scanner / Insights workspace switcher. Scanner history
 groups persisted runs by the America/New_York calendar day and labels each run
 with its Eastern time and trigger source, so intraday sweeps can be reviewed as
 one daily evidence set. After basic data validation, candidate admission uses
-one rule: the canonical 30-day IV current-chain percentile must be at or below
-the selected threshold. IV/HV, EDR, contract quality, execution quality,
-recurrence, and learned context rank and explain admitted candidates; they do
-not veto admission. Bounded sweeps select expiries nearest the 30-day target
-instead of consuming their budget on the first few daily or weekly expiries.
+one rule: 30-day implied volatility divided by 30-day historical volatility
+must be at or below the selected maximum. The default maximum is 100%, meaning
+IV30 cannot exceed HV30. Current-chain percentile, EDR, contract quality,
+execution quality, recurrence, and learned context rank and explain admitted
+candidates; they do not veto admission. Bounded sweeps select expiries nearest
+the 30-day target instead of consuming their budget on the first few daily or
+weekly expiries.
 
 The scheduler worker starts an S&P 500 sweep on market weekdays at 10:00 AM,
 12:00 PM, and 2:00 PM America/New_York. Scheduled sweeps use the same persisted
-run and hit pipeline as manually started dashboard sweeps. The 30-day IV
-current-chain percentile threshold defaults to 30 and can be overridden with
+run and hit pipeline as manually started dashboard sweeps. The IV30/HV30
+maximum defaults to 100 and can be overridden with
 `SCHEDULED_SP500_SCANNER_THRESHOLD`.
 
 ## Greeks Model
