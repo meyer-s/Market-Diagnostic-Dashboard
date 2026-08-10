@@ -48,12 +48,16 @@ Desktop Secret Options has separate **Positions** and **Scanner** tabs. Mobile
 retains the Positions / Scanner / Insights workspace switcher. Scanner history
 groups persisted runs by the America/New_York calendar day and labels each run
 with its Eastern time and trigger source, so intraday sweeps can be reviewed as
-one daily evidence set.
+one daily evidence set. After basic data validation, candidate admission uses
+one rule: the canonical 30-day IV current-chain percentile must be at or below
+the selected threshold. IV/HV, EDR, contract quality, execution quality,
+recurrence, and learned context rank and explain admitted candidates; they do
+not veto admission.
 
 The scheduler worker starts an S&P 500 sweep on market weekdays at 10:00 AM,
 12:00 PM, and 2:00 PM America/New_York. Scheduled sweeps use the same persisted
-run and hit pipeline as manually started dashboard sweeps. The IV percentile
-threshold defaults to 30 and can be overridden with
+run and hit pipeline as manually started dashboard sweeps. The 30-day IV
+current-chain percentile threshold defaults to 30 and can be overridden with
 `SCHEDULED_SP500_SCANNER_THRESHOLD`.
 
 ## Greeks Model

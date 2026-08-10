@@ -1,6 +1,7 @@
 # Options Alerting
 
-This system scans option-chain data and notifies you when a ticker's implied volatility looks cheap.
+This system scans option-chain data and notifies you when a ticker's 30-day
+implied volatility sits low in the current option-chain distribution.
 
 ## Enable alerts
 
@@ -50,8 +51,10 @@ curl -sS http://127.0.0.1:8000/options-alerts/events?limit=20
 
 An alert triggers when:
 
-- `iv_percentile` is at or below `iv_percentile_max`
+- the canonical `iv30_chain_percentile` is at or below `iv_percentile_max`
 - the watch is active
 - the cooldown window has passed since the last alert
 
-Metrics are sourced from Yahoo Finance option chains via `yfinance`.
+IV/HV, extrinsic density, contract quality, execution quality, recurrence, and
+learned context rank and explain candidates after admission; they do not veto
+the alert. Metrics use the configured market-data provider with fallback.

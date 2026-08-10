@@ -498,10 +498,11 @@ def test_sweep_persists_field_snapshot_on_every_emitted_hit(monkeypatch: pytest.
         options_chain_sweep,
         "compute_optionality_metrics",
         lambda *args, **kwargs: {
-            "iv_percentile": 10.0,
-            "iv30": 17.0,
+            "iv30_chain_percentile": 10.0,
+            "iv_percentile": None,
+            "iv30": 23.0,
             "hv30": 24.0,
-            "avg_edr": 25.0,
+            "avg_edr": 50.0,
             "data_source": "test_options",
             "quote_source": "test",
         },
@@ -525,6 +526,7 @@ def test_sweep_persists_field_snapshot_on_every_emitted_hit(monkeypatch: pytest.
     assert hits == 1
     assert len(session.events) == 1
     event = session.events[0]
+    assert event.iv_percentile == 10.0
     assert event.field_context_version == OPTION_FIELD_SCHEMA_VERSION
     snapshot = json.loads(event.field_context_json)
     assert snapshot["quality"]["available"] is True

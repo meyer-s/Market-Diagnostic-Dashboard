@@ -19,6 +19,8 @@ from app.services.options_alerts import (
     _format_horizon_summary,
     _get_current_price,
     _is_iv_data_valid,
+    _passes_scanner_threshold,
+    _scanner_iv_percentile,
 )
 
 
@@ -101,15 +103,15 @@ def _scan_tickers_for_discord(
             history = provider.daily_bars(symbol, days=365)
             hv30 = compute_historical_volatility(history, 30) if history is not None else None
             metrics = compute_optionality_metrics(provider, symbol, current_price, hv30)
-            iv_percentile = metrics.get("iv_percentile")
+            iv_percentile = _scanner_iv_percentile(metrics)
             iv30 = metrics.get("iv30")
             
             if not _is_iv_data_valid(iv30, hv30, iv_percentile):
                 continue
+            if not _passes_scanner_threshold(iv_percentile, threshold):
+                continue
             
             bias, votes = _compute_option_bias(iv30, hv30, iv_percentile, metrics.get("avg_edr"))
-            if iv_percentile is None or iv_percentile > threshold or bias != "CHEAP":
-                continue
             
             # Found a hit!
             direction, direction_reason = _direction_hint(history)
@@ -141,7 +143,7 @@ def _format_discord_embed(symbol: str, alerts: List[dict], threshold: float, sca
         return {
             "embeds": [{
                 "title": f"📊 {symbol} Options Sweep Complete",
-                "description": f"No cheap options found below {threshold}% IV percentile",
+                "description": f"No options found below {threshold}% 30D IV chain percentile",
                 "color": 0x6c757d,  # Gray
                 "fields": [
                     {
@@ -165,7 +167,7 @@ def _format_discord_embed(symbol: str, alerts: List[dict], threshold: float, sca
         value_lines = [
             f"Price: ${alert['price']:.2f}",
             f"IV: {alert['iv30']:.1f}% | HV: {alert.get('hv30', 0):.1f}%",
-            f"IV Percentile: {alert['iv_percentile']:.1f}%",
+            f"30D Chain Percentile: {alert['iv_percentile']:.1f}%",
             f"Direction: {_format_horizon_summary(alert.get('horizon_labels'))}",
         ]
         fields.append({
@@ -185,7 +187,7 @@ def _format_discord_embed(symbol: str, alerts: List[dict], threshold: float, sca
     return {
         "embeds": [{
             "title": f"🎯 {symbol} Options Sweep - {len(alerts)} Cheap Options Found!",
-            "description": f"Found {len(alerts)} options below {threshold}% IV percentile",
+            "description": f"Found {len(alerts)} options below {threshold}% 30D IV chain percentile",
             "color": 0x28a745,  # Green
             "fields": fields,
             "footer": {"text": f"Scanned {scanned} tickers • Market Diagnostic Dashboard"}

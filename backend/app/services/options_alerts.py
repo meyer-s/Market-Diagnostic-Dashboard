@@ -1,3 +1,4 @@
+import math
 import os
 from datetime import datetime, timedelta
 from math import sqrt
@@ -102,11 +103,45 @@ def _send_webhook(
 
 
 def _is_iv_data_valid(iv30: Optional[float], hv30: Optional[float], iv_percentile: Optional[float]) -> bool:
-    if iv30 is None or iv30 <= 1:
+    try:
+        iv30_value = float(iv30) if iv30 is not None else None
+        percentile_value = float(iv_percentile) if iv_percentile is not None else None
+    except (TypeError, ValueError):
         return False
-    if iv_percentile is not None and iv_percentile == 0 and (hv30 or 0) > 10:
+    if iv30_value is None or not math.isfinite(iv30_value) or iv30_value <= 1:
         return False
-    return True
+    if percentile_value is None or not math.isfinite(percentile_value):
+        return False
+    return 0 <= percentile_value <= 100
+
+
+def _scanner_iv_percentile(metrics: dict[str, object]) -> Optional[float]:
+    """Return the scanner's explicit current-chain percentile.
+
+    ``iv_percentile`` is retained only as a compatibility fallback for older
+    providers and fixtures. The stock optionality contract intentionally
+    retired that ambiguous field in favor of ``iv30_chain_percentile``.
+    """
+    for key in ("iv30_chain_percentile", "iv_percentile"):
+        value = metrics.get(key)
+        if value is None:
+            continue
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(numeric) and 0 <= numeric <= 100:
+            return numeric
+    return None
+
+
+def _passes_scanner_threshold(iv_percentile: Optional[float], threshold: Optional[float]) -> bool:
+    if iv_percentile is None or threshold is None:
+        return False
+    try:
+        return float(iv_percentile) <= float(threshold)
+    except (TypeError, ValueError):
+        return False
 
 
 def _compute_option_bias(
@@ -167,14 +202,14 @@ def _build_alert_reason(
     reasons = []
     if iv_percentile is not None:
         limit = threshold if threshold is not None else 0
-        reasons.append(f"IV percentile {iv_percentile:.1f}% <= {limit:.1f}%")
+        reasons.append(f"30D IV chain percentile {iv_percentile:.1f}% <= {limit:.1f}%")
     if iv30 is not None and hv30 is not None:
         spread = iv30 - hv30
         if spread < 0:
             reasons.append(f"IV30 below HV30 by {abs(spread):.1f} pts")
     if not reasons and iv_percentile is not None:
-        reasons.append(f"IV percentile {iv_percentile:.1f}%")
-    return "; ".join(reasons) if reasons else "Low IV percentile"
+        reasons.append(f"30D IV chain percentile {iv_percentile:.1f}%")
+    return "; ".join(reasons) if reasons else "Low 30D IV chain percentile"
 
 
 def _direction_hint(history: Optional[pd.DataFrame]) -> tuple[str, str]:
@@ -754,9 +789,9 @@ def _compact_votes(votes: list[str]) -> str:
         "CHEAP:IV_SPREAD": "IV<HV",
         "EXPENSIVE:IV_SPREAD": "IV>HV",
         "FAIR:IV_SPREAD": "IV~HV",
-        "CHEAP:IV_PCTL": "Low IV pct",
-        "EXPENSIVE:IV_PCTL": "High IV pct",
-        "FAIR:IV_PCTL": "Mid IV pct",
+        "CHEAP:IV_PCTL": "Low 30D chain pct",
+        "EXPENSIVE:IV_PCTL": "High 30D chain pct",
+        "FAIR:IV_PCTL": "Mid 30D chain pct",
         "CHEAP:EDR": "Low EDR",
         "EXPENSIVE:EDR": "High EDR",
         "FAIR:EDR": "Mid EDR",
@@ -892,7 +927,7 @@ def _format_alert_message(
         else "────────────────────────────────────────────────────────"
     )
     accent_line = _ansi("▓" * len(separator_line), 93) if exceptional else None
-    iv_line = f"  IV Pctl   : {_format_value(iv_percentile, 1)}% (<= {threshold_text}%)"
+    iv_line = f"  30D Ch Pct: {_format_value(iv_percentile, 1)}% (<= {threshold_text}%)"
     if exceptional:
         iv_line = _ansi(iv_line, 92)
     metrics_source_text = _format_source_text(
@@ -951,14 +986,10 @@ def _build_stock_analyzer_url(symbol: str) -> str:
     return f"{base}/stock-analysis/{normalized}?symbol={normalized}"
 
 
-def _should_trigger(watch: OptionAlertWatch, iv_percentile: Optional[float], bias: str) -> bool:
-    if iv_percentile is None:
-        return False
+def _should_trigger(watch: OptionAlertWatch, iv_percentile: Optional[float]) -> bool:
     if not watch.active:
         return False
-    if bias != "CHEAP":
-        return False
-    return iv_percentile <= (watch.iv_percentile_max or 0)
+    return _passes_scanner_threshold(iv_percentile, watch.iv_percentile_max)
 
 
 def run_options_alert_scan() -> dict:
@@ -978,16 +1009,16 @@ def run_options_alert_scan() -> dict:
                 hist = provider.daily_bars(symbol, days=365)
                 hv30 = compute_historical_volatility(hist, 30) if hist is not None else None
                 metrics = compute_optionality_metrics(provider, symbol, current_price, hv30)
-                iv_percentile = metrics.get("iv_percentile")
+                iv_percentile = _scanner_iv_percentile(metrics)
                 iv30 = metrics.get("iv30")
                 avg_edr = metrics.get("avg_edr")
 
                 if not _is_iv_data_valid(iv30, hv30, iv_percentile):
                     continue
 
-                bias, votes = _compute_option_bias(iv30, hv30, iv_percentile, avg_edr)
-                if not _should_trigger(watch, iv_percentile, bias):
+                if not _should_trigger(watch, iv_percentile):
                     continue
+                bias, votes = _compute_option_bias(iv30, hv30, iv_percentile, avg_edr)
 
                 reason = _build_alert_reason(
                     iv30,

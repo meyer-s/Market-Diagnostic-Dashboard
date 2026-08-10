@@ -15,8 +15,10 @@ from app.services.options_alerts import (
     _direction_hint,
     _format_alert_message,
     _is_iv_data_valid,
+    _passes_scanner_threshold,
     _provider_source,
     _review_window_for_plan,
+    _scanner_iv_percentile,
     _select_training_contract,
     _selected_contract_event_fields,
     _training_plan_inputs,
@@ -220,15 +222,15 @@ def _scan_tickers(
             max_expiries=optionality_config.get("max_expiries"),
             strike_thresholds=optionality_config.get("strike_thresholds"),
         )
-        iv_percentile = metrics.get("iv_percentile")
+        iv_percentile = _scanner_iv_percentile(metrics)
         iv30 = metrics.get("iv30")
 
         if not _is_iv_data_valid(iv30, hv30, iv_percentile):
             return
 
-        bias, votes = _compute_option_bias(iv30, hv30, iv_percentile, metrics.get("avg_edr"))
-        if iv_percentile is None or iv_percentile > threshold or bias != "CHEAP":
+        if not _passes_scanner_threshold(iv_percentile, threshold):
             return
+        bias, votes = _compute_option_bias(iv30, hv30, iv_percentile, metrics.get("avg_edr"))
 
         reason = _build_alert_reason(iv30, hv30, iv_percentile, threshold, bias, votes)
         direction, direction_reason = _direction_hint(history)

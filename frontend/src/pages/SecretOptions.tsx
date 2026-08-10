@@ -4546,7 +4546,7 @@ export default function SecretOptions() {
                   <select value={scannerUniverse} onChange={(event) => setScannerUniverse(event.target.value)} disabled={secretMutationDisabled || scannerRunning || Boolean(activeScannerRun)} aria-describedby={scannerWriteAccessMessage ? "mobile-scanner-write-scope" : undefined} className="min-h-11 rounded-lg border border-stealth-700 bg-stealth-950 px-3 text-sm text-stealth-100">{scannerUniverses.map((universe) => <option key={universe.key} value={universe.key}>{universe.label}</option>)}</select>
                 </label>
                 <label className="grid gap-1 text-xs text-stealth-300">
-                  IV threshold
+                  30D chain pct max
                   <input type="number" min="1" max="99" step="1" value={scannerThreshold} onChange={(event) => setScannerThreshold(event.target.value)} disabled={secretMutationDisabled || scannerRunning || Boolean(activeScannerRun)} aria-describedby={scannerWriteAccessMessage ? "mobile-scanner-write-scope" : undefined} className="min-h-11 rounded-lg border border-stealth-700 bg-stealth-950 px-3 text-sm text-stealth-100" />
                 </label>
               </div>
@@ -5034,7 +5034,7 @@ export default function SecretOptions() {
               </select>
             </label>
             <label className="grid gap-1 text-xs text-stealth-300">
-              IV threshold
+              30D chain pct max
               <input
                 type="number"
                 min="1"
@@ -5280,7 +5280,7 @@ export default function SecretOptions() {
                             ) : null}
                           </div>
                           <div className="truncate text-xs text-stealth-500">
-                            {opportunity.group} · IV pct {formatPercent(opportunity.iv_percentile, 0)} · IV/HV {formatPointChange(opportunity.iv_hv_spread, 1)}
+                            {opportunity.group} · 30D chain pct {formatPercent(opportunity.iv_percentile, 0)} · IV/HV {formatPointChange(opportunity.iv_hv_spread, 1)}
                             {contract.reward_risk !== null && contract.reward_risk !== undefined ? ` · ${contract.reward_risk.toFixed(2)}R` : ""}
                             {contract.open_interest !== null && contract.open_interest !== undefined ? ` · OI ${contract.open_interest}` : ""}
                           </div>

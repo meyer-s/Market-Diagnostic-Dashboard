@@ -1,5 +1,35 @@
-from app.services.options_alerts import _format_alert_message
+from types import SimpleNamespace
+
+from app.services.options_alerts import (
+    _compute_option_bias,
+    _format_alert_message,
+    _scanner_iv_percentile,
+    _should_trigger,
+)
 from tests.fake_market_data import FakeProvider
+
+
+def test_scanner_admission_uses_canonical_percentile_without_consensus_veto() -> None:
+    percentile = _scanner_iv_percentile(
+        {
+            "iv30_chain_percentile": 12.0,
+            "iv_percentile": None,
+        }
+    )
+    bias, _votes = _compute_option_bias(31.0, 24.0, percentile, 65.0)
+    watch = SimpleNamespace(active=True, iv_percentile_max=20.0)
+
+    assert percentile == 12.0
+    assert bias == "EXPENSIVE"
+    assert _should_trigger(watch, percentile) is True
+
+
+def test_scanner_admission_rejects_missing_above_threshold_or_inactive_inputs() -> None:
+    watch = SimpleNamespace(active=True, iv_percentile_max=20.0)
+
+    assert _should_trigger(watch, None) is False
+    assert _should_trigger(watch, 20.1) is False
+    assert _should_trigger(SimpleNamespace(active=False, iv_percentile_max=20.0), 12.0) is False
 
 
 def test_alert_message_includes_scan_and_contract_sources() -> None:

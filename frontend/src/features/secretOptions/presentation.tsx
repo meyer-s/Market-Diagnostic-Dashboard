@@ -813,7 +813,7 @@ export const ScannerHitDetail = ({ opportunity }: { opportunity: ScannerRankedOp
               Mispricing × path fit
             </span>
             <span className="rounded border border-emerald-500/25 bg-emerald-500/10 px-1.5 py-0.5 text-xs font-semibold text-emerald-200">
-              IV pct {formatPercent(opportunity.iv_percentile, 0)}
+              30D chain pct {formatPercent(opportunity.iv_percentile, 0)}
             </span>
             <span
               aria-label={marketField.accessibleLabel}
@@ -880,7 +880,7 @@ export const ScannerHitDetail = ({ opportunity }: { opportunity: ScannerRankedOp
         <div className="space-y-2">
           <div className="text-xs font-semibold uppercase tracking-wide text-stealth-500">Mispricing</div>
           {detailRow("Consensus", scannerAlertValue(sections, "MISPRICING", "Consensus") || "Cheap", "text-emerald-200")}
-          {detailRow("IV pct", formatPercent(opportunity.iv_percentile, 1))}
+          {detailRow("30D chain pct", formatPercent(opportunity.iv_percentile, 1))}
           {detailRow("IV/HV/EDR", ivHvEdr)}
           {detailRow("Data", dataSource)}
         </div>
