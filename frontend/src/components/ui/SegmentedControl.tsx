@@ -1,22 +1,24 @@
-export type SegmentedControlOption<T extends string> = {
+export type SegmentedControlOption<T extends string | number> = {
   value: T;
   label: string;
   disabled?: boolean;
 };
 
-type SegmentedControlProps<T extends string> = {
+type SegmentedControlProps<T extends string | number> = {
   label: string;
   value: T;
   options: Array<SegmentedControlOption<T>>;
   onChange: (value: T) => void;
+  accent?: "neutral" | "sky" | "orange" | "emerald";
   className?: string;
 };
 
-export default function SegmentedControl<T extends string>({
+export default function SegmentedControl<T extends string | number>({
   label,
   value,
   options,
   onChange,
+  accent = "neutral",
   className = "",
 }: SegmentedControlProps<T>) {
   return (
@@ -24,6 +26,7 @@ export default function SegmentedControl<T extends string>({
       className={`segmented-control ${className}`.trim()}
       role="group"
       aria-label={label}
+      data-accent={accent}
     >
       {options.map((option) => {
         const selected = option.value === value;

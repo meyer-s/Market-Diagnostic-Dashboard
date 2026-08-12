@@ -11,6 +11,8 @@ import {
 } from "recharts";
 import MarketLoading from "../ui/MarketLoading";
 import DataScroller from "../ui/DataScroller";
+import MarketTabs from "../ui/MarketTabs";
+import SegmentedControl from "../ui/SegmentedControl";
 import { useApi } from "../../hooks/useApi";
 import {
   CHART_MARGIN,
@@ -716,6 +718,9 @@ function SectorPriceCard({
   );
 }
 
+const COMMERCIAL_HORIZON_OPTIONS: Array<{ value: RealEstateHorizon; label: string }> =
+  REAL_ESTATE_HORIZONS.map(({ years, label }) => ({ value: years, label }));
+
 export default function CommercialRealEstateTab({ days }: { days: number }) {
   const [selectedSector, setSelectedSector] = useState("office");
   const [horizonYears, setHorizonYears] = useState<RealEstateHorizon>(15);
@@ -891,54 +896,43 @@ export default function CommercialRealEstateTab({ days }: { days: number }) {
             </span>
           </div>
           <div className="mt-4 grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto]">
-            <div
-              className="flex w-full max-w-full gap-1 overflow-x-auto rounded-xl border border-stealth-700 bg-stealth-900/50 p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400"
-              role="tablist"
-              aria-label="Commercial property type context"
-              tabIndex={0}
-            >
-              {sectorContexts.map((context) => {
-                const active = context.group === selectedContext.group;
-                return (
-                  <button
-                    key={context.group}
-                    type="button"
-                    role="tab"
-                    aria-selected={active}
-                    onClick={() => setSelectedSector(context.group)}
-                    className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${active ? "bg-sky-500/15 text-sky-300" : "text-stealth-400 hover:bg-stealth-800 hover:text-stealth-200"}`}
-                  >
-                    {context.label}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="control-strip justify-self-start lg:justify-self-end" role="group" aria-label="Commercial longer-horizon window">
-              {REAL_ESTATE_HORIZONS.map(({ years, label }) => (
-                <button
-                  key={years}
-                  type="button"
-                  aria-pressed={horizonYears === years}
-                  onClick={() => setHorizonYears(years)}
-                  className={`rounded-xl px-3 py-1.5 text-xs font-medium transition-all ${
-                    horizonYears === years
-                      ? "bg-sky-500/20 text-sky-300"
-                      : "text-stealth-400 hover:text-stealth-200"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            <MarketTabs
+              label="Commercial property type context"
+              value={selectedContext.group}
+              options={sectorContexts.map((context) => ({
+                value: context.group,
+                label: context.label,
+                panelId: "commercial-property-context-panel",
+              }))}
+              onChange={setSelectedSector}
+              idPrefix="commercial-property"
+              variant="segmented"
+            />
+            <SegmentedControl
+              label="Commercial longer-horizon window"
+              value={horizonYears}
+              options={COMMERCIAL_HORIZON_OPTIONS}
+              onChange={setHorizonYears}
+              accent="sky"
+              className="justify-self-start lg:justify-self-end"
+            />
           </div>
-          <div className="mt-4 grid items-start gap-3 md:gap-4 xl:grid-cols-3">
-            <SectorSupplyCard context={selectedContext} color={GROUP_COLORS[selectedContext.group] ?? "#38bdf8"} horizonYears={horizonYears} />
-            <SectorDemandSupplyCard context={selectedContext} horizonYears={horizonYears} />
-            <SectorPriceCard context={selectedContext} color={GROUP_COLORS[selectedContext.group] ?? "#a78bfa"} horizonYears={horizonYears} />
+          <div
+            id="commercial-property-context-panel"
+            role="tabpanel"
+            aria-labelledby={`commercial-property-${selectedContext.group}-tab`}
+            tabIndex={0}
+            className="mt-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+          >
+            <div className="grid items-start gap-3 md:gap-4 xl:grid-cols-3">
+              <SectorSupplyCard context={selectedContext} color={GROUP_COLORS[selectedContext.group] ?? "#38bdf8"} horizonYears={horizonYears} />
+              <SectorDemandSupplyCard context={selectedContext} horizonYears={horizonYears} />
+              <SectorPriceCard context={selectedContext} color={GROUP_COLORS[selectedContext.group] ?? "#a78bfa"} horizonYears={horizonYears} />
+            </div>
+            <p className="text-xs leading-5 text-stealth-500">
+              {selectedContext.label} public-data series: {selectedContext.sources.map((source) => `${source.series_id} (${source.label})`).join(" · ")}
+            </p>
           </div>
-          <p className="text-xs leading-5 text-stealth-500">
-            {selectedContext.label} public-data series: {selectedContext.sources.map((source) => `${source.series_id} (${source.label})`).join(" · ")}
-          </p>
         </div>
       )}
 

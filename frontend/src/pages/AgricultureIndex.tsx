@@ -15,6 +15,9 @@ import {
 } from "recharts";
 
 import MarketLoading from "../components/ui/MarketLoading";
+import DataScroller from "../components/ui/DataScroller";
+import MarketTabs from "../components/ui/MarketTabs";
+import SegmentedControl from "../components/ui/SegmentedControl";
 import { useApi } from "../hooks/useApi";
 import { CompactContextDigest, type AgricultureContextData } from "../components/agriculture/AgricultureContextPanel";
 import { ContractSignalBadge, ContractSignalLegend, isContractMarketClosed } from "../components/agriculture/ContractSignalBadge";
@@ -119,6 +122,14 @@ type AgricultureMacro = {
 };
 
 type Timeframe = "30d" | "90d" | "180d" | "365d" | "30y";
+
+const AGRICULTURE_TIMEFRAME_OPTIONS: Array<{ value: Timeframe; label: string }> = [
+  { value: "30d", label: "30d" },
+  { value: "90d", label: "90d" },
+  { value: "180d", label: "180d" },
+  { value: "365d", label: "365d" },
+  { value: "30y", label: "30y" },
+];
 
 const BACKGROUND_CONTEXT_PREFETCH_CONCURRENCY = 2;
 
@@ -836,14 +847,15 @@ export default function AgricultureIndex() {
   return (
     <div className="page-shell-wide page-stack">
       <div>
-        <span className="page-kicker">Tools</span>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">Agriculture Index</h1>
-        <p className="mt-2 max-w-4xl text-sm leading-6 text-stealth-300 md:text-[15px]">
+        <p className="page-kicker">Tools</p>
+        <h1 className="page-title">Agriculture Index</h1>
+        <p className="page-subtitle max-w-4xl">
           A futures-based macro diagnostic for agriculture regime stability. This is not a trading signal and is designed for contextual market structure analysis.
         </p>
       </div>
 
-      <div id="agriculture-now" className="section-anchor surface-card-strong p-4 md:p-5">
+      <section id="agriculture-now" aria-labelledby="agriculture-now-title" className="section-anchor surface-card-strong p-4 md:p-5">
+        <h2 id="agriculture-now-title" className="sr-only">Current agriculture market read</h2>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-[0.16em] text-stealth-500">Stability Snapshot</p>
@@ -875,39 +887,23 @@ export default function AgricultureIndex() {
             </div>
           </div>
         </div>
-      </div>
+        <p id="agriculture-summary" className="mt-4 border-t border-stealth-700/80 pt-4 text-sm leading-6 text-stealth-200">
+          {overview.summary}
+        </p>
+      </section>
 
-      <div id="agriculture-summary" className="section-anchor surface-card-strong p-5">
-        <p className="text-sm text-stealth-200">{overview.summary}</p>
-      </div>
-
-      <div
-        id="agriculture-views"
-        className="section-anchor mb-2 flex gap-2 border-b border-stealth-700"
-        role="tablist"
-        aria-label="Agriculture analysis view"
-      >
-        {([
-          { key: "overview", label: "Overview" },
-          { key: "deepdive", label: "Deep Dive" },
-        ] as Array<{ key: TabKey; label: string }>).map((tab) => (
-          <button
-            key={tab.key}
-            id={`agriculture-tab-${tab.key}`}
-            type="button"
-            role="tab"
-            aria-selected={activeTab === tab.key}
-            aria-controls={`agriculture-panel-${tab.key}`}
-            onClick={() => setActiveTab(tab.key)}
-            className={`min-h-11 border-b-2 px-3 font-semibold transition ${
-              activeTab === tab.key
-                ? "border-emerald-500 text-emerald-300"
-                : "border-transparent text-stealth-400 hover:text-stealth-300"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+      <div id="agriculture-views" className="section-anchor mb-2">
+        <MarketTabs<TabKey>
+          label="Agriculture analysis view"
+          value={activeTab}
+          options={[
+            { value: "overview", label: "Overview", panelId: "agriculture-panel-overview", tabId: "agriculture-tab-overview" },
+            { value: "deepdive", label: "Deep Dive", panelId: "agriculture-panel-deepdive", tabId: "agriculture-tab-deepdive" },
+          ]}
+          onChange={setActiveTab}
+          idPrefix="agriculture"
+          accent="emerald"
+        />
       </div>
 
       {activeTab === "overview" ? (
@@ -927,23 +923,13 @@ export default function AgricultureIndex() {
                     : "Regime quality momentum centered around zero — positive histogram means stability is improving. Breadth and trend overlaid for context."}
                 </p>
               </div>
-              <div className="flex flex-wrap gap-2" role="group" aria-label="Stability history window">
-                {(["30d", "90d", "180d", "365d", "30y"] as Timeframe[]).map((tf) => (
-                  <button
-                    key={tf}
-                    type="button"
-                    aria-pressed={timeframe === tf}
-                    onClick={() => setTimeframe(tf)}
-                    className={`min-h-11 rounded-md px-3 text-xs font-medium ${
-                      timeframe === tf
-                        ? "bg-stealth-700 text-stealth-100"
-                        : "bg-stealth-900 text-stealth-400 hover:text-stealth-200"
-                    }`}
-                  >
-                    {tf}
-                  </button>
-                ))}
-              </div>
+              <SegmentedControl
+                label="Stability history window"
+                value={timeframe}
+                options={AGRICULTURE_TIMEFRAME_OPTIONS}
+                onChange={setTimeframe}
+                accent="emerald"
+              />
             </div>
             <div className="mt-4 h-80">
               <ResponsiveContainer width="100%" height="100%" minWidth={0}>
@@ -1255,37 +1241,33 @@ export default function AgricultureIndex() {
             <div className="surface-card min-w-0 max-w-full overflow-hidden p-4">
               <h2 id="agriculture-correlation-heading" className="text-base font-semibold text-stealth-100">Rolling Correlation Matrix (60d)</h2>
               <p id="agriculture-correlation-description" className="mt-1 text-xs leading-5 text-stealth-300">
-                Pairwise 60-day group correlations. Scroll horizontally on narrow screens.
+                Pairwise 60-day group correlations.
               </p>
-              <div
-                className="mt-3 max-w-full overflow-x-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pulse-400"
-                role="region"
-                aria-labelledby="agriculture-correlation-heading"
-                aria-describedby="agriculture-correlation-description"
-                tabIndex={0}
-              >
-                <table className="w-max min-w-[640px] border-collapse text-xs text-stealth-300">
-                  <thead>
-                    <tr>
-                      <th scope="col" className="border border-stealth-700 px-2 py-2 text-left text-stealth-300">Group</th>
-                      {matrix60[0] ? Object.keys(matrix60[0].values).map((col) => (
-                        <th scope="col" key={col} className="border border-stealth-700 px-2 py-2 text-left text-stealth-300">{formatGroupCode(col)}</th>
-                      )) : null}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {matrix60.map((row) => (
-                      <tr key={row.row}>
-                        <th scope="row" className="border border-stealth-700 px-2 py-2 font-medium text-stealth-200">{formatGroupCode(row.row)}</th>
-                        {Object.entries(row.values).map(([col, value]) => (
-                          <td key={col} className={`border border-stealth-700 px-2 py-2 ${getCorrCellStyle(value)}`}>
-                            {value === null ? "—" : value.toFixed(2)}
-                          </td>
-                        ))}
+              <div className="mt-3">
+                <DataScroller label="Agriculture group correlation matrix">
+                  <table className="w-max min-w-[640px] border-collapse text-xs text-stealth-300">
+                    <thead>
+                      <tr>
+                        <th scope="col" className="border border-stealth-700 px-2 py-2 text-left text-stealth-300">Group</th>
+                        {matrix60[0] ? Object.keys(matrix60[0].values).map((col) => (
+                          <th scope="col" key={col} className="border border-stealth-700 px-2 py-2 text-left text-stealth-300">{formatGroupCode(col)}</th>
+                        )) : null}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {matrix60.map((row) => (
+                        <tr key={row.row}>
+                          <th scope="row" className="border border-stealth-700 px-2 py-2 font-medium text-stealth-200">{formatGroupCode(row.row)}</th>
+                          {Object.entries(row.values).map(([col, value]) => (
+                            <td key={col} className={`border border-stealth-700 px-2 py-2 ${getCorrCellStyle(value)}`}>
+                              {value === null ? "—" : value.toFixed(2)}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </DataScroller>
               </div>
             </div>
 

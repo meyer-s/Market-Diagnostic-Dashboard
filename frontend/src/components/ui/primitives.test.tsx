@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import AccessibleChartFrame from "./AccessibleChartFrame";
 import DataScroller from "./DataScroller";
 import FormField from "./FormField";
+import MarketTabs from "./MarketTabs";
 import PageState, { type PageStateVariant } from "./PageState";
 import SectionNav from "./SectionNav";
 import SegmentedControl from "./SegmentedControl";
@@ -79,6 +80,39 @@ describe("shared interface primitives", () => {
     expect(screen.getByRole("button", { name: "1 month" }).getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "1 year" }));
     expect(onChange).toHaveBeenCalledWith("1y");
+  });
+
+  it("supports complete keyboard navigation for market tabs", () => {
+    const onChange = vi.fn();
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      callback(0);
+      return 1;
+    });
+
+    render(
+      <MarketTabs
+        label="Market views"
+        value="overview"
+        options={[
+          { value: "overview", label: "Overview", panelId: "overview-panel" },
+          { value: "deep-dive", label: "Deep Dive", panelId: "deep-dive-panel" },
+        ]}
+        onChange={onChange}
+        idPrefix="market"
+      />,
+    );
+
+    const overview = screen.getByRole("tab", { name: "Overview" });
+    const deepDive = screen.getByRole("tab", { name: "Deep Dive" });
+    expect(overview.getAttribute("tabindex")).toBe("0");
+    expect(deepDive.getAttribute("tabindex")).toBe("-1");
+
+    overview.focus();
+    fireEvent.keyDown(overview, { key: "ArrowRight" });
+
+    expect(onChange).toHaveBeenCalledWith("deep-dive");
+    expect(document.activeElement).toBe(deepDive);
+    expect(deepDive.getAttribute("aria-controls")).toBe("deep-dive-panel");
   });
 
   it("can open overflowing evidence at its current end without a redundant visible hint", () => {

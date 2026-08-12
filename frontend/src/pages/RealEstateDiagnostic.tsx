@@ -15,6 +15,8 @@ import {
 } from "recharts";
 import MarketLoading from "../components/ui/MarketLoading";
 import DataScroller from "../components/ui/DataScroller";
+import MarketTabs from "../components/ui/MarketTabs";
+import SegmentedControl from "../components/ui/SegmentedControl";
 import SupportingContextTooltip from "../components/ui/SupportingContextTooltip";
 import CommercialRealEstateTab from "../components/realEstate/CommercialRealEstateTab";
 import { useApi } from "../hooks/useApi";
@@ -1519,11 +1521,14 @@ function RealEstateMethodologyPanel() {
 // Main page
 // ---------------------------------------------------------------------------
 
-const TIMEFRAME_OPTIONS: { key: Timeframe; label: string }[] = [
-  { key: "90d",  label: "90D" },
-  { key: "180d", label: "180D" },
-  { key: "365d", label: "1Y" },
+const TIMEFRAME_OPTIONS: Array<{ value: Timeframe; label: string }> = [
+  { value: "90d",  label: "90D" },
+  { value: "180d", label: "180D" },
+  { value: "365d", label: "1Y" },
 ];
+
+const LONG_HORIZON_OPTIONS: Array<{ value: RealEstateHorizon; label: string }> =
+  REAL_ESTATE_HORIZONS.map(({ years, label }) => ({ value: years, label }));
 
 export default function RealEstateDiagnostic() {
   const [timeframe, setTimeframe] = useState<Timeframe>("365d");
@@ -1686,50 +1691,29 @@ export default function RealEstateDiagnostic() {
           <h1 className="page-title">Real Estate Markets</h1>
           <p className="page-subtitle">Stability, financing transmission, listed proxies, and supply context</p>
         </div>
-        <div className="control-strip mt-2">
-          {TIMEFRAME_OPTIONS.map(({ key, label }) => (
-            <button
-              key={key}
-              type="button"
-              aria-pressed={timeframe === key}
-              onClick={() => setTimeframe(key)}
-              className={`min-h-11 rounded-xl px-3 text-xs font-medium transition-all ${
-                timeframe === key
-                  ? "bg-sky-500/20 text-sky-300"
-                  : "text-stealth-400 hover:text-stealth-200"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          label="Real estate evidence window"
+          value={timeframe}
+          options={TIMEFRAME_OPTIONS}
+          onChange={setTimeframe}
+          accent="sky"
+          className="mt-2"
+        />
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stealth-700/80" role="tablist" aria-label="Real estate market views">
-        <div className="flex gap-1">
-          {([
-            { key: "overview", label: "Housing & Overview" },
-            { key: "commercial", label: "Commercial Real Estate" },
-          ] as const).map((tab) => (
-            <button
-              key={tab.key}
-              id={`real-estate-${tab.key}-tab`}
-              type="button"
-              role="tab"
-              aria-selected={activeTab === tab.key}
-              aria-controls={activeTab === tab.key ? "real-estate-active-panel" : undefined}
-              onClick={() => setActiveTab(tab.key)}
-              className={`min-h-11 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ${
-                activeTab === tab.key
-                  ? "border-sky-400 text-sky-300"
-                  : "border-transparent text-stealth-400 hover:text-stealth-200"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-        <p className="pb-2 text-xs text-stealth-400">
+      <div className="flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
+        <MarketTabs<RealEstateTab>
+          label="Real estate market views"
+          value={activeTab}
+          options={[
+            { value: "overview", label: "Housing & Overview", panelId: "real-estate-active-panel", tabId: "real-estate-overview-tab" },
+            { value: "commercial", label: "Commercial Real Estate", panelId: "real-estate-active-panel", tabId: "real-estate-commercial-tab" },
+          ]}
+          onChange={setActiveTab}
+          idPrefix="real-estate"
+          className="min-w-0 flex-1"
+        />
+        <p className="pb-2 text-xs leading-5 text-stealth-400">
           {activeTab === "commercial" ? "Property types, credit fundamentals, and bank exposure" : "Housing, listed REITs, financing, and supply"}
         </p>
       </div>
@@ -1952,23 +1936,13 @@ export default function RealEstateDiagnostic() {
               title="Supply, construction, and affordability context"
               tooltipText="Slower-moving structural context. Supply and construction data confirm whether the price and credit picture is demand- or supply-driven. Buyer-demand divergence and housing inflation provide the structural demand overlay without replacing the listed-market read."
             />
-            <div className="control-strip" role="group" aria-label="Residential longer-horizon window">
-              {REAL_ESTATE_HORIZONS.map(({ years, label }) => (
-                <button
-                  key={years}
-                  type="button"
-                  aria-pressed={longHorizonYears === years}
-                  onClick={() => setLongHorizonYears(years)}
-                  className={`min-h-11 rounded-xl px-3 text-xs font-medium transition-all ${
-                    longHorizonYears === years
-                      ? "bg-sky-500/20 text-sky-300"
-                      : "text-stealth-400 hover:text-stealth-200"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            <SegmentedControl
+              label="Residential longer-horizon window"
+              value={longHorizonYears}
+              options={LONG_HORIZON_OPTIONS}
+              onChange={setLongHorizonYears}
+              accent="sky"
+            />
           </div>
           <div
             className={`mt-4 grid items-start gap-3 md:gap-4 ${

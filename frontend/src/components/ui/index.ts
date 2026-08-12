@@ -3,6 +3,7 @@ export { default as ChartFrame } from "./ChartFrame";
 export { default as DataScroller } from "./DataScroller";
 export { default as Dialog } from "./Dialog";
 export { default as FormField } from "./FormField";
+export { default as MarketTabs } from "./MarketTabs";
 export { default as PageHeader } from "./PageHeader";
 export { default as PageState } from "./PageState";
 export { default as SectionNav } from "./SectionNav";
@@ -11,4 +12,5 @@ export { default as SupportingContextTooltip } from "./SupportingContextTooltip"
 export type { PageStateVariant } from "./PageState";
 export type { AccessibleChartFrameProps } from "./AccessibleChartFrame";
 export type { SectionNavItem } from "./SectionNav";
+export type { MarketTabOption } from "./MarketTabs";
 export type { SegmentedControlOption } from "./SegmentedControl";

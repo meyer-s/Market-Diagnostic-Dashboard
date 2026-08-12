@@ -20,6 +20,7 @@ import {
 } from "recharts";
 import MarketLoading from "../components/ui/MarketLoading";
 import DataScroller from "../components/ui/DataScroller";
+import SegmentedControl from "../components/ui/SegmentedControl";
 import SupportingContextTooltip from "../components/ui/SupportingContextTooltip";
 import { useApi } from "../hooks/useApi";
 import {
@@ -1615,10 +1616,10 @@ function EnergyMethodologyPanel() {
 // Main page
 // ---------------------------------------------------------------------------
 
-const TIMEFRAME_OPTIONS: { key: Timeframe; label: string }[] = [
-  { key: "90d",  label: "90D" },
-  { key: "180d", label: "180D" },
-  { key: "365d", label: "1Y" },
+const TIMEFRAME_OPTIONS: Array<{ value: Timeframe; label: string }> = [
+  { value: "90d",  label: "90D" },
+  { value: "180d", label: "180D" },
+  { value: "365d", label: "1Y" },
 ];
 
 export default function EnergyIndex() {
@@ -1704,23 +1705,14 @@ export default function EnergyIndex() {
           <h1 className="page-title">Energy Markets</h1>
           <p className="page-subtitle">Futures composite, price relationships, biofuels, generation mix, and renewables transition</p>
         </div>
-        <div className="control-strip mt-2">
-          {TIMEFRAME_OPTIONS.map(({ key, label }) => (
-            <button
-              key={key}
-              type="button"
-              aria-pressed={timeframe === key}
-              onClick={() => setTimeframe(key)}
-              className={`min-h-11 rounded-xl px-3 text-xs font-medium transition-all ${
-                timeframe === key
-                  ? "bg-orange-500/20 text-orange-300"
-                  : "text-stealth-400 hover:text-stealth-200"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          label="Energy evidence window"
+          value={timeframe}
+          options={TIMEFRAME_OPTIONS}
+          onChange={setTimeframe}
+          accent="orange"
+          className="mt-2"
+        />
       </div>
 
       {partialIssues.length > 0 && (
