@@ -17,6 +17,7 @@ import {
 import MarketLoading from "../components/ui/MarketLoading";
 import { useApi } from "../hooks/useApi";
 import { CompactContextDigest, type AgricultureContextData } from "../components/agriculture/AgricultureContextPanel";
+import { ContractSignalBadge, ContractSignalLegend } from "../components/agriculture/ContractSignalBadge";
 import { apiFetch } from "../utils/apiUtils";
 import {
   CHART_MARGIN,
@@ -1129,6 +1130,7 @@ export default function AgricultureIndex() {
         >
           <div id="agriculture-sectors" className="section-anchor">
             <h2 className="text-base font-semibold text-stealth-100">Sector Analysis</h2>
+            <ContractSignalLegend />
             <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {groups.map((group) => (
                 <div key={group.group} className="surface-card p-4">
@@ -1186,19 +1188,26 @@ export default function AgricultureIndex() {
                     >
                       {sortGroupComponents(group).map((component) => {
                         const selected = selectedIndicatorsByGroup[group.group] === component.code;
+                        const indicatorEntry = indicatorContexts[component.code];
                         return (
                           <button
                             key={component.code}
                             type="button"
                             aria-pressed={selected}
                             onClick={() => setSelectedIndicatorsByGroup((current) => ({ ...current, [group.group]: component.code }))}
-                            className={`min-h-11 rounded-full border px-3 text-xs font-semibold transition ${
+                            className={`inline-flex min-h-11 items-center gap-2 rounded-full border px-2.5 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 focus-visible:ring-offset-2 focus-visible:ring-offset-stealth-950 ${
                               selected
-                                ? "border-emerald-300 bg-emerald-300/12 text-emerald-100"
+                                ? "border-sky-300 bg-sky-400/10 text-white"
                                 : "border-stealth-700 bg-stealth-900/60 text-stealth-300 hover:border-stealth-500 hover:text-white"
                             }`}
                           >
-                            {component.code}
+                            <span aria-hidden="true">{component.code}</span>
+                            <ContractSignalBadge
+                              symbol={component.code}
+                              context={indicatorEntry?.data}
+                              loading={!indicatorEntry || indicatorEntry.loading}
+                              error={indicatorEntry?.error}
+                            />
                           </button>
                         );
                       })}
