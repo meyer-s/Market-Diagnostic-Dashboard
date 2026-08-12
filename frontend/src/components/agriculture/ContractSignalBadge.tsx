@@ -101,12 +101,12 @@ export function getContractSignalPresentation(
 }
 
 export function ContractSignalBadge({
-  symbol,
+  contractName,
   context,
   loading = false,
   error,
 }: {
-  symbol: string;
+  contractName: string;
   context?: SignalContext | null;
   loading?: boolean;
   error?: string | null;
@@ -118,11 +118,11 @@ export function ContractSignalBadge({
     <>
       <span
         aria-hidden="true"
-        className={`inline-flex min-h-6 items-center rounded-md border px-1.5 text-xs font-bold tabular-nums ${TONE_CLASS[presentation.tone]}`}
+        className={`inline-flex min-h-6 shrink-0 items-center rounded-md border px-1.5 text-xs font-bold tabular-nums ${TONE_CLASS[presentation.tone]}`}
       >
         {presentation.label}
       </span>
-      <span className="sr-only">{symbol}, {presentation.description}{marketClosed ? ", market closed" : ""}</span>
+      <span className="sr-only">{contractName}, {presentation.description}{marketClosed ? ", market closed" : ""}</span>
     </>
   );
 }

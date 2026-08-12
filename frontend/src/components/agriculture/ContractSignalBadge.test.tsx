@@ -75,22 +75,22 @@ describe("contract signal presentation", () => {
   it("expands the compact marker into a useful button name for assistive technology", () => {
     render(
       <button type="button">
-        <span aria-hidden="true">ZC</span>
-        <ContractSignalBadge symbol="ZC" context={context("aligned long setup", "bullish", "bullish")} />
+        <span aria-hidden="true">Corn</span>
+        <ContractSignalBadge contractName="Corn" context={context("aligned long setup", "bullish", "bullish")} />
       </button>
     );
 
-    expect(screen.getByRole("button", { name: "ZC, Aligned long" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Corn, Aligned long" })).not.toBeNull();
   });
 
   it("announces closed status as secondary context instead of replacing the setup", () => {
     render(
       <button type="button">
-        <span aria-hidden="true">ZC</span>
-        <ContractSignalBadge symbol="ZC" context={context("closed/no execution", "bullish", "bullish", "closed")} />
+        <span aria-hidden="true">Corn</span>
+        <ContractSignalBadge contractName="Corn" context={context("closed/no execution", "bullish", "bullish", "closed")} />
       </button>
     );
 
-    expect(screen.getByRole("button", { name: "ZC, Aligned long, market closed" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Corn, Aligned long, market closed" })).not.toBeNull();
   });
 });

@@ -1196,15 +1196,15 @@ export default function AgricultureIndex() {
                             type="button"
                             aria-pressed={selected}
                             onClick={() => setSelectedIndicatorsByGroup((current) => ({ ...current, [group.group]: component.code }))}
-                            className={`inline-flex min-h-11 items-center gap-2 rounded-full border px-2.5 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 focus-visible:ring-offset-2 focus-visible:ring-offset-stealth-950 ${marketClosed ? "border-dotted" : "border-solid"} ${
+                            className={`inline-flex min-h-11 max-w-full items-center gap-2 rounded-full border px-2.5 py-1.5 text-xs font-semibold leading-4 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 focus-visible:ring-offset-2 focus-visible:ring-offset-stealth-950 ${marketClosed ? "border-dotted" : "border-solid"} ${
                               selected
                                 ? "border-sky-300 bg-sky-400/10 text-white"
                                 : "border-stealth-700 bg-stealth-900/60 text-stealth-300 hover:border-stealth-500 hover:text-white"
                             }`}
                           >
-                            <span aria-hidden="true">{component.code}</span>
+                            <span aria-hidden="true" className="whitespace-normal text-left">{component.name}</span>
                             <ContractSignalBadge
-                              symbol={component.code}
+                              contractName={component.name}
                               context={indicatorEntry?.data}
                               loading={!indicatorEntry || indicatorEntry.loading}
                               error={indicatorEntry?.error}
