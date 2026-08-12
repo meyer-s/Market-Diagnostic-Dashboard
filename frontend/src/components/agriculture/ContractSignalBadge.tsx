@@ -1,6 +1,6 @@
 import type { AgricultureContextData } from "./AgricultureContextPanel";
 
-type SignalContext = Pick<AgricultureContextData, "context_score" | "setup_label" | "technical">;
+type SignalContext = Pick<AgricultureContextData, "context_score" | "session" | "setup_label" | "technical">;
 
 type ContractSignalPresentation = {
   description: string;
@@ -30,6 +30,43 @@ function directionalPresentation(
   return { description: `${source} direction unavailable`, label: `${prefix}\u2014`, tone: "informational" };
 }
 
+function presentationFromBiases(context: SignalContext): ContractSignalPresentation {
+  const technicalBias = context.technical.bias;
+  const contextBias = context.context_score.net_bias;
+
+  if (technicalBias === "bullish" && contextBias === "bullish") {
+    return directionalPresentation("A", "Aligned", "bullish");
+  }
+  if (technicalBias === "bearish" && contextBias === "bearish") {
+    return directionalPresentation("A", "Aligned", "bearish");
+  }
+  if ((technicalBias === "bullish" || technicalBias === "bearish") && contextBias === "neutral") {
+    return directionalPresentation("T", "Technical", technicalBias);
+  }
+  if (technicalBias === "neutral" && (contextBias === "bullish" || contextBias === "bearish")) {
+    return directionalPresentation("F", "Fundamental", contextBias);
+  }
+  if (
+    (technicalBias === "bullish" || technicalBias === "bearish")
+    && (contextBias === "bullish" || contextBias === "bearish")
+    && technicalBias !== contextBias
+  ) {
+    const technicalDirection = technicalBias === "bullish" ? "long" : "short";
+    const fundamentalDirection = contextBias === "bullish" ? "long" : "short";
+    return {
+      description: `Conflicting signals: technical ${technicalDirection}, fundamental ${fundamentalDirection}`,
+      label: "CONFLICT",
+      tone: "caution",
+    };
+  }
+  if (contextBias === "mixed") return { description: "Watch", label: "WATCH", tone: "caution" };
+  return { description: "Avoid", label: "AVOID", tone: "bearish" };
+}
+
+export function isContractMarketClosed(context?: SignalContext | null): boolean {
+  return Boolean(context && context.session.status !== "open");
+}
+
 export function getContractSignalPresentation(
   context?: SignalContext | null,
   loading = false,
@@ -52,18 +89,12 @@ export function getContractSignalPresentation(
     return directionalPresentation("T", "Technical", context.technical.bias);
   }
   if (setup === "conflicting signals") {
-    const technicalDirection = context.technical.bias === "bullish" ? "long" : context.technical.bias === "bearish" ? "short" : "neutral";
-    const fundamentalDirection = context.context_score.net_bias === "bullish" ? "long" : context.context_score.net_bias === "bearish" ? "short" : "mixed";
-    return {
-      description: `Conflicting signals: technical ${technicalDirection}, fundamental ${fundamentalDirection}`,
-      label: "CONFLICT",
-      tone: "caution",
-    };
+    return presentationFromBiases(context);
   }
   if (setup === "watch") return { description: "Watch", label: "WATCH", tone: "caution" };
   if (setup === "avoid") return { description: "Avoid", label: "AVOID", tone: "bearish" };
   if (setup === "wait for report") return { description: "Wait for report", label: "WAIT", tone: "caution" };
-  if (setup === "closed/no execution") return { description: "Market closed; no execution", label: "CLOSED", tone: "inactive" };
+  if (setup === "closed/no execution") return presentationFromBiases(context);
 
   const fallbackLabel = context.setup_label.trim() || "Unknown setup";
   return { description: fallbackLabel, label: fallbackLabel.toUpperCase(), tone: "informational" };
@@ -81,6 +112,7 @@ export function ContractSignalBadge({
   error?: string | null;
 }) {
   const presentation = getContractSignalPresentation(context, loading, error);
+  const marketClosed = isContractMarketClosed(context);
 
   return (
     <>
@@ -90,7 +122,7 @@ export function ContractSignalBadge({
       >
         {presentation.label}
       </span>
-      <span className="sr-only">{symbol}, {presentation.description}</span>
+      <span className="sr-only">{symbol}, {presentation.description}{marketClosed ? ", market closed" : ""}</span>
     </>
   );
 }
@@ -101,7 +133,7 @@ export function ContractSignalLegend() {
       Each contract carries its current setup: <span className="font-semibold text-stealth-100">A</span> aligned,{
       " "
       }<span className="font-semibold text-stealth-100">F</span> fundamental, or <span className="font-semibold text-stealth-100">T</span> technical.
-      Arrows show long or short; watch, avoid, conflict, report-wait, and closed states are written out.
+      Arrows show long or short; watch, avoid, conflict, and report-wait states are written out. A dotted contract outline means the market is closed.
     </p>
   );
 }

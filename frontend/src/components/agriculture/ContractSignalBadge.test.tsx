@@ -1,18 +1,20 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { ContractSignalBadge, getContractSignalPresentation } from "./ContractSignalBadge";
+import { ContractSignalBadge, getContractSignalPresentation, isContractMarketClosed } from "./ContractSignalBadge";
 import type { AgricultureContextData } from "./AgricultureContextPanel";
 
-type SignalContext = Pick<AgricultureContextData, "context_score" | "setup_label" | "technical">;
+type SignalContext = Pick<AgricultureContextData, "context_score" | "session" | "setup_label" | "technical">;
 
 function context(
   setupLabel: string,
   netBias: AgricultureContextData["context_score"]["net_bias"] = "neutral",
-  technicalBias: NonNullable<AgricultureContextData["technical"]["bias"]> = "neutral"
+  technicalBias: NonNullable<AgricultureContextData["technical"]["bias"]> = "neutral",
+  sessionStatus = "open"
 ): SignalContext {
   return {
     setup_label: setupLabel,
+    session: { status: sessionStatus },
     context_score: {
       net_bias: netBias,
       confidence: "high",
@@ -43,9 +45,22 @@ describe("contract signal presentation", () => {
     ["avoid", "AVOID"],
     ["conflicting signals", "CONFLICT"],
     ["wait for report", "WAIT"],
-    ["closed/no execution", "CLOSED"],
   ])("keeps the %s state explicit", (setupLabel, label) => {
     expect(getContractSignalPresentation(context(setupLabel, "bullish", "bearish")).label).toBe(label);
+  });
+
+  it.each([
+    ["bullish", "bullish", "A\u2191"],
+    ["bearish", "bearish", "A\u2193"],
+    ["bullish", "neutral", "T\u2191"],
+    ["neutral", "bearish", "F\u2193"],
+    ["bullish", "bearish", "CONFLICT"],
+    ["neutral", "mixed", "WATCH"],
+    ["neutral", "neutral", "AVOID"],
+  ])("preserves the underlying %s/%s setup while the market is closed", (technicalBias, netBias, label) => {
+    const closedContext = context("closed/no execution", netBias, technicalBias, "closed");
+    expect(getContractSignalPresentation(closedContext).label).toBe(label);
+    expect(isContractMarketClosed(closedContext)).toBe(true);
   });
 
   it("keeps loading, unavailable, and future backend states visible", () => {
@@ -66,5 +81,16 @@ describe("contract signal presentation", () => {
     );
 
     expect(screen.getByRole("button", { name: "ZC, Aligned long" })).not.toBeNull();
+  });
+
+  it("announces closed status as secondary context instead of replacing the setup", () => {
+    render(
+      <button type="button">
+        <span aria-hidden="true">ZC</span>
+        <ContractSignalBadge symbol="ZC" context={context("closed/no execution", "bullish", "bullish", "closed")} />
+      </button>
+    );
+
+    expect(screen.getByRole("button", { name: "ZC, Aligned long, market closed" })).not.toBeNull();
   });
 });

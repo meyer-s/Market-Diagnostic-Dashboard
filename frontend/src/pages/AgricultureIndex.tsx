@@ -17,7 +17,7 @@ import {
 import MarketLoading from "../components/ui/MarketLoading";
 import { useApi } from "../hooks/useApi";
 import { CompactContextDigest, type AgricultureContextData } from "../components/agriculture/AgricultureContextPanel";
-import { ContractSignalBadge, ContractSignalLegend } from "../components/agriculture/ContractSignalBadge";
+import { ContractSignalBadge, ContractSignalLegend, isContractMarketClosed } from "../components/agriculture/ContractSignalBadge";
 import { apiFetch } from "../utils/apiUtils";
 import {
   CHART_MARGIN,
@@ -1189,13 +1189,14 @@ export default function AgricultureIndex() {
                       {sortGroupComponents(group).map((component) => {
                         const selected = selectedIndicatorsByGroup[group.group] === component.code;
                         const indicatorEntry = indicatorContexts[component.code];
+                        const marketClosed = isContractMarketClosed(indicatorEntry?.data);
                         return (
                           <button
                             key={component.code}
                             type="button"
                             aria-pressed={selected}
                             onClick={() => setSelectedIndicatorsByGroup((current) => ({ ...current, [group.group]: component.code }))}
-                            className={`inline-flex min-h-11 items-center gap-2 rounded-full border px-2.5 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 focus-visible:ring-offset-2 focus-visible:ring-offset-stealth-950 ${
+                            className={`inline-flex min-h-11 items-center gap-2 rounded-full border px-2.5 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 focus-visible:ring-offset-2 focus-visible:ring-offset-stealth-950 ${marketClosed ? "border-dotted" : "border-solid"} ${
                               selected
                                 ? "border-sky-300 bg-sky-400/10 text-white"
                                 : "border-stealth-700 bg-stealth-900/60 text-stealth-300 hover:border-stealth-500 hover:text-white"
