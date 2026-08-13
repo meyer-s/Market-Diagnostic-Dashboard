@@ -37,6 +37,11 @@ def main() -> None:
     parser.add_argument("--since", type=_iso_date, default=WASDE_STRUCTURED_START)
     parser.add_argument("--through", type=_iso_date, default=date.today())
     parser.add_argument("--workers", type=int, default=6)
+    parser.add_argument(
+        "--source-dir",
+        type=Path,
+        help="Optional directory of staged official files; missing files still download from USDA.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -48,6 +53,7 @@ def main() -> None:
             through=args.through,
             max_workers=args.workers,
             dry_run=args.dry_run,
+            source_dir=args.source_dir,
         )
     finally:
         db.close()

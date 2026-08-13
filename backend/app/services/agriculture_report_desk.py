@@ -15,10 +15,12 @@ from bisect import bisect_left
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
+from pathlib import Path
 from statistics import mean, pstdev
 from threading import Lock
 from time import sleep
 from typing import Any, Iterable
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 import requests
@@ -429,29 +431,37 @@ def _download_backfill_source(
     *,
     since: date,
     through: date,
+    source_dir: Path | None = None,
 ) -> dict[str, Any]:
-    response = None
-    for attempt in range(3):
-        try:
-            response = requests.get(source.url, headers=HTTP_HEADERS, timeout=60)
-            if response.status_code == 404 and not source.required:
-                return {
-                    "source": source,
-                    "missing": True,
-                    "rows_scanned": 0,
-                    "observations": [],
-                }
-            response.raise_for_status()
-            break
-        except requests.RequestException:
-            if attempt == 2:
-                raise
-            sleep(0.5 * (2 ** attempt))
-    if response is None:
-        raise RuntimeError(f"USDA archive request returned no response: {source.url}")
+    local_path = source_dir / Path(urlparse(source.url).path).name if source_dir else None
+    loaded_from_local = bool(local_path and local_path.is_file())
+    if loaded_from_local and local_path is not None:
+        content = local_path.read_bytes()
+    else:
+        response = None
+        for attempt in range(3):
+            try:
+                response = requests.get(source.url, headers=HTTP_HEADERS, timeout=60)
+                if response.status_code == 404 and not source.required:
+                    return {
+                        "source": source,
+                        "missing": True,
+                        "loaded_from_local": False,
+                        "rows_scanned": 0,
+                        "observations": [],
+                    }
+                response.raise_for_status()
+                break
+            except requests.RequestException:
+                if attempt == 2:
+                    raise
+                sleep(0.5 * (2 ** attempt))
+        if response is None:
+            raise RuntimeError(f"USDA archive request returned no response: {source.url}")
+        content = response.content
 
     if source.kind == "bulk_zip":
-        with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
             members = [name for name in archive.namelist() if name.lower().endswith(".csv")]
             if not members:
                 raise ValueError(f"USDA archive contained no CSV file: {source.url}")
@@ -464,7 +474,7 @@ def _download_backfill_source(
                         through=through,
                     )
     else:
-        text_stream = io.StringIO(response.content.decode("utf-8-sig"))
+        text_stream = io.StringIO(content.decode("utf-8-sig"))
         observations, rows_scanned = _select_backfill_observations(
             csv.DictReader(text_stream),
             source_url=source.url,
@@ -474,6 +484,7 @@ def _download_backfill_source(
     return {
         "source": source,
         "missing": False,
+        "loaded_from_local": loaded_from_local,
         "rows_scanned": rows_scanned,
         "observations": observations,
     }
@@ -486,17 +497,27 @@ def backfill_wasde_history(
     through: date | None = None,
     max_workers: int = 6,
     dry_run: bool = False,
+    source_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     """Import every supported chart observation from the official USDA archive."""
     through = through or datetime.now(EASTERN).date()
     since = max(since, WASDE_STRUCTURED_START)
     if through < since:
         raise ValueError("through must be on or after the structured WASDE start date")
+    local_source_dir = Path(source_dir) if source_dir else None
+    if local_source_dir is not None and not local_source_dir.is_dir():
+        raise ValueError(f"source_dir is not a directory: {local_source_dir}")
     sources = _wasde_archive_sources(since, through)
     results: list[dict[str, Any]] = []
     with ThreadPoolExecutor(max_workers=max(1, min(max_workers, 8))) as executor:
         futures = {
-            executor.submit(_download_backfill_source, source, since=since, through=through): source
+            executor.submit(
+                _download_backfill_source,
+                source,
+                since=since,
+                through=through,
+                source_dir=local_source_dir,
+            ): source
             for source in sources
         }
         for future in as_completed(futures):
@@ -559,6 +580,7 @@ def backfill_wasde_history(
         "requested_end": through.isoformat(),
         "sources_requested": len(sources),
         "sources_loaded": len(sources) - len(missing_urls),
+        "local_sources_loaded": sum(1 for result in results if result["loaded_from_local"]),
         "missing_optional_sources": missing_urls,
         "raw_rows_scanned": sum(result["rows_scanned"] for result in results),
         "observations_selected": len(incoming),

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import zipfile
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
@@ -175,9 +176,10 @@ def test_wasde_backfill_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         desk,
         "_download_backfill_source",
-        lambda archive, since, through: {
+        lambda archive, since, through, source_dir: {
             "source": archive,
             "missing": False,
+            "loaded_from_local": False,
             "rows_scanned": 10,
             "observations": [observation],
         },
@@ -213,6 +215,36 @@ def test_archive_manifest_preserves_official_filename_exceptions() -> None:
     assert not any("2025-10" in url for url in urls)
     assert any("2026-05-V2.csv" in url for url in urls)
     assert any("2026-06-V2.csv" in url for url in urls)
+
+
+def test_staged_official_archive_bypasses_blocked_network(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    source = desk.WasdeArchiveSource(
+        url="https://www.usda.gov/sites/default/files/documents/archive.zip",
+        start=date(2010, 4, 1),
+        end=date(2010, 4, 30),
+        kind="bulk_zip",
+    )
+    csv_text = "\n".join([
+        "ReleaseDate,ReportDate,ReportTitle,Attribute,Commodity,Region,MarketYear,ProjEstFlag,Value,Unit",
+        "2010-04-09,2010-04-09,U.S. Corn,Ending Stocks,Corn,United States,2010/11,Proj.,1900,Million Bushels",
+    ])
+    with zipfile.ZipFile(tmp_path / "archive.zip", "w") as archive:
+        archive.writestr("archive.csv", csv_text)
+    monkeypatch.setattr(
+        desk.requests,
+        "get",
+        lambda *args, **kwargs: pytest.fail("a staged source must not hit the network"),
+    )
+
+    result = desk._download_backfill_source(
+        source,
+        since=date(2010, 4, 9),
+        through=date(2010, 4, 9),
+        source_dir=tmp_path,
+    )
+
+    assert result["loaded_from_local"] is True
+    assert result["observations"][0]["value"] == 1900.0
 
 
 def test_long_history_reads_persisted_observations(monkeypatch: pytest.MonkeyPatch) -> None:
