@@ -196,12 +196,13 @@ async function openDesk(page: Page, width: number, height: number) {
 
 test("report desk is readable, responsive, and accessible", async ({ page }, testInfo) => {
   await openDesk(page, 1440, 1000);
-  await expect(page.getByText("Raw release viewer")).toBeVisible();
-  await expect(page.getByText("Insights pane")).toBeVisible();
-  await expect(page.getByText("WASDE · Ending stocks", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Choose a report" })).toBeVisible();
+  await expect(page.getByText("Latest ending stocks")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Compare with futures" })).toBeVisible();
+  await expect(page.getByText("Release details")).toBeVisible();
   await expect(page.getByRole("button", { name: "All" })).toBeVisible();
-  await expect(page.getByText(/36 persisted records/)).toBeVisible();
-  await expect(page.getByText("Ending stocks expectation", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /WASDE.*36 releases/ })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("agriculture-report-desk-wasde-desktop.png"), fullPage: true });
   for (const reportName of ["Crop Production", "Crop Progress", "Export Sales", "Export Inspections", "Grain Stocks", "Acreage", "Commitments of Traders"]) {
     await page.getByRole("button", { name: new RegExp(reportName) }).click();
     await expect(page.getByText("Latest reading")).toBeVisible();
@@ -218,7 +219,7 @@ test("report desk is readable, responsive, and accessible", async ({ page }, tes
   expect(desktopAxe.violations).toEqual([]);
 
   await openDesk(page, 390, 844);
-  await page.getByRole("button", { name: /Crop Progress/ }).click();
+  await page.getByLabel("Report family").selectOption("crop_progress");
   await expect(page.getByText("Latest reading")).toBeVisible();
   const mobileBars = page.locator(".recharts-bar-rectangle path");
   await expect.poll(() => mobileBars.evaluateAll((bars) => bars.map((bar) => bar.getBBox().height).filter((height) => height > 20).length)).toBeGreaterThanOrEqual(6);

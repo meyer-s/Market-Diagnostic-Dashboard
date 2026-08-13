@@ -124,19 +124,20 @@ describe("AgricultureReportDesk", () => {
     useApiMock.mockReturnValue({ data: payload, loading: false, error: null, refetch: vi.fn() });
   });
 
-  it("keeps the raw viewer beside standardized insights", () => {
+  it("presents one focused WASDE view with direct report navigation", () => {
     render(<MemoryRouter><AgricultureReportDesk /></MemoryRouter>);
 
     expect(screen.getByRole("heading", { name: "Agriculture Report Desk" })).toBeTruthy();
-    expect(screen.getByText("Raw release viewer")).toBeTruthy();
-    expect(screen.getByText("Insights pane")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Choose a report" })).toBeTruthy();
+    expect(screen.getByText("Latest ending stocks")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Compare with futures" })).toBeTruthy();
+    expect(screen.getByText("Release details")).toBeTruthy();
+    expect(screen.getByText("Expectation journal")).toBeTruthy();
     expect(screen.getByText("Chart ready")).toBeTruthy();
-    expect(screen.getByText("Association is not causation.")).toBeTruthy();
-    expect(screen.getByText("WASDE · Ending stocks")).toBeTruthy();
     expect(screen.getByText("Method and source notes")).toBeTruthy();
     expect(screen.queryByText("Ending stocks expectation")).toBeNull();
     expect(screen.getByRole("button", { name: "All" })).toBeTruthy();
-    expect(screen.getByText(/24 persisted records/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /WASDE.*24 releases/ })).toBeTruthy();
   });
 
   it("renders imported release history and raw documents for non-WASDE reports", () => {
@@ -144,8 +145,8 @@ describe("AgricultureReportDesk", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Crop Progress/ }));
     expect(screen.getByText("Chart + history")).toBeTruthy();
-    expect(screen.getByText("18", { selector: "p" })).toBeTruthy();
-    expect(screen.getByText("Crop Progress release")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Crop Progress.*18 releases/ })).toBeTruthy();
+    expect(screen.getByRole("option", { name: /Crop Progress release/ })).toBeTruthy();
     expect(screen.getByRole("link", { name: /Open TXT/ })).toBeTruthy();
     expect(screen.getByText("What this report is saying")).toBeTruthy();
     expect(screen.getByText("Latest reading")).toBeTruthy();
@@ -163,11 +164,11 @@ describe("AgricultureReportDesk", () => {
     render(<MemoryRouter><AgricultureReportDesk /></MemoryRouter>);
 
     fireEvent.click(screen.getByRole("button", { name: /Crop Progress/ }));
-    expect(screen.getByText("Crop Progress release")).toBeTruthy();
+    expect(screen.getByLabelText("Release date")).toHaveProperty("value", "2026-08-10");
     fireEvent.click(screen.getByRole("button", { name: /Commitments of Traders/ }));
 
-    expect(screen.getByText("Latest COT record")).toBeTruthy();
-    expect(screen.queryByText("Older COT record", { selector: "h3" })).toBeNull();
+    expect(screen.getByLabelText("Release date")).toHaveProperty("value", "2026-08-17");
+    expect(screen.getByRole("option", { name: /Latest COT record/ })).toBeTruthy();
   });
 
   it("saves user expectations locally", () => {
@@ -178,6 +179,6 @@ describe("AgricultureReportDesk", () => {
 
     expect(window.localStorage.getItem("agriculture-report-expectations-v1")).toContain("2050");
     expect(screen.getByRole("button", { name: "Update expectation" })).toBeTruthy();
-    expect(screen.getByText("Ending stocks expectation")).toBeTruthy();
+    expect(screen.getByText("Your expectation")).toBeTruthy();
   });
 });

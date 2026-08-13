@@ -1,9 +1,9 @@
 /*
-THESIS: Raw releases and an interpretive lens live side by side; neither a document-only nor chart-only dashboard is enough.
+THESIS: One report, one primary read, and one visual should answer what changed before deeper evidence is opened.
 OWN-WORLD: Evidence Field — dark, exacting, source-forward, and operational.
-STORY: Next catalyst and current official read, then raw evidence, then standardized cross-series interpretation.
-FIRST VIEWPORT: Current strip above a 40/60 raw-release and insights split.
-FORM: Approved combined composition with a vertical Evidence Field spine and the chart inspector behavior of direction 5 (seed 309fdfcf).
+STORY: Choose a report, understand its latest change, then open source evidence or the expectation journal only when needed.
+FIRST VIEWPORT: A complete report navigator above one focused report workspace.
+FORM: A linear evidence workspace with progressive disclosure for supporting detail.
 */
 
 import { useEffect, useMemo, useState } from "react";
@@ -11,12 +11,10 @@ import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowLeft,
-  CalendarDays,
   Check,
   Clock3,
   Download,
   ExternalLink,
-  FileText,
   Info,
   Save,
   TriangleAlert,
@@ -190,7 +188,6 @@ type SavedExpectation = {
 type Expectations = Record<string, SavedExpectation>;
 
 const EXPECTATION_STORAGE_KEY = "agriculture-report-expectations-v1";
-const SERIES_COLORS = ["#69d6a3", "#83bfff", "#f3cb69", "#c9a8ff"];
 const INPUT_CLASS = "mt-1 w-full rounded-lg border border-stealth-600 bg-stealth-900 px-3 py-2.5 text-sm text-stealth-100 outline-none transition focus:border-sky-400";
 
 function formatDate(value: string, includeYear = true) {
@@ -238,13 +235,6 @@ function coverageTone(coverage: ReportCoverage) {
   return "border-stealth-600 bg-stealth-800 text-stealth-300";
 }
 
-function takeawayTone(tone: ReportDeskData["takeaways"][number]["tone"]) {
-  if (tone === "positive") return "border-emerald-400/45 bg-emerald-400/[0.07]";
-  if (tone === "negative") return "border-rose-400/45 bg-rose-400/[0.07]";
-  if (tone === "warning") return "border-amber-300/45 bg-amber-300/[0.07]";
-  return "border-stealth-600 bg-stealth-900/40";
-}
-
 function signalLabel(value: number | null | undefined) {
   if (value === null || value === undefined) return "Unscored";
   if (value >= 0.75) return "Bullish revision";
@@ -254,23 +244,6 @@ function signalLabel(value: number | null | undefined) {
 
 function chartDateLabel(timestamp: number) {
   return new Intl.DateTimeFormat("en-US", { month: "short", year: "2-digit" }).format(new Date(timestamp));
-}
-
-function ReportTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ name?: string; value?: number; color?: string }>; label?: number }) {
-  if (!active || !payload?.length || label === undefined) return null;
-  return (
-    <div className="max-w-[280px] rounded-lg border border-stealth-600 bg-stealth-900/95 p-3 shadow-xl">
-      <p className="text-xs font-semibold text-stealth-200">{formatDate(new Date(label).toISOString())}</p>
-      <div className="mt-2 space-y-1.5">
-        {payload.filter((item) => item.value !== null && item.value !== undefined).map((item) => (
-          <p key={item.name} className="flex items-center justify-between gap-4 text-xs text-stealth-300">
-            <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full" style={{ background: item.color }} />{item.name}</span>
-            <strong className="text-stealth-100">{formatSigned(Number(item.value))}</strong>
-          </p>
-        ))}
-      </div>
-    </div>
-  );
 }
 
 function compactNumber(value: number) {
@@ -652,7 +625,7 @@ export default function AgricultureReportDesk() {
   const [years, setYears] = useState<1 | 3 | 5 | 10 | 150>(3);
   const [metric, setMetric] = useState("ending_stocks");
   const [selectedReportId, setSelectedReportId] = useState("wasde");
-  const [visibleMetrics, setVisibleMetrics] = useState<string[]>(["ending_stocks", "production", "exports"]);
+  const [showFutures, setShowFutures] = useState(false);
   const [expectations, setExpectations] = useState<Expectations>(() => readExpectations());
   const [selectedReleaseDate, setSelectedReleaseDate] = useState("");
   const [selectedArchiveReleaseDate, setSelectedArchiveReleaseDate] = useState("");
@@ -702,49 +675,6 @@ export default function AgricultureReportDesk() {
     : undefined;
   const canSaveExpectation = expectationInput.trim() !== "" && Number.isFinite(Number(expectationInput));
 
-  const signalChartData = useMemo(() => {
-    if (!data) return [];
-    const merged = new Map<number, Record<string, number | string | null>>();
-    for (const price of data.price_history) {
-      const timestamp = new Date(`${price.date}T12:00:00`).getTime();
-      merged.set(timestamp, { timestamp, date: price.date, futures: price.rebased });
-    }
-    for (const layer of data.series) {
-      for (const point of layer.points) {
-        const timestamp = new Date(`${point.release_date}T12:00:00`).getTime();
-        const datum = merged.get(timestamp) ?? { timestamp, date: point.release_date };
-        datum[`signal_${layer.metric_id}`] = point.bullish_signal_z;
-        const saved = expectations[expectationKey(symbol, "wasde", layer.metric_id, point.release_date)];
-        if (saved && point.prior_value !== null && point.normalization.revision_std_dev > 0) {
-          const definition = data.metrics.find((item) => item.id === layer.metric_id);
-          const expectedRevision = saved.value - point.prior_value;
-          datum[`expected_${layer.metric_id}`] = (
-            (expectedRevision - point.normalization.mean_revision)
-            / point.normalization.revision_std_dev
-          ) * (definition?.orientation ?? 1);
-        }
-        merged.set(timestamp, datum);
-      }
-    }
-    for (const event of data.schedule.filter((item) => item.report_id === "wasde")) {
-      for (const layer of data.series) {
-        const saved = expectations[expectationKey(symbol, "wasde", layer.metric_id, event.date)];
-        if (!saved) continue;
-        const priorPoint = [...layer.points].reverse().find((point) => point.release_date < event.date);
-        if (!priorPoint || priorPoint.normalization.revision_std_dev <= 0) continue;
-        const definition = data.metrics.find((item) => item.id === layer.metric_id);
-        const timestamp = new Date(`${event.date}T12:00:00`).getTime();
-        const datum = merged.get(timestamp) ?? { timestamp, date: event.date };
-        datum[`expected_${layer.metric_id}`] = (
-          (saved.value - priorPoint.value - priorPoint.normalization.mean_revision)
-          / priorPoint.normalization.revision_std_dev
-        ) * (definition?.orientation ?? 1);
-        merged.set(timestamp, datum);
-      }
-    }
-    return Array.from(merged.values()).sort((a, b) => Number(a.timestamp) - Number(b.timestamp));
-  }, [data, expectations, symbol]);
-
   const rawChartData = useMemo(() => {
     if (!selectedSeries) return [];
     const rows: Array<{ timestamp: number; actual: number | null; expectation: number | null }> = selectedSeries.points.map((point) => ({
@@ -760,17 +690,15 @@ export default function AgricultureReportDesk() {
     return rows.sort((a, b) => a.timestamp - b.timestamp);
   }, [data?.schedule, expectations, selectedSeries, symbol]);
 
-  const expectedMetricIds = useMemo(() => new Set(
-    Object.keys(expectations)
-      .filter((key) => key.startsWith(`${symbol}:wasde:`))
-      .map((key) => key.split(":")[2]),
-  ), [expectations, symbol]);
-
-  function toggleMetric(metricId: string) {
-    setVisibleMetrics((current) => current.includes(metricId)
-      ? current.length > 1 ? current.filter((item) => item !== metricId) : current
-      : [...current, metricId]);
-  }
+  const focusedWasdeChartData = useMemo(() => {
+    const merged = new Map<number, { timestamp: number; actual?: number | null; expectation?: number | null; futures?: number | null }>();
+    rawChartData.forEach((row) => merged.set(row.timestamp, { ...row }));
+    data?.price_history.forEach((price) => {
+      const timestamp = new Date(`${price.date}T12:00:00`).getTime();
+      merged.set(timestamp, { ...(merged.get(timestamp) ?? { timestamp }), futures: price.rebased });
+    });
+    return Array.from(merged.values()).sort((a, b) => a.timestamp - b.timestamp);
+  }, [data?.price_history, rawChartData]);
 
   function saveExpectation() {
     const parsed = Number(expectationInput);
@@ -818,59 +746,64 @@ export default function AgricultureReportDesk() {
           </Link>
           <p className="page-kicker">Evidence workspace</p>
           <h1 className="page-title">Agriculture Report Desk</h1>
-          <p className="page-subtitle max-w-4xl">Official releases on the left. A report-specific visualization, key read, and honest comparison baseline on the right.</p>
+          <p className="page-subtitle max-w-4xl">Choose a report, read the latest change, then open the source only when you need it.</p>
         </div>
         <a className="field-button field-button-secondary gap-2" href={buildApiUrl("/agriculture/report-desk/calendar.ics")} download>
           <Download size={16} aria-hidden="true" /> Add release calendar
         </a>
       </header>
 
-      <section aria-labelledby="report-desk-now" className="surface-card-strong overflow-hidden">
-        <h2 id="report-desk-now" className="sr-only">Current report desk read</h2>
-        <div className="grid divide-y divide-stealth-700 lg:grid-cols-[1.15fr_0.85fr_0.85fr_0.85fr] lg:divide-x lg:divide-y-0">
-          <div className="p-4 md:p-5">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stealth-500">Next agriculture release</p>
-            {data.next_release ? (
-              <>
-                <p className="mt-2 text-xl font-semibold text-stealth-100">{data.next_release.report}</p>
-                <p className="mt-1 flex items-center gap-2 text-sm text-stealth-300"><CalendarDays size={15} aria-hidden="true" /> {formatDate(data.next_release.release_at)} · {data.next_release.time_label}</p>
-                <p className="mt-2 text-xs text-stealth-500">{confidenceLabel(data.next_release.confidence)} · holiday exceptions should be verified</p>
-              </>
-            ) : <p className="mt-2 text-stealth-300">No future release is in the current calendar window.</p>}
-          </div>
-          <label className="p-4 md:p-5">
-            <span className="text-xs font-semibold uppercase tracking-[0.16em] text-stealth-500">Commodity</span>
+      <section aria-labelledby="report-family-title" className="surface-card overflow-hidden">
+        <div className="border-b border-stealth-700 px-4 py-3 md:px-5">
+          <h2 id="report-family-title" className="text-sm font-semibold text-stealth-100">Choose a report</h2>
+        </div>
+        <label className="block p-4 md:hidden">
+          <span className="sr-only">Report family</span>
+          <select value={selectedReportId} onChange={(event) => { setSelectedReportId(event.target.value); setSelectedArchiveReleaseDate(""); }} className={INPUT_CLASS}>
+            {data.reports.map((report) => <option key={report.id} value={report.id}>{report.name} · {(report.release_count ?? 0).toLocaleString()} releases</option>)}
+          </select>
+        </label>
+        <div className="hidden grid-cols-4 gap-px bg-stealth-700 md:grid xl:grid-cols-8" role="group" aria-label="Agriculture report families">
+          {data.reports.map((report) => (
+            <button
+              key={report.id}
+              type="button"
+              aria-pressed={selectedReportId === report.id}
+              onClick={() => { setSelectedReportId(report.id); setSelectedArchiveReleaseDate(""); }}
+              className={`min-h-[4.5rem] bg-stealth-900 px-3 py-3 text-left transition focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 ${selectedReportId === report.id ? "bg-sky-300/[0.10] text-sky-100" : "text-stealth-300 hover:bg-stealth-800 hover:text-stealth-100"}`}
+            >
+              <span className="block text-sm font-semibold leading-5">{report.name}</span>
+              <span className="mt-1 block text-xs tabular-nums text-stealth-500">{(report.release_count ?? 0).toLocaleString()} releases</span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section aria-label="Report filters" className="surface-card overflow-hidden">
+        <div className="grid divide-y divide-stealth-700 md:grid-cols-3 md:divide-x md:divide-y-0">
+          <label className="p-4">
+            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-stealth-500">Commodity</span>
             <select value={symbol} onChange={(event) => { setSymbol(event.target.value); setSelectedReleaseDate(""); setSelectedArchiveReleaseDate(""); }} className={INPUT_CLASS}>
               {data.commodities.map((item) => <option key={item.symbol} value={item.symbol}>{item.name}</option>)}
             </select>
-            <span className="mt-2 block text-xs text-stealth-500">{data.commodity.ticker} futures response</span>
           </label>
           {selectedReportId === "wasde" ? (
-            <label className="p-4 md:p-5">
-              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-stealth-500">Primary metric</span>
+            <label className="p-4">
+              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-stealth-500">WASDE metric</span>
               <select value={metric} onChange={(event) => { setMetric(event.target.value); setSelectedReleaseDate(""); }} className={INPUT_CLASS}>
                 {data.metrics.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
               </select>
-              <span className="mt-2 block text-xs text-stealth-500">Latest market year: {latest?.market_year ?? "—"}</span>
             </label>
           ) : (
-            <div className="p-4 md:p-5">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stealth-500">Report lens</p>
-              <p className="mt-2 text-base font-semibold text-stealth-100">{selectedReportHistory?.analysis?.title ?? "Source documents"}</p>
-              <p className="mt-2 text-xs text-stealth-500">{selectedReportHistory?.analysis?.comparison_basis ?? "No comparable national metric"}</p>
+            <div className="p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stealth-500">Comparison</p>
+              <p className="mt-2 text-sm font-semibold text-stealth-100">{selectedReportHistory?.analysis?.title ?? "Official source history"}</p>
+              <p className="mt-1 text-xs text-stealth-500">{selectedReportHistory?.analysis?.comparison_basis ?? "No comparable national metric"}</p>
             </div>
           )}
-          <div className="p-4 md:p-5">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stealth-500">History window</p>
-            <div className="mt-3">
-              <SegmentedControl label="Report history window" value={years} options={[{ value: 1, label: "1Y" }, { value: 3, label: "3Y" }, { value: 5, label: "5Y" }, { value: 10, label: "10Y" }, { value: 150, label: "All" }]} onChange={setYears} accent="emerald" />
-            </div>
-            <p className="mt-2 text-xs text-stealth-500">
-              {selectedReport?.release_count ?? data.history_coverage.release_count} persisted records
-              {selectedReport?.observed_start_date && selectedReport.observed_end_date
-                ? ` · ${formatDate(selectedReport.observed_start_date)}–${formatDate(selectedReport.observed_end_date)}`
-                : ""}
-            </p>
+          <div className="p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stealth-500">History</p>
+            <div className="mt-2"><SegmentedControl label="Report history window" value={years} options={[{ value: 1, label: "1Y" }, { value: 3, label: "3Y" }, { value: 5, label: "5Y" }, { value: 10, label: "10Y" }, { value: 150, label: "All" }]} onChange={setYears} accent="emerald" /></div>
           </div>
         </div>
       </section>
@@ -881,248 +814,76 @@ export default function AgricultureReportDesk() {
         </div>
       ) : null}
 
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)]">
-        <div className="surface-card min-w-0 overflow-hidden">
-          <div className="border-b border-stealth-700 p-4 md:p-5">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="page-kicker">Raw release viewer</p>
-                <h2 className="mt-1 text-xl font-semibold text-stealth-100">What the report says</h2>
-              </div>
-              {selectedReport ? <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${coverageTone(selectedReport.coverage)}`}>{selectedReport.coverage_label}</span> : null}
-            </div>
-            <DataScroller label="Agriculture report families" hint="Scroll to inspect every report family.">
-              <div className="mt-4 flex min-w-max gap-2 pb-1">
-                {data.reports.map((report) => (
-                  <button
-                    key={report.id}
-                    type="button"
-                    aria-pressed={selectedReportId === report.id}
-                    onClick={() => { setSelectedReportId(report.id); setSelectedArchiveReleaseDate(""); }}
-                    className={`min-h-11 rounded-lg border px-3 text-sm font-semibold transition ${selectedReportId === report.id ? "border-emerald-400 bg-emerald-400/10 text-emerald-100" : "border-stealth-700 bg-stealth-900/50 text-stealth-300 hover:border-stealth-500"}`}
-                  >
-                    <span>{report.name}</span>
-                    <span className="ml-2 rounded-full bg-stealth-700/80 px-1.5 py-0.5 text-xs tabular-nums text-stealth-300">{(report.release_count ?? 0).toLocaleString()}</span>
-                  </button>
-                ))}
-              </div>
-            </DataScroller>
-          </div>
-
-          {selectedReport ? (
-            <div className="space-y-5 p-4 md:p-5">
-              <div>
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <h3 className="text-lg font-semibold text-stealth-100">{selectedReport.name}</h3>
-                  <p className="text-xs text-stealth-500">{selectedReport.agency} · {selectedReport.cadence} · {selectedReport.release_time}</p>
-                </div>
-                <p className="mt-2 text-sm leading-6 text-stealth-300">{selectedReport.description}</p>
-                {nextSelectedReportRelease ? <p className="mt-2 flex items-center gap-2 text-xs text-sky-200"><Clock3 size={14} aria-hidden="true" /> Next: {formatDate(nextSelectedReportRelease.release_at)} at {nextSelectedReportRelease.time_label} · {confidenceLabel(nextSelectedReportRelease.confidence)}</p> : null}
-              </div>
-
-              {selectedReport.id === "wasde" && selectedSeries && latest ? (
-                <>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="surface-card-muted p-3">
-                      <p className="text-xs uppercase tracking-[0.12em] text-stealth-500">Latest result</p>
-                      <p className="mt-1 text-2xl font-semibold text-stealth-100">{formatValue(latest.value)}</p>
-                      <p className="mt-1 text-xs text-stealth-400">{latest.unit} · {latest.market_year}</p>
-                    </div>
-                    <div className="surface-card-muted p-3">
-                      <p className="text-xs uppercase tracking-[0.12em] text-stealth-500">Prior estimate</p>
-                      <p className="mt-1 text-2xl font-semibold text-stealth-100">{formatValue(latest.prior_value)}</p>
-                      <p className="mt-1 text-xs text-stealth-400">Revision {formatSigned(latest.revision)}</p>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <h3 className="text-sm font-semibold text-stealth-100">As-reported {selectedSeries.label.toLowerCase()}</h3>
-                        <p className="mt-1 text-xs text-stealth-500">Solid line = result · dotted hollow series = your expectation</p>
-                      </div>
-                    </div>
-                    <div className="mt-3 h-56 min-w-0">
-                      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                        <LineChart data={rawChartData} margin={{ top: 10, right: 12, bottom: 4, left: 0 }} accessibilityLayer aria-label={`${selectedSeries.label} result and saved expectations`}>
-                          <CartesianGrid stroke="rgba(63,80,104,0.38)" vertical={false} />
-                          <XAxis dataKey="timestamp" type="number" domain={["dataMin", "dataMax"]} tickFormatter={chartDateLabel} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} />
-                          <YAxis width={52} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} domain={["auto", "auto"]} />
-                          <Tooltip content={<ReportTooltip />} />
-                          <Line type="monotone" dataKey="actual" name="Result" stroke="#69d6a3" strokeWidth={2.25} dot={{ r: 3, fill: "#69d6a3" }} activeDot={{ r: 5 }} connectNulls isAnimationActive={false} />
-                          <Line type="monotone" dataKey="expectation" name="Your expectation" stroke="#f3cb69" strokeWidth={1.5} strokeDasharray="4 4" dot={{ r: 4, fill: "#0e1520", stroke: "#f3cb69", strokeWidth: 2 }} connectNulls isAnimationActive={false} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                </>
-              ) : selectedReportHistory && selectedArchiveRelease ? (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="surface-card-muted p-3">
-                      <p className="text-xs uppercase tracking-[0.12em] text-stealth-500">Persisted records</p>
-                      <p className="mt-1 text-2xl font-semibold tabular-nums text-stealth-100">{selectedReportHistory.release_count.toLocaleString()}</p>
-                      <p className="mt-1 text-xs text-stealth-400">{selectedReportHistory.scope_label}</p>
-                    </div>
-                    <div className="surface-card-muted p-3">
-                      <p className="text-xs uppercase tracking-[0.12em] text-stealth-500">Archive coverage</p>
-                      <p className="mt-1 text-sm font-semibold text-stealth-100">
-                        {selectedReportHistory.observed_start_date ? formatDate(selectedReportHistory.observed_start_date) : "—"}
-                      </p>
-                      <p className="mt-1 text-xs text-stealth-400">through {selectedReportHistory.observed_end_date ? formatDate(selectedReportHistory.observed_end_date) : "—"}</p>
-                    </div>
-                  </div>
-
-                  <label className="block">
-                    <span className="text-xs font-semibold uppercase tracking-[0.12em] text-stealth-500">Dated record in the raw viewer</span>
-                    <select
-                      value={selectedArchiveRelease.release_date}
-                      onChange={(event) => setSelectedArchiveReleaseDate(event.target.value)}
-                      className={INPUT_CLASS}
-                    >
-                      {selectedReportHistory.releases.map((release) => (
-                        <option key={release.release_date} value={release.release_date}>
-                          {formatDate(release.release_date)} · {release.title}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <article className="rounded-lg border border-stealth-600 bg-stealth-900/35 p-4">
-                    <div className="flex items-start gap-3">
-                      <FileText size={20} className="mt-0.5 shrink-0 text-sky-300" aria-hidden="true" />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stealth-500">{formatDate(selectedArchiveRelease.release_date)}</p>
-                        <h3 className="mt-1 text-sm font-semibold text-stealth-100">{selectedArchiveRelease.title}</h3>
-                      </div>
-                    </div>
-
-                    {selectedArchiveRelease.metrics.length > 0 ? (
-                      <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                        {selectedArchiveRelease.metrics.slice(0, 4).map((releaseMetric) => (
-                          <div key={releaseMetric.id} className="rounded-md border border-stealth-700 bg-stealth-900/60 p-3">
-                            <p className="text-xs text-stealth-500">{releaseMetric.label}</p>
-                            <p className="mt-1 text-lg font-semibold tabular-nums text-stealth-100">{formatValue(releaseMetric.value, 0)}</p>
-                            <p className="text-xs text-stealth-500">{releaseMetric.unit}</p>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="mt-3 text-sm leading-6 text-stealth-400">The agency publishes this release as source documents. Open the preserved TXT, PDF, or ZIP file below to inspect the raw report.</p>
-                    )}
-
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {selectedArchiveRelease.documents.map((document) => (
-                        <a key={`${document.format}:${document.url}`} href={document.url} target="_blank" rel="noreferrer" className="field-button field-button-secondary gap-2">
-                          Open {document.label} <ExternalLink size={14} aria-hidden="true" />
-                        </a>
-                      ))}
-                      {selectedArchiveRelease.documents.length === 0 ? (
-                        <a href={selectedArchiveRelease.source_url} target="_blank" rel="noreferrer" className="field-button field-button-secondary gap-2">
-                          Open release <ExternalLink size={14} aria-hidden="true" />
-                        </a>
-                      ) : null}
-                    </div>
-                  </article>
-
-                  {selectedReportHistory.truncated ? (
-                    <p className="flex items-start gap-2 text-xs leading-5 text-stealth-500">
-                      <Info size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-                      Showing the latest {selectedReportHistory.returned_count.toLocaleString()} records in the selector; all {selectedReportHistory.release_count.toLocaleString()} records remain persisted and are reflected in coverage.
-                    </p>
-                  ) : null}
-                </div>
-              ) : (
-                <div className="rounded-lg border border-dashed border-amber-300/35 bg-amber-300/[0.05] p-5">
-                  <TriangleAlert size={22} className="text-amber-200" aria-hidden="true" />
-                  <h3 className="mt-3 text-sm font-semibold text-stealth-100">Release history has not been imported</h3>
-                  <p className="mt-2 text-sm leading-6 text-stealth-400">This is an ingestion gap, not an archive-only report state. The official source remains available below while the backfill is repaired.</p>
-                </div>
-              )}
-
-              <div className="flex flex-wrap gap-2 border-t border-stealth-700 pt-4">
-                <a href={selectedReport.source_url} target="_blank" rel="noreferrer" className="field-button field-button-primary gap-2">Open latest official report <ExternalLink size={15} aria-hidden="true" /></a>
-                <a href={selectedReport.archive_url} target="_blank" rel="noreferrer" className="field-button field-button-secondary gap-2">Browse archive <ExternalLink size={15} aria-hidden="true" /></a>
-              </div>
-            </div>
-          ) : null}
-        </div>
-
-        <div className="surface-card-strong min-w-0 p-4 md:p-5">
-          {selectedReportId === "wasde" ? (
-            <>
-          <div className="flex flex-wrap items-start justify-between gap-3">
+      <section className="surface-card-strong min-w-0 overflow-hidden">
+        {selectedReport ? (
+          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-stealth-700 px-4 py-4 md:px-6 md:py-5">
             <div>
-              <p className="page-kicker">Insights pane</p>
-              <h2 className="mt-1 text-xl font-semibold text-stealth-100">WASDE revisions — and did price agree?</h2>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-stealth-400">The raw viewer can inspect every report family. This pane stays on chart-ready WASDE layers, where like-series revisions can be standardized without fabricating comparisons.</p>
-            </div>
-            <div className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${latestSignal !== null && latestSignal !== undefined && latestSignal >= 0.5 ? "border-emerald-400/50 bg-emerald-400/10 text-emerald-200" : latestSignal !== null && latestSignal !== undefined && latestSignal <= -0.5 ? "border-rose-400/50 bg-rose-400/10 text-rose-200" : "border-stealth-600 bg-stealth-800 text-stealth-300"}`}>
-              {signalLabel(latestSignal)}
-            </div>
-          </div>
-
-          <div className="mt-5 grid gap-3 md:grid-cols-3">
-            {data.takeaways.map((takeaway) => (
-              <article key={takeaway.title} className={`rounded-lg border p-3.5 ${takeawayTone(takeaway.tone)}`}>
-                <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-stealth-300">{takeaway.title}</h3>
-                <p className="mt-2 text-sm leading-5 text-stealth-200">{takeaway.body}</p>
-              </article>
-            ))}
-          </div>
-
-          <div className="mt-6 border-t border-stealth-700 pt-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h3 className="text-sm font-semibold text-stealth-100">Report layers vs. rebased futures</h3>
-                <p className="mt-1 text-xs text-stealth-500">Report scale ±3σ (left) · futures indexed to 100 (right)</p>
+              <div className="flex flex-wrap items-center gap-3">
+                <h2 className="text-2xl font-semibold text-stealth-100">{selectedReport.name}</h2>
+                <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${coverageTone(selectedReport.coverage)}`}>{selectedReport.coverage_label}</span>
               </div>
-              <div className="flex flex-wrap gap-2" aria-label="Visible report layers">
-                {data.series.map((layer, index) => (
-                  <button
-                    key={layer.metric_id}
-                    type="button"
-                    aria-pressed={visibleMetrics.includes(layer.metric_id)}
-                    onClick={() => toggleMetric(layer.metric_id)}
-                    className="min-h-11 rounded-lg border px-3 text-xs font-semibold transition"
-                    style={{
-                      borderColor: visibleMetrics.includes(layer.metric_id) ? SERIES_COLORS[index % SERIES_COLORS.length] : "#3f5068",
-                      backgroundColor: visibleMetrics.includes(layer.metric_id) ? `${SERIES_COLORS[index % SERIES_COLORS.length]}18` : "rgba(14,21,32,.45)",
-                      color: visibleMetrics.includes(layer.metric_id) ? SERIES_COLORS[index % SERIES_COLORS.length] : "#9aa9bc",
-                    }}
-                  >
-                    {layer.label}
-                  </button>
-                ))}
-              </div>
+              <p className="mt-1 text-sm text-stealth-400">{selectedReport.agency} · {selectedReport.cadence} · {selectedReport.release_time}</p>
+              {nextSelectedReportRelease ? <p className="mt-2 flex items-center gap-2 text-sm text-sky-200"><Clock3 size={15} aria-hidden="true" /> Next release {formatDate(nextSelectedReportRelease.release_at)} at {nextSelectedReportRelease.time_label}</p> : null}
             </div>
-
-            <div className="mt-4 h-[390px] min-w-0">
-              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                <LineChart data={signalChartData} margin={{ top: 12, right: 8, bottom: 8, left: 0 }} accessibilityLayer aria-label="Standardized USDA report revisions compared with rebased agriculture futures">
-                  <CartesianGrid stroke="rgba(63,80,104,0.38)" vertical={false} />
-                  <XAxis dataKey="timestamp" type="number" domain={["dataMin", "dataMax"]} tickFormatter={chartDateLabel} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} />
-                  <YAxis yAxisId="signal" width={42} domain={[-3, 3]} ticks={[-3, -2, -1, 0, 1, 2, 3]} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} />
-                  <YAxis yAxisId="price" orientation="right" width={48} domain={["auto", "auto"]} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} />
-                  <Tooltip content={<ReportTooltip />} />
-                  <Legend verticalAlign="top" height={30} wrapperStyle={{ fontSize: 11, color: "#b7c3d3" }} />
-                  <ReferenceLine yAxisId="signal" y={0} stroke="#6f8199" strokeDasharray="3 3" />
-                  <Line yAxisId="price" type="monotone" dataKey="futures" name={`${data.commodity.name} futures (100)`} stroke="#f4f7fb" strokeWidth={1.5} dot={false} opacity={0.62} isAnimationActive={false} />
-                  {data.series.map((layer, index) => visibleMetrics.includes(layer.metric_id) ? (
-                    <Line key={layer.metric_id} yAxisId="signal" type="monotone" dataKey={`signal_${layer.metric_id}`} name={`${layer.report} · ${layer.label}`} stroke={SERIES_COLORS[index % SERIES_COLORS.length]} strokeWidth={2.25} dot={{ r: 3 }} connectNulls isAnimationActive={false} />
-                  ) : null)}
-                  {data.series.map((layer, index) => visibleMetrics.includes(layer.metric_id) && expectedMetricIds.has(layer.metric_id) ? (
-                    <Line key={`expectation-${layer.metric_id}`} yAxisId="signal" type="monotone" dataKey={`expected_${layer.metric_id}`} name={`${layer.label} expectation`} stroke={SERIES_COLORS[index % SERIES_COLORS.length]} strokeWidth={1.25} strokeDasharray="4 5" dot={{ r: 4, fill: "#0e1520", strokeWidth: 2 }} connectNulls isAnimationActive={false} />
-                  ) : null)}
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-
-            <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-stealth-500">
-              <span className="flex items-center gap-2"><span className="h-0.5 w-5 bg-emerald-300" /> Filled result series</span>
-              <span className="flex items-center gap-2"><span className="w-5 border-t border-dashed border-amber-200" /> Hollow expectation series</span>
-              <span className="flex items-center gap-2"><span className="h-0.5 w-5 bg-white/60" /> Rebased futures, context only</span>
+            <div className="flex flex-wrap gap-2">
+              <a href={selectedReport.source_url} target="_blank" rel="noreferrer" className="field-button field-button-primary gap-2">Official report <ExternalLink size={15} aria-hidden="true" /></a>
+              <a href={selectedReport.archive_url} target="_blank" rel="noreferrer" className="field-button field-button-secondary gap-2">Archive <ExternalLink size={15} aria-hidden="true" /></a>
             </div>
           </div>
+        ) : null}
+
+        <div className="p-4 md:p-6">
+          {selectedReportId === "wasde" && selectedSeries && latest ? (
+            <>
+              <div className="grid divide-y divide-stealth-700 border-b border-stealth-700 sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
+                <div className="pb-4 sm:pr-5 xl:pb-5">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stealth-500">Latest {selectedSeries.label.toLowerCase()}</p>
+                  <p className="mt-2 text-3xl font-semibold tabular-nums text-stealth-100">{formatValue(latest.value)}</p>
+                  <p className="mt-1 text-sm text-stealth-400">{latest.unit} · {latest.market_year}</p>
+                </div>
+                <div className="py-4 sm:pl-5 sm:pt-0 xl:px-5 xl:pb-5">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stealth-500">Revision</p>
+                  <p className="mt-2 text-2xl font-semibold tabular-nums text-stealth-100">{formatSigned(latest.revision)}</p>
+                  <p className="mt-1 text-sm text-stealth-400">From {formatValue(latest.prior_value)}</p>
+                </div>
+                <div className="py-4 sm:border-t sm:border-stealth-700 sm:pr-5 xl:border-t-0 xl:px-5 xl:pt-0">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stealth-500">Supply-demand read</p>
+                  <p className="mt-2 text-2xl font-semibold text-stealth-100">{signalLabel(latestSignal)}</p>
+                  <p className="mt-1 text-sm text-stealth-400">{formatSigned(latestSignal, "σ")} versus history</p>
+                </div>
+                <div className="pt-4 sm:border-t sm:border-stealth-700 sm:pl-5 xl:border-t-0 xl:pl-5 xl:pt-0">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stealth-500">Futures response</p>
+                  <p className="mt-2 text-2xl font-semibold tabular-nums text-stealth-100">{formatSigned(latest.reaction_1d_pct, "%")}</p>
+                  <p className="mt-1 text-sm text-stealth-400">Release-day close · 5D {formatSigned(latest.reaction_5d_pct, "%")}</p>
+                </div>
+              </div>
+
+              <div className="mt-5 flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-semibold text-stealth-100">{selectedSeries.label} history</h3>
+                  <p className="mt-1 text-sm text-stealth-400">Official values as published. Saved expectations appear as a dashed line.</p>
+                </div>
+                <button type="button" aria-pressed={showFutures} onClick={() => setShowFutures((current) => !current)} className={`field-button gap-2 ${showFutures ? "field-button-primary" : "field-button-secondary"}`}>
+                  {showFutures ? "Hide futures context" : "Compare with futures"}
+                </button>
+              </div>
+
+              <div className="mt-4 h-[360px] min-w-0 rounded-xl bg-stealth-900/35 px-1 pt-3 md:h-[470px] md:px-3">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                  <LineChart data={focusedWasdeChartData} margin={{ top: 12, right: showFutures ? 8 : 18, bottom: 8, left: 0 }} accessibilityLayer aria-label={`${selectedSeries.label} official history${showFutures ? ` compared with ${data.commodity.name} futures` : ""}`}>
+                    <CartesianGrid stroke="rgba(98,117,142,0.38)" vertical={false} />
+                    <XAxis dataKey="timestamp" type="number" domain={["dataMin", "dataMax"]} tickFormatter={chartDateLabel} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} />
+                    <YAxis yAxisId="report" width={64} domain={["auto", "auto"]} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} />
+                    {showFutures ? <YAxis yAxisId="price" orientation="right" width={52} domain={["auto", "auto"]} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} /> : null}
+                    <Tooltip content={<ArchiveTooltip />} />
+                    <Legend verticalAlign="top" height={34} wrapperStyle={{ fontSize: 12, color: "#d6dee9" }} />
+                    <Line yAxisId="report" type="monotone" dataKey="actual" name={`Official ${selectedSeries.label}`} stroke="#a8d2ff" strokeWidth={3.2} dot={{ r: 3, fill: "#a8d2ff" }} activeDot={{ r: 6 }} connectNulls isAnimationActive={false} />
+                    <Line yAxisId="report" type="monotone" dataKey="expectation" name="Your expectation" stroke="#f3cb69" strokeWidth={2} strokeDasharray="7 5" dot={{ r: 4, fill: "#0e1520", stroke: "#f3cb69", strokeWidth: 2 }} connectNulls isAnimationActive={false} />
+                    {showFutures ? <Line yAxisId="price" type="monotone" dataKey="futures" name={`${data.commodity.name} futures (100)`} stroke="#91a4bd" strokeWidth={1.6} dot={false} opacity={0.8} isAnimationActive={false} /> : null}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              <p className="mt-3 text-sm leading-6 text-stealth-300"><strong className="font-semibold text-stealth-100">Latest read:</strong> {data.takeaways[0]?.body}</p>
             </>
           ) : selectedReportHistory ? (
             <ArchiveReportInsights history={selectedReportHistory} commodityName={selectedReportHistory.scope_label ?? data.commodity.name} />
@@ -1130,7 +891,50 @@ export default function AgricultureReportDesk() {
         </div>
       </section>
 
-      {selectedReportId === "wasde" ? <section className="surface-card-strong p-4 md:p-5" aria-labelledby="release-inspector-title">
+      <details className="surface-card group overflow-hidden">
+        <summary className="flex min-h-16 cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 md:px-5">
+          <span>
+            <span className="block text-sm font-semibold text-stealth-100">Release details</span>
+            <span className="mt-1 block text-xs text-stealth-500">Raw metrics, dated records, and source documents</span>
+          </span>
+          <span className="text-xs font-semibold text-sky-200 group-open:hidden">Open</span>
+          <span className="hidden text-xs font-semibold text-sky-200 group-open:inline">Close</span>
+        </summary>
+        <div className="border-t border-stealth-700 p-4 md:p-5">
+          {selectedReport ? <p className="max-w-3xl text-sm leading-6 text-stealth-300">{selectedReport.description}</p> : null}
+          {selectedReportId === "wasde" && selectedSeries && latest ? (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-lg bg-stealth-900/45 p-4"><p className="text-xs text-stealth-500">Latest result</p><p className="mt-1 text-xl font-semibold tabular-nums text-stealth-100">{formatValue(latest.value)}</p><p className="text-xs text-stealth-500">{latest.unit} · {latest.market_year}</p></div>
+              <div className="rounded-lg bg-stealth-900/45 p-4"><p className="text-xs text-stealth-500">Prior estimate</p><p className="mt-1 text-xl font-semibold tabular-nums text-stealth-100">{formatValue(latest.prior_value)}</p><p className="text-xs text-stealth-500">Revision {formatSigned(latest.revision)}</p></div>
+            </div>
+          ) : selectedReportHistory && selectedArchiveRelease ? (
+            <div className="mt-4 space-y-4">
+              <label className="block max-w-2xl">
+                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-stealth-500">Release date</span>
+                <select value={selectedArchiveRelease.release_date} onChange={(event) => setSelectedArchiveReleaseDate(event.target.value)} className={INPUT_CLASS}>
+                  {selectedReportHistory.releases.map((release) => <option key={release.release_date} value={release.release_date}>{formatDate(release.release_date)} · {release.title}</option>)}
+                </select>
+              </label>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {selectedArchiveRelease.metrics.slice(0, 4).map((releaseMetric) => (
+                  <div key={releaseMetric.id} className="rounded-lg bg-stealth-900/45 p-4"><p className="text-xs text-stealth-500">{releaseMetric.label}</p><p className="mt-1 text-xl font-semibold tabular-nums text-stealth-100">{formatValue(releaseMetric.value, 1)}</p><p className="text-xs text-stealth-500">{releaseMetric.unit}</p></div>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {selectedArchiveRelease.documents.map((document) => <a key={`${document.format}:${document.url}`} href={document.url} target="_blank" rel="noreferrer" className="field-button field-button-secondary gap-2">Open {document.label} <ExternalLink size={14} aria-hidden="true" /></a>)}
+                {selectedArchiveRelease.documents.length === 0 ? <a href={selectedArchiveRelease.source_url} target="_blank" rel="noreferrer" className="field-button field-button-secondary gap-2">Open release <ExternalLink size={14} aria-hidden="true" /></a> : null}
+              </div>
+            </div>
+          ) : <p className="mt-4 text-sm text-stealth-400">No dated release is available for this selection.</p>}
+        </div>
+      </details>
+
+      {selectedReportId === "wasde" ? <details className="surface-card group overflow-hidden">
+        <summary className="flex min-h-16 cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 md:px-5">
+          <span><span className="block text-sm font-semibold text-stealth-100">Expectation journal</span><span className="mt-1 block text-xs text-stealth-500">Record your number and review past release reactions</span></span>
+          <span className="text-xs font-semibold text-sky-200 group-open:hidden">Open</span><span className="hidden text-xs font-semibold text-sky-200 group-open:inline">Close</span>
+        </summary>
+        <div className="border-t border-stealth-700 p-4 md:p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="page-kicker">Event inspector</p>
@@ -1195,9 +999,10 @@ export default function AgricultureReportDesk() {
             </div>
           </div>
         </div>
-      </section> : null}
+        </div>
+      </details> : null}
 
-      <section className="grid gap-5 lg:grid-cols-[1fr_1fr]">
+      <section className="space-y-4">
         <div className="surface-card min-w-0 p-4 md:p-5">
           <details className="group">
             <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">
@@ -1230,17 +1035,31 @@ export default function AgricultureReportDesk() {
           </details>
         </div>
         <div className="surface-card min-w-0 p-4 md:p-5">
-          <h2 className="text-sm font-semibold text-stealth-100">Upcoming release board</h2>
-          <DataScroller label="Upcoming agriculture report schedule" hint="Official dates, recurring times, and expected dates are labeled separately.">
-            <table className="mt-3 min-w-[680px] w-full text-left text-xs">
-              <thead className="border-b border-stealth-700 text-stealth-500"><tr><th className="py-2 pr-4 font-semibold">Report</th><th className="py-2 pr-4 font-semibold">Date</th><th className="py-2 pr-4 font-semibold">Time</th><th className="py-2 font-semibold">Timing status</th></tr></thead>
-              <tbody className="divide-y divide-stealth-800">
-                {data.schedule.slice(0, 9).map((event) => (
-                  <tr key={`${event.report_id}-${event.release_at}`} className="text-stealth-300"><td className="py-2.5 pr-4 font-semibold text-stealth-200">{event.report}</td><td className="py-2.5 pr-4">{formatDate(event.release_at)}</td><td className="py-2.5 pr-4">{event.time_label}</td><td className="py-2.5">{confidenceLabel(event.confidence)}</td></tr>
-                ))}
-              </tbody>
-            </table>
-          </DataScroller>
+          <details className="group">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">
+              <span className="flex items-center gap-3">
+                <Clock3 className="shrink-0 text-sky-300" size={18} aria-hidden="true" />
+                <span>
+                  <span className="block text-sm font-semibold text-stealth-100">Upcoming release board</span>
+                  <span className="mt-0.5 block text-xs text-stealth-500">{data.schedule.length} scheduled agriculture releases</span>
+                </span>
+              </span>
+              <span className="text-xs font-semibold text-sky-200 group-open:hidden">Show</span>
+              <span className="hidden text-xs font-semibold text-sky-200 group-open:inline">Hide</span>
+            </summary>
+            <div className="mt-4 border-t border-stealth-700 pt-1">
+              <DataScroller label="Upcoming agriculture report schedule" hint="Official dates, recurring times, and expected dates are labeled separately.">
+                <table className="mt-3 min-w-[680px] w-full text-left text-xs">
+                  <thead className="border-b border-stealth-700 text-stealth-500"><tr><th className="py-2 pr-4 font-semibold">Report</th><th className="py-2 pr-4 font-semibold">Date</th><th className="py-2 pr-4 font-semibold">Time</th><th className="py-2 font-semibold">Timing status</th></tr></thead>
+                  <tbody className="divide-y divide-stealth-800">
+                    {data.schedule.slice(0, 9).map((event) => (
+                      <tr key={`${event.report_id}-${event.release_at}`} className="text-stealth-300"><td className="py-2.5 pr-4 font-semibold text-stealth-200">{event.report}</td><td className="py-2.5 pr-4">{formatDate(event.release_at)}</td><td className="py-2.5 pr-4">{event.time_label}</td><td className="py-2.5">{confidenceLabel(event.confidence)}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </DataScroller>
+            </div>
+          </details>
         </div>
       </section>
     </div>
