@@ -50,6 +50,7 @@ const payload = {
   reports: [
     { id: "wasde", name: "WASDE", agency: "USDA OCE", cadence: "Monthly", release_time: "12:00 ET", coverage: "chart_ready", coverage_label: "Chart ready", description: "Balance sheets.", source_url: "https://example.com/latest", archive_url: "https://example.com/archive", release_count: 24, observed_start_date: "2024-09-12", observed_end_date: "2026-08-12" },
     { id: "crop_progress", name: "Crop Progress", agency: "USDA NASS", cadence: "Weekly", release_time: "16:00 ET", coverage: "history_ready", coverage_label: "Release history", description: "Crop pace.", source_url: "https://example.com/crop", archive_url: "https://example.com/crop", release_count: 18, observed_start_date: "2026-04-06", observed_end_date: "2026-08-10" },
+    { id: "cot", name: "Commitments of Traders", agency: "CFTC", cadence: "Weekly", release_time: "15:30 ET", coverage: "history_ready", coverage_label: "Position history", description: "Positioning.", source_url: "https://example.com/cot", archive_url: "https://example.com/cot", release_count: 100, observed_start_date: "2024-08-13", observed_end_date: "2026-08-17" },
   ],
   report_histories: {
     crop_progress: {
@@ -69,6 +70,21 @@ const payload = {
         documents: [{ label: "TXT", format: "txt", url: "https://example.com/crop.txt" }],
         metrics: [],
       }],
+    },
+    cot: {
+      report_id: "cot",
+      scope_key: "ZC",
+      scope_label: "Corn",
+      requested_start_date: "2024-08-13",
+      observed_start_date: "2024-08-13",
+      observed_end_date: "2026-08-17",
+      release_count: 100,
+      returned_count: 100,
+      truncated: false,
+      releases: [
+        { release_date: "2026-08-17", title: "Latest COT record", source_url: "https://example.com/cot/latest", documents: [{ label: "CFTC data", format: "dataset", url: "https://example.com/cot" }], metrics: [] },
+        { release_date: "2026-08-10", title: "Older COT record", source_url: "https://example.com/cot/older", documents: [{ label: "CFTC data", format: "dataset", url: "https://example.com/cot" }], metrics: [] },
+      ],
     },
   },
   schedule: [{ report_id: "wasde", report: "WASDE", release_at: "2026-09-11T12:00:00-04:00", date: "2026-09-11", time_label: "12:00 PM ET", confidence: "official" }],
@@ -111,6 +127,17 @@ describe("AgricultureReportDesk", () => {
     expect(screen.getByText("Crop Progress release")).toBeTruthy();
     expect(screen.getByRole("link", { name: /Open TXT/ })).toBeTruthy();
     expect(screen.queryByText("Official raw source connected")).toBeNull();
+  });
+
+  it("opens the latest record when switching between families with overlapping dates", () => {
+    render(<MemoryRouter><AgricultureReportDesk /></MemoryRouter>);
+
+    fireEvent.click(screen.getByRole("button", { name: /Crop Progress/ }));
+    expect(screen.getByText("Crop Progress release")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Commitments of Traders/ }));
+
+    expect(screen.getByText("Latest COT record")).toBeTruthy();
+    expect(screen.queryByText("Older COT record", { selector: "h3" })).toBeNull();
   });
 
   it("saves user expectations locally", () => {

@@ -443,7 +443,7 @@ export default function AgricultureReportDesk() {
           </div>
           <label className="p-4 md:p-5">
             <span className="text-xs font-semibold uppercase tracking-[0.16em] text-stealth-500">Commodity</span>
-            <select value={symbol} onChange={(event) => { setSymbol(event.target.value); setSelectedReleaseDate(""); }} className={INPUT_CLASS}>
+            <select value={symbol} onChange={(event) => { setSymbol(event.target.value); setSelectedReleaseDate(""); setSelectedArchiveReleaseDate(""); }} className={INPUT_CLASS}>
               {data.commodities.map((item) => <option key={item.symbol} value={item.symbol}>{item.name}</option>)}
             </select>
             <span className="mt-2 block text-xs text-stealth-500">{data.commodity.ticker} futures response</span>
@@ -493,7 +493,7 @@ export default function AgricultureReportDesk() {
                     key={report.id}
                     type="button"
                     aria-pressed={selectedReportId === report.id}
-                    onClick={() => setSelectedReportId(report.id)}
+                    onClick={() => { setSelectedReportId(report.id); setSelectedArchiveReleaseDate(""); }}
                     className={`min-h-11 rounded-lg border px-3 text-sm font-semibold transition ${selectedReportId === report.id ? "border-emerald-400 bg-emerald-400/10 text-emerald-100" : "border-stealth-700 bg-stealth-900/50 text-stealth-300 hover:border-stealth-500"}`}
                   >
                     <span>{report.name}</span>
