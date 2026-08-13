@@ -204,15 +204,24 @@ test("report desk is readable, responsive, and accessible", async ({ page }, tes
   await expect(page.getByText("Ending stocks expectation", { exact: true })).toHaveCount(0);
   for (const reportName of ["Crop Production", "Crop Progress", "Export Sales", "Export Inspections", "Grain Stocks", "Acreage", "Commitments of Traders"]) {
     await page.getByRole("button", { name: new RegExp(reportName) }).click();
-    await expect(page.getByText("What this report is saying")).toBeVisible();
+    await expect(page.getByText("Latest reading")).toBeVisible();
+    await expect(page.getByText("Bottom line:")).toBeVisible();
     await expect(page.locator(".recharts-wrapper").last()).toBeVisible();
   }
-  await page.screenshot({ path: testInfo.outputPath("agriculture-report-desk-desktop.png"), fullPage: true, animations: "disabled" });
-  await testInfo.attach("desktop-full-page", { body: await page.screenshot({ fullPage: true, animations: "disabled" }), contentType: "image/png" });
+  await page.getByRole("button", { name: /Crop Progress/ }).click();
+  const desktopBars = page.locator(".recharts-bar-rectangle path");
+  await expect(desktopBars).toHaveCount(6);
+  await expect.poll(() => desktopBars.evaluateAll((bars) => bars.map((bar) => bar.getBBox().height).filter((height) => height > 20).length)).toBeGreaterThanOrEqual(6);
+  await page.screenshot({ path: testInfo.outputPath("agriculture-report-desk-desktop.png"), fullPage: true });
+  await testInfo.attach("desktop-full-page", { body: await page.screenshot({ fullPage: true }), contentType: "image/png" });
   const desktopAxe = await new AxeBuilder({ page }).analyze();
   expect(desktopAxe.violations).toEqual([]);
 
   await openDesk(page, 390, 844);
+  await page.getByRole("button", { name: /Crop Progress/ }).click();
+  await expect(page.getByText("Latest reading")).toBeVisible();
+  const mobileBars = page.locator(".recharts-bar-rectangle path");
+  await expect.poll(() => mobileBars.evaluateAll((bars) => bars.map((bar) => bar.getBBox().height).filter((height) => height > 20).length)).toBeGreaterThanOrEqual(6);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   const overflowElements = await page.evaluate(() => Array.from(document.querySelectorAll("body *"))
     .map((element) => {
@@ -223,6 +232,6 @@ test("report desk is readable, responsive, and accessible", async ({ page }, tes
     .sort((a, b) => b.right - a.right)
     .slice(0, 12));
   expect(overflow, JSON.stringify(overflowElements, null, 2)).toBeLessThanOrEqual(1);
-  await page.screenshot({ path: testInfo.outputPath("agriculture-report-desk-mobile.png"), fullPage: true, animations: "disabled" });
-  await testInfo.attach("mobile-full-page", { body: await page.screenshot({ fullPage: true, animations: "disabled" }), contentType: "image/png" });
+  await page.screenshot({ path: testInfo.outputPath("agriculture-report-desk-mobile.png"), fullPage: true });
+  await testInfo.attach("mobile-full-page", { body: await page.screenshot({ fullPage: true }), contentType: "image/png" });
 });

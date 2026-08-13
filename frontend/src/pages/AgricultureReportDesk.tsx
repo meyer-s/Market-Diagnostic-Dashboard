@@ -314,9 +314,63 @@ function archiveTimeSeries(history: ReportHistory, metricIds: string[], limit = 
     .slice(-limit);
 }
 
+type ComparisonTile = {
+  label: string;
+  display: string;
+  detail: string;
+  currentLabel: string;
+  currentValue: number;
+  baselineLabel: string;
+  baselineValue: number;
+  unit?: string;
+};
+
+function metricDigits(value: number) {
+  return Math.abs(value) < 1_000 && !Number.isInteger(value) ? 1 : 0;
+}
+
+function signedPercentChange(current: number, baseline: number | null | undefined) {
+  if (baseline === null || baseline === undefined || baseline === 0) return null;
+  return (current / baseline - 1) * 100;
+}
+
+function comparisonDisplay(delta: number | null, suffix = "%") {
+  if (delta === null || Number.isNaN(delta)) return "—";
+  const digits = suffix === " pts" ? 0 : 1;
+  return `${delta > 0 ? "↑ " : delta < 0 ? "↓ " : "→ "}${delta > 0 ? "+" : ""}${delta.toFixed(digits)}${suffix}`;
+}
+
+function comparisonDetail(delta: number | null, baselineLabel: string) {
+  if (delta === null) return `No usable ${baselineLabel.toLowerCase()} baseline`;
+  if (Math.abs(delta) < 0.05) return `In line with ${baselineLabel.toLowerCase()}`;
+  return `${delta > 0 ? "Higher" : "Lower"} than ${baselineLabel.toLowerCase()}`;
+}
+
+function ComparisonBars({ tile, unit }: { tile: ComparisonTile; unit: string }) {
+  const scale = Math.max(Math.abs(tile.currentValue), Math.abs(tile.baselineValue), 1);
+  const currentWidth = `${Math.max(4, Math.abs(tile.currentValue) / scale * 100)}%`;
+  const baselineWidth = `${Math.max(4, Math.abs(tile.baselineValue) / scale * 100)}%`;
+  const digits = metricDigits(Math.max(Math.abs(tile.currentValue), Math.abs(tile.baselineValue)));
+
+  return (
+    <div className="mt-4 hidden space-y-2 sm:block" role="img" aria-label={`${tile.currentLabel} ${formatValue(tile.currentValue, digits)} ${tile.unit ?? unit}; ${tile.baselineLabel} ${formatValue(tile.baselineValue, digits)} ${tile.unit ?? unit}`}>
+      <div className="grid grid-cols-[3.25rem_minmax(0,1fr)_auto] items-center gap-2 text-xs text-stealth-400">
+        <span>{tile.currentLabel}</span>
+        <span className="h-2 overflow-hidden rounded-full bg-stealth-900"><span className="block h-full rounded-full bg-sky-300" style={{ width: currentWidth }} /></span>
+        <span className="tabular-nums text-stealth-200">{formatValue(tile.currentValue, digits)}</span>
+      </div>
+      <div className="grid grid-cols-[3.25rem_minmax(0,1fr)_auto] items-center gap-2 text-xs text-stealth-500">
+        <span>{tile.baselineLabel}</span>
+        <span className="h-2 overflow-hidden rounded-full bg-stealth-900"><span className="block h-full rounded-full bg-stealth-500" style={{ width: baselineWidth }} /></span>
+        <span className="tabular-nums text-stealth-300">{formatValue(tile.baselineValue, digits)}</span>
+      </div>
+    </div>
+  );
+}
+
 function chartShell(chart: ReactNode, ariaLabel: string) {
   return (
-    <div className="mt-4 h-[340px] min-w-0" aria-label={ariaLabel}>
+    <div className="mt-5 h-[360px] min-w-0 rounded-xl bg-stealth-900/35 px-1 pt-3 md:h-[410px] md:px-3" aria-label={ariaLabel}>
       {chart}
     </div>
   );
@@ -335,8 +389,86 @@ function ArchiveReportInsights({ history, commodityName }: { history: ReportHist
   }
 
   const latestRelease = history.releases.find((release) => release.release_date === analysis.latest_release_date) ?? history.releases[0];
+  const primaryMetric = latestRelease ? releaseMetric(latestRelease, analysis.primary_metric_id) : null;
+  const comparisons: ComparisonTile[] = [];
+  const addPercentComparison = (label: string, baseline: number | null | undefined, baselineLabel: string) => {
+    if (baseline === null || baseline === undefined) return;
+    const delta = signedPercentChange(analysis.latest_value, baseline);
+    comparisons.push({
+      label,
+      display: comparisonDisplay(delta),
+      detail: comparisonDetail(delta, baselineLabel),
+      currentLabel: "Now",
+      currentValue: analysis.latest_value,
+      baselineLabel,
+      baselineValue: baseline,
+    });
+  };
+  const addPointComparison = (label: string, baseline: number | null | undefined, baselineLabel: string) => {
+    if (baseline === null || baseline === undefined) return;
+    const delta = analysis.latest_value - baseline;
+    comparisons.push({
+      label,
+      display: comparisonDisplay(delta, " pts"),
+      detail: comparisonDetail(delta, baselineLabel),
+      currentLabel: "Now",
+      currentValue: analysis.latest_value,
+      baselineLabel,
+      baselineValue: baseline,
+    });
+  };
+  const addRawComparison = (label: string, baseline: number | null | undefined, baselineLabel: string) => {
+    if (baseline === null || baseline === undefined) return;
+    const delta = analysis.latest_value - baseline;
+    comparisons.push({
+      label,
+      display: `${delta > 0 ? "↑ +" : delta < 0 ? "↓ " : "→ "}${compactNumber(delta)}`,
+      detail: comparisonDetail(delta, baselineLabel),
+      currentLabel: "Now",
+      currentValue: analysis.latest_value,
+      baselineLabel,
+      baselineValue: baseline,
+    });
+  };
+
+  if (analysis.chart_kind === "progress_benchmark") {
+    addPointComparison("Week over week", primaryMetric?.previous_week, "Prior week");
+    addPointComparison(
+      primaryMetric?.five_year_average !== null && primaryMetric?.five_year_average !== undefined ? "Against normal" : "Year over year",
+      primaryMetric?.five_year_average ?? primaryMetric?.previous_year,
+      primaryMetric?.five_year_average !== null && primaryMetric?.five_year_average !== undefined ? "5Y avg" : "Last year",
+    );
+  } else if (analysis.chart_kind === "production_trend") {
+    addPercentComparison("Year over year", releaseMetric(latestRelease, "production_year_ago")?.value, "Year ago");
+    addPercentComparison("Latest revision", analysis.previous_value, "Prior est.");
+  } else if (analysis.chart_kind === "stocks_composition") {
+    addPercentComparison("Year over year", releaseMetric(latestRelease, "total_stocks_year_ago")?.value, "Year ago");
+    const total = releaseMetric(latestRelease, "total_stocks")?.value;
+    const onFarm = releaseMetric(latestRelease, "on_farm_stocks")?.value;
+    if (total && onFarm !== null && onFarm !== undefined) {
+      const share = onFarm / total * 100;
+      comparisons.push({ label: "Storage mix", display: `${share.toFixed(1)}%`, detail: "Of total stocks held on farm", currentLabel: "On farm", currentValue: share, baselineLabel: "Total", baselineValue: 100, unit: "Percent" });
+    }
+  } else if (analysis.chart_kind === "acreage_comparison") {
+    addPercentComparison("Year over year", releaseMetric(latestRelease, "planted_area_year_ago")?.value, "Year ago");
+    const planted = releaseMetric(latestRelease, "planted_area")?.value;
+    const harvested = releaseMetric(latestRelease, "harvested_area")?.value;
+    if (planted && harvested !== null && harvested !== undefined) {
+      const share = harvested / planted * 100;
+      comparisons.push({ label: "Harvest footprint", display: `${share.toFixed(1)}%`, detail: "Of planted area expected harvested", currentLabel: "Harvest", currentValue: share, baselineLabel: "Planted", baselineValue: 100, unit: "Percent" });
+    }
+  } else if (analysis.chart_kind === "positioning_balance") {
+    addRawComparison("Weekly move", analysis.previous_value, "Prior report");
+    addRawComparison("Against recent positioning", analysis.four_report_average, "4-report avg");
+  } else if (analysis.chart_kind === "sales_flow") {
+    addRawComparison("Versus last report", analysis.previous_value, "Prior report");
+    addRawComparison("Versus recent pace", analysis.four_report_average, "4-report avg");
+  } else {
+    addPercentComparison("Versus last report", analysis.previous_value, "Prior report");
+    addPercentComparison("Versus recent pace", analysis.four_report_average, "4-report avg");
+  }
+
   let chart: ReactNode = null;
-  let chartDescription = analysis.subtitle;
 
   if (analysis.chart_kind === "production_trend") {
     const rows = archiveTimeSeries(history, ["production", "production_year_ago"], 60);
@@ -344,13 +476,13 @@ function ArchiveReportInsights({ history, commodityName }: { history: ReportHist
     chart = chartShell(
       <ResponsiveContainer width="100%" height="100%" minWidth={0}>
         <LineChart data={rows} margin={{ top: 12, right: 10, bottom: 6, left: 2 }} accessibilityLayer aria-label="Published production estimate history and year-ago crop comparison">
-          <CartesianGrid stroke="rgba(63,80,104,0.38)" vertical={false} />
-          <XAxis dataKey="timestamp" type="number" domain={["dataMin", "dataMax"]} tickFormatter={chartDateLabel} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} />
-          <YAxis width={56} tickFormatter={compactNumber} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} domain={["auto", "auto"]} />
+          <CartesianGrid stroke="rgba(98,117,142,0.38)" vertical={false} />
+          <XAxis dataKey="timestamp" type="number" domain={["dataMin", "dataMax"]} tickFormatter={chartDateLabel} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} />
+          <YAxis width={58} tickFormatter={compactNumber} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} domain={["auto", "auto"]} />
           <Tooltip content={<ArchiveTooltip />} />
-          <Legend verticalAlign="top" height={28} wrapperStyle={{ fontSize: 11, color: "#b7c3d3" }} />
-          <Line type="monotone" dataKey="production" name="Published production" stroke="#69d6a3" strokeWidth={2.3} dot={{ r: 2.5 }} connectNulls isAnimationActive={false} />
-          <Line type="monotone" dataKey="production_year_ago" name={hasImpliedComparison ? "Implied year-ago crop" : "Year-ago crop"} stroke="#83bfff" strokeWidth={1.5} strokeDasharray="5 4" dot={false} connectNulls isAnimationActive={false} />
+          <Legend verticalAlign="top" height={34} wrapperStyle={{ fontSize: 12, color: "#d6dee9" }} />
+          <Line type="monotone" dataKey="production" name="Current estimate" stroke="#a8d2ff" strokeWidth={3.25} dot={{ r: 3, fill: "#a8d2ff" }} activeDot={{ r: 6 }} connectNulls isAnimationActive={false} />
+          <Line type="monotone" dataKey="production_year_ago" name={hasImpliedComparison ? "Implied year-ago crop" : "Year-ago crop"} stroke="#91a4bd" strokeWidth={2} strokeDasharray="7 5" dot={false} connectNulls isAnimationActive={false} />
         </LineChart>
       </ResponsiveContainer>,
       `${commodityName} published production estimates and year-ago crop comparisons`,
@@ -363,18 +495,17 @@ function ArchiveReportInsights({ history, commodityName }: { history: ReportHist
       previous: metric.previous_week ?? null,
       benchmark: metric.five_year_average ?? metric.previous_year ?? null,
     }));
-    chartDescription = "Current percentage versus the previous week and the report's five-year average or prior-year benchmark.";
     chart = chartShell(
       <ResponsiveContainer width="100%" height="100%" minWidth={0}>
         <BarChart data={rows} margin={{ top: 12, right: 8, bottom: 45, left: 0 }} accessibilityLayer aria-label="Latest crop progress and condition compared with published benchmarks">
-          <CartesianGrid stroke="rgba(63,80,104,0.38)" vertical={false} />
-          <XAxis dataKey="name" interval={0} angle={-22} textAnchor="end" height={68} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 10 }} />
-          <YAxis width={42} domain={[0, 100]} tickFormatter={(value) => `${value}%`} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} />
+          <CartesianGrid stroke="rgba(98,117,142,0.38)" vertical={false} />
+          <XAxis dataKey="name" interval={0} angle={-18} textAnchor="end" height={72} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} />
+          <YAxis width={44} domain={[0, 100]} tickFormatter={(value) => `${value}%`} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} />
           <Tooltip content={<ArchiveTooltip />} />
-          <Legend verticalAlign="top" height={28} wrapperStyle={{ fontSize: 11, color: "#b7c3d3" }} />
-          <Bar dataKey="current" name="Current" fill="#69d6a3" radius={[3, 3, 0, 0]} />
-          <Bar dataKey="previous" name="Previous week" fill="#83bfff" radius={[3, 3, 0, 0]} />
-          <Bar dataKey="benchmark" name="5Y avg / prior year" fill="#f3cb69" radius={[3, 3, 0, 0]} />
+          <Legend verticalAlign="top" height={34} wrapperStyle={{ fontSize: 12, color: "#d6dee9" }} />
+          <Bar dataKey="current" name="Current" fill="#a8d2ff" radius={[4, 4, 0, 0]} maxBarSize={34} isAnimationActive={false} />
+          <Bar dataKey="previous" name="Previous week" fill="#62758e" radius={[4, 4, 0, 0]} maxBarSize={34} isAnimationActive={false} />
+          <Bar dataKey="benchmark" name="5Y avg / prior year" fill="#f3cb69" radius={[4, 4, 0, 0]} maxBarSize={34} isAnimationActive={false} />
         </BarChart>
       </ResponsiveContainer>,
       `${commodityName} crop progress and condition against USDA benchmarks`,
@@ -384,14 +515,14 @@ function ArchiveReportInsights({ history, commodityName }: { history: ReportHist
     chart = chartShell(
       <ResponsiveContainer width="100%" height="100%" minWidth={0}>
         <LineChart data={rows} margin={{ top: 12, right: 10, bottom: 6, left: 2 }} accessibilityLayer aria-label="Weekly net export sales and exports shipped history">
-          <CartesianGrid stroke="rgba(63,80,104,0.38)" vertical={false} />
-          <XAxis dataKey="timestamp" type="number" domain={["dataMin", "dataMax"]} tickFormatter={chartDateLabel} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} />
-          <YAxis width={58} tickFormatter={compactNumber} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} />
+          <CartesianGrid stroke="rgba(98,117,142,0.38)" vertical={false} />
+          <XAxis dataKey="timestamp" type="number" domain={["dataMin", "dataMax"]} tickFormatter={chartDateLabel} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} />
+          <YAxis width={62} tickFormatter={compactNumber} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} />
           <Tooltip content={<ArchiveTooltip />} />
-          <Legend verticalAlign="top" height={28} wrapperStyle={{ fontSize: 11, color: "#b7c3d3" }} />
+          <Legend verticalAlign="top" height={34} wrapperStyle={{ fontSize: 12, color: "#d6dee9" }} />
           <ReferenceLine y={0} stroke="#6f8199" strokeDasharray="3 3" />
-          <Line type="monotone" dataKey="net_sales" name="Net sales" stroke="#69d6a3" strokeWidth={2.2} dot={false} isAnimationActive={false} />
-          <Line type="monotone" dataKey="weekly_exports" name="Exports shipped" stroke="#83bfff" strokeWidth={1.7} dot={false} isAnimationActive={false} />
+          <Line type="monotone" dataKey="net_sales" name="Net sales" stroke="#a8d2ff" strokeWidth={3.1} dot={false} activeDot={{ r: 6 }} isAnimationActive={false} />
+          <Line type="monotone" dataKey="weekly_exports" name="Exports shipped" stroke="#91a4bd" strokeWidth={2} strokeDasharray="6 4" dot={false} isAnimationActive={false} />
         </LineChart>
       </ResponsiveContainer>,
       `${commodityName} weekly net export sales and exports shipped`,
@@ -404,15 +535,15 @@ function ArchiveReportInsights({ history, commodityName }: { history: ReportHist
     });
     chart = chartShell(
       <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-        <LineChart data={rows} margin={{ top: 12, right: 10, bottom: 6, left: 2 }} accessibilityLayer aria-label="Weekly export inspections and four-week moving average history">
-          <CartesianGrid stroke="rgba(63,80,104,0.38)" vertical={false} />
-          <XAxis dataKey="timestamp" type="number" domain={["dataMin", "dataMax"]} tickFormatter={chartDateLabel} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} />
-          <YAxis width={58} tickFormatter={compactNumber} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} />
+        <ComposedChart data={rows} margin={{ top: 12, right: 10, bottom: 6, left: 2 }} accessibilityLayer aria-label="Weekly export inspections and four-week moving average history">
+          <CartesianGrid stroke="rgba(98,117,142,0.38)" vertical={false} />
+          <XAxis dataKey="timestamp" type="number" domain={["dataMin", "dataMax"]} tickFormatter={chartDateLabel} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} />
+          <YAxis width={62} tickFormatter={compactNumber} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} />
           <Tooltip content={<ArchiveTooltip />} />
-          <Legend verticalAlign="top" height={28} wrapperStyle={{ fontSize: 11, color: "#b7c3d3" }} />
-          <Line type="monotone" dataKey="inspected_volume" name="Weekly inspections" stroke="#83bfff" strokeWidth={1.35} dot={false} isAnimationActive={false} />
-          <Line type="monotone" dataKey="rolling_average" name="4-week average" stroke="#f3cb69" strokeWidth={2.4} dot={false} isAnimationActive={false} />
-        </LineChart>
+          <Legend verticalAlign="top" height={34} wrapperStyle={{ fontSize: 12, color: "#d6dee9" }} />
+          <Bar dataKey="inspected_volume" name="Weekly inspections" fill="#62758e" radius={[3, 3, 0, 0]} maxBarSize={18} isAnimationActive={false} />
+          <Line type="monotone" dataKey="rolling_average" name="4-week pace" stroke="#a8d2ff" strokeWidth={3.2} dot={false} activeDot={{ r: 6 }} isAnimationActive={false} />
+        </ComposedChart>
       </ResponsiveContainer>,
       `${commodityName} weekly export inspections and four-week moving average`,
     );
@@ -425,14 +556,14 @@ function ArchiveReportInsights({ history, commodityName }: { history: ReportHist
     ];
     chart = chartShell(
       <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-        <BarChart data={rows} margin={{ top: 12, right: 8, bottom: 8, left: 0 }} accessibilityLayer aria-label="Latest total on-farm and off-farm stocks compared with year ago">
-          <CartesianGrid stroke="rgba(63,80,104,0.38)" vertical={false} />
-          <XAxis dataKey="name" stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} />
-          <YAxis width={58} tickFormatter={compactNumber} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} />
+        <BarChart data={rows} layout="vertical" margin={{ top: 12, right: 18, bottom: 8, left: 6 }} accessibilityLayer aria-label="Latest total on-farm and off-farm stocks compared with year ago">
+          <CartesianGrid stroke="rgba(98,117,142,0.38)" horizontal={false} />
+          <XAxis type="number" tickFormatter={compactNumber} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} />
+          <YAxis dataKey="name" type="category" width={68} stroke="#62758e" tick={{ fill: "#d6dee9", fontSize: 12 }} />
           <Tooltip content={<ArchiveTooltip />} />
-          <Legend verticalAlign="top" height={28} wrapperStyle={{ fontSize: 11, color: "#b7c3d3" }} />
-          <Bar dataKey="current" name="Latest" fill="#69d6a3" radius={[3, 3, 0, 0]} />
-          <Bar dataKey="yearAgo" name={yearAgoStocks?.comparison_quality ? "Implied year ago" : "Year ago"} fill="#83bfff" radius={[3, 3, 0, 0]} />
+          <Legend verticalAlign="top" height={34} wrapperStyle={{ fontSize: 12, color: "#d6dee9" }} />
+          <Bar dataKey="current" name="Current stocks" fill="#a8d2ff" radius={[0, 4, 4, 0]} maxBarSize={28} isAnimationActive={false} />
+          <Bar dataKey="yearAgo" name={yearAgoStocks?.comparison_quality ? "Implied year ago" : "Year ago"} fill="#62758e" radius={[0, 4, 4, 0]} maxBarSize={28} isAnimationActive={false} />
         </BarChart>
       </ResponsiveContainer>,
       `${commodityName} latest stocks by storage position compared with year ago where published`,
@@ -445,14 +576,14 @@ function ArchiveReportInsights({ history, commodityName }: { history: ReportHist
     ];
     chart = chartShell(
       <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-        <BarChart data={rows} margin={{ top: 12, right: 8, bottom: 8, left: 0 }} accessibilityLayer aria-label="Latest planted and harvested acreage compared with year ago">
-          <CartesianGrid stroke="rgba(63,80,104,0.38)" vertical={false} />
-          <XAxis dataKey="name" stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} />
-          <YAxis width={50} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} />
+        <BarChart data={rows} layout="vertical" margin={{ top: 12, right: 18, bottom: 8, left: 6 }} accessibilityLayer aria-label="Latest planted and harvested acreage compared with year ago">
+          <CartesianGrid stroke="rgba(98,117,142,0.38)" horizontal={false} />
+          <XAxis type="number" stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} />
+          <YAxis dataKey="name" type="category" width={78} stroke="#62758e" tick={{ fill: "#d6dee9", fontSize: 12 }} />
           <Tooltip content={<ArchiveTooltip />} />
-          <Legend verticalAlign="top" height={28} wrapperStyle={{ fontSize: 11, color: "#b7c3d3" }} />
-          <Bar dataKey="current" name="Latest estimate" fill="#69d6a3" radius={[3, 3, 0, 0]} />
-          <Bar dataKey="yearAgo" name={yearAgoArea?.comparison_quality ? "Implied year ago" : "Year ago"} fill="#83bfff" radius={[3, 3, 0, 0]} />
+          <Legend verticalAlign="top" height={34} wrapperStyle={{ fontSize: 12, color: "#d6dee9" }} />
+          <Bar dataKey="current" name="Current acreage" fill="#a8d2ff" radius={[0, 4, 4, 0]} maxBarSize={32} isAnimationActive={false} />
+          <Bar dataKey="yearAgo" name={yearAgoArea?.comparison_quality ? "Implied year ago" : "Year ago"} fill="#62758e" radius={[0, 4, 4, 0]} maxBarSize={32} isAnimationActive={false} />
         </BarChart>
       </ResponsiveContainer>,
       `${commodityName} planted and harvested acreage compared with year ago`,
@@ -462,15 +593,15 @@ function ArchiveReportInsights({ history, commodityName }: { history: ReportHist
     chart = chartShell(
       <ResponsiveContainer width="100%" height="100%" minWidth={0}>
         <ComposedChart data={rows} margin={{ top: 12, right: 5, bottom: 6, left: 0 }} accessibilityLayer aria-label="Noncommercial net futures position and open interest history">
-          <CartesianGrid stroke="rgba(63,80,104,0.38)" vertical={false} />
-          <XAxis dataKey="timestamp" type="number" domain={["dataMin", "dataMax"]} tickFormatter={chartDateLabel} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} />
-          <YAxis yAxisId="net" width={58} tickFormatter={compactNumber} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} />
-          <YAxis yAxisId="oi" orientation="right" width={58} tickFormatter={compactNumber} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} />
+          <CartesianGrid stroke="rgba(98,117,142,0.38)" vertical={false} />
+          <XAxis dataKey="timestamp" type="number" domain={["dataMin", "dataMax"]} tickFormatter={chartDateLabel} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} />
+          <YAxis yAxisId="net" width={62} tickFormatter={compactNumber} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} />
+          <YAxis yAxisId="oi" orientation="right" width={62} tickFormatter={compactNumber} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} />
           <Tooltip content={<ArchiveTooltip />} />
-          <Legend verticalAlign="top" height={28} wrapperStyle={{ fontSize: 11, color: "#b7c3d3" }} />
+          <Legend verticalAlign="top" height={34} wrapperStyle={{ fontSize: 12, color: "#d6dee9" }} />
           <ReferenceLine yAxisId="net" y={0} stroke="#6f8199" strokeDasharray="3 3" />
-          <Bar yAxisId="oi" dataKey="open_interest" name="Open interest" fill="#83bfff" opacity={0.23} />
-          <Line yAxisId="net" type="monotone" dataKey="noncommercial_net" name="Noncommercial net" stroke="#c9a8ff" strokeWidth={2.25} dot={false} isAnimationActive={false} />
+          <Bar yAxisId="oi" dataKey="open_interest" name="Open interest" fill="#62758e" opacity={0.45} maxBarSize={18} isAnimationActive={false} />
+          <Line yAxisId="net" type="monotone" dataKey="noncommercial_net" name="Noncommercial net" stroke="#a8d2ff" strokeWidth={3.2} dot={false} activeDot={{ r: 6 }} isAnimationActive={false} />
         </ComposedChart>
       </ResponsiveContainer>,
       `${commodityName} noncommercial net position and total open interest`,
@@ -483,20 +614,35 @@ function ArchiveReportInsights({ history, commodityName }: { history: ReportHist
         <div>
           <p className="page-kicker">Report interpretation</p>
           <h2 className="mt-1 text-xl font-semibold text-stealth-100">{analysis.title}</h2>
-          <p className="mt-2 text-sm leading-6 text-stealth-400">{chartDescription}</p>
         </div>
         <span className="rounded-full border border-sky-400/45 bg-sky-400/10 px-3 py-1.5 text-xs font-semibold text-sky-200">{formatDate(analysis.latest_release_date)}</span>
       </div>
 
-      <article className="mt-5 rounded-lg border border-emerald-400/35 bg-emerald-400/[0.06] p-4">
-        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stealth-400">What this report is saying</p>
-        <h3 className="mt-2 text-lg font-semibold text-stealth-100">{analysis.headline}</h3>
-        <p className="mt-2 text-sm leading-6 text-stealth-200">{analysis.body}</p>
-        <p className="mt-3 text-xs text-stealth-500">Comparison basis: {analysis.comparison_basis}</p>
-      </article>
+      <section className="mt-5 overflow-hidden rounded-xl border border-stealth-600 bg-stealth-900/30" aria-labelledby="archive-at-a-glance">
+        <h3 id="archive-at-a-glance" className="sr-only">What this report is saying</h3>
+        <div className={`grid ${comparisons.length > 1 ? "grid-cols-2 md:grid-cols-3" : "md:grid-cols-2"}`}>
+          <div className={`border-b border-stealth-700 bg-sky-300/[0.06] p-4 md:col-span-1 md:border-b-0 md:p-5 ${comparisons.length > 1 ? "col-span-2" : ""}`}>
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-sky-200">Latest reading</p>
+            <p className="mt-2 text-3xl font-semibold tabular-nums text-stealth-100 md:text-4xl">{formatValue(analysis.latest_value, metricDigits(analysis.latest_value))}</p>
+            <p className="mt-1 text-sm text-stealth-300">{primaryMetric?.label ?? analysis.headline} · {analysis.unit}</p>
+          </div>
+          {comparisons.slice(0, 2).map((tile, index) => (
+            <div key={tile.label} className={`p-4 md:border-l md:border-stealth-700 md:p-5 ${index === 0 && comparisons.length > 1 ? "border-r border-stealth-700 md:border-r-0" : ""}`}>
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stealth-400">{tile.label}</p>
+              <p className="mt-2 text-2xl font-semibold tabular-nums text-sky-100 md:text-3xl">{tile.display}</p>
+              <p className="mt-1 text-sm text-stealth-300">{tile.detail}</p>
+              <ComparisonBars tile={tile} unit={analysis.unit} />
+            </div>
+          ))}
+        </div>
+        <div className="flex items-start gap-3 border-t border-stealth-700 px-4 py-3.5 md:px-5">
+          <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-sky-300" aria-hidden="true" />
+          <p className="text-sm leading-6 text-stealth-200"><strong className="font-semibold text-stealth-100">Bottom line:</strong> {analysis.body}</p>
+        </div>
+      </section>
 
       {chart}
-      <p className="mt-3 flex items-start gap-2 text-xs leading-5 text-stealth-500"><Info size={14} className="mt-0.5 shrink-0" aria-hidden="true" />Values are plotted in the report's native units. Gaps mean the official source did not publish a confidently comparable national metric for that release.</p>
+      <p className="mt-3 text-xs leading-5 text-stealth-500">{analysis.subtitle} · Native report units · Gaps indicate no safely comparable national observation.</p>
     </>
   );
 }
@@ -1053,29 +1199,35 @@ export default function AgricultureReportDesk() {
 
       <section className="grid gap-5 lg:grid-cols-[1fr_1fr]">
         <div className="surface-card min-w-0 p-4 md:p-5">
-          <div className="flex items-start gap-3">
-            <Info className="mt-0.5 shrink-0 text-sky-300" size={18} aria-hidden="true" />
-            {selectedReportId === "wasde" ? (
-              <div>
-                <h2 className="text-sm font-semibold text-stealth-100">How to read the standardized chart</h2>
+          <details className="group">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">
+              <span className="flex items-center gap-3">
+                <Info className="shrink-0 text-sky-300" size={18} aria-hidden="true" />
+                <span>
+                  <span className="block text-sm font-semibold text-stealth-100">Method and source notes</span>
+                  <span className="mt-0.5 block text-xs text-stealth-500">Definitions, units, and interpretation limits</span>
+                </span>
+              </span>
+              <span className="text-xs font-semibold text-sky-200 group-open:hidden">Show</span>
+              <span className="hidden text-xs font-semibold text-sky-200 group-open:inline">Hide</span>
+            </summary>
+            <div className="mt-4 border-t border-stealth-700 pt-4">
+              {selectedReportId === "wasde" ? (
                 <dl className="mt-3 space-y-3 text-sm leading-6">
                   {Object.entries(data.methodology).map(([key, value]) => (
                     <div key={key}><dt className="inline font-semibold capitalize text-stealth-200">{key}: </dt><dd className="inline text-stealth-400">{value}</dd></div>
                   ))}
                 </dl>
-              </div>
-            ) : (
-              <div>
-                <h2 className="text-sm font-semibold text-stealth-100">How to read this report comparison</h2>
+              ) : (
                 <dl className="mt-3 space-y-3 text-sm leading-6">
                   <div><dt className="inline font-semibold text-stealth-200">Comparison basis: </dt><dd className="inline text-stealth-400">{selectedReportHistory?.analysis?.comparison_basis ?? "No comparable national metric is available for this release."}</dd></div>
                   <div><dt className="inline font-semibold text-stealth-200">Units: </dt><dd className="inline text-stealth-400">Values stay in the official source units shown on the chart; unlike WASDE signals, these series are not standardized across unlike measures.</dd></div>
                   <div><dt className="inline font-semibold text-stealth-200">Archive scope: </dt><dd className="inline text-stealth-400">The visualization uses comparable observations within the selected history window. Older source documents remain available in the raw viewer when their layouts cannot be compared safely.</dd></div>
                   <div><dt className="inline font-semibold text-stealth-200">Interpretation boundary: </dt><dd className="inline text-stealth-400">The summary describes the latest official release relative to its stated baseline; it does not infer market causation or unpublished consensus estimates.</dd></div>
                 </dl>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          </details>
         </div>
         <div className="surface-card min-w-0 p-4 md:p-5">
           <h2 className="text-sm font-semibold text-stealth-100">Upcoming release board</h2>

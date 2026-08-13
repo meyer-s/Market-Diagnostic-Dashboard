@@ -133,7 +133,7 @@ describe("AgricultureReportDesk", () => {
     expect(screen.getByText("Chart ready")).toBeTruthy();
     expect(screen.getByText("Association is not causation.")).toBeTruthy();
     expect(screen.getByText("WASDE · Ending stocks")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "How to read the standardized chart" })).toBeTruthy();
+    expect(screen.getByText("Method and source notes")).toBeTruthy();
     expect(screen.queryByText("Ending stocks expectation")).toBeNull();
     expect(screen.getByRole("button", { name: "All" })).toBeTruthy();
     expect(screen.getByText(/24 persisted records/)).toBeTruthy();
@@ -148,11 +148,13 @@ describe("AgricultureReportDesk", () => {
     expect(screen.getByText("Crop Progress release")).toBeTruthy();
     expect(screen.getByRole("link", { name: /Open TXT/ })).toBeTruthy();
     expect(screen.getByText("What this report is saying")).toBeTruthy();
+    expect(screen.getByText("Latest reading")).toBeTruthy();
+    expect(screen.getByText("Week over week")).toBeTruthy();
+    expect(screen.getAllByText("→ 0 pts").length).toBeGreaterThan(0);
     expect(screen.getByText(/11 points above last year/)).toBeTruthy();
     expect(screen.getByText("5Y avg / prior year")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "How to read this report comparison" })).toBeTruthy();
+    expect(screen.getByText("Method and source notes")).toBeTruthy();
     expect(screen.getByText(/these series are not standardized across unlike measures/)).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: "How to read the standardized chart" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Expectation, result, and price response" })).toBeNull();
     expect(screen.queryByText("Official raw source connected")).toBeNull();
   });
