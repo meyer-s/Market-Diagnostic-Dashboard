@@ -1055,14 +1055,26 @@ export default function AgricultureReportDesk() {
         <div className="surface-card min-w-0 p-4 md:p-5">
           <div className="flex items-start gap-3">
             <Info className="mt-0.5 shrink-0 text-sky-300" size={18} aria-hidden="true" />
-            <div>
-              <h2 className="text-sm font-semibold text-stealth-100">How to read the standardized chart</h2>
-              <dl className="mt-3 space-y-3 text-sm leading-6">
-                {Object.entries(data.methodology).map(([key, value]) => (
-                  <div key={key}><dt className="inline font-semibold capitalize text-stealth-200">{key}: </dt><dd className="inline text-stealth-400">{value}</dd></div>
-                ))}
-              </dl>
-            </div>
+            {selectedReportId === "wasde" ? (
+              <div>
+                <h2 className="text-sm font-semibold text-stealth-100">How to read the standardized chart</h2>
+                <dl className="mt-3 space-y-3 text-sm leading-6">
+                  {Object.entries(data.methodology).map(([key, value]) => (
+                    <div key={key}><dt className="inline font-semibold capitalize text-stealth-200">{key}: </dt><dd className="inline text-stealth-400">{value}</dd></div>
+                  ))}
+                </dl>
+              </div>
+            ) : (
+              <div>
+                <h2 className="text-sm font-semibold text-stealth-100">How to read this report comparison</h2>
+                <dl className="mt-3 space-y-3 text-sm leading-6">
+                  <div><dt className="inline font-semibold text-stealth-200">Comparison basis: </dt><dd className="inline text-stealth-400">{selectedReportHistory?.analysis?.comparison_basis ?? "No comparable national metric is available for this release."}</dd></div>
+                  <div><dt className="inline font-semibold text-stealth-200">Units: </dt><dd className="inline text-stealth-400">Values stay in the official source units shown on the chart; unlike WASDE signals, these series are not standardized across unlike measures.</dd></div>
+                  <div><dt className="inline font-semibold text-stealth-200">Archive scope: </dt><dd className="inline text-stealth-400">The visualization uses comparable observations within the selected history window. Older source documents remain available in the raw viewer when their layouts cannot be compared safely.</dd></div>
+                  <div><dt className="inline font-semibold text-stealth-200">Interpretation boundary: </dt><dd className="inline text-stealth-400">The summary describes the latest official release relative to its stated baseline; it does not infer market causation or unpublished consensus estimates.</dd></div>
+                </dl>
+              </div>
+            )}
           </div>
         </div>
         <div className="surface-card min-w-0 p-4 md:p-5">
