@@ -14,6 +14,7 @@ from lxml import html
 from sqlalchemy.orm import Session
 
 from app.models.agriculture_report_release import AgricultureReportRelease
+from app.services.agriculture_nass_metrics import parse_nass_release_metrics
 
 
 REPORT_ARCHIVE_START = date(1900, 1, 1)
@@ -191,6 +192,37 @@ def collect_nass_releases(
     return releases
 
 
+def collect_nass_metric_releases(
+    releases: Iterable[dict[str, Any]],
+    *,
+    max_workers: int = 8,
+) -> list[dict[str, Any]]:
+    """Download NASS TXT documents and create commodity-scoped metric rows."""
+    materialized = list(releases)
+    jobs: dict[Any, dict[str, Any]] = {}
+    with ThreadPoolExecutor(max_workers=max(1, min(max_workers, 12))) as executor:
+        for release in materialized:
+            text_document = next(
+                (document for document in release.get("documents", []) if document.get("format") == "txt"),
+                None,
+            )
+            if text_document:
+                jobs[executor.submit(_get, text_document["url"], timeout=60)] = release
+
+        enriched: list[dict[str, Any]] = []
+        for future in as_completed(jobs):
+            release = jobs[future]
+            response = future.result()
+            text = response.content.decode(response.encoding or "utf-8", errors="replace")
+            for scope_key, metrics in parse_nass_release_metrics(release["report_id"], text).items():
+                enriched.append({
+                    **release,
+                    "scope_key": scope_key,
+                    "metrics": metrics,
+                })
+    return enriched
+
+
 def collect_export_sales_releases(*, since: date, through: date) -> list[dict[str, Any]]:
     releases: list[dict[str, Any]] = []
     for scope_key, (commodity_id, commodity_name) in FAS_COMMODITIES.items():
@@ -360,6 +392,7 @@ def collect_report_releases(
     through: date | None = None,
     max_workers: int = 8,
     report_ids: Iterable[str] | None = None,
+    nass_metrics_since: date | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     through = through or date.today()
     selected = set(report_ids or (*NASS_ARCHIVES, "export_sales", "export_inspections", "cot"))
@@ -378,6 +411,13 @@ def collect_report_releases(
         )
         releases.extend(rows)
         counts[report_id] = len(rows)
+        if nass_metrics_since is not None:
+            metric_rows = collect_nass_metric_releases(
+                [row for row in rows if row["release_date"] >= nass_metrics_since],
+                max_workers=max_workers,
+            )
+            releases.extend(metric_rows)
+            counts[f"{report_id}_metric_rows"] = len(metric_rows)
     collectors = {
         "export_sales": collect_export_sales_releases,
         "export_inspections": collect_export_inspection_releases,
@@ -445,6 +485,7 @@ def backfill_report_releases(
     through: date | None = None,
     max_workers: int = 8,
     report_ids: Iterable[str] | None = None,
+    nass_metrics_since: date | None = None,
     dry_run: bool = False,
 ) -> dict[str, Any]:
     through = through or date.today()
@@ -453,6 +494,7 @@ def backfill_report_releases(
         through=through,
         max_workers=max_workers,
         report_ids=report_ids,
+        nass_metrics_since=nass_metrics_since,
     )
     result = persist_report_releases(db, releases, dry_run=dry_run)
     return {
@@ -461,4 +503,5 @@ def backfill_report_releases(
         "through": through.isoformat(),
         "dry_run": dry_run,
         "reports": counts,
+        "nass_metrics_since": nass_metrics_since.isoformat() if nass_metrics_since else None,
     }

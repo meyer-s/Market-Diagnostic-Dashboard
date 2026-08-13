@@ -90,3 +90,36 @@ def test_report_viewer_prefers_selected_commodity_and_falls_back_to_universal(mo
     assert corn["export_inspections"]["releases"][0]["metrics"][0]["value"] == 400
     assert rice["export_inspections"]["scope_key"] == "ALL"
     assert rice["export_inspections"]["scope_label"] == "All covered grains"
+
+
+def test_nass_metrics_enrich_full_universal_archive_without_shortening_it(monkeypatch) -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    AgricultureReportRelease.__table__.create(bind=engine)
+    session_local = sessionmaker(bind=engine)
+    db = session_local()
+    try:
+        db.add_all([
+            AgricultureReportRelease(**_release("crop_production", "ALL", date(2026, 7, 10))),
+            AgricultureReportRelease(**_release("crop_production", "ALL", date(2026, 8, 12))),
+            AgricultureReportRelease(**{
+                **_release("crop_production", "ZC", date(2026, 8, 12)),
+                "metrics": [
+                    {"id": "production", "label": "Production", "value": 16000, "unit": "Million bushels"},
+                    {"id": "production_yoy_pct", "label": "Production vs year ago", "value": -6, "unit": "Percent"},
+                ],
+            }),
+        ])
+        db.commit()
+    finally:
+        db.close()
+    monkeypatch.setattr(desk, "SessionLocal", session_local)
+
+    history = desk._load_report_histories("ZC", 3, date(2026, 8, 13))["crop_production"]
+    engine.dispose()
+
+    assert history["release_count"] == 2
+    assert history["scope_key"] == "ZC"
+    assert history["releases"][0]["metrics"][0]["id"] == "production"
+    assert history["releases"][1]["metrics"] == []
+    assert history["analysis"]["chart_kind"] == "production_trend"
+    assert "6.0% below" in history["analysis"]["body"]

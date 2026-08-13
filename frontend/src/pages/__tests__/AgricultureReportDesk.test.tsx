@@ -11,7 +11,10 @@ vi.mock("../../utils/apiUtils", () => ({ buildApiUrl: (endpoint: string) => `/ap
 vi.mock("recharts", () => {
   const Shell = ({ children }: { children?: React.ReactNode }) => <div>{children}</div>;
   return {
+    Bar: ({ name }: { name?: string }) => name ? <span>{name}</span> : null,
+    BarChart: Shell,
     CartesianGrid: () => null,
+    ComposedChart: Shell,
     Legend: () => null,
     Line: ({ name }: { name?: string }) => name ? <span>{name}</span> : null,
     LineChart: Shell,
@@ -49,7 +52,7 @@ const payload = {
   latest_release: point,
   reports: [
     { id: "wasde", name: "WASDE", agency: "USDA OCE", cadence: "Monthly", release_time: "12:00 ET", coverage: "chart_ready", coverage_label: "Chart ready", description: "Balance sheets.", source_url: "https://example.com/latest", archive_url: "https://example.com/archive", release_count: 24, observed_start_date: "2024-09-12", observed_end_date: "2026-08-12" },
-    { id: "crop_progress", name: "Crop Progress", agency: "USDA NASS", cadence: "Weekly", release_time: "16:00 ET", coverage: "history_ready", coverage_label: "Release history", description: "Crop pace.", source_url: "https://example.com/crop", archive_url: "https://example.com/crop", release_count: 18, observed_start_date: "2026-04-06", observed_end_date: "2026-08-10" },
+    { id: "crop_progress", name: "Crop Progress", agency: "USDA NASS", cadence: "Weekly", release_time: "16:00 ET", coverage: "chart_ready", coverage_label: "Chart + history", description: "Crop pace.", source_url: "https://example.com/crop", archive_url: "https://example.com/crop", release_count: 18, observed_start_date: "2026-04-06", observed_end_date: "2026-08-10" },
     { id: "cot", name: "Commitments of Traders", agency: "CFTC", cadence: "Weekly", release_time: "15:30 ET", coverage: "history_ready", coverage_label: "Position history", description: "Positioning.", source_url: "https://example.com/cot", archive_url: "https://example.com/cot", release_count: 100, observed_start_date: "2024-08-13", observed_end_date: "2026-08-17" },
   ],
   report_histories: {
@@ -63,12 +66,29 @@ const payload = {
       release_count: 18,
       returned_count: 18,
       truncated: false,
+      analysis: {
+        chart_kind: "progress_benchmark",
+        title: "Field progress and condition",
+        subtitle: "Current reading against USDA's own benchmarks",
+        primary_metric_id: "condition_good_excellent",
+        latest_release_date: "2026-08-10",
+        latest_value: 61,
+        previous_value: 60,
+        four_report_average: 59,
+        unit: "Percent",
+        headline: "Good + excellent: 61.0 percent",
+        body: "USDA reports 61% good or excellent, unchanged week over week and 11 points above last year.",
+        comparison_basis: "USDA current, prior-week, and prior-year benchmarks",
+      },
       releases: [{
         release_date: "2026-08-10",
         title: "Crop Progress release",
         source_url: "https://example.com/crop/2026-08-10",
         documents: [{ label: "TXT", format: "txt", url: "https://example.com/crop.txt" }],
-        metrics: [],
+        metrics: [
+          { id: "condition_good_excellent", label: "Good + excellent", value: 61, unit: "Percent", previous_week: 61, previous_year: 50, chart_group: "condition" },
+          { id: "progress_dough", label: "Dough", value: 74, unit: "Percent", previous_week: 62, previous_year: 69, five_year_average: 68, chart_group: "progress" },
+        ],
       }],
     },
     cot: {
@@ -122,10 +142,14 @@ describe("AgricultureReportDesk", () => {
     render(<MemoryRouter><AgricultureReportDesk /></MemoryRouter>);
 
     fireEvent.click(screen.getByRole("button", { name: /Crop Progress/ }));
-    expect(screen.getByText("Release history")).toBeTruthy();
+    expect(screen.getByText("Chart + history")).toBeTruthy();
     expect(screen.getByText("18", { selector: "p" })).toBeTruthy();
     expect(screen.getByText("Crop Progress release")).toBeTruthy();
     expect(screen.getByRole("link", { name: /Open TXT/ })).toBeTruthy();
+    expect(screen.getByText("What this report is saying")).toBeTruthy();
+    expect(screen.getByText(/11 points above last year/)).toBeTruthy();
+    expect(screen.getByText("5Y avg / prior year")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Expectation, result, and price response" })).toBeNull();
     expect(screen.queryByText("Official raw source connected")).toBeNull();
   });
 

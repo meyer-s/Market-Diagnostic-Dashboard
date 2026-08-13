@@ -29,7 +29,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.core.db import SessionLocal
 from app.models.agriculture_report_release import AgricultureReportRelease
 from app.models.agriculture_wasde_observation import AgricultureWasdeObservation
-from app.services.agriculture_report_archive import REPORT_ARCHIVE_START
+from app.services.agriculture_report_archive import NASS_ARCHIVES, REPORT_ARCHIVE_START
 from app.services.agriculture_index import AGRICULTURE_SYMBOLS
 from app.services.ingestion.yahoo_client import YahooClient, YahooClientError
 
@@ -287,6 +287,160 @@ def _empty_report_history(report_id: str, requested_start: date) -> dict[str, An
         "returned_count": 0,
         "truncated": False,
         "releases": [],
+        "analysis": None,
+    }
+
+
+def _metric_by_id(release: dict[str, Any], metric_id: str) -> dict[str, Any] | None:
+    return next((metric for metric in release.get("metrics", []) if metric.get("id") == metric_id), None)
+
+
+def _metric_releases(releases: list[dict[str, Any]], metric_id: str) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    return [
+        (release, metric)
+        for release in releases
+        if (metric := _metric_by_id(release, metric_id)) is not None
+    ]
+
+
+def _pct_change(current: float, comparison: float | None) -> float | None:
+    if comparison in (None, 0):
+        return None
+    return round((current / comparison - 1) * 100, 1)
+
+
+def _change_phrase(value: float | None, comparison: str) -> str:
+    if value is None:
+        return f"no usable {comparison} comparison"
+    if abs(value) < 0.05:
+        return f"unchanged from {comparison}"
+    return f"{abs(value):.1f}% {'above' if value > 0 else 'below'} {comparison}"
+
+
+def _raw_change_phrase(value: float, comparison: str) -> str:
+    if abs(value) < 0.5:
+        return f"in line with {comparison}"
+    return f"{abs(value):,.0f} {'above' if value > 0 else 'below'} {comparison}"
+
+
+def _build_report_history_analysis(
+    report_id: str,
+    releases: list[dict[str, Any]],
+    commodity_name: str,
+) -> dict[str, Any] | None:
+    definitions = {
+        "crop_production": ("production", "production_trend", "Production estimate history", "Published national production estimates"),
+        "crop_progress": ("condition_good_excellent", "progress_benchmark", "Field progress and condition", "Current reading against USDA's own benchmarks"),
+        "export_sales": ("net_sales", "sales_flow", "Export demand flow", "Net sales and weekly exports by report week"),
+        "export_inspections": ("inspected_volume", "inspection_pace", "Physical export inspection pace", "Weekly inspected volume with a four-week baseline"),
+        "grain_stocks": ("total_stocks", "stocks_composition", "Inventory checkpoint", "Total stocks and the on-farm/off-farm split"),
+        "acreage": ("planted_area", "acreage_comparison", "Acreage footprint", "Current planted area against the prior-year estimate"),
+        "cot": ("noncommercial_net", "positioning_balance", "Speculative positioning", "Noncommercial net position and open interest"),
+    }
+    primary_id, chart_kind, title, subtitle = definitions[report_id]
+    observations = _metric_releases(releases, primary_id)
+    if report_id == "crop_progress" and not observations:
+        progress_ids = [
+            metric["id"]
+            for release in releases
+            for metric in release.get("metrics", [])
+            if str(metric.get("id", "")).startswith("progress_")
+        ]
+        if progress_ids:
+            primary_id = progress_ids[0]
+            observations = _metric_releases(releases, primary_id)
+    if not observations:
+        return None
+
+    latest_release, latest_metric = observations[0]
+    latest_value = float(latest_metric["value"])
+    previous_value = float(observations[1][1]["value"]) if len(observations) > 1 else None
+    rolling_values = [float(metric["value"]) for _, metric in observations[1:5]]
+    four_week_average = round(mean(rolling_values), 3) if rolling_values else None
+    latest_label = latest_metric.get("label", primary_id)
+    unit = latest_metric.get("unit", "")
+    comparison_text = _change_phrase(_pct_change(latest_value, previous_value), "the previous release")
+    headline = f"{latest_label}: {latest_value:,.1f} {unit.lower()}"
+    body = f"The latest {commodity_name} reading is {comparison_text}."
+    basis = "Release-to-release comparison"
+
+    if report_id == "crop_production":
+        yoy = _metric_by_id(latest_release, "production_yoy_pct")
+        if yoy:
+            yoy_value = float(yoy["value"])
+            body = (
+                f"USDA's latest national estimate is {abs(yoy_value):.1f}% "
+                f"{'above' if yoy_value > 0 else 'below'} the year-ago crop, and {comparison_text}."
+            )
+            basis = "USDA's rounded year-over-year change plus the prior published estimate"
+    elif report_id == "crop_progress":
+        prior_week = latest_metric.get("previous_week")
+        prior_year = latest_metric.get("previous_year")
+        average = latest_metric.get("five_year_average")
+        comparisons = []
+        if prior_week is not None:
+            comparisons.append(f"{latest_value - float(prior_week):+.0f} points week over week")
+        if average is not None:
+            comparisons.append(f"{latest_value - float(average):+.0f} points versus the five-year average")
+        elif prior_year is not None:
+            comparisons.append(f"{latest_value - float(prior_year):+.0f} points versus last year")
+        body = f"USDA reports {latest_value:.0f}% for {latest_label.lower()}"
+        body += f", {' and '.join(comparisons)}." if comparisons else "."
+        basis = "USDA current, prior-week, prior-year, and five-year benchmarks where published"
+    elif report_id == "export_sales":
+        average_delta = latest_value - four_week_average if four_week_average is not None else None
+        previous_delta = latest_value - previous_value if previous_value is not None else None
+        body = f"Net sales are {latest_value:,.0f} {unit.lower()}"
+        if average_delta is not None:
+            body += f", {_raw_change_phrase(average_delta, 'the prior four-report average')}"
+        if previous_delta is not None:
+            body += f", and {_raw_change_phrase(previous_delta, 'the previous report')}"
+        body += "."
+        basis = "Previous report and prior four-report average"
+    elif report_id == "export_inspections":
+        rolling_change = _pct_change(latest_value, four_week_average)
+        body = f"The latest {commodity_name} physical inspection pace is {_change_phrase(rolling_change, 'the prior four-report average')} and {comparison_text}."
+        basis = "Previous report and prior four-report average"
+    elif report_id == "grain_stocks":
+        yoy = _metric_by_id(latest_release, "total_stocks_yoy_pct")
+        if yoy:
+            yoy_value = float(yoy["value"])
+            body = (
+                f"Reported stocks are {abs(yoy_value):.1f}% {'above' if yoy_value > 0 else 'below'} "
+                "the comparable year-ago checkpoint, indicating a larger inventory cushion."
+                if yoy_value > 0
+                else f"Reported stocks are {abs(yoy_value):.1f}% below the comparable year-ago checkpoint, indicating a smaller inventory cushion."
+            )
+            basis = "USDA's rounded change from the comparable year-ago stock date"
+    elif report_id == "acreage":
+        yoy = _metric_by_id(latest_release, "planted_area_yoy_pct")
+        if yoy:
+            yoy_value = float(yoy["value"])
+            body = (
+                f"Planted area is {abs(yoy_value):.1f}% {'above' if yoy_value > 0 else 'below'} last year, "
+                f"so the planted supply footprint has {'expanded' if yoy_value > 0 else 'contracted'}."
+            )
+            basis = "USDA's rounded change from prior-year planted area"
+    elif report_id == "cot":
+        direction = "net long" if latest_value > 0 else "net short" if latest_value < 0 else "neutral"
+        delta = latest_value - previous_value if previous_value is not None else None
+        body = f"Noncommercial traders are {direction} {abs(latest_value):,.0f} contracts"
+        body += f", with net positioning moving {delta:+,.0f} contracts from the prior report." if delta is not None else "."
+        basis = "Tuesday positions versus the previous CFTC report"
+
+    return {
+        "chart_kind": chart_kind,
+        "title": title,
+        "subtitle": subtitle,
+        "primary_metric_id": primary_id,
+        "latest_release_date": latest_release["release_date"],
+        "latest_value": latest_value,
+        "previous_value": previous_value,
+        "four_report_average": four_week_average,
+        "unit": unit,
+        "headline": headline,
+        "body": body,
+        "comparison_basis": basis,
     }
 
 
@@ -325,17 +479,47 @@ def _load_report_histories(
     for report_id in report_ids:
         direct = grouped.get((report_id, symbol), [])
         universal = grouped.get((report_id, "ALL"), [])
-        selected = direct or universal
+        # NASS source documents are universal report releases. Commodity-scoped
+        # rows enrich those same dates with parsed national metrics; they should
+        # not shorten the visible archive to only the metric-enriched period.
+        merge_scoped_metrics = report_id in NASS_ARCHIVES and bool(universal)
+        selected = universal if merge_scoped_metrics else (direct or universal)
         if not selected:
             continue
         scope_key = symbol if direct else "ALL"
         if scope_key == symbol:
-            scope_label = COMMODITIES[symbol]["name"]
+            metric_scope_name = COMMODITIES[symbol]["name"]
+            if report_id in {"grain_stocks", "export_inspections"} and symbol in {"ZW", "KE", "MW"}:
+                metric_scope_name = "All wheat"
+            elif report_id == "crop_progress" and symbol in {"ZW", "KE"}:
+                metric_scope_name = "Winter wheat"
+            elif report_id == "crop_progress" and symbol == "MW":
+                metric_scope_name = "Spring wheat"
+            scope_label = (
+                f"{metric_scope_name} metrics · full release archive"
+                if merge_scoped_metrics
+                else metric_scope_name
+            )
         elif report_id == "export_inspections":
             scope_label = "All covered grains"
         else:
             scope_label = "All published releases"
         returned = list(reversed(selected[-release_limit:]))
+        direct_by_date = {row.release_date: row for row in direct} if merge_scoped_metrics else {}
+        serialized_releases = [
+            {
+                "release_date": row.release_date.isoformat(),
+                "title": row.title,
+                "source_url": row.source_url,
+                "documents": row.documents or [],
+                "metrics": (
+                    direct_by_date[row.release_date].metrics
+                    if row.release_date in direct_by_date
+                    else row.metrics or []
+                ),
+            }
+            for row in returned
+        ]
         histories[report_id] = {
             "report_id": report_id,
             "scope_key": scope_key,
@@ -346,16 +530,12 @@ def _load_report_histories(
             "release_count": len(selected),
             "returned_count": len(returned),
             "truncated": len(selected) > len(returned),
-            "releases": [
-                {
-                    "release_date": row.release_date.isoformat(),
-                    "title": row.title,
-                    "source_url": row.source_url,
-                    "documents": row.documents or [],
-                    "metrics": row.metrics or [],
-                }
-                for row in returned
-            ],
+            "releases": serialized_releases,
+            "analysis": _build_report_history_analysis(
+                report_id,
+                serialized_releases,
+                scope_label,
+            ),
         }
     return histories
 
@@ -954,6 +1134,11 @@ def build_report_desk(symbol: str = "ZC", years: int = 2, selected_metric: str =
                 "observed_start_date": history["observed_start_date"],
                 "observed_end_date": history["observed_end_date"],
             })
+            if history["analysis"]:
+                item.update({
+                    "coverage": "chart_ready",
+                    "coverage_label": "Chart + history",
+                })
         report_catalog.append(item)
     return {
         "as_of": now.isoformat(),

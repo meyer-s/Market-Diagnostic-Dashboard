@@ -4,7 +4,7 @@ import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 const SOURCE_ROOT = join(process.cwd(), "src");
-const EXPECTED_RENDERED_ROOT_COUNT = 73;
+const EXPECTED_RENDERED_ROOT_COUNT = 80;
 const RECHART_ROOT_NAMES = new Set([
   "AreaChart",
   "BarChart",

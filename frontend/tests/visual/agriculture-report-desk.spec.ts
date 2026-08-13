@@ -25,13 +25,13 @@ const metricMeta = [
 
 const reports = [
   ["wasde", "WASDE", "USDA OCE", "Monthly", "12:00 ET", "chart_ready", "Chart ready"],
-  ["crop_production", "Crop Production", "USDA NASS", "Monthly in season", "12:00 ET", "history_ready", "Release history"],
-  ["crop_progress", "Crop Progress", "USDA NASS", "Weekly in season", "16:00 ET", "history_ready", "Release history"],
-  ["export_sales", "Export Sales", "USDA FAS", "Weekly", "08:30 ET", "history_ready", "Weekly history"],
-  ["export_inspections", "Export Inspections", "USDA AMS", "Weekly", "11:00 ET", "history_ready", "Weekly history"],
-  ["grain_stocks", "Grain Stocks", "USDA NASS", "Quarterly", "12:00 ET", "history_ready", "Release history"],
-  ["acreage", "Acreage", "USDA NASS", "Annual", "12:00 ET", "history_ready", "Release history"],
-  ["cot", "Commitments of Traders", "CFTC", "Weekly", "15:30 ET", "history_ready", "Position history"],
+  ["crop_production", "Crop Production", "USDA NASS", "Monthly in season", "12:00 ET", "chart_ready", "Chart + history"],
+  ["crop_progress", "Crop Progress", "USDA NASS", "Weekly in season", "16:00 ET", "chart_ready", "Chart + history"],
+  ["export_sales", "Export Sales", "USDA FAS", "Weekly", "08:30 ET", "chart_ready", "Chart + history"],
+  ["export_inspections", "Export Inspections", "USDA AMS", "Weekly", "11:00 ET", "chart_ready", "Chart + history"],
+  ["grain_stocks", "Grain Stocks", "USDA NASS", "Quarterly", "12:00 ET", "chart_ready", "Chart + history"],
+  ["acreage", "Acreage", "USDA NASS", "Annual", "12:00 ET", "chart_ready", "Chart + history"],
+  ["cot", "Commitments of Traders", "CFTC", "Weekly", "15:30 ET", "chart_ready", "Chart + history"],
 ].map(([id, name, agency, cadence, releaseTime, coverage, coverageLabel]) => ({
   id, name, agency, cadence, release_time: releaseTime, coverage, coverage_label: coverageLabel,
   description: `${name} official release history and source archive.`,
@@ -39,6 +39,76 @@ const reports = [
   release_count: id === "wasde" ? 36 : 156,
   observed_start_date: "2023-08-17", observed_end_date: "2026-08-12",
 }));
+
+const archiveSpecs = {
+  crop_production: {
+    chartKind: "production_trend", title: "Production estimate history", primary: "production", unit: "Million bushels",
+    latest: [{ id: "production", label: "Production", value: 16000, unit: "Million bushels" }, { id: "production_year_ago", label: "Year-ago production", value: 17021, unit: "Million bushels" }],
+    older: [{ id: "production", label: "Production", value: 15500, unit: "Million bushels" }, { id: "production_year_ago", label: "Year-ago production", value: 15100, unit: "Million bushels" }],
+  },
+  crop_progress: {
+    chartKind: "progress_benchmark", title: "Field progress and condition", primary: "condition_good_excellent", unit: "Percent",
+    latest: [{ id: "condition_good_excellent", label: "Good + excellent", value: 61, unit: "Percent", previous_week: 61, previous_year: 72, chart_group: "condition" }, { id: "progress_dough", label: "Dough", value: 61, unit: "Percent", previous_week: 43, previous_year: 56, five_year_average: 55, chart_group: "progress" }],
+    older: [{ id: "condition_good_excellent", label: "Good + excellent", value: 61, unit: "Percent", previous_week: 62, previous_year: 70, chart_group: "condition" }],
+  },
+  export_sales: {
+    chartKind: "sales_flow", title: "Export demand flow", primary: "net_sales", unit: "Metric Tons",
+    latest: [{ id: "net_sales", label: "Net sales", value: 1020000, unit: "Metric Tons" }, { id: "weekly_exports", label: "Weekly exports", value: 875000, unit: "Metric Tons" }],
+    older: [{ id: "net_sales", label: "Net sales", value: 880000, unit: "Metric Tons" }, { id: "weekly_exports", label: "Weekly exports", value: 910000, unit: "Metric Tons" }],
+  },
+  export_inspections: {
+    chartKind: "inspection_pace", title: "Physical export inspection pace", primary: "inspected_volume", unit: "Metric Tons",
+    latest: [{ id: "inspected_volume", label: "Inspected volume", value: 1220000, unit: "Metric Tons" }],
+    older: [{ id: "inspected_volume", label: "Inspected volume", value: 1040000, unit: "Metric Tons" }],
+  },
+  grain_stocks: {
+    chartKind: "stocks_composition", title: "Inventory checkpoint", primary: "total_stocks", unit: "Million bushels",
+    latest: [{ id: "total_stocks", label: "Total stocks", value: 5290, unit: "Million bushels" }, { id: "total_stocks_year_ago", label: "Year-ago stocks", value: 4640, unit: "Million bushels" }, { id: "on_farm_stocks", label: "On-farm", value: 2960, unit: "Million bushels" }, { id: "off_farm_stocks", label: "Off-farm", value: 2340, unit: "Million bushels" }],
+    older: [{ id: "total_stocks", label: "Total stocks", value: 4640, unit: "Million bushels" }],
+  },
+  acreage: {
+    chartKind: "acreage_comparison", title: "Acreage footprint", primary: "planted_area", unit: "Million acres",
+    latest: [{ id: "planted_area", label: "Planted area", value: 95.3, unit: "Million acres" }, { id: "planted_area_year_ago", label: "Year-ago planted area", value: 98.2, unit: "Million acres" }, { id: "harvested_area", label: "Harvested area", value: 87.4, unit: "Million acres" }],
+    older: [{ id: "planted_area", label: "Planted area", value: 98.2, unit: "Million acres" }],
+  },
+  cot: {
+    chartKind: "positioning_balance", title: "Speculative positioning", primary: "noncommercial_net", unit: "Contracts",
+    latest: [{ id: "noncommercial_net", label: "Noncommercial net", value: -52000, unit: "Contracts" }, { id: "open_interest", label: "Open interest", value: 1450000, unit: "Contracts" }],
+    older: [{ id: "noncommercial_net", label: "Noncommercial net", value: -34000, unit: "Contracts" }, { id: "open_interest", label: "Open interest", value: 1420000, unit: "Contracts" }],
+  },
+} as const;
+
+function archiveHistories() {
+  return Object.fromEntries(Object.entries(archiveSpecs).map(([reportId, spec]) => [reportId, {
+    report_id: reportId,
+    scope_key: "ZC",
+    scope_label: "Corn",
+    requested_start_date: "2023-08-13",
+    observed_start_date: "2023-08-17",
+    observed_end_date: "2026-08-12",
+    release_count: 156,
+    returned_count: 2,
+    truncated: true,
+    analysis: {
+      chart_kind: spec.chartKind,
+      title: spec.title,
+      subtitle: "Latest official reading compared on the report's own basis",
+      primary_metric_id: spec.primary,
+      latest_release_date: "2026-08-12",
+      latest_value: spec.latest[0].value,
+      previous_value: spec.older[0].value,
+      four_report_average: spec.older[0].value,
+      unit: spec.unit,
+      headline: `${spec.latest[0].label}: ${spec.latest[0].value.toLocaleString()} ${spec.unit.toLowerCase()}`,
+      body: "The latest official reading is shown against the report's appropriate previous-release or published benchmark.",
+      comparison_basis: "Official previous-release or published report benchmark",
+    },
+    releases: [
+      { release_date: "2026-08-12", title: `${spec.title} latest release`, source_url: "https://www.usda.gov/", documents: [{ label: "TXT", format: "txt", url: "https://www.usda.gov/" }], metrics: spec.latest },
+      { release_date: "2026-08-05", title: `${spec.title} previous release`, source_url: "https://www.usda.gov/", documents: [{ label: "TXT", format: "txt", url: "https://www.usda.gov/" }], metrics: spec.older },
+    ],
+  }]));
+}
 
 function reportDeskFixture() {
   const series = metricMeta.map(([id, label, orientation], metricIndex) => ({
@@ -96,7 +166,7 @@ function reportDeskFixture() {
     },
     next_release: schedule[1],
     latest_release: series[0].points.at(-1), reports, schedule,
-    report_histories: {},
+    report_histories: archiveHistories(),
     metrics: metricMeta.map(([id, label, orientation]) => ({ id, label, orientation, bullish_when: orientation < 0 ? "lower" : "higher" })),
     series, price_history: priceHistory,
     takeaways: [
@@ -132,6 +202,11 @@ test("report desk is readable, responsive, and accessible", async ({ page }, tes
   await expect(page.getByRole("button", { name: "All" })).toBeVisible();
   await expect(page.getByText(/36 persisted records/)).toBeVisible();
   await expect(page.getByText("Ending stocks expectation", { exact: true })).toHaveCount(0);
+  for (const reportName of ["Crop Production", "Crop Progress", "Export Sales", "Export Inspections", "Grain Stocks", "Acreage", "Commitments of Traders"]) {
+    await page.getByRole("button", { name: new RegExp(reportName) }).click();
+    await expect(page.getByText("What this report is saying")).toBeVisible();
+    await expect(page.locator(".recharts-wrapper").last()).toBeVisible();
+  }
   await page.screenshot({ path: testInfo.outputPath("agriculture-report-desk-desktop.png"), fullPage: true, animations: "disabled" });
   await testInfo.attach("desktop-full-page", { body: await page.screenshot({ fullPage: true, animations: "disabled" }), contentType: "image/png" });
   const desktopAxe = await new AxeBuilder({ page }).analyze();

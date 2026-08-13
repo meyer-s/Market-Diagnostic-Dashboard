@@ -7,6 +7,7 @@ FORM: Approved combined composition with a vertical Evidence Field spine and the
 */
 
 import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowLeft,
@@ -21,7 +22,10 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import {
+  Bar,
+  BarChart,
   CartesianGrid,
+  ComposedChart,
   Legend,
   Line,
   LineChart,
@@ -61,6 +65,11 @@ type ReportReleaseMetric = {
   label: string;
   value: number;
   unit: string;
+  previous_week?: number | null;
+  previous_year?: number | null;
+  five_year_average?: number | null;
+  chart_group?: "condition" | "progress";
+  comparison_quality?: "implied_from_published_rounded_percent";
 };
 
 type ReportReleaseDocument = {
@@ -88,6 +97,20 @@ type ReportHistory = {
   returned_count: number;
   truncated: boolean;
   releases: ReportRelease[];
+  analysis: {
+    chart_kind: "production_trend" | "progress_benchmark" | "sales_flow" | "inspection_pace" | "stocks_composition" | "acreage_comparison" | "positioning_balance";
+    title: string;
+    subtitle: string;
+    primary_metric_id: string;
+    latest_release_date: string;
+    latest_value: number;
+    previous_value: number | null;
+    four_report_average: number | null;
+    unit: string;
+    headline: string;
+    body: string;
+    comparison_basis: string;
+  } | null;
 };
 
 type ReleaseEvent = {
@@ -247,6 +270,234 @@ function ReportTooltip({ active, payload, label }: { active?: boolean; payload?:
         ))}
       </div>
     </div>
+  );
+}
+
+function compactNumber(value: number) {
+  return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value);
+}
+
+function ArchiveTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ name?: string; value?: number; color?: string; fill?: string }>; label?: number | string }) {
+  if (!active || !payload?.length || label === undefined) return null;
+  const heading = typeof label === "number" ? formatDate(new Date(label).toISOString()) : String(label);
+  return (
+    <div className="max-w-[290px] rounded-lg border border-stealth-600 bg-stealth-900/95 p-3 shadow-xl">
+      <p className="text-xs font-semibold text-stealth-200">{heading}</p>
+      <div className="mt-2 space-y-1.5">
+        {payload.filter((item) => item.value !== null && item.value !== undefined).map((item) => (
+          <p key={item.name} className="flex items-center justify-between gap-5 text-xs text-stealth-300">
+            <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full" style={{ background: item.color ?? item.fill }} />{item.name}</span>
+            <strong className="tabular-nums text-stealth-100">{formatValue(Number(item.value), 2)}</strong>
+          </p>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function releaseMetric(release: ReportRelease, metricId: string) {
+  return release.metrics.find((metric) => metric.id === metricId) ?? null;
+}
+
+function archiveTimeSeries(history: ReportHistory, metricIds: string[], limit = 104) {
+  return [...history.releases]
+    .reverse()
+    .map((release) => {
+      const row: Record<string, number | string | null> = {
+        timestamp: new Date(`${release.release_date}T12:00:00`).getTime(),
+        releaseDate: release.release_date,
+      };
+      metricIds.forEach((metricId) => { row[metricId] = releaseMetric(release, metricId)?.value ?? null; });
+      return row;
+    })
+    .filter((row) => metricIds.some((metricId) => row[metricId] !== null))
+    .slice(-limit);
+}
+
+function chartShell(chart: ReactNode, ariaLabel: string) {
+  return (
+    <div className="mt-4 h-[340px] min-w-0" aria-label={ariaLabel}>
+      {chart}
+    </div>
+  );
+}
+
+function ArchiveReportInsights({ history, commodityName }: { history: ReportHistory; commodityName: string }) {
+  const analysis = history.analysis;
+  if (!analysis) {
+    return (
+      <div>
+        <p className="page-kicker">Report interpretation</p>
+        <h2 className="mt-1 text-xl font-semibold text-stealth-100">Chart metrics are not available for this selection</h2>
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-stealth-400">The dated source files remain available in the raw viewer. This commodity/report pairing does not expose a national metric that can be compared honestly.</p>
+      </div>
+    );
+  }
+
+  const latestRelease = history.releases.find((release) => release.release_date === analysis.latest_release_date) ?? history.releases[0];
+  let chart: ReactNode = null;
+  let chartDescription = analysis.subtitle;
+
+  if (analysis.chart_kind === "production_trend") {
+    const rows = archiveTimeSeries(history, ["production", "production_year_ago"], 60);
+    const hasImpliedComparison = history.releases.some((release) => releaseMetric(release, "production_year_ago")?.comparison_quality);
+    chart = chartShell(
+      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+        <LineChart data={rows} margin={{ top: 12, right: 10, bottom: 6, left: 2 }} accessibilityLayer aria-label="Published production estimate history and year-ago crop comparison">
+          <CartesianGrid stroke="rgba(63,80,104,0.38)" vertical={false} />
+          <XAxis dataKey="timestamp" type="number" domain={["dataMin", "dataMax"]} tickFormatter={chartDateLabel} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} />
+          <YAxis width={56} tickFormatter={compactNumber} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} domain={["auto", "auto"]} />
+          <Tooltip content={<ArchiveTooltip />} />
+          <Legend verticalAlign="top" height={28} wrapperStyle={{ fontSize: 11, color: "#b7c3d3" }} />
+          <Line type="monotone" dataKey="production" name="Published production" stroke="#69d6a3" strokeWidth={2.3} dot={{ r: 2.5 }} connectNulls isAnimationActive={false} />
+          <Line type="monotone" dataKey="production_year_ago" name={hasImpliedComparison ? "Implied year-ago crop" : "Year-ago crop"} stroke="#83bfff" strokeWidth={1.5} strokeDasharray="5 4" dot={false} connectNulls isAnimationActive={false} />
+        </LineChart>
+      </ResponsiveContainer>,
+      `${commodityName} published production estimates and year-ago crop comparisons`,
+    );
+  } else if (analysis.chart_kind === "progress_benchmark") {
+    const metrics = (latestRelease?.metrics ?? []).filter((metric) => metric.chart_group).slice(0, 6);
+    const rows = metrics.map((metric) => ({
+      name: metric.label,
+      current: metric.value,
+      previous: metric.previous_week ?? null,
+      benchmark: metric.five_year_average ?? metric.previous_year ?? null,
+    }));
+    chartDescription = "Current percentage versus the previous week and the report's five-year average or prior-year benchmark.";
+    chart = chartShell(
+      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+        <BarChart data={rows} margin={{ top: 12, right: 8, bottom: 45, left: 0 }} accessibilityLayer aria-label="Latest crop progress and condition compared with published benchmarks">
+          <CartesianGrid stroke="rgba(63,80,104,0.38)" vertical={false} />
+          <XAxis dataKey="name" interval={0} angle={-22} textAnchor="end" height={68} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 10 }} />
+          <YAxis width={42} domain={[0, 100]} tickFormatter={(value) => `${value}%`} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} />
+          <Tooltip content={<ArchiveTooltip />} />
+          <Legend verticalAlign="top" height={28} wrapperStyle={{ fontSize: 11, color: "#b7c3d3" }} />
+          <Bar dataKey="current" name="Current" fill="#69d6a3" radius={[3, 3, 0, 0]} />
+          <Bar dataKey="previous" name="Previous week" fill="#83bfff" radius={[3, 3, 0, 0]} />
+          <Bar dataKey="benchmark" name="5Y avg / prior year" fill="#f3cb69" radius={[3, 3, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>,
+      `${commodityName} crop progress and condition against USDA benchmarks`,
+    );
+  } else if (analysis.chart_kind === "sales_flow") {
+    const rows = archiveTimeSeries(history, ["net_sales", "weekly_exports"], 52);
+    chart = chartShell(
+      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+        <LineChart data={rows} margin={{ top: 12, right: 10, bottom: 6, left: 2 }} accessibilityLayer aria-label="Weekly net export sales and exports shipped history">
+          <CartesianGrid stroke="rgba(63,80,104,0.38)" vertical={false} />
+          <XAxis dataKey="timestamp" type="number" domain={["dataMin", "dataMax"]} tickFormatter={chartDateLabel} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} />
+          <YAxis width={58} tickFormatter={compactNumber} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} />
+          <Tooltip content={<ArchiveTooltip />} />
+          <Legend verticalAlign="top" height={28} wrapperStyle={{ fontSize: 11, color: "#b7c3d3" }} />
+          <ReferenceLine y={0} stroke="#6f8199" strokeDasharray="3 3" />
+          <Line type="monotone" dataKey="net_sales" name="Net sales" stroke="#69d6a3" strokeWidth={2.2} dot={false} isAnimationActive={false} />
+          <Line type="monotone" dataKey="weekly_exports" name="Exports shipped" stroke="#83bfff" strokeWidth={1.7} dot={false} isAnimationActive={false} />
+        </LineChart>
+      </ResponsiveContainer>,
+      `${commodityName} weekly net export sales and exports shipped`,
+    );
+  } else if (analysis.chart_kind === "inspection_pace") {
+    const rawRows = archiveTimeSeries(history, ["inspected_volume"], 56);
+    const rows = rawRows.map((row, index) => {
+      const window = rawRows.slice(Math.max(0, index - 3), index + 1).map((item) => Number(item.inspected_volume));
+      return { ...row, rolling_average: window.reduce((sum, value) => sum + value, 0) / window.length };
+    });
+    chart = chartShell(
+      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+        <LineChart data={rows} margin={{ top: 12, right: 10, bottom: 6, left: 2 }} accessibilityLayer aria-label="Weekly export inspections and four-week moving average history">
+          <CartesianGrid stroke="rgba(63,80,104,0.38)" vertical={false} />
+          <XAxis dataKey="timestamp" type="number" domain={["dataMin", "dataMax"]} tickFormatter={chartDateLabel} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} />
+          <YAxis width={58} tickFormatter={compactNumber} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} />
+          <Tooltip content={<ArchiveTooltip />} />
+          <Legend verticalAlign="top" height={28} wrapperStyle={{ fontSize: 11, color: "#b7c3d3" }} />
+          <Line type="monotone" dataKey="inspected_volume" name="Weekly inspections" stroke="#83bfff" strokeWidth={1.35} dot={false} isAnimationActive={false} />
+          <Line type="monotone" dataKey="rolling_average" name="4-week average" stroke="#f3cb69" strokeWidth={2.4} dot={false} isAnimationActive={false} />
+        </LineChart>
+      </ResponsiveContainer>,
+      `${commodityName} weekly export inspections and four-week moving average`,
+    );
+  } else if (analysis.chart_kind === "stocks_composition") {
+    const yearAgoStocks = releaseMetric(latestRelease, "total_stocks_year_ago");
+    const rows = [
+      { name: "Total", current: releaseMetric(latestRelease, "total_stocks")?.value ?? null, yearAgo: yearAgoStocks?.value ?? null },
+      { name: "On farm", current: releaseMetric(latestRelease, "on_farm_stocks")?.value ?? null, yearAgo: releaseMetric(latestRelease, "on_farm_stocks_year_ago")?.value ?? null },
+      { name: "Off farm", current: releaseMetric(latestRelease, "off_farm_stocks")?.value ?? null, yearAgo: releaseMetric(latestRelease, "off_farm_stocks_year_ago")?.value ?? null },
+    ];
+    chart = chartShell(
+      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+        <BarChart data={rows} margin={{ top: 12, right: 8, bottom: 8, left: 0 }} accessibilityLayer aria-label="Latest total on-farm and off-farm stocks compared with year ago">
+          <CartesianGrid stroke="rgba(63,80,104,0.38)" vertical={false} />
+          <XAxis dataKey="name" stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} />
+          <YAxis width={58} tickFormatter={compactNumber} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} />
+          <Tooltip content={<ArchiveTooltip />} />
+          <Legend verticalAlign="top" height={28} wrapperStyle={{ fontSize: 11, color: "#b7c3d3" }} />
+          <Bar dataKey="current" name="Latest" fill="#69d6a3" radius={[3, 3, 0, 0]} />
+          <Bar dataKey="yearAgo" name={yearAgoStocks?.comparison_quality ? "Implied year ago" : "Year ago"} fill="#83bfff" radius={[3, 3, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>,
+      `${commodityName} latest stocks by storage position compared with year ago where published`,
+    );
+  } else if (analysis.chart_kind === "acreage_comparison") {
+    const yearAgoArea = releaseMetric(latestRelease, "planted_area_year_ago");
+    const rows = [
+      { name: "Planted", current: releaseMetric(latestRelease, "planted_area")?.value ?? null, yearAgo: yearAgoArea?.value ?? null },
+      { name: "Harvested", current: releaseMetric(latestRelease, "harvested_area")?.value ?? null, yearAgo: releaseMetric(latestRelease, "harvested_area_year_ago")?.value ?? null },
+    ];
+    chart = chartShell(
+      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+        <BarChart data={rows} margin={{ top: 12, right: 8, bottom: 8, left: 0 }} accessibilityLayer aria-label="Latest planted and harvested acreage compared with year ago">
+          <CartesianGrid stroke="rgba(63,80,104,0.38)" vertical={false} />
+          <XAxis dataKey="name" stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} />
+          <YAxis width={50} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} />
+          <Tooltip content={<ArchiveTooltip />} />
+          <Legend verticalAlign="top" height={28} wrapperStyle={{ fontSize: 11, color: "#b7c3d3" }} />
+          <Bar dataKey="current" name="Latest estimate" fill="#69d6a3" radius={[3, 3, 0, 0]} />
+          <Bar dataKey="yearAgo" name={yearAgoArea?.comparison_quality ? "Implied year ago" : "Year ago"} fill="#83bfff" radius={[3, 3, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>,
+      `${commodityName} planted and harvested acreage compared with year ago`,
+    );
+  } else {
+    const rows = archiveTimeSeries(history, ["noncommercial_net", "open_interest"], 104);
+    chart = chartShell(
+      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+        <ComposedChart data={rows} margin={{ top: 12, right: 5, bottom: 6, left: 0 }} accessibilityLayer aria-label="Noncommercial net futures position and open interest history">
+          <CartesianGrid stroke="rgba(63,80,104,0.38)" vertical={false} />
+          <XAxis dataKey="timestamp" type="number" domain={["dataMin", "dataMax"]} tickFormatter={chartDateLabel} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} />
+          <YAxis yAxisId="net" width={58} tickFormatter={compactNumber} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} />
+          <YAxis yAxisId="oi" orientation="right" width={58} tickFormatter={compactNumber} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} />
+          <Tooltip content={<ArchiveTooltip />} />
+          <Legend verticalAlign="top" height={28} wrapperStyle={{ fontSize: 11, color: "#b7c3d3" }} />
+          <ReferenceLine yAxisId="net" y={0} stroke="#6f8199" strokeDasharray="3 3" />
+          <Bar yAxisId="oi" dataKey="open_interest" name="Open interest" fill="#83bfff" opacity={0.23} />
+          <Line yAxisId="net" type="monotone" dataKey="noncommercial_net" name="Noncommercial net" stroke="#c9a8ff" strokeWidth={2.25} dot={false} isAnimationActive={false} />
+        </ComposedChart>
+      </ResponsiveContainer>,
+      `${commodityName} noncommercial net position and total open interest`,
+    );
+  }
+
+  return (
+    <>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="page-kicker">Report interpretation</p>
+          <h2 className="mt-1 text-xl font-semibold text-stealth-100">{analysis.title}</h2>
+          <p className="mt-2 text-sm leading-6 text-stealth-400">{chartDescription}</p>
+        </div>
+        <span className="rounded-full border border-sky-400/45 bg-sky-400/10 px-3 py-1.5 text-xs font-semibold text-sky-200">{formatDate(analysis.latest_release_date)}</span>
+      </div>
+
+      <article className="mt-5 rounded-lg border border-emerald-400/35 bg-emerald-400/[0.06] p-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stealth-400">What this report is saying</p>
+        <h3 className="mt-2 text-lg font-semibold text-stealth-100">{analysis.headline}</h3>
+        <p className="mt-2 text-sm leading-6 text-stealth-200">{analysis.body}</p>
+        <p className="mt-3 text-xs text-stealth-500">Comparison basis: {analysis.comparison_basis}</p>
+      </article>
+
+      {chart}
+      <p className="mt-3 flex items-start gap-2 text-xs leading-5 text-stealth-500"><Info size={14} className="mt-0.5 shrink-0" aria-hidden="true" />Values are plotted in the report's native units. Gaps mean the official source did not publish a confidently comparable national metric for that release.</p>
+    </>
   );
 }
 
@@ -421,7 +672,7 @@ export default function AgricultureReportDesk() {
           </Link>
           <p className="page-kicker">Evidence workspace</p>
           <h1 className="page-title">Agriculture Report Desk</h1>
-          <p className="page-subtitle max-w-4xl">Official releases on the left. Standardized revisions, expectations, and associated futures reactions on the right.</p>
+          <p className="page-subtitle max-w-4xl">Official releases on the left. A report-specific visualization, key read, and honest comparison baseline on the right.</p>
         </div>
         <a className="field-button field-button-secondary gap-2" href={buildApiUrl("/agriculture/report-desk/calendar.ics")} download>
           <Download size={16} aria-hidden="true" /> Add release calendar
@@ -448,13 +699,21 @@ export default function AgricultureReportDesk() {
             </select>
             <span className="mt-2 block text-xs text-stealth-500">{data.commodity.ticker} futures response</span>
           </label>
-          <label className="p-4 md:p-5">
-            <span className="text-xs font-semibold uppercase tracking-[0.16em] text-stealth-500">Primary metric</span>
-            <select value={metric} onChange={(event) => { setMetric(event.target.value); setSelectedReleaseDate(""); }} className={INPUT_CLASS}>
-              {data.metrics.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-            </select>
-            <span className="mt-2 block text-xs text-stealth-500">Latest market year: {latest?.market_year ?? "—"}</span>
-          </label>
+          {selectedReportId === "wasde" ? (
+            <label className="p-4 md:p-5">
+              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-stealth-500">Primary metric</span>
+              <select value={metric} onChange={(event) => { setMetric(event.target.value); setSelectedReleaseDate(""); }} className={INPUT_CLASS}>
+                {data.metrics.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+              </select>
+              <span className="mt-2 block text-xs text-stealth-500">Latest market year: {latest?.market_year ?? "—"}</span>
+            </label>
+          ) : (
+            <div className="p-4 md:p-5">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stealth-500">Report lens</p>
+              <p className="mt-2 text-base font-semibold text-stealth-100">{selectedReportHistory?.analysis?.title ?? "Source documents"}</p>
+              <p className="mt-2 text-xs text-stealth-500">{selectedReportHistory?.analysis?.comparison_basis ?? "No comparable national metric"}</p>
+            </div>
+          )}
           <div className="p-4 md:p-5">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stealth-500">History window</p>
             <div className="mt-3">
@@ -515,7 +774,7 @@ export default function AgricultureReportDesk() {
                 {nextSelectedReportRelease ? <p className="mt-2 flex items-center gap-2 text-xs text-sky-200"><Clock3 size={14} aria-hidden="true" /> Next: {formatDate(nextSelectedReportRelease.release_at)} at {nextSelectedReportRelease.time_label} · {confidenceLabel(nextSelectedReportRelease.confidence)}</p> : null}
               </div>
 
-              {selectedReport.coverage === "chart_ready" && selectedSeries && latest ? (
+              {selectedReport.id === "wasde" && selectedSeries && latest ? (
                 <>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="surface-card-muted p-3">
@@ -643,6 +902,8 @@ export default function AgricultureReportDesk() {
         </div>
 
         <div className="surface-card-strong min-w-0 p-4 md:p-5">
+          {selectedReportId === "wasde" ? (
+            <>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="page-kicker">Insights pane</p>
@@ -716,10 +977,14 @@ export default function AgricultureReportDesk() {
               <span className="flex items-center gap-2"><span className="h-0.5 w-5 bg-white/60" /> Rebased futures, context only</span>
             </div>
           </div>
+            </>
+          ) : selectedReportHistory ? (
+            <ArchiveReportInsights history={selectedReportHistory} commodityName={selectedReportHistory.scope_label ?? data.commodity.name} />
+          ) : null}
         </div>
       </section>
 
-      <section className="surface-card-strong p-4 md:p-5" aria-labelledby="release-inspector-title">
+      {selectedReportId === "wasde" ? <section className="surface-card-strong p-4 md:p-5" aria-labelledby="release-inspector-title">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="page-kicker">Event inspector</p>
@@ -784,7 +1049,7 @@ export default function AgricultureReportDesk() {
             </div>
           </div>
         </div>
-      </section>
+      </section> : null}
 
       <section className="grid gap-5 lg:grid-cols-[1fr_1fr]">
         <div className="surface-card min-w-0 p-4 md:p-5">

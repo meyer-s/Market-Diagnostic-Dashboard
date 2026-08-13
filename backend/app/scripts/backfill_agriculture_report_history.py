@@ -37,6 +37,11 @@ def main() -> None:
         dest="reports",
         help="Limit the import to one report id; repeat for more than one.",
     )
+    parser.add_argument(
+        "--nass-metrics-since",
+        type=_iso_date,
+        help="Also parse commodity-level metrics from NASS TXT releases on or after this date.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -48,6 +53,7 @@ def main() -> None:
             through=args.through,
             max_workers=args.workers,
             report_ids=args.reports,
+            nass_metrics_since=args.nass_metrics_since,
             dry_run=args.dry_run,
         )
     finally:
