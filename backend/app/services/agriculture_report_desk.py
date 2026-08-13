@@ -10,16 +10,22 @@ from __future__ import annotations
 
 import csv
 import io
+import zipfile
 from bisect import bisect_left
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from statistics import mean, pstdev
 from threading import Lock
-from typing import Any
+from time import sleep
+from typing import Any, Iterable
 from zoneinfo import ZoneInfo
 
 import requests
+from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.db import SessionLocal
+from app.models.agriculture_wasde_observation import AgricultureWasdeObservation
 from app.services.agriculture_index import AGRICULTURE_SYMBOLS
 from app.services.ingestion.yahoo_client import YahooClient, YahooClientError
 
@@ -27,12 +33,41 @@ from app.services.ingestion.yahoo_client import YahooClient, YahooClientError
 EASTERN = ZoneInfo("America/New_York")
 HTTP_HEADERS = {
     "User-Agent": "MarketDiagnosticDashboard/1.0 (agriculture-report-desk)",
-    "Accept": "text/csv,application/json,text/plain,*/*",
+    "Accept": "application/zip,text/csv,application/json,text/plain,*/*",
 }
 WASDE_CSV_URL = "https://www.usda.gov/sites/default/files/documents/oce-wasde-report-data-{year}-{month:02d}.csv"
+WASDE_STRUCTURED_START = date(2010, 4, 9)
+WASDE_MONTHLY_ARCHIVE_START = date(2021, 1, 1)
+WASDE_BULK_ARCHIVES = (
+    (
+        date(2010, 4, 1),
+        date(2015, 12, 31),
+        "https://www.usda.gov/sites/default/files/documents/oce-wasde-report-data-2010-04-to-2015-12.zip",
+    ),
+    (
+        date(2016, 1, 1),
+        date(2020, 12, 31),
+        "https://www.usda.gov/sites/default/files/documents/oce-wasde-report-data-2016-01-to-2020-12.zip",
+    ),
+)
+WASDE_MONTHLY_URL_OVERRIDES = {
+    (2026, 5): "https://www.usda.gov/sites/default/files/documents/oce-wasde-report-data-2026-05-V2.csv",
+    (2026, 6): "https://www.usda.gov/sites/default/files/documents/oce-wasde-report-data-2026-06-V2.csv",
+}
+# The official historical-data page has no October 2025 release file.
+WASDE_UNPUBLISHED_MONTHS = {(2025, 10)}
 _CACHE_TTL = timedelta(hours=12)
 _CSV_CACHE: dict[str, dict[str, Any]] = {}
 _CSV_CACHE_LOCK = Lock()
+
+
+@dataclass(frozen=True)
+class WasdeArchiveSource:
+    url: str
+    start: date
+    end: date
+    kind: str
+    required: bool = True
 
 
 COMMODITIES: dict[str, dict[str, str]] = {
@@ -76,6 +111,34 @@ METRICS: tuple[dict[str, Any], ...] = (
         "bullish_when": "lower than the prior estimate",
     },
 )
+
+
+def _wasde_archive_sources(since: date, through: date) -> list[WasdeArchiveSource]:
+    sources = [
+        WasdeArchiveSource(url=url, start=start, end=end, kind="bulk_zip")
+        for start, end, url in WASDE_BULK_ARCHIVES
+        if start <= through and end >= since
+    ]
+    cursor = max(since, WASDE_MONTHLY_ARCHIVE_START).replace(day=1)
+    final_month = through.replace(day=1)
+    while cursor <= final_month:
+        if (cursor.year, cursor.month) in WASDE_UNPUBLISHED_MONTHS:
+            cursor = (cursor.replace(day=28) + timedelta(days=4)).replace(day=1)
+            continue
+        sources.append(
+            WasdeArchiveSource(
+                url=WASDE_MONTHLY_URL_OVERRIDES.get(
+                    (cursor.year, cursor.month),
+                    WASDE_CSV_URL.format(year=cursor.year, month=cursor.month),
+                ),
+                start=cursor,
+                end=(cursor.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1),
+                kind="monthly_csv",
+                required=cursor < final_month,
+            )
+        )
+        cursor = (cursor.replace(day=28) + timedelta(days=4)).replace(day=1)
+    return sources
 
 REPORT_CATALOG: tuple[dict[str, Any], ...] = (
     {
@@ -200,8 +263,17 @@ def _month_starts(years: int, reference: date) -> list[date]:
     return list(reversed(months))
 
 
+def _history_start(years: int, reference: date) -> date:
+    return max(WASDE_STRUCTURED_START, reference - timedelta(days=years * 366))
+
+
 def _download_wasde_month(month_start: date) -> list[dict[str, str]]:
-    url = WASDE_CSV_URL.format(year=month_start.year, month=month_start.month)
+    if (month_start.year, month_start.month) in WASDE_UNPUBLISHED_MONTHS:
+        return []
+    url = WASDE_MONTHLY_URL_OVERRIDES.get(
+        (month_start.year, month_start.month),
+        WASDE_CSV_URL.format(year=month_start.year, month=month_start.month),
+    )
     now = datetime.now(EASTERN)
     with _CSV_CACHE_LOCK:
         cached = _CSV_CACHE.get(url)
@@ -220,9 +292,8 @@ def _download_wasde_month(month_start: date) -> list[dict[str, str]]:
     return rows
 
 
-def _load_wasde_history(years: int, reference: date) -> list[dict[str, str]]:
+def _download_wasde_months(months: list[date]) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
-    months = _month_starts(years, reference)
     with ThreadPoolExecutor(max_workers=6) as executor:
         futures = {executor.submit(_download_wasde_month, month): month for month in months}
         for future in as_completed(futures):
@@ -231,6 +302,44 @@ def _load_wasde_history(years: int, reference: date) -> list[dict[str, str]]:
             except requests.RequestException:
                 continue
     return rows
+
+
+def _read_persisted_wasde_rows(start: date, end: date) -> list[dict[str, str]]:
+    db = SessionLocal()
+    try:
+        observations = db.query(AgricultureWasdeObservation).filter(
+            AgricultureWasdeObservation.release_date >= start,
+            AgricultureWasdeObservation.release_date <= end,
+        ).order_by(AgricultureWasdeObservation.release_date.asc()).all()
+    except SQLAlchemyError:
+        db.rollback()
+        return []
+    finally:
+        db.close()
+    return [
+        {
+            "ReleaseDate": observation.release_date.isoformat(),
+            "ReportDate": observation.release_date.isoformat(),
+            "ReportTitle": "USDA WASDE as-reported archive",
+            "Attribute": observation.source_attribute,
+            "Commodity": observation.commodity,
+            "Region": "United States",
+            "MarketYear": observation.market_year,
+            "ProjEstFlag": observation.projection_status or "",
+            "Value": str(observation.value),
+            "Unit": observation.unit,
+            "SourceUrl": observation.source_url,
+        }
+        for observation in observations
+    ]
+
+
+def _load_wasde_history(years: int, reference: date) -> list[dict[str, str]]:
+    persisted = _read_persisted_wasde_rows(_history_start(years, reference), reference)
+    if persisted:
+        recent_months = _month_starts(1, reference)[-2:]
+        return _download_wasde_months(recent_months) + persisted
+    return _download_wasde_months(_month_starts(min(years, 3), reference))
 
 
 def _release_date(row: dict[str, str]) -> date | None:
@@ -255,6 +364,211 @@ def _market_year_sort(value: str) -> tuple[int, int]:
         return first, second
     except (TypeError, ValueError):
         return (0, 0)
+
+
+def _select_backfill_observations(
+    rows: Iterable[dict[str, str]],
+    *,
+    source_url: str,
+    since: date,
+    through: date,
+) -> tuple[list[dict[str, Any]], int]:
+    commodity_lookup = {
+        item["usda"].strip().lower(): item["usda"]
+        for item in COMMODITIES.values()
+    }
+    metric_lookup = {
+        attribute.strip().lower(): (metric["id"], attribute)
+        for metric in METRICS
+        for attribute in metric["attribute"]
+    }
+    candidates: dict[tuple[str, str, date], tuple[tuple[int, tuple[int, int]], dict[str, Any]]] = {}
+    rows_scanned = 0
+    for row in rows:
+        rows_scanned += 1
+        commodity = commodity_lookup.get((row.get("Commodity") or "").strip().lower())
+        metric_match = metric_lookup.get((row.get("Attribute") or "").strip().lower())
+        if commodity is None or metric_match is None:
+            continue
+        if (row.get("Region") or "").strip().lower() != "united states":
+            continue
+        if "reliability" in (row.get("ReportTitle") or "").lower():
+            continue
+        released = _release_date(row)
+        value = _safe_float(row.get("Value"))
+        if released is None or value is None or released < since or released > through:
+            continue
+        metric_id, source_attribute = metric_match
+        projection_status = (row.get("ProjEstFlag") or "").strip()
+        rank = (
+            1 if projection_status.lower().startswith("proj") else 0,
+            _market_year_sort(row.get("MarketYear") or ""),
+        )
+        key = (commodity, metric_id, released)
+        observation = {
+            "commodity": commodity,
+            "metric_id": metric_id,
+            "source_attribute": source_attribute,
+            "release_date": released,
+            "value": value,
+            "unit": (row.get("Unit") or "").strip(),
+            "market_year": (row.get("MarketYear") or "").strip(),
+            "projection_status": projection_status or None,
+            "source_url": source_url,
+        }
+        current = candidates.get(key)
+        if current is None or rank > current[0]:
+            candidates[key] = (rank, observation)
+    observations = [item[1] for item in candidates.values()]
+    observations.sort(key=lambda item: (item["release_date"], item["commodity"], item["metric_id"]))
+    return observations, rows_scanned
+
+
+def _download_backfill_source(
+    source: WasdeArchiveSource,
+    *,
+    since: date,
+    through: date,
+) -> dict[str, Any]:
+    response = None
+    for attempt in range(3):
+        try:
+            response = requests.get(source.url, headers=HTTP_HEADERS, timeout=60)
+            if response.status_code == 404 and not source.required:
+                return {
+                    "source": source,
+                    "missing": True,
+                    "rows_scanned": 0,
+                    "observations": [],
+                }
+            response.raise_for_status()
+            break
+        except requests.RequestException:
+            if attempt == 2:
+                raise
+            sleep(0.5 * (2 ** attempt))
+    if response is None:
+        raise RuntimeError(f"USDA archive request returned no response: {source.url}")
+
+    if source.kind == "bulk_zip":
+        with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+            members = [name for name in archive.namelist() if name.lower().endswith(".csv")]
+            if not members:
+                raise ValueError(f"USDA archive contained no CSV file: {source.url}")
+            with archive.open(members[0]) as raw_stream:
+                with io.TextIOWrapper(raw_stream, encoding="utf-8-sig", newline="") as text_stream:
+                    observations, rows_scanned = _select_backfill_observations(
+                        csv.DictReader(text_stream),
+                        source_url=source.url,
+                        since=since,
+                        through=through,
+                    )
+    else:
+        text_stream = io.StringIO(response.content.decode("utf-8-sig"))
+        observations, rows_scanned = _select_backfill_observations(
+            csv.DictReader(text_stream),
+            source_url=source.url,
+            since=since,
+            through=through,
+        )
+    return {
+        "source": source,
+        "missing": False,
+        "rows_scanned": rows_scanned,
+        "observations": observations,
+    }
+
+
+def backfill_wasde_history(
+    db,
+    *,
+    since: date = WASDE_STRUCTURED_START,
+    through: date | None = None,
+    max_workers: int = 6,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Import every supported chart observation from the official USDA archive."""
+    through = through or datetime.now(EASTERN).date()
+    since = max(since, WASDE_STRUCTURED_START)
+    if through < since:
+        raise ValueError("through must be on or after the structured WASDE start date")
+    sources = _wasde_archive_sources(since, through)
+    results: list[dict[str, Any]] = []
+    with ThreadPoolExecutor(max_workers=max(1, min(max_workers, 8))) as executor:
+        futures = {
+            executor.submit(_download_backfill_source, source, since=since, through=through): source
+            for source in sources
+        }
+        for future in as_completed(futures):
+            results.append(future.result())
+
+    incoming: dict[tuple[str, str, date], dict[str, Any]] = {}
+    for result in results:
+        for observation in result["observations"]:
+            key = (
+                observation["commodity"],
+                observation["metric_id"],
+                observation["release_date"],
+            )
+            incoming[key] = observation
+
+    existing_rows = db.query(AgricultureWasdeObservation).filter(
+        AgricultureWasdeObservation.release_date >= since,
+        AgricultureWasdeObservation.release_date <= through,
+    ).all()
+    existing = {
+        (row.commodity, row.metric_id, row.release_date): row
+        for row in existing_rows
+    }
+    inserted = 0
+    updated = 0
+    unchanged = 0
+    now = datetime.now(ZoneInfo("UTC")).replace(tzinfo=None)
+    mutable_fields = (
+        "source_attribute",
+        "value",
+        "unit",
+        "market_year",
+        "projection_status",
+        "source_url",
+    )
+    for key, observation in incoming.items():
+        current = existing.get(key)
+        if current is None:
+            db.add(AgricultureWasdeObservation(**observation, created_at=now, updated_at=now))
+            inserted += 1
+            continue
+        changed = any(getattr(current, field) != observation[field] for field in mutable_fields)
+        if not changed:
+            unchanged += 1
+            continue
+        for field in mutable_fields:
+            setattr(current, field, observation[field])
+        current.updated_at = now
+        updated += 1
+
+    if dry_run:
+        db.rollback()
+    else:
+        db.commit()
+    release_dates = sorted({key[2] for key in incoming})
+    missing_urls = [result["source"].url for result in results if result["missing"]]
+    return {
+        "status": "dry_run" if dry_run else "committed",
+        "requested_start": since.isoformat(),
+        "requested_end": through.isoformat(),
+        "sources_requested": len(sources),
+        "sources_loaded": len(sources) - len(missing_urls),
+        "missing_optional_sources": missing_urls,
+        "raw_rows_scanned": sum(result["rows_scanned"] for result in results),
+        "observations_selected": len(incoming),
+        "inserted": inserted,
+        "updated": updated,
+        "unchanged": unchanged,
+        "release_count": len(release_dates),
+        "coverage_start": release_dates[0].isoformat() if release_dates else None,
+        "coverage_end": release_dates[-1].isoformat() if release_dates else None,
+    }
 
 
 def _select_metric_rows(
@@ -460,7 +774,7 @@ def build_report_desk(symbol: str = "ZC", years: int = 2, selected_metric: str =
     metric_ids = {metric["id"] for metric in METRICS}
     if selected_metric not in metric_ids:
         raise KeyError(f"Unsupported report metric: {selected_metric}")
-    years = max(1, min(years, 3))
+    years = max(1, min(years, 20))
     now = datetime.now(EASTERN)
     commodity = COMMODITIES[symbol]
     warnings: list[str] = []
@@ -484,9 +798,10 @@ def build_report_desk(symbol: str = "ZC", years: int = 2, selected_metric: str =
                 "points": points,
             })
 
+    history_start = _history_start(years, now.date())
     prices, price_warnings = _price_history(
         commodity["ticker"],
-        now.date() - timedelta(days=years * 366),
+        history_start,
         now.date(),
     )
     warnings.extend(price_warnings)
@@ -495,12 +810,31 @@ def build_report_desk(symbol: str = "ZC", years: int = 2, selected_metric: str =
     next_release = schedule[0] if schedule else None
     selected_layer = next((layer for layer in series if layer["metric_id"] == selected_metric), None)
     latest_release = selected_layer["points"][-1] if selected_layer and selected_layer["points"] else None
+    release_dates = sorted({
+        date.fromisoformat(point["release_date"])
+        for layer in series
+        for point in layer["points"]
+    })
+    history_complete = bool(release_dates) and release_dates[0] <= history_start + timedelta(days=45)
+    if years > 3 and not history_complete:
+        warnings.append(
+            "The persisted USDA archive does not yet cover the full selected window; run the WASDE history backfill."
+        )
     return {
         "as_of": now.isoformat(),
         "commodity": {"symbol": symbol, **commodity},
         "commodities": [{"symbol": code, **item} for code, item in COMMODITIES.items()],
         "selected_metric": selected_metric,
         "years": years,
+        "history_coverage": {
+            "structured_start_date": WASDE_STRUCTURED_START.isoformat(),
+            "requested_start_date": history_start.isoformat(),
+            "observed_start_date": release_dates[0].isoformat() if release_dates else None,
+            "observed_end_date": release_dates[-1].isoformat() if release_dates else None,
+            "release_count": len(release_dates),
+            "complete": history_complete,
+            "source": "USDA WASDE as-reported CSV archive",
+        },
         "next_release": next_release,
         "latest_release": latest_release,
         "reports": list(REPORT_CATALOG),
@@ -510,7 +844,7 @@ def build_report_desk(symbol: str = "ZC", years: int = 2, selected_metric: str =
         "price_history": prices,
         "takeaways": _build_takeaways(series, selected_metric),
         "methodology": {
-            "actuals": "USDA monthly WASDE CSV files, preserved as reported on each release date.",
+            "actuals": "USDA WASDE bulk and monthly CSV files from April 2010 forward, preserved as reported on each release date.",
             "expectations": "User-entered only. USDA does not publish market consensus expectations.",
             "standardization": "Each metric uses the z-score of like-market-year release revisions; positive always means price-supportive.",
             "futures": f"Adjusted daily closes for {commodity['ticker']}, rebased to 100 at the start of the selected window.",

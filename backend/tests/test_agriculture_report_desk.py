@@ -4,7 +4,10 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
+from app.models.agriculture_wasde_observation import AgricultureWasdeObservation
 from app.services import agriculture_report_desk as desk
 
 
@@ -125,3 +128,134 @@ def test_soybean_mapping_matches_the_official_wasde_schema(monkeypatch: pytest.M
 
     assert payload["commodity"]["name"] == "Soybeans"
     assert payload["series"][0]["points"][0]["value"] == 330.0
+
+
+def test_archive_selection_keeps_latest_projected_market_year() -> None:
+    rows = [
+        {**_row("2010-04-09", "1900", "2009/10"), "ProjEstFlag": "Est."},
+        _row("2010-04-09", "1800", "2010/11"),
+        {**_row("2010-04-09", "9999", "2011/12"), "Region": "World"},
+    ]
+
+    observations, rows_scanned = desk._select_backfill_observations(
+        rows,
+        source_url="https://www.usda.gov/archive.zip",
+        since=date(2010, 4, 9),
+        through=date(2010, 4, 9),
+    )
+
+    assert rows_scanned == 3
+    assert len(observations) == 1
+    assert observations[0]["value"] == 1800.0
+    assert observations[0]["market_year"] == "2010/11"
+
+
+def test_wasde_backfill_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    AgricultureWasdeObservation.__table__.create(bind=engine)
+    session_local = sessionmaker(bind=engine)
+    source = desk.WasdeArchiveSource(
+        url="https://www.usda.gov/archive.zip",
+        start=date(2010, 4, 1),
+        end=date(2010, 4, 30),
+        kind="bulk_zip",
+    )
+    observation = {
+        "commodity": "Corn",
+        "metric_id": "ending_stocks",
+        "source_attribute": "Ending Stocks",
+        "release_date": date(2010, 4, 9),
+        "value": 1900.0,
+        "unit": "Million Bushels",
+        "market_year": "2010/11",
+        "projection_status": "Proj.",
+        "source_url": source.url,
+    }
+    monkeypatch.setattr(desk, "_wasde_archive_sources", lambda since, through: [source])
+    monkeypatch.setattr(
+        desk,
+        "_download_backfill_source",
+        lambda archive, since, through: {
+            "source": archive,
+            "missing": False,
+            "rows_scanned": 10,
+            "observations": [observation],
+        },
+    )
+
+    db = session_local()
+    try:
+        first = desk.backfill_wasde_history(
+            db,
+            since=date(2010, 4, 9),
+            through=date(2010, 4, 9),
+        )
+        second = desk.backfill_wasde_history(
+            db,
+            since=date(2010, 4, 9),
+            through=date(2010, 4, 9),
+        )
+        stored = db.query(AgricultureWasdeObservation).all()
+    finally:
+        db.close()
+        engine.dispose()
+
+    assert first["inserted"] == 1
+    assert second["inserted"] == 0
+    assert second["unchanged"] == 1
+    assert len(stored) == 1
+
+
+def test_archive_manifest_preserves_official_filename_exceptions() -> None:
+    sources = desk._wasde_archive_sources(date(2025, 10, 1), date(2026, 6, 30))
+    urls = {source.url for source in sources}
+
+    assert not any("2025-10" in url for url in urls)
+    assert any("2026-05-V2.csv" in url for url in urls)
+    assert any("2026-06-V2.csv" in url for url in urls)
+
+
+def test_long_history_reads_persisted_observations(monkeypatch: pytest.MonkeyPatch) -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    AgricultureWasdeObservation.__table__.create(bind=engine)
+    session_local = sessionmaker(bind=engine)
+    db = session_local()
+    try:
+        db.add(
+            AgricultureWasdeObservation(
+                commodity="Corn",
+                metric_id="ending_stocks",
+                source_attribute="Ending Stocks",
+                release_date=date(2010, 4, 9),
+                value=1900.0,
+                unit="Million Bushels",
+                market_year="2010/11",
+                projection_status="Proj.",
+                source_url="https://www.usda.gov/archive.zip",
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+    monkeypatch.setattr(desk, "SessionLocal", session_local)
+    monkeypatch.setattr(desk, "_download_wasde_months", lambda months: [])
+
+    rows = desk._load_wasde_history(20, date(2026, 8, 13))
+    engine.dispose()
+
+    assert len(rows) == 1
+    assert rows[0]["ReleaseDate"] == "2010-04-09"
+    assert rows[0]["Value"] == "1900.0"
+
+
+def test_all_history_window_reaches_the_structured_archive_boundary(monkeypatch: pytest.MonkeyPatch) -> None:
+    rows = [_row("2010-04-09", "1900", "2010/11"), _row("2026-08-12", "2117", "2026/27")]
+    monkeypatch.setattr(desk, "_load_wasde_history", lambda years, reference: rows)
+    monkeypatch.setattr(desk, "_price_history", lambda ticker, start, end: ([], []))
+
+    payload = desk.build_report_desk("ZC", years=20, selected_metric="ending_stocks")
+
+    assert payload["years"] == 20
+    assert payload["history_coverage"]["structured_start_date"] == "2010-04-09"
+    assert payload["history_coverage"]["observed_start_date"] == "2010-04-09"
+    assert payload["history_coverage"]["complete"] is True

@@ -44,6 +44,7 @@ const payload = {
   commodities: [{ symbol: "ZC", name: "Corn", usda: "Corn", ticker: "ZC=F" }],
   selected_metric: "ending_stocks",
   years: 2,
+  history_coverage: { structured_start_date: "2010-04-09", requested_start_date: "2024-08-13", observed_start_date: "2024-09-12", observed_end_date: "2026-08-12", release_count: 24, complete: true, source: "USDA WASDE as-reported CSV archive" },
   next_release: { report_id: "export_sales", report: "Export Sales", release_at: "2026-08-20T08:30:00-04:00", date: "2026-08-20", time_label: "8:30 AM ET", confidence: "recurring" },
   latest_release: point,
   reports: [
@@ -77,6 +78,8 @@ describe("AgricultureReportDesk", () => {
     expect(screen.getByText("Association is not causation.")).toBeTruthy();
     expect(screen.getByText("WASDE · Ending stocks")).toBeTruthy();
     expect(screen.queryByText("Ending stocks expectation")).toBeNull();
+    expect(screen.getByRole("button", { name: "All" })).toBeTruthy();
+    expect(screen.getByText(/24 as-reported releases/)).toBeTruthy();
   });
 
   it("communicates archive-only report coverage without fabricating a chart", () => {

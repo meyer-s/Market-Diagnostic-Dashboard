@@ -99,6 +99,15 @@ type ReportDeskData = {
   commodities: Array<{ symbol: string; name: string; usda: string; ticker: string }>;
   selected_metric: string;
   years: number;
+  history_coverage: {
+    structured_start_date: string;
+    requested_start_date: string;
+    observed_start_date: string | null;
+    observed_end_date: string | null;
+    release_count: number;
+    complete: boolean;
+    source: string;
+  };
   next_release: ReleaseEvent | null;
   latest_release: MetricPoint | null;
   reports: ReportCatalogItem[];
@@ -204,7 +213,7 @@ function ReportTooltip({ active, payload, label }: { active?: boolean; payload?:
 
 export default function AgricultureReportDesk() {
   const [symbol, setSymbol] = useState("ZC");
-  const [years, setYears] = useState<1 | 2 | 3>(2);
+  const [years, setYears] = useState<1 | 3 | 5 | 10 | 20>(3);
   const [metric, setMetric] = useState("ending_stocks");
   const [selectedReportId, setSelectedReportId] = useState("wasde");
   const [visibleMetrics, setVisibleMetrics] = useState<string[]>(["ending_stocks", "production", "exports"]);
@@ -399,9 +408,14 @@ export default function AgricultureReportDesk() {
           <div className="p-4 md:p-5">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stealth-500">History window</p>
             <div className="mt-3">
-              <SegmentedControl label="Report history window" value={years} options={[{ value: 1, label: "1Y" }, { value: 2, label: "2Y" }, { value: 3, label: "3Y" }]} onChange={setYears} accent="emerald" />
+              <SegmentedControl label="Report history window" value={years} options={[{ value: 1, label: "1Y" }, { value: 3, label: "3Y" }, { value: 5, label: "5Y" }, { value: 10, label: "10Y" }, { value: 20, label: "All" }]} onChange={setYears} accent="emerald" />
             </div>
-            <p className="mt-2 text-xs text-stealth-500">As-reported monthly snapshots</p>
+            <p className="mt-2 text-xs text-stealth-500">
+              {data.history_coverage.release_count} as-reported releases
+              {data.history_coverage.observed_start_date && data.history_coverage.observed_end_date
+                ? ` · ${formatDate(data.history_coverage.observed_start_date)}–${formatDate(data.history_coverage.observed_end_date)}`
+                : ""}
+            </p>
           </div>
         </div>
       </section>
