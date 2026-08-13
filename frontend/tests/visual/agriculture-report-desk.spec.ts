@@ -25,17 +25,19 @@ const metricMeta = [
 
 const reports = [
   ["wasde", "WASDE", "USDA OCE", "Monthly", "12:00 ET", "chart_ready", "Chart ready"],
-  ["crop_production", "Crop Production", "USDA NASS", "Monthly in season", "12:00 ET", "official_archive", "Raw archive"],
-  ["crop_progress", "Crop Progress", "USDA NASS", "Weekly in season", "16:00 ET", "official_archive", "Raw archive"],
-  ["export_sales", "Export Sales", "USDA FAS", "Weekly", "08:30 ET", "official_archive", "Raw archive"],
-  ["export_inspections", "Export Inspections", "USDA AMS", "Weekly", "11:00 ET", "latest_snapshot", "Latest snapshot"],
-  ["grain_stocks", "Grain Stocks", "USDA NASS", "Quarterly", "12:00 ET", "official_archive", "Raw archive"],
-  ["acreage", "Acreage", "USDA NASS", "Annual", "12:00 ET", "official_archive", "Raw archive"],
-  ["cot", "Commitments of Traders", "CFTC", "Weekly", "15:30 ET", "official_archive", "Raw archive"],
+  ["crop_production", "Crop Production", "USDA NASS", "Monthly in season", "12:00 ET", "history_ready", "Release history"],
+  ["crop_progress", "Crop Progress", "USDA NASS", "Weekly in season", "16:00 ET", "history_ready", "Release history"],
+  ["export_sales", "Export Sales", "USDA FAS", "Weekly", "08:30 ET", "history_ready", "Weekly history"],
+  ["export_inspections", "Export Inspections", "USDA AMS", "Weekly", "11:00 ET", "history_ready", "Weekly history"],
+  ["grain_stocks", "Grain Stocks", "USDA NASS", "Quarterly", "12:00 ET", "history_ready", "Release history"],
+  ["acreage", "Acreage", "USDA NASS", "Annual", "12:00 ET", "history_ready", "Release history"],
+  ["cot", "Commitments of Traders", "CFTC", "Weekly", "15:30 ET", "history_ready", "Position history"],
 ].map(([id, name, agency, cadence, releaseTime, coverage, coverageLabel]) => ({
   id, name, agency, cadence, release_time: releaseTime, coverage, coverage_label: coverageLabel,
   description: `${name} official release history and source archive.`,
   source_url: "https://www.usda.gov/", archive_url: "https://esmis.nal.usda.gov/",
+  release_count: id === "wasde" ? 36 : 156,
+  observed_start_date: "2023-08-17", observed_end_date: "2026-08-12",
 }));
 
 function reportDeskFixture() {
@@ -94,6 +96,7 @@ function reportDeskFixture() {
     },
     next_release: schedule[1],
     latest_release: series[0].points.at(-1), reports, schedule,
+    report_histories: {},
     metrics: metricMeta.map(([id, label, orientation]) => ({ id, label, orientation, bullish_when: orientation < 0 ? "lower" : "higher" })),
     series, price_history: priceHistory,
     takeaways: [
@@ -127,7 +130,7 @@ test("report desk is readable, responsive, and accessible", async ({ page }, tes
   await expect(page.getByText("Insights pane")).toBeVisible();
   await expect(page.getByText("WASDE · Ending stocks", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "All" })).toBeVisible();
-  await expect(page.getByText(/36 as-reported releases/)).toBeVisible();
+  await expect(page.getByText(/36 persisted records/)).toBeVisible();
   await expect(page.getByText("Ending stocks expectation", { exact: true })).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath("agriculture-report-desk-desktop.png"), fullPage: true, animations: "disabled" });
   await testInfo.attach("desktop-full-page", { body: await page.screenshot({ fullPage: true, animations: "disabled" }), contentType: "image/png" });

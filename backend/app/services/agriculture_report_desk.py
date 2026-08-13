@@ -1,9 +1,9 @@
 """Official-source agriculture report desk.
 
-The first chart-ready adapter uses USDA's monthly, as-reported WASDE CSV files.
-Other report families remain visible in the catalog and calendar with an honest
-coverage state until their historical parsers are connected. Market expectations
-are deliberately not sourced here: USDA does not publish market consensus data.
+USDA's monthly, as-reported WASDE CSV files power standardized chart layers.
+Every other report family is backed by persisted official release history, with
+numeric weekly snapshots where the publishing agency exposes a public dataset.
+Market expectations remain user-entered: USDA does not publish consensus data.
 """
 
 from __future__ import annotations
@@ -27,7 +27,9 @@ import requests
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.db import SessionLocal
+from app.models.agriculture_report_release import AgricultureReportRelease
 from app.models.agriculture_wasde_observation import AgricultureWasdeObservation
+from app.services.agriculture_report_archive import REPORT_ARCHIVE_START
 from app.services.agriculture_index import AGRICULTURE_SYMBOLS
 from app.services.ingestion.yahoo_client import YahooClient, YahooClientError
 
@@ -161,8 +163,8 @@ REPORT_CATALOG: tuple[dict[str, Any], ...] = (
         "agency": "USDA NASS",
         "cadence": "Monthly in season",
         "release_time": "12:00 ET",
-        "coverage": "official_archive",
-        "coverage_label": "Raw archive",
+        "coverage": "history_ready",
+        "coverage_label": "Release history",
         "description": "Acreage, yield, and production estimates from producer surveys and objective measurements.",
         "source_url": "https://esmis.nal.usda.gov/publication/crop-production",
         "archive_url": "https://esmis.nal.usda.gov/publication/crop-production",
@@ -173,8 +175,8 @@ REPORT_CATALOG: tuple[dict[str, Any], ...] = (
         "agency": "USDA NASS",
         "cadence": "Weekly in season",
         "release_time": "16:00 ET",
-        "coverage": "official_archive",
-        "coverage_label": "Raw archive",
+        "coverage": "history_ready",
+        "coverage_label": "Release history",
         "description": "Planting, development, harvest pace, and crop-condition ratings.",
         "source_url": "https://esmis.nal.usda.gov/publication/crop-progress",
         "archive_url": "https://esmis.nal.usda.gov/publication/crop-progress",
@@ -185,23 +187,23 @@ REPORT_CATALOG: tuple[dict[str, Any], ...] = (
         "agency": "USDA FAS",
         "cadence": "Weekly",
         "release_time": "08:30 ET",
-        "coverage": "official_archive",
-        "coverage_label": "Raw archive",
+        "coverage": "history_ready",
+        "coverage_label": "Weekly history",
         "description": "Weekly export commitments, shipments, and outstanding sales by commodity and destination.",
         "source_url": "https://www.fas.usda.gov/data/scheduled-reports",
-        "archive_url": "https://apps.fas.usda.gov/esrquery/",
+        "archive_url": "https://apps.fas.usda.gov/esrqs/",
     },
     {
         "id": "export_inspections",
         "name": "Export Inspections",
-        "agency": "USDA AMS",
+        "agency": "USDA AMS/FGIS",
         "cadence": "Weekly",
         "release_time": "11:00 ET",
-        "coverage": "latest_snapshot",
-        "coverage_label": "Latest snapshot",
+        "coverage": "history_ready",
+        "coverage_label": "Weekly history",
         "description": "Inspected export volume and marketing-year pace for major grains and oilseeds.",
-        "source_url": "https://www.ams.usda.gov/mnreports/wa_gr101.txt",
-        "archive_url": "https://www.ams.usda.gov/market-news/grain-and-feed",
+        "source_url": "https://agtransport.usda.gov/Exports/Grain-Inspections/sruw-w49i",
+        "archive_url": "https://agtransport.usda.gov/Exports/Grain-Inspections/sruw-w49i",
     },
     {
         "id": "grain_stocks",
@@ -209,8 +211,8 @@ REPORT_CATALOG: tuple[dict[str, Any], ...] = (
         "agency": "USDA NASS",
         "cadence": "Quarterly",
         "release_time": "12:00 ET",
-        "coverage": "official_archive",
-        "coverage_label": "Raw archive",
+        "coverage": "history_ready",
+        "coverage_label": "Release history",
         "description": "On-farm and off-farm stocks, a direct checkpoint on supply disappearance.",
         "source_url": "https://esmis.nal.usda.gov/publication/grain-stocks",
         "archive_url": "https://esmis.nal.usda.gov/publication/grain-stocks",
@@ -221,8 +223,8 @@ REPORT_CATALOG: tuple[dict[str, Any], ...] = (
         "agency": "USDA NASS",
         "cadence": "Annual",
         "release_time": "12:00 ET",
-        "coverage": "official_archive",
-        "coverage_label": "Raw archive",
+        "coverage": "history_ready",
+        "coverage_label": "Release history",
         "description": "Planted and harvested acreage estimates following the March intentions survey.",
         "source_url": "https://esmis.nal.usda.gov/publication/acreage",
         "archive_url": "https://esmis.nal.usda.gov/publication/acreage",
@@ -233,11 +235,11 @@ REPORT_CATALOG: tuple[dict[str, Any], ...] = (
         "agency": "CFTC",
         "cadence": "Weekly",
         "release_time": "15:30 ET",
-        "coverage": "official_archive",
-        "coverage_label": "Raw archive",
+        "coverage": "history_ready",
+        "coverage_label": "Position history",
         "description": "Tuesday futures positioning published Friday, including commercial and managed-money cohorts.",
         "source_url": "https://www.cftc.gov/MarketReports/CommitmentsofTraders/index.htm",
-        "archive_url": "https://www.cftc.gov/MarketReports/CommitmentsofTraders/HistoricalCompressed/index.htm",
+        "archive_url": "https://publicreporting.cftc.gov/Commitments-of-Traders/Legacy_All/srt6-5q2f",
     },
 )
 
@@ -267,6 +269,95 @@ def _month_starts(years: int, reference: date) -> list[date]:
 
 def _history_start(years: int, reference: date) -> date:
     return max(WASDE_STRUCTURED_START, reference - timedelta(days=years * 366))
+
+
+def _report_history_start(years: int, reference: date) -> date:
+    return max(REPORT_ARCHIVE_START, reference - timedelta(days=years * 366))
+
+
+def _empty_report_history(report_id: str, requested_start: date) -> dict[str, Any]:
+    return {
+        "report_id": report_id,
+        "scope_key": None,
+        "scope_label": None,
+        "requested_start_date": requested_start.isoformat(),
+        "observed_start_date": None,
+        "observed_end_date": None,
+        "release_count": 0,
+        "returned_count": 0,
+        "truncated": False,
+        "releases": [],
+    }
+
+
+def _load_report_histories(
+    symbol: str,
+    years: int,
+    reference: date,
+    *,
+    release_limit: int = 160,
+) -> dict[str, dict[str, Any]]:
+    requested_start = _report_history_start(years, reference)
+    report_ids = [report["id"] for report in REPORT_CATALOG if report["id"] != "wasde"]
+    histories = {report_id: _empty_report_history(report_id, requested_start) for report_id in report_ids}
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(AgricultureReportRelease)
+            .filter(
+                AgricultureReportRelease.report_id.in_(report_ids),
+                AgricultureReportRelease.scope_key.in_((symbol, "ALL")),
+                AgricultureReportRelease.release_date >= requested_start,
+                AgricultureReportRelease.release_date <= reference,
+            )
+            .order_by(AgricultureReportRelease.release_date.asc())
+            .all()
+        )
+    except SQLAlchemyError:
+        db.rollback()
+        return histories
+    finally:
+        db.close()
+
+    grouped: dict[tuple[str, str], list[AgricultureReportRelease]] = {}
+    for row in rows:
+        grouped.setdefault((row.report_id, row.scope_key), []).append(row)
+    for report_id in report_ids:
+        direct = grouped.get((report_id, symbol), [])
+        universal = grouped.get((report_id, "ALL"), [])
+        selected = direct or universal
+        if not selected:
+            continue
+        scope_key = symbol if direct else "ALL"
+        if scope_key == symbol:
+            scope_label = COMMODITIES[symbol]["name"]
+        elif report_id == "export_inspections":
+            scope_label = "All covered grains"
+        else:
+            scope_label = "All published releases"
+        returned = list(reversed(selected[-release_limit:]))
+        histories[report_id] = {
+            "report_id": report_id,
+            "scope_key": scope_key,
+            "scope_label": scope_label,
+            "requested_start_date": requested_start.isoformat(),
+            "observed_start_date": selected[0].release_date.isoformat(),
+            "observed_end_date": selected[-1].release_date.isoformat(),
+            "release_count": len(selected),
+            "returned_count": len(returned),
+            "truncated": len(selected) > len(returned),
+            "releases": [
+                {
+                    "release_date": row.release_date.isoformat(),
+                    "title": row.title,
+                    "source_url": row.source_url,
+                    "documents": row.documents or [],
+                    "metrics": row.metrics or [],
+                }
+                for row in returned
+            ],
+        }
+    return histories
 
 
 def _download_wasde_month(month_start: date) -> list[dict[str, str]]:
@@ -796,7 +887,7 @@ def build_report_desk(symbol: str = "ZC", years: int = 2, selected_metric: str =
     metric_ids = {metric["id"] for metric in METRICS}
     if selected_metric not in metric_ids:
         raise KeyError(f"Unsupported report metric: {selected_metric}")
-    years = max(1, min(years, 20))
+    years = max(1, min(years, 150))
     now = datetime.now(EASTERN)
     commodity = COMMODITIES[symbol]
     warnings: list[str] = []
@@ -842,6 +933,28 @@ def build_report_desk(symbol: str = "ZC", years: int = 2, selected_metric: str =
         warnings.append(
             "The persisted USDA archive does not yet cover the full selected window; run the WASDE history backfill."
         )
+    report_histories = _load_report_histories(symbol, years, now.date())
+    if not any(history["release_count"] for history in report_histories.values()):
+        warnings.append(
+            "The non-WASDE release archive is empty; run the agriculture report-history backfill."
+        )
+    report_catalog = []
+    for report in REPORT_CATALOG:
+        item = dict(report)
+        if report["id"] == "wasde":
+            item.update({
+                "release_count": len(release_dates),
+                "observed_start_date": release_dates[0].isoformat() if release_dates else None,
+                "observed_end_date": release_dates[-1].isoformat() if release_dates else None,
+            })
+        else:
+            history = report_histories[report["id"]]
+            item.update({
+                "release_count": history["release_count"],
+                "observed_start_date": history["observed_start_date"],
+                "observed_end_date": history["observed_end_date"],
+            })
+        report_catalog.append(item)
     return {
         "as_of": now.isoformat(),
         "commodity": {"symbol": symbol, **commodity},
@@ -859,14 +972,15 @@ def build_report_desk(symbol: str = "ZC", years: int = 2, selected_metric: str =
         },
         "next_release": next_release,
         "latest_release": latest_release,
-        "reports": list(REPORT_CATALOG),
+        "reports": report_catalog,
+        "report_histories": report_histories,
         "schedule": schedule,
         "metrics": [{key: value for key, value in metric.items() if key != "attribute"} for metric in METRICS],
         "series": series,
         "price_history": prices,
         "takeaways": _build_takeaways(series, selected_metric),
         "methodology": {
-            "actuals": "USDA WASDE bulk and monthly CSV files from April 2010 forward, preserved as reported on each release date.",
+            "actuals": "USDA WASDE CSVs plus official NASS, FAS, FGIS, and CFTC archives, preserved by the source's release or report date.",
             "expectations": "User-entered only. USDA does not publish market consensus expectations.",
             "standardization": "Each metric uses the z-score of like-market-year release revisions; positive always means price-supportive.",
             "futures": f"Adjusted daily closes for {commodity['ticker']}, rebased to 100 at the start of the selected window.",

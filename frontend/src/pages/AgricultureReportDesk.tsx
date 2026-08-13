@@ -38,7 +38,7 @@ import SegmentedControl from "../components/ui/SegmentedControl";
 import { useApi } from "../hooks/useApi";
 import { buildApiUrl } from "../utils/apiUtils";
 
-type ReportCoverage = "chart_ready" | "latest_snapshot" | "official_archive";
+type ReportCoverage = "chart_ready" | "history_ready" | "latest_snapshot" | "official_archive";
 
 type ReportCatalogItem = {
   id: string;
@@ -51,6 +51,43 @@ type ReportCatalogItem = {
   description: string;
   source_url: string;
   archive_url: string;
+  release_count: number;
+  observed_start_date: string | null;
+  observed_end_date: string | null;
+};
+
+type ReportReleaseMetric = {
+  id: string;
+  label: string;
+  value: number;
+  unit: string;
+};
+
+type ReportReleaseDocument = {
+  label: string;
+  format: string;
+  url: string;
+};
+
+type ReportRelease = {
+  release_date: string;
+  title: string;
+  source_url: string;
+  documents: ReportReleaseDocument[];
+  metrics: ReportReleaseMetric[];
+};
+
+type ReportHistory = {
+  report_id: string;
+  scope_key: string | null;
+  scope_label: string | null;
+  requested_start_date: string;
+  observed_start_date: string | null;
+  observed_end_date: string | null;
+  release_count: number;
+  returned_count: number;
+  truncated: boolean;
+  releases: ReportRelease[];
 };
 
 type ReleaseEvent = {
@@ -111,6 +148,7 @@ type ReportDeskData = {
   next_release: ReleaseEvent | null;
   latest_release: MetricPoint | null;
   reports: ReportCatalogItem[];
+  report_histories: Record<string, ReportHistory>;
   schedule: ReleaseEvent[];
   metrics: Array<{ id: string; label: string; orientation: number; bullish_when: string }>;
   series: ReportSeries[];
@@ -172,6 +210,7 @@ function confidenceLabel(confidence: ReleaseEvent["confidence"]) {
 
 function coverageTone(coverage: ReportCoverage) {
   if (coverage === "chart_ready") return "border-emerald-400/40 bg-emerald-400/10 text-emerald-200";
+  if (coverage === "history_ready") return "border-sky-400/40 bg-sky-400/10 text-sky-200";
   if (coverage === "latest_snapshot") return "border-sky-400/40 bg-sky-400/10 text-sky-200";
   return "border-stealth-600 bg-stealth-800 text-stealth-300";
 }
@@ -213,12 +252,13 @@ function ReportTooltip({ active, payload, label }: { active?: boolean; payload?:
 
 export default function AgricultureReportDesk() {
   const [symbol, setSymbol] = useState("ZC");
-  const [years, setYears] = useState<1 | 3 | 5 | 10 | 20>(3);
+  const [years, setYears] = useState<1 | 3 | 5 | 10 | 150>(3);
   const [metric, setMetric] = useState("ending_stocks");
   const [selectedReportId, setSelectedReportId] = useState("wasde");
   const [visibleMetrics, setVisibleMetrics] = useState<string[]>(["ending_stocks", "production", "exports"]);
   const [expectations, setExpectations] = useState<Expectations>(() => readExpectations());
   const [selectedReleaseDate, setSelectedReleaseDate] = useState("");
+  const [selectedArchiveReleaseDate, setSelectedArchiveReleaseDate] = useState("");
   const [expectationInput, setExpectationInput] = useState("");
   const [expectationNote, setExpectationNote] = useState("");
   const endpoint = `/agriculture/report-desk?symbol=${encodeURIComponent(symbol)}&years=${years}&metric=${encodeURIComponent(metric)}`;
@@ -229,7 +269,17 @@ export default function AgricultureReportDesk() {
     [data, metric],
   );
   const selectedReport = data?.reports.find((report) => report.id === selectedReportId) ?? data?.reports[0] ?? null;
+  const selectedReportHistory = data?.report_histories?.[selectedReportId] ?? null;
+  const selectedArchiveRelease = selectedReportHistory?.releases.find(
+    (release) => release.release_date === selectedArchiveReleaseDate,
+  ) ?? selectedReportHistory?.releases[0] ?? null;
   const nextSelectedReportRelease = data?.schedule.find((event) => event.report_id === selectedReportId) ?? null;
+
+  useEffect(() => {
+    const releases = selectedReportHistory?.releases ?? [];
+    if (releases.some((release) => release.release_date === selectedArchiveReleaseDate)) return;
+    setSelectedArchiveReleaseDate(releases[0]?.release_date ?? "");
+  }, [selectedArchiveReleaseDate, selectedReportHistory]);
 
   useEffect(() => {
     if (!data) return;
@@ -408,12 +458,12 @@ export default function AgricultureReportDesk() {
           <div className="p-4 md:p-5">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stealth-500">History window</p>
             <div className="mt-3">
-              <SegmentedControl label="Report history window" value={years} options={[{ value: 1, label: "1Y" }, { value: 3, label: "3Y" }, { value: 5, label: "5Y" }, { value: 10, label: "10Y" }, { value: 20, label: "All" }]} onChange={setYears} accent="emerald" />
+              <SegmentedControl label="Report history window" value={years} options={[{ value: 1, label: "1Y" }, { value: 3, label: "3Y" }, { value: 5, label: "5Y" }, { value: 10, label: "10Y" }, { value: 150, label: "All" }]} onChange={setYears} accent="emerald" />
             </div>
             <p className="mt-2 text-xs text-stealth-500">
-              {data.history_coverage.release_count} as-reported releases
-              {data.history_coverage.observed_start_date && data.history_coverage.observed_end_date
-                ? ` · ${formatDate(data.history_coverage.observed_start_date)}–${formatDate(data.history_coverage.observed_end_date)}`
+              {selectedReport?.release_count ?? data.history_coverage.release_count} persisted records
+              {selectedReport?.observed_start_date && selectedReport.observed_end_date
+                ? ` · ${formatDate(selectedReport.observed_start_date)}–${formatDate(selectedReport.observed_end_date)}`
                 : ""}
             </p>
           </div>
@@ -446,7 +496,8 @@ export default function AgricultureReportDesk() {
                     onClick={() => setSelectedReportId(report.id)}
                     className={`min-h-11 rounded-lg border px-3 text-sm font-semibold transition ${selectedReportId === report.id ? "border-emerald-400 bg-emerald-400/10 text-emerald-100" : "border-stealth-700 bg-stealth-900/50 text-stealth-300 hover:border-stealth-500"}`}
                   >
-                    {report.name}
+                    <span>{report.name}</span>
+                    <span className="ml-2 rounded-full bg-stealth-700/80 px-1.5 py-0.5 text-xs tabular-nums text-stealth-300">{(report.release_count ?? 0).toLocaleString()}</span>
                   </button>
                 ))}
               </div>
@@ -499,11 +550,87 @@ export default function AgricultureReportDesk() {
                     </div>
                   </div>
                 </>
+              ) : selectedReportHistory && selectedArchiveRelease ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="surface-card-muted p-3">
+                      <p className="text-xs uppercase tracking-[0.12em] text-stealth-500">Persisted records</p>
+                      <p className="mt-1 text-2xl font-semibold tabular-nums text-stealth-100">{selectedReportHistory.release_count.toLocaleString()}</p>
+                      <p className="mt-1 text-xs text-stealth-400">{selectedReportHistory.scope_label}</p>
+                    </div>
+                    <div className="surface-card-muted p-3">
+                      <p className="text-xs uppercase tracking-[0.12em] text-stealth-500">Archive coverage</p>
+                      <p className="mt-1 text-sm font-semibold text-stealth-100">
+                        {selectedReportHistory.observed_start_date ? formatDate(selectedReportHistory.observed_start_date) : "—"}
+                      </p>
+                      <p className="mt-1 text-xs text-stealth-400">through {selectedReportHistory.observed_end_date ? formatDate(selectedReportHistory.observed_end_date) : "—"}</p>
+                    </div>
+                  </div>
+
+                  <label className="block">
+                    <span className="text-xs font-semibold uppercase tracking-[0.12em] text-stealth-500">Dated record in the raw viewer</span>
+                    <select
+                      value={selectedArchiveRelease.release_date}
+                      onChange={(event) => setSelectedArchiveReleaseDate(event.target.value)}
+                      className={INPUT_CLASS}
+                    >
+                      {selectedReportHistory.releases.map((release) => (
+                        <option key={release.release_date} value={release.release_date}>
+                          {formatDate(release.release_date)} · {release.title}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <article className="rounded-lg border border-stealth-600 bg-stealth-900/35 p-4">
+                    <div className="flex items-start gap-3">
+                      <FileText size={20} className="mt-0.5 shrink-0 text-sky-300" aria-hidden="true" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stealth-500">{formatDate(selectedArchiveRelease.release_date)}</p>
+                        <h3 className="mt-1 text-sm font-semibold text-stealth-100">{selectedArchiveRelease.title}</h3>
+                      </div>
+                    </div>
+
+                    {selectedArchiveRelease.metrics.length > 0 ? (
+                      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                        {selectedArchiveRelease.metrics.slice(0, 4).map((releaseMetric) => (
+                          <div key={releaseMetric.id} className="rounded-md border border-stealth-700 bg-stealth-900/60 p-3">
+                            <p className="text-xs text-stealth-500">{releaseMetric.label}</p>
+                            <p className="mt-1 text-lg font-semibold tabular-nums text-stealth-100">{formatValue(releaseMetric.value, 0)}</p>
+                            <p className="text-xs text-stealth-500">{releaseMetric.unit}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-3 text-sm leading-6 text-stealth-400">The agency publishes this release as source documents. Open the preserved TXT, PDF, or ZIP file below to inspect the raw report.</p>
+                    )}
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {selectedArchiveRelease.documents.map((document) => (
+                        <a key={`${document.format}:${document.url}`} href={document.url} target="_blank" rel="noreferrer" className="field-button field-button-secondary gap-2">
+                          Open {document.label} <ExternalLink size={14} aria-hidden="true" />
+                        </a>
+                      ))}
+                      {selectedArchiveRelease.documents.length === 0 ? (
+                        <a href={selectedArchiveRelease.source_url} target="_blank" rel="noreferrer" className="field-button field-button-secondary gap-2">
+                          Open release <ExternalLink size={14} aria-hidden="true" />
+                        </a>
+                      ) : null}
+                    </div>
+                  </article>
+
+                  {selectedReportHistory.truncated ? (
+                    <p className="flex items-start gap-2 text-xs leading-5 text-stealth-500">
+                      <Info size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+                      Showing the latest {selectedReportHistory.returned_count.toLocaleString()} records in the selector; all {selectedReportHistory.release_count.toLocaleString()} records remain persisted and are reflected in coverage.
+                    </p>
+                  ) : null}
+                </div>
               ) : (
-                <div className="rounded-lg border border-dashed border-stealth-600 bg-stealth-900/35 p-5">
-                  <FileText size={22} className="text-stealth-400" aria-hidden="true" />
-                  <h3 className="mt-3 text-sm font-semibold text-stealth-100">Official raw source connected</h3>
-                  <p className="mt-2 text-sm leading-6 text-stealth-400">This family is scheduled and linked, but its historical observations are not standardized into chart layers yet. Open the official release without losing your place in the desk.</p>
+                <div className="rounded-lg border border-dashed border-amber-300/35 bg-amber-300/[0.05] p-5">
+                  <TriangleAlert size={22} className="text-amber-200" aria-hidden="true" />
+                  <h3 className="mt-3 text-sm font-semibold text-stealth-100">Release history has not been imported</h3>
+                  <p className="mt-2 text-sm leading-6 text-stealth-400">This is an ingestion gap, not an archive-only report state. The official source remains available below while the backfill is repaired.</p>
                 </div>
               )}
 
@@ -519,8 +646,8 @@ export default function AgricultureReportDesk() {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="page-kicker">Insights pane</p>
-              <h2 className="mt-1 text-xl font-semibold text-stealth-100">What changed — and did price agree?</h2>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-stealth-400">Different units are converted to like-series revision z-scores. Positive always means the report moved in a price-supportive direction.</p>
+              <h2 className="mt-1 text-xl font-semibold text-stealth-100">WASDE revisions — and did price agree?</h2>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-stealth-400">The raw viewer can inspect every report family. This pane stays on chart-ready WASDE layers, where like-series revisions can be standardized without fabricating comparisons.</p>
             </div>
             <div className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${latestSignal !== null && latestSignal !== undefined && latestSignal >= 0.5 ? "border-emerald-400/50 bg-emerald-400/10 text-emerald-200" : latestSignal !== null && latestSignal !== undefined && latestSignal <= -0.5 ? "border-rose-400/50 bg-rose-400/10 text-rose-200" : "border-stealth-600 bg-stealth-800 text-stealth-300"}`}>
               {signalLabel(latestSignal)}

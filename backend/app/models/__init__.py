@@ -37,3 +37,4 @@ from .stock_price_bar import StockPriceBar
 from .stock_projection_snapshot import StockProjectionSnapshot
 from .endpoint_response_snapshot import EndpointResponseSnapshot
 from .agriculture_wasde_observation import AgricultureWasdeObservation
+from .agriculture_report_release import AgricultureReportRelease

@@ -48,9 +48,29 @@ const payload = {
   next_release: { report_id: "export_sales", report: "Export Sales", release_at: "2026-08-20T08:30:00-04:00", date: "2026-08-20", time_label: "8:30 AM ET", confidence: "recurring" },
   latest_release: point,
   reports: [
-    { id: "wasde", name: "WASDE", agency: "USDA OCE", cadence: "Monthly", release_time: "12:00 ET", coverage: "chart_ready", coverage_label: "Chart ready", description: "Balance sheets.", source_url: "https://example.com/latest", archive_url: "https://example.com/archive" },
-    { id: "crop_progress", name: "Crop Progress", agency: "USDA NASS", cadence: "Weekly", release_time: "16:00 ET", coverage: "official_archive", coverage_label: "Raw archive", description: "Crop pace.", source_url: "https://example.com/crop", archive_url: "https://example.com/crop" },
+    { id: "wasde", name: "WASDE", agency: "USDA OCE", cadence: "Monthly", release_time: "12:00 ET", coverage: "chart_ready", coverage_label: "Chart ready", description: "Balance sheets.", source_url: "https://example.com/latest", archive_url: "https://example.com/archive", release_count: 24, observed_start_date: "2024-09-12", observed_end_date: "2026-08-12" },
+    { id: "crop_progress", name: "Crop Progress", agency: "USDA NASS", cadence: "Weekly", release_time: "16:00 ET", coverage: "history_ready", coverage_label: "Release history", description: "Crop pace.", source_url: "https://example.com/crop", archive_url: "https://example.com/crop", release_count: 18, observed_start_date: "2026-04-06", observed_end_date: "2026-08-10" },
   ],
+  report_histories: {
+    crop_progress: {
+      report_id: "crop_progress",
+      scope_key: "ALL",
+      scope_label: "All published releases",
+      requested_start_date: "2024-08-13",
+      observed_start_date: "2026-04-06",
+      observed_end_date: "2026-08-10",
+      release_count: 18,
+      returned_count: 18,
+      truncated: false,
+      releases: [{
+        release_date: "2026-08-10",
+        title: "Crop Progress release",
+        source_url: "https://example.com/crop/2026-08-10",
+        documents: [{ label: "TXT", format: "txt", url: "https://example.com/crop.txt" }],
+        metrics: [],
+      }],
+    },
+  },
   schedule: [{ report_id: "wasde", report: "WASDE", release_at: "2026-09-11T12:00:00-04:00", date: "2026-09-11", time_label: "12:00 PM ET", confidence: "official" }],
   metrics: [{ id: "ending_stocks", label: "Ending stocks", orientation: -1, bullish_when: "lower" }],
   series: [{ id: "wasde:ending_stocks", report_id: "wasde", report: "WASDE", metric_id: "ending_stocks", label: "Ending stocks", bullish_when: "lower", unit: "Million Bushels", points: [point] }],
@@ -79,15 +99,18 @@ describe("AgricultureReportDesk", () => {
     expect(screen.getByText("WASDE · Ending stocks")).toBeTruthy();
     expect(screen.queryByText("Ending stocks expectation")).toBeNull();
     expect(screen.getByRole("button", { name: "All" })).toBeTruthy();
-    expect(screen.getByText(/24 as-reported releases/)).toBeTruthy();
+    expect(screen.getByText(/24 persisted records/)).toBeTruthy();
   });
 
-  it("communicates archive-only report coverage without fabricating a chart", () => {
+  it("renders imported release history and raw documents for non-WASDE reports", () => {
     render(<MemoryRouter><AgricultureReportDesk /></MemoryRouter>);
 
-    fireEvent.click(screen.getByRole("button", { name: "Crop Progress" }));
-    expect(screen.getByText("Official raw source connected")).toBeTruthy();
-    expect(screen.getByText("Raw archive")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Crop Progress/ }));
+    expect(screen.getByText("Release history")).toBeTruthy();
+    expect(screen.getByText("18", { selector: "p" })).toBeTruthy();
+    expect(screen.getByText("Crop Progress release")).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Open TXT/ })).toBeTruthy();
+    expect(screen.queryByText("Official raw source connected")).toBeNull();
   });
 
   it("saves user expectations locally", () => {

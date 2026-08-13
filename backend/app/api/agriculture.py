@@ -11,7 +11,7 @@ router = APIRouter(prefix="/agriculture")
 @router.get("/report-desk")
 def get_agriculture_report_desk(
     symbol: str = Query("ZC"),
-    years: int = Query(2, ge=1, le=20),
+    years: int = Query(2, ge=1, le=150),
     metric: str = Query("ending_stocks"),
 ):
     try:
