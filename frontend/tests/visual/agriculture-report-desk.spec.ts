@@ -82,7 +82,17 @@ function reportDeskFixture() {
       { symbol: "ZS", name: "Soybeans", usda: "Soybeans", ticker: "ZS=F" },
       { symbol: "ZW", name: "Chicago Wheat", usda: "Wheat", ticker: "ZW=F" },
     ],
-    selected_metric: "ending_stocks", years: 2, next_release: schedule[1],
+    selected_metric: "ending_stocks", years: 3,
+    history_coverage: {
+      structured_start_date: "2010-04-09",
+      requested_start_date: "2023-08-13",
+      observed_start_date: "2023-09-12",
+      observed_end_date: "2026-08-12",
+      release_count: 36,
+      complete: true,
+      source: "USDA WASDE as-reported CSV archive",
+    },
+    next_release: schedule[1],
     latest_release: series[0].points.at(-1), reports, schedule,
     metrics: metricMeta.map(([id, label, orientation]) => ({ id, label, orientation, bullish_when: orientation < 0 ? "lower" : "higher" })),
     series, price_history: priceHistory,
@@ -116,6 +126,8 @@ test("report desk is readable, responsive, and accessible", async ({ page }, tes
   await expect(page.getByText("Raw release viewer")).toBeVisible();
   await expect(page.getByText("Insights pane")).toBeVisible();
   await expect(page.getByText("WASDE · Ending stocks", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "All" })).toBeVisible();
+  await expect(page.getByText(/36 as-reported releases/)).toBeVisible();
   await expect(page.getByText("Ending stocks expectation", { exact: true })).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath("agriculture-report-desk-desktop.png"), fullPage: true, animations: "disabled" });
   await testInfo.attach("desktop-full-page", { body: await page.screenshot({ fullPage: true, animations: "disabled" }), contentType: "image/png" });
