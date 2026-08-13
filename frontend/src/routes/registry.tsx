@@ -21,6 +21,7 @@ const VolumeBreadthTools = lazy(() => import("../pages/tools/VolumeBreadthTools"
 const PreciousMetalsDiagnostic = lazy(() => import("../pages/PreciousMetalsDiagnostic"));
 const CryptoDiagnostic = lazy(() => import("../pages/CryptoDiagnostic"));
 const AgricultureIndex = lazy(() => import("../pages/AgricultureIndex"));
+const AgricultureReportDesk = lazy(() => import("../pages/AgricultureReportDesk"));
 const EnergyIndex = lazy(() => import("../pages/EnergyIndex"));
 const RealEstateDiagnostic = lazy(() => import("../pages/RealEstateDiagnostic"));
 
@@ -130,6 +131,7 @@ export const routeRegistry: AppRouteDefinition[] = [
   { path: "/metals-indicators", label: "Metals", analyticsName: "Metals", navGroup: "tools", toolGroup: "asset-classes", visible: true, activeMatch: "/metals-indicators", element: <PreciousMetalsDiagnostic /> },
   { path: "/crypto-indicators", label: "Crypto", analyticsName: "Crypto", navGroup: "tools", toolGroup: "asset-classes", visible: true, activeMatch: "/crypto-indicators", element: <CryptoDiagnostic /> },
   { path: "/agriculture", label: "Agriculture Index", analyticsName: "Agriculture Index", navGroup: "tools", toolGroup: "asset-classes", visible: true, activeMatch: "/agriculture", element: <AgricultureIndex /> },
+  { path: "/agriculture/reports", analyticsName: "Agriculture Report Desk", element: <AgricultureReportDesk /> },
   { path: "/energy", label: "Energy Markets", analyticsName: "Energy Markets", navGroup: "tools", toolGroup: "asset-classes", visible: true, activeMatch: "/energy", element: <EnergyIndex /> },
   { path: "/real-estate", label: "Real Estate", analyticsName: "Real Estate", navGroup: "tools", toolGroup: "asset-classes", visible: true, activeMatch: "/real-estate", element: <RealEstateDiagnostic /> },
   { path: "*", analyticsName: "Not Found", element: <NotFoundPage /> },

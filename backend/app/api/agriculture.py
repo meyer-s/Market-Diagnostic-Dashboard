@@ -1,10 +1,32 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 
 from app.services.agriculture_index import build_agriculture_long_view, calculate_composite_index
 from app.services.agriculture_market_context import build_agriculture_market_context
+from app.services.agriculture_report_desk import build_calendar_ics, build_report_desk
 
 
 router = APIRouter(prefix="/agriculture")
+
+
+@router.get("/report-desk")
+def get_agriculture_report_desk(
+    symbol: str = Query("ZC"),
+    years: int = Query(2, ge=1, le=3),
+    metric: str = Query("ending_stocks"),
+):
+    try:
+        return build_report_desk(symbol=symbol, years=years, selected_metric=metric)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc).strip("'")) from exc
+
+
+@router.get("/report-desk/calendar.ics")
+def get_agriculture_report_calendar():
+    return Response(
+        content=build_calendar_ics(),
+        media_type="text/calendar",
+        headers={"Content-Disposition": 'attachment; filename="agriculture-report-calendar.ics"'},
+    )
 
 
 @router.get("/context")

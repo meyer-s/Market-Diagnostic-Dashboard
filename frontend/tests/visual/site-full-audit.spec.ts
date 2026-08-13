@@ -268,6 +268,13 @@ const baseTargets: AuditTarget[] = [
       await page.getByRole("tab", { name: "Deep Dive", exact: true }).click();
     },
   },
+  {
+    id: "22b-agriculture-report-desk",
+    name: "Agriculture — Report Desk",
+    path: "/agriculture/reports",
+    group: "route",
+    template: "AgricultureReportDesk",
+  },
   { id: "23-energy", name: "Energy", path: "/energy", group: "route", template: "EnergyIndex" },
   {
     id: "24-real-estate-overview",

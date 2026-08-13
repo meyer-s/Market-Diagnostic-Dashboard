@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Bar,
   Cell,
@@ -846,12 +847,15 @@ export default function AgricultureIndex() {
 
   return (
     <div className="page-shell-wide page-stack">
-      <div>
-        <p className="page-kicker">Tools</p>
-        <h1 className="page-title">Agriculture Index</h1>
-        <p className="page-subtitle max-w-4xl">
-          A futures-based macro diagnostic for agriculture regime stability. This is not a trading signal and is designed for contextual market structure analysis.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="page-kicker">Tools</p>
+          <h1 className="page-title">Agriculture Index</h1>
+          <p className="page-subtitle max-w-4xl">
+            A futures-based macro diagnostic for agriculture regime stability. This is not a trading signal and is designed for contextual market structure analysis.
+          </p>
+        </div>
+        <Link to="/agriculture/reports" className="field-button field-button-primary">Open Report Desk</Link>
       </div>
 
       <section id="agriculture-now" aria-labelledby="agriculture-now-title" className="section-anchor surface-card-strong p-4 md:p-5">
