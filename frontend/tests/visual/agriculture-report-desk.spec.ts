@@ -115,6 +115,8 @@ test("report desk is readable, responsive, and accessible", async ({ page }, tes
   await openDesk(page, 1440, 1000);
   await expect(page.getByText("Raw release viewer")).toBeVisible();
   await expect(page.getByText("Insights pane")).toBeVisible();
+  await expect(page.getByText("WASDE · Ending stocks", { exact: true })).toBeVisible();
+  await expect(page.getByText("Ending stocks expectation", { exact: true })).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath("agriculture-report-desk-desktop.png"), fullPage: true, animations: "disabled" });
   await testInfo.attach("desktop-full-page", { body: await page.screenshot({ fullPage: true, animations: "disabled" }), contentType: "image/png" });
   const desktopAxe = await new AxeBuilder({ page }).analyze();

@@ -223,9 +223,14 @@ export default function AgricultureReportDesk() {
   const nextSelectedReportRelease = data?.schedule.find((event) => event.report_id === selectedReportId) ?? null;
 
   useEffect(() => {
-    if (!data || selectedReleaseDate) return;
+    if (!data) return;
+    const availableReleaseDates = new Set([
+      ...(selectedSeries?.points.map((point) => point.release_date) ?? []),
+      ...data.schedule.filter((event) => event.report_id === "wasde").map((event) => event.date),
+    ]);
+    if (selectedReleaseDate && availableReleaseDates.has(selectedReleaseDate)) return;
     const nextWasde = data.schedule.find((event) => event.report_id === "wasde");
-    setSelectedReleaseDate(nextWasde?.date ?? selectedSeries?.points.at(-1)?.release_date ?? "");
+    setSelectedReleaseDate(selectedSeries?.points.at(-1)?.release_date ?? nextWasde?.date ?? "");
   }, [data, selectedReleaseDate, selectedSeries]);
 
   useEffect(() => {
@@ -239,6 +244,7 @@ export default function AgricultureReportDesk() {
   const savedExpectation = selectedReleaseDate
     ? expectations[expectationKey(symbol, "wasde", metric, selectedReleaseDate)]
     : undefined;
+  const canSaveExpectation = expectationInput.trim() !== "" && Number.isFinite(Number(expectationInput));
 
   const signalChartData = useMemo(() => {
     if (!data) return [];
@@ -312,7 +318,7 @@ export default function AgricultureReportDesk() {
 
   function saveExpectation() {
     const parsed = Number(expectationInput);
-    if (!selectedReleaseDate || !Number.isFinite(parsed)) return;
+    if (!selectedReleaseDate || !canSaveExpectation) return;
     const key = expectationKey(symbol, "wasde", metric, selectedReleaseDate);
     const next = {
       ...expectations,
@@ -472,8 +478,8 @@ export default function AgricultureReportDesk() {
                           <XAxis dataKey="timestamp" type="number" domain={["dataMin", "dataMax"]} tickFormatter={chartDateLabel} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} />
                           <YAxis width={52} stroke="#6f8199" tick={{ fill: "#9aa9bc", fontSize: 11 }} domain={["auto", "auto"]} />
                           <Tooltip content={<ReportTooltip />} />
-                          <Line type="monotone" dataKey="actual" name="Result" stroke="#69d6a3" strokeWidth={2.25} dot={{ r: 3, fill: "#69d6a3" }} activeDot={{ r: 5 }} connectNulls />
-                          <Line type="monotone" dataKey="expectation" name="Your expectation" stroke="#f3cb69" strokeWidth={1.5} strokeDasharray="4 4" dot={{ r: 4, fill: "#0e1520", stroke: "#f3cb69", strokeWidth: 2 }} connectNulls />
+                          <Line type="monotone" dataKey="actual" name="Result" stroke="#69d6a3" strokeWidth={2.25} dot={{ r: 3, fill: "#69d6a3" }} activeDot={{ r: 5 }} connectNulls isAnimationActive={false} />
+                          <Line type="monotone" dataKey="expectation" name="Your expectation" stroke="#f3cb69" strokeWidth={1.5} strokeDasharray="4 4" dot={{ r: 4, fill: "#0e1520", stroke: "#f3cb69", strokeWidth: 2 }} connectNulls isAnimationActive={false} />
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
@@ -552,12 +558,12 @@ export default function AgricultureReportDesk() {
                   <Tooltip content={<ReportTooltip />} />
                   <Legend verticalAlign="top" height={30} wrapperStyle={{ fontSize: 11, color: "#b7c3d3" }} />
                   <ReferenceLine yAxisId="signal" y={0} stroke="#6f8199" strokeDasharray="3 3" />
-                  <Line yAxisId="price" type="monotone" dataKey="futures" name={`${data.commodity.name} futures (100)`} stroke="#f4f7fb" strokeWidth={1.5} dot={false} opacity={0.62} />
-                  {data.series.map((layer, index) => visibleMetrics.includes(layer.metric_id) && expectedMetricIds.has(layer.metric_id) ? (
-                    <Line key={layer.metric_id} yAxisId="signal" type="monotone" dataKey={`signal_${layer.metric_id}`} name={`${layer.report} · ${layer.label}`} stroke={SERIES_COLORS[index % SERIES_COLORS.length]} strokeWidth={2.25} dot={{ r: 3 }} connectNulls />
-                  ) : null)}
+                  <Line yAxisId="price" type="monotone" dataKey="futures" name={`${data.commodity.name} futures (100)`} stroke="#f4f7fb" strokeWidth={1.5} dot={false} opacity={0.62} isAnimationActive={false} />
                   {data.series.map((layer, index) => visibleMetrics.includes(layer.metric_id) ? (
-                    <Line key={`expectation-${layer.metric_id}`} yAxisId="signal" type="monotone" dataKey={`expected_${layer.metric_id}`} name={`${layer.label} expectation`} stroke={SERIES_COLORS[index % SERIES_COLORS.length]} strokeWidth={1.25} strokeDasharray="4 5" dot={{ r: 4, fill: "#0e1520", strokeWidth: 2 }} connectNulls />
+                    <Line key={layer.metric_id} yAxisId="signal" type="monotone" dataKey={`signal_${layer.metric_id}`} name={`${layer.report} · ${layer.label}`} stroke={SERIES_COLORS[index % SERIES_COLORS.length]} strokeWidth={2.25} dot={{ r: 3 }} connectNulls isAnimationActive={false} />
+                  ) : null)}
+                  {data.series.map((layer, index) => visibleMetrics.includes(layer.metric_id) && expectedMetricIds.has(layer.metric_id) ? (
+                    <Line key={`expectation-${layer.metric_id}`} yAxisId="signal" type="monotone" dataKey={`expected_${layer.metric_id}`} name={`${layer.label} expectation`} stroke={SERIES_COLORS[index % SERIES_COLORS.length]} strokeWidth={1.25} strokeDasharray="4 5" dot={{ r: 4, fill: "#0e1520", strokeWidth: 2 }} connectNulls isAnimationActive={false} />
                   ) : null)}
                 </LineChart>
               </ResponsiveContainer>
@@ -609,7 +615,7 @@ export default function AgricultureReportDesk() {
                 <span className="form-field-hint">Saved only on this device.</span>
               </label>
             </div>
-            <button type="button" className="field-button field-button-primary mt-4 gap-2" onClick={saveExpectation} disabled={!selectedReleaseDate || !Number.isFinite(Number(expectationInput))}>
+            <button type="button" className="field-button field-button-primary mt-4 gap-2" onClick={saveExpectation} disabled={!selectedReleaseDate || !canSaveExpectation}>
               {savedExpectation ? <Check size={16} aria-hidden="true" /> : <Save size={16} aria-hidden="true" />} {savedExpectation ? "Update expectation" : "Save expectation"}
             </button>
           </div>
@@ -627,7 +633,7 @@ export default function AgricultureReportDesk() {
             </div>
             <div className="surface-card-muted p-3.5">
               <p className="text-xs uppercase tracking-[0.12em] text-stealth-500">Report signal</p>
-              <p className={`mt-2 text-xl font-semibold ${activePoint?.bullish_signal_z !== null && activePoint?.bullish_signal_z !== undefined && activePoint.bullish_signal_z >= 0 ? "text-emerald-200" : "text-rose-200"}`}>{formatSigned(activePoint?.bullish_signal_z, "σ")}</p>
+              <p className={`mt-2 text-xl font-semibold ${activePoint?.bullish_signal_z === null || activePoint?.bullish_signal_z === undefined ? "text-stealth-300" : activePoint.bullish_signal_z >= 0 ? "text-emerald-200" : "text-rose-200"}`}>{formatSigned(activePoint?.bullish_signal_z, "σ")}</p>
               <p className="mt-1 text-xs text-stealth-500">Positive = price-supportive</p>
             </div>
             <div className="surface-card-muted p-3.5">

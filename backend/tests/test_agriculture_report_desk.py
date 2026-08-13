@@ -69,6 +69,30 @@ def test_report_desk_combines_official_history_and_price_reactions(monkeypatch: 
     assert payload["takeaways"][-1]["title"] == "Interpretation boundary"
 
 
+def test_five_session_reaction_waits_for_a_complete_forward_window() -> None:
+    series = [{"points": [{"release_date": "2026-08-12"}]}]
+    incomplete_prices = [
+        {"date": "2026-08-11", "value": 400.0},
+        {"date": "2026-08-12", "value": 404.0},
+        {"date": "2026-08-13", "value": 408.0},
+    ]
+
+    desk._attach_reactions(series, incomplete_prices)
+
+    point = series[0]["points"][0]
+    assert point["reaction_1d_pct"] == 1.0
+    assert point["reaction_5d_pct"] is None
+
+    complete_prices = incomplete_prices + [
+        {"date": "2026-08-14", "value": 412.0},
+        {"date": "2026-08-17", "value": 416.0},
+        {"date": "2026-08-18", "value": 420.0},
+    ]
+    desk._attach_reactions(series, complete_prices)
+
+    assert point["reaction_5d_pct"] == 5.0
+
+
 def test_calendar_labels_official_recurring_and_expected_dates() -> None:
     events = desk.build_release_calendar(date(2026, 8, 13))
 

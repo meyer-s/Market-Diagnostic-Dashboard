@@ -354,9 +354,13 @@ def _attach_reactions(series: list[dict[str, Any]], prices: list[dict[str, Any]]
                 point["reaction_5d_pct"] = None
                 continue
             base = closes[prior_index]
-            day_five = min(event_index + 4, len(closes) - 1)
+            day_five = event_index + 4
             point["reaction_1d_pct"] = round((closes[event_index] / base - 1) * 100, 3) if base else None
-            point["reaction_5d_pct"] = round((closes[day_five] / base - 1) * 100, 3) if base else None
+            point["reaction_5d_pct"] = (
+                round((closes[day_five] / base - 1) * 100, 3)
+                if base and day_five < len(closes)
+                else None
+            )
 
 
 def _next_release_weekday(reference: datetime, weekday: int, release_time: time) -> date:

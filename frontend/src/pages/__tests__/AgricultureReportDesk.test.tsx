@@ -13,7 +13,7 @@ vi.mock("recharts", () => {
   return {
     CartesianGrid: () => null,
     Legend: () => null,
-    Line: () => null,
+    Line: ({ name }: { name?: string }) => name ? <span>{name}</span> : null,
     LineChart: Shell,
     ReferenceLine: () => null,
     ResponsiveContainer: Shell,
@@ -75,6 +75,8 @@ describe("AgricultureReportDesk", () => {
     expect(screen.getByText("Insights pane")).toBeTruthy();
     expect(screen.getByText("Chart ready")).toBeTruthy();
     expect(screen.getByText("Association is not causation.")).toBeTruthy();
+    expect(screen.getByText("WASDE · Ending stocks")).toBeTruthy();
+    expect(screen.queryByText("Ending stocks expectation")).toBeNull();
   });
 
   it("communicates archive-only report coverage without fabricating a chart", () => {
@@ -93,5 +95,6 @@ describe("AgricultureReportDesk", () => {
 
     expect(window.localStorage.getItem("agriculture-report-expectations-v1")).toContain("2050");
     expect(screen.getByRole("button", { name: "Update expectation" })).toBeTruthy();
+    expect(screen.getByText("Ending stocks expectation")).toBeTruthy();
   });
 });
