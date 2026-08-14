@@ -25,6 +25,10 @@ def _release(
     }
 
 
+def test_cot_archive_maps_every_report_desk_future() -> None:
+    assert set(archive.CFTC_MARKETS) == desk.report_desk_supported_symbols()
+
+
 def test_nass_page_parser_preserves_each_official_document() -> None:
     content = b"""
     <table><tbody><tr>
@@ -88,8 +92,30 @@ def test_report_viewer_prefers_selected_commodity_and_falls_back_to_universal(mo
     assert corn["crop_progress"]["release_count"] == 1
     assert corn["export_inspections"]["scope_key"] == "ZC"
     assert corn["export_inspections"]["releases"][0]["metrics"][0]["value"] == 400
-    assert rice["export_inspections"]["scope_key"] == "ALL"
-    assert rice["export_inspections"]["scope_label"] == "All covered grains"
+    assert "export_inspections" not in rice
+
+
+def test_soy_products_use_underlying_soybean_crop_releases_but_their_own_cot(monkeypatch) -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    AgricultureReportRelease.__table__.create(bind=engine)
+    session_local = sessionmaker(bind=engine)
+    db = session_local()
+    try:
+        db.add_all([
+            AgricultureReportRelease(**_release("crop_progress", "ZS", value=72)),
+            AgricultureReportRelease(**_release("cot", "ZL", value=1400)),
+        ])
+        db.commit()
+    finally:
+        db.close()
+    monkeypatch.setattr(desk, "SessionLocal", session_local)
+
+    histories = desk._load_report_histories("ZL", 3, date(2026, 8, 13))
+    engine.dispose()
+
+    assert histories["crop_progress"]["scope_key"] == "ZS"
+    assert "underlying-crop metrics for Soybean Oil" in histories["crop_progress"]["scope_label"]
+    assert histories["cot"]["scope_key"] == "ZL"
 
 
 def test_nass_metrics_enrich_full_universal_archive_without_shortening_it(monkeypatch) -> None:

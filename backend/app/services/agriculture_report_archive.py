@@ -72,7 +72,7 @@ CFTC_MARKETS = {
             "WHEAT-HRSpring - MIAX FUTURES EXCHANGE",
         ),
     ),
-    "ZO": ("Oats", ("OATS - CHICAGO BOARD OF TRADE",)),
+    "ZO": ("Oats", ("OATS - CHICAGO BOARD OF TRADE", "OATS - CBT OATS")),
     "ZR": (
         "Rough Rice",
         (
@@ -90,6 +90,77 @@ CFTC_MARKETS = {
             "COTTON NO. 2 - ICE FUTURES U.S.",
         ),
     ),
+    "ZL": (
+        "Soybean Oil",
+        ("SOYBEAN OIL - CHICAGO BOARD OF TRADE", "SOYBEAN OIL - CBT SOYBEAN OIL"),
+    ),
+    "ZM": (
+        "Soybean Meal",
+        ("SOYBEAN MEAL - CHICAGO BOARD OF TRADE", "SOYBEAN MEAL - CBT SOYBEAN MEAL"),
+    ),
+    "LE": (
+        "Live Cattle",
+        ("LIVE CATTLE - CHICAGO MERCANTILE EXCHANGE", "LIVE CATTLE - CME LIVE CATTLE"),
+    ),
+    "GF": (
+        "Feeder Cattle",
+        ("FEEDER CATTLE - CHICAGO MERCANTILE EXCHANGE", "FEEDER CATTLE - CME FEEDER CATTLE"),
+    ),
+    "HE": (
+        "Lean Hogs",
+        (
+            "LEAN HOGS - CHICAGO MERCANTILE EXCHANGE",
+            "LIVE HOGS - CHICAGO MERCANTILE EXCHANGE",
+            "LEAN HOGS - CME LEAN HOG",
+        ),
+    ),
+    "DC": (
+        "Class III Milk",
+        ("MILK, Class III - CHICAGO MERCANTILE EXCHANGE", "MILK - CHICAGO MERCANTILE EXCHANGE"),
+    ),
+    "DAIRY_CLASS_IV": (
+        "Class IV Milk",
+        ("CME MILK IV - CHICAGO MERCANTILE EXCHANGE",),
+    ),
+    "LBR": (
+        "Lumber",
+        (
+            "LUMBER - CHICAGO MERCANTILE EXCHANGE",
+            "RANDOM LENGTH LUMBER - CHICAGO MERCANTILE EXCHANGE",
+        ),
+    ),
+    "KC": (
+        "Coffee C",
+        (
+            "COFFEE C - ICE FUTURES U.S.",
+            "COFFEE C - NEW YORK BOARD OF TRADE",
+            "COFFEE C - COFFEE SUGAR AND COCOA EXCHANGE",
+        ),
+    ),
+    "CC": (
+        "Cocoa",
+        (
+            "COCOA - ICE FUTURES U.S.",
+            "COCOA - NEW YORK BOARD OF TRADE",
+            "COCOA - COFFEE SUGAR AND COCOA EXCHANGE",
+        ),
+    ),
+    "SB": (
+        "Sugar No. 11",
+        (
+            "SUGAR NO. 11 - ICE FUTURES U.S.",
+            "SUGAR NO. 11 - NEW YORK BOARD OF TRADE",
+            "SUGAR NO. 11 - COFFEE SUGAR AND COCOA EXCHANGE",
+        ),
+    ),
+    "OJ": (
+        "Frozen Concentrated Orange Juice",
+        (
+            "FRZN CONCENTRATED ORANGE JUICE - ICE FUTURES U.S.",
+            "FRZN CONCENTRATED ORANGE JUICE - NEW YORK BOARD OF TRADE",
+        ),
+    ),
+    "RS": ("Canola", ("CANOLA - ICE FUTURES U.S.",)),
 }
 
 

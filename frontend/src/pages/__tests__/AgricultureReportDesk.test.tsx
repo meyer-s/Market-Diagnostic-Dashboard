@@ -44,8 +44,11 @@ const point = {
 
 const payload = {
   as_of: "2026-08-13T12:00:00-04:00",
-  commodity: { symbol: "ZC", name: "Corn", usda: "Corn", ticker: "ZC=F", price_unit: "cents per bushel" },
-  commodities: [{ symbol: "ZC", name: "Corn", usda: "Corn", ticker: "ZC=F", price_unit: "cents per bushel" }],
+  commodity: { symbol: "ZC", name: "Corn", usda: "Corn", ticker: "ZC=F", price_unit: "cents per bushel", group: "grains_oilseeds", group_label: "Grains / Oilseeds", report_count: 4 },
+  commodities: [
+    { symbol: "ZC", name: "Corn", usda: "Corn", ticker: "ZC=F", price_unit: "cents per bushel", group: "grains_oilseeds", group_label: "Grains / Oilseeds", report_count: 4 },
+    { symbol: "LE", name: "Live Cattle", usda: "Beef", ticker: "LE=F", price_unit: "cents per pound", group: "livestock", group_label: "Livestock", report_count: 2 },
+  ],
   selected_metric: "ending_stocks",
   years: 2,
   history_coverage: { structured_start_date: "2010-04-09", requested_start_date: "2024-08-13", observed_start_date: "2024-09-12", observed_end_date: "2026-08-12", release_count: 24, complete: true, source: "USDA WASDE as-reported CSV archive" },
@@ -54,6 +57,7 @@ const payload = {
   reports: [
     { id: "wasde", name: "WASDE", agency: "USDA OCE", cadence: "Monthly", release_time: "12:00 ET", coverage: "chart_ready", coverage_label: "Chart ready", description: "Balance sheets.", source_url: "https://example.com/latest", archive_url: "https://example.com/archive", release_count: 24, observed_start_date: "2024-09-12", observed_end_date: "2026-08-12" },
     { id: "crop_progress", name: "Crop Progress", agency: "USDA NASS", cadence: "Weekly", release_time: "16:00 ET", coverage: "chart_ready", coverage_label: "Chart + history", description: "Crop pace.", source_url: "https://example.com/crop", archive_url: "https://example.com/crop", release_count: 18, observed_start_date: "2026-04-06", observed_end_date: "2026-08-10" },
+    { id: "export_sales", name: "Export Sales", agency: "USDA FAS", cadence: "Weekly", release_time: "08:30 ET", coverage: "history_ready", coverage_label: "Weekly history", description: "Export demand.", source_url: "https://example.com/sales", archive_url: "https://example.com/sales", release_count: 0, observed_start_date: null, observed_end_date: null },
     { id: "cot", name: "Commitments of Traders", agency: "CFTC", cadence: "Weekly", release_time: "15:30 ET", coverage: "history_ready", coverage_label: "Position history", description: "Positioning.", source_url: "https://example.com/cot", archive_url: "https://example.com/cot", release_count: 100, observed_start_date: "2024-08-13", observed_end_date: "2026-08-17" },
   ],
   report_histories: {
@@ -142,6 +146,9 @@ describe("AgricultureReportDesk", () => {
     render(<MemoryRouter><AgricultureReportDesk /></MemoryRouter>);
 
     expect(screen.getByRole("heading", { name: "Agriculture Report Desk" })).toBeTruthy();
+    expect(screen.getByText(/4 mapped official reports connected to Corn futures/)).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Grains / Oilseeds" })).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Livestock" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Combined report-price association" })).toBeTruthy();
     expect(screen.getByText("Association-implied marker")).toBeTruthy();
     expect(screen.getByText(/Association-based scenario, not a forecast/)).toBeTruthy();

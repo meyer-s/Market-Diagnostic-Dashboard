@@ -178,7 +178,72 @@ def test_calendar_skips_a_recurring_release_after_its_time_passes() -> None:
 
 def test_unknown_symbol_is_rejected() -> None:
     with pytest.raises(KeyError, match="not yet chart-ready"):
-        desk.build_report_desk("LE")
+        desk.build_report_desk("FERT_N")
+
+
+def test_every_configured_future_is_supported_but_cash_and_equity_proxies_are_not() -> None:
+    supported = desk.report_desk_supported_symbols()
+
+    assert supported == {
+        "ZS", "ZC", "ZW", "KE", "MW", "ZL", "ZM", "ZO", "ZR",
+        "LE", "GF", "HE", "DC", "DAIRY_CLASS_IV", "LBR",
+        "KC", "CC", "SB", "CT", "OJ", "RS",
+    }
+    assert supported.isdisjoint({"SYP", "FERT_N", "FERT_P", "FERT_K"})
+
+
+def test_contract_report_matrix_does_not_attach_crop_reports_to_unrelated_futures() -> None:
+    assert desk._report_ids_for("LBR") == ("cot",)
+    assert desk._report_ids_for("LE") == ("wasde", "cot")
+    assert "export_inspections" not in desk._report_ids_for("ZR")
+    assert desk._report_scope_for("ZL", "crop_progress") == "ZS"
+    assert desk._report_scope_for("ZL", "cot") == "ZL"
+
+
+def test_cot_only_future_builds_without_loading_wasde(monkeypatch: pytest.MonkeyPatch) -> None:
+    history = desk._empty_report_history("cot", date(2025, 8, 13))
+    monkeypatch.setattr(desk, "_load_wasde_history", lambda *args: pytest.fail("COT-only markets must not load WASDE"))
+    monkeypatch.setattr(desk, "_load_report_histories", lambda *args: {"cot": history})
+    monkeypatch.setattr(desk, "_price_history", lambda tickers, start, end: ([], []))
+
+    payload = desk.build_report_desk("LBR", years=1)
+
+    assert [report["id"] for report in payload["reports"]] == ["cot"]
+    assert payload["series"] == []
+    assert payload["metrics"] == []
+    assert payload["commodity"]["group_label"] == "Lumber"
+
+
+def test_dairy_wasde_uses_the_price_forecast_metric(monkeypatch: pytest.MonkeyPatch) -> None:
+    rows = [
+        {**_row("2026-07-10", "17.40"), "Commodity": "Milk, Class III", "Attribute": "Prices", "Unit": "Dollars per Cwt"},
+        {**_row("2026-08-12", "17.85"), "Commodity": "Milk, Class III", "Attribute": "Prices", "Unit": "Dollars per Cwt"},
+    ]
+    monkeypatch.setattr(desk, "_load_wasde_history", lambda years, reference: rows)
+    monkeypatch.setattr(desk, "_load_report_histories", lambda *args: {"cot": desk._empty_report_history("cot", date(2025, 8, 13))})
+    monkeypatch.setattr(desk, "_price_history", lambda tickers, start, end: ([], []))
+
+    payload = desk.build_report_desk("DC", years=1)
+
+    assert [series["metric_id"] for series in payload["series"]] == ["price_forecast"]
+    assert payload["series"][0]["points"][-1]["bullish_signal_z"] is None
+    assert [report["id"] for report in payload["reports"]] == ["wasde", "cot"]
+
+
+def test_futures_history_tries_fallback_tickers_after_provider_failures(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeYahooClient:
+        def fetch_series(self, ticker: str, **kwargs):
+            if ticker == "BROKEN=F":
+                raise ValueError("provider returned an unusable frame")
+            return [{"date": "2026-08-13", "value": 10.0}, {"date": "2026-08-14", "value": 11.0}]
+
+    monkeypatch.setattr(desk, "YahooClient", FakeYahooClient)
+
+    rows, warnings = desk._price_history(("BROKEN=F", "WORKS=F"), date(2026, 8, 1), date(2026, 8, 14))
+
+    assert warnings == []
+    assert rows[-1]["ticker"] == "WORKS=F"
+    assert rows[-1]["rebased"] == 110.0
 
 
 def test_soybean_mapping_matches_the_official_wasde_schema(monkeypatch: pytest.MonkeyPatch) -> None:

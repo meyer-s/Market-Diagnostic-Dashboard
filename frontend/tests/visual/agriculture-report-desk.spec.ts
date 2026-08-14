@@ -186,11 +186,11 @@ function reportDeskFixture() {
   });
   return {
     as_of: "2026-08-13T11:00:00-04:00",
-    commodity: { symbol: "ZC", name: "Corn", usda: "Corn", ticker: "ZC=F", price_unit: "cents per bushel" },
+    commodity: { symbol: "ZC", name: "Corn", usda: "Corn", ticker: "ZC=F", price_unit: "cents per bushel", group: "grains_oilseeds", group_label: "Grains / Oilseeds", report_count: 8 },
     commodities: [
-      { symbol: "ZC", name: "Corn", usda: "Corn", ticker: "ZC=F", price_unit: "cents per bushel" },
-      { symbol: "ZS", name: "Soybeans", usda: "Soybeans", ticker: "ZS=F", price_unit: "cents per bushel" },
-      { symbol: "ZW", name: "Chicago Wheat", usda: "Wheat", ticker: "ZW=F", price_unit: "cents per bushel" },
+      { symbol: "ZC", name: "Corn", usda: "Corn", ticker: "ZC=F", price_unit: "cents per bushel", group: "grains_oilseeds", group_label: "Grains / Oilseeds", report_count: 8 },
+      { symbol: "ZS", name: "Soybeans", usda: "Soybeans", ticker: "ZS=F", price_unit: "cents per bushel", group: "grains_oilseeds", group_label: "Grains / Oilseeds", report_count: 8 },
+      { symbol: "ZW", name: "Chicago Wheat", usda: "Wheat", ticker: "ZW=F", price_unit: "cents per bushel", group: "grains_oilseeds", group_label: "Grains / Oilseeds", report_count: 8 },
     ],
     selected_metric: "ending_stocks", years: 3,
     history_coverage: {

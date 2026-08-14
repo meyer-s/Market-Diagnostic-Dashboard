@@ -64,7 +64,7 @@ AGRICULTURE_SYMBOLS: Tuple[AgricultureSymbol, ...] = (
     AgricultureSymbol("GF", "Feeder Cattle", "livestock", ("GF=F",)),
     AgricultureSymbol("HE", "Lean Hogs", "livestock", ("HE=F",)),
     AgricultureSymbol("DC", "Class III Milk", "dairy", ("DC=F",)),
-    AgricultureSymbol("DAIRY_CLASS_IV", "Class IV Milk", "dairy", ("DY=F",)),
+    AgricultureSymbol("DAIRY_CLASS_IV", "Class IV Milk", "dairy", ("GDK=F",)),
     AgricultureSymbol("LBR", "Lumber", "lumber", ("LBR=F",)),
     AgricultureSymbol("SYP", "Southern Yellow Pine", "lumber", ("SYP",)),
     AgricultureSymbol("KC", "Coffee", "softs", ("KC=F",)),

@@ -154,8 +154,8 @@ type ReportSeries = {
 
 type ReportDeskData = {
   as_of: string;
-  commodity: { symbol: string; name: string; usda: string; ticker: string; price_unit: string };
-  commodities: Array<{ symbol: string; name: string; usda: string; ticker: string; price_unit: string }>;
+  commodity: { symbol: string; name: string; usda: string; ticker: string; price_unit: string; group: string; group_label: string; report_count: number };
+  commodities: Array<{ symbol: string; name: string; usda: string; ticker: string; price_unit: string; group: string; group_label: string; report_count: number }>;
   selected_metric: string;
   years: number;
   history_coverage: {
@@ -681,7 +681,9 @@ function reportDigest(reportId: string, history: ReportHistory | null, endingSto
 }
 
 function buildBriefing(data: ReportDeskData): BriefingLine[] {
-  const endingStocks = data.series.find((series) => series.metric_id === "ending_stocks")?.points.at(-1) ?? null;
+  const applicable = new Set(data.reports.map((report) => report.id));
+  const wasdeSeries = data.series.find((series) => series.metric_id === "ending_stocks") ?? data.series[0] ?? null;
+  const latestWasde = wasdeSeries?.points.at(-1) ?? null;
   const grainStocks = data.report_histories.grain_stocks?.analysis ?? null;
   const grainRelease = data.report_histories.grain_stocks?.releases[0] ?? null;
   const grainYearAgo = grainRelease ? releaseMetric(grainRelease, "total_stocks_year_ago")?.value : null;
@@ -711,32 +713,53 @@ function buildBriefing(data: ReportDeskData): BriefingLine[] {
     ? positioning.latest_value - positioning.four_report_average
     : null;
 
-  return [
-    {
+  const lines: BriefingLine[] = [];
+  if (applicable.has("wasde")) {
+    const revision = latestWasde?.revision ?? null;
+    const revisionText = revision === null
+      ? `${wasdeSeries?.label ?? "WASDE metric"} has no comparable prior estimate yet`
+      : `${wasdeSeries?.label ?? "WASDE metric"} moved ${revision > 0 ? "higher" : revision < 0 ? "lower" : "unchanged"} by ${formatValue(Math.abs(revision), 1)} ${wasdeSeries?.unit.toLowerCase() ?? ""}`;
+    lines.push({
       label: "Balance sheet",
       reportId: "wasde",
-      text: endingStocks
-        ? `Ending stocks ${endingStocks.revision !== null && endingStocks.revision < 0 ? "cut" : "raised"} ${formatValue(Math.abs(endingStocks.revision ?? 0), 0)}M bu; quarterly stocks ${movement(grainDelta)} year over year.`
-        : "Balance-sheet history is not available for this commodity.",
-    },
-    {
+      text: `${revisionText}${grainStocks ? `; quarterly stocks ${movement(grainDelta)} year over year` : ""}.`,
+    });
+  }
+  const supplyReportId = ["crop_production", "crop_progress", "acreage"].find((reportId) => applicable.has(reportId));
+  if (supplyReportId) {
+    const supplyReads = [
+      applicable.has("crop_production") ? `production ${movement(productionDelta)} vs prior estimate` : null,
+      applicable.has("crop_progress") ? `conditions ${movement(progressDelta, " pts")} year over year` : null,
+      applicable.has("acreage") ? `acreage ${movement(acreageDelta)} year over year` : null,
+    ].filter(Boolean);
+    lines.push({
       label: "Supply & fields",
-      reportId: "crop_production",
-      text: `Production ${movement(productionDelta)} vs prior estimate; conditions ${movement(progressDelta, " pts")} year over year; acreage ${movement(acreageDelta)} year over year.`,
-    },
-    {
+      reportId: supplyReportId,
+      text: `${supplyReads.join("; ")}.`,
+    });
+  }
+  const demandReportId = ["export_sales", "export_inspections"].find((reportId) => applicable.has(reportId));
+  if (demandReportId) {
+    const demandReads = [
+      applicable.has("export_sales") ? `export sales ${movement(salesDelta)}` : null,
+      applicable.has("export_inspections") ? `inspections ${movement(inspectionsDelta)}` : null,
+    ].filter(Boolean);
+    lines.push({
       label: "Demand",
-      reportId: "export_sales",
-      text: `Export sales ${movement(salesDelta)} and inspections ${movement(inspectionsDelta)} vs their four-report pace.`,
-    },
-    {
+      reportId: demandReportId,
+      text: `${demandReads.join(" and ")} vs their four-report pace.`,
+    });
+  }
+  if (applicable.has("cot")) {
+    lines.push({
       label: "Positioning",
       reportId: "cot",
       text: positioning
         ? `Noncommercial net ${compactNumber(positioning.latest_value)} contracts, ${signedCompact(positioningDelta)} vs the four-report average.`
         : "Positioning history is not available for this commodity.",
-    },
-  ];
+    });
+  }
+  return lines;
 }
 
 function formatFuturesPrice(value: number | null | undefined, unit: string) {
@@ -931,35 +954,44 @@ function ValuesDisclosure({ table, label }: { table: StoryTable; label: string }
 }
 
 function ReportStory({ data, impact }: { data: ReportDeskData; impact: ReportImpact }) {
-  const contract = REPORT_STORY_CONTRACTS[impact.report_id] ?? REPORT_STORY_CONTRACTS.wasde;
+  const wasdeLayer = data.series.find((series) => series.metric_id === "ending_stocks") ?? data.series[0] ?? null;
+  const contract = impact.report_id === "wasde" && wasdeLayer
+    ? {
+        ...REPORT_STORY_CONTRACTS.wasde,
+        title: wasdeLayer.metric_id === "ending_stocks" ? "Ending-stocks revisions" : `${wasdeLayer.label} revisions`,
+        question: `How did USDA change its ${wasdeLayer.label.toLowerCase()} estimate at each release?`,
+        takeaway: `A ${wasdeLayer.bullish_when} revision is price-supportive in this series.`,
+      }
+    : REPORT_STORY_CONTRACTS[impact.report_id] ?? REPORT_STORY_CONTRACTS.wasde;
   const history = data.report_histories[impact.report_id] ?? null;
-  const endingStocks = data.series.find((series) => series.metric_id === "ending_stocks") ?? data.series[0] ?? null;
-  const latestWasde = endingStocks?.points.at(-1) ?? null;
+  const latestWasde = wasdeLayer?.points.at(-1) ?? null;
   const table = buildStoryTable(data, impact.report_id);
   let chart: ReactNode = null;
   let latestRead = history?.analysis?.body ?? impact.signal_basis ?? "A comparable report read is not available.";
 
-  if (impact.report_id === "wasde" && endingStocks) {
-    const rows = endingStocks.points.filter((point) => point.revision !== null).slice(-24).map((point) => ({
+  if (impact.report_id === "wasde" && wasdeLayer) {
+    const rows = wasdeLayer.points.filter((point) => point.revision !== null).slice(-24).map((point) => ({
       timestamp: new Date(`${point.release_date}T12:00:00`).getTime(),
       revision: point.revision,
+      signal: point.bullish_signal_z,
     }));
     if (latestWasde) {
-      const revisionVerb = latestWasde.revision === null ? "was unchanged" : latestWasde.revision < 0 ? "was cut" : "was raised";
-      latestRead = `${endingStocks.label} ${revisionVerb} by ${formatValue(Math.abs(latestWasde.revision ?? 0), 0)} ${endingStocks.unit.toLowerCase()} to ${formatValue(latestWasde.value, 0)}. ${contract.takeaway}`;
+      const revisionVerb = latestWasde.revision === null ? "has no comparable prior estimate" : latestWasde.revision < 0 ? "moved lower" : latestWasde.revision > 0 ? "moved higher" : "was unchanged";
+      const revisionAmount = latestWasde.revision === null ? "" : ` by ${formatValue(Math.abs(latestWasde.revision), 1)} ${wasdeLayer.unit.toLowerCase()}`;
+      latestRead = `${wasdeLayer.label} ${revisionVerb}${revisionAmount} to ${formatValue(latestWasde.value, 1)}. That is ${pressureLabel(latestWasde.bullish_signal_z).toLowerCase()} relative to this metric's own history.`;
     }
     chart = chartShell(
       <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-        <BarChart data={rows} margin={{ top: 12, right: 10, bottom: 6, left: 2 }} accessibilityLayer aria-label={`${data.commodity.name} WASDE ending stocks revisions by release`}>
+        <BarChart data={rows} margin={{ top: 12, right: 10, bottom: 6, left: 2 }} accessibilityLayer aria-label={`${data.commodity.name} WASDE ${wasdeLayer.label.toLowerCase()} revisions by release`}>
           <CartesianGrid stroke="rgba(98,117,142,0.38)" vertical={false} />
           <XAxis dataKey="timestamp" type="number" domain={["dataMin", "dataMax"]} tickFormatter={chartDateLabel} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} />
           <YAxis width={62} tickFormatter={compactNumber} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} />
           <Tooltip content={<ArchiveTooltip />} />
           <ReferenceLine y={0} stroke="#91a4bd" />
-          <Bar dataKey="revision" name="Ending stocks revision" radius={[3, 3, 0, 0]} maxBarSize={24} isAnimationActive={false}>{rows.map((row) => <Cell key={row.timestamp} fill={Number(row.revision) <= 0 ? "#a8d2ff" : "#f3cb69"} />)}</Bar>
+          <Bar dataKey="revision" name={`${wasdeLayer.label} revision`} radius={[3, 3, 0, 0]} maxBarSize={24} isAnimationActive={false}>{rows.map((row) => <Cell key={row.timestamp} fill={Number(row.signal) >= 0 ? "#a8d2ff" : "#f3cb69"} />)}</Bar>
         </BarChart>
       </ResponsiveContainer>,
-      `${data.commodity.name} WASDE ending stocks revisions; negative bars are stocks cuts and positive bars are increases`,
+      `${data.commodity.name} WASDE ${wasdeLayer.label.toLowerCase()} revisions; blue bars are price-supportive reads and amber bars are price-restrictive reads`,
     );
   } else if (history) {
     chart = <ArchiveReportInsights history={history} commodityName={history.scope_label ?? data.commodity.name} />;
@@ -1188,11 +1220,33 @@ export default function AgricultureReportDesk() {
     [data, metric],
   );
   const selectedReport = data?.reports.find((report) => report.id === selectedReportId) ?? data?.reports[0] ?? null;
-  const selectedReportHistory = data?.report_histories?.[selectedReportId] ?? null;
+  const activeReportId = selectedReport?.id ?? "";
+  const selectedReportHistory = data?.report_histories?.[activeReportId] ?? null;
   const selectedArchiveRelease = selectedReportHistory?.releases.find(
     (release) => release.release_date === selectedArchiveReleaseDate,
   ) ?? selectedReportHistory?.releases[0] ?? null;
-  const nextSelectedReportRelease = data?.schedule.find((event) => event.report_id === selectedReportId) ?? null;
+  const nextSelectedReportRelease = data?.schedule.find((event) => event.report_id === activeReportId) ?? null;
+  const commodityGroups = useMemo(() => {
+    const groups = new Map<string, { label: string; items: ReportDeskData["commodities"] }>();
+    for (const item of data?.commodities ?? []) {
+      const group = groups.get(item.group) ?? { label: item.group_label, items: [] };
+      group.items.push(item);
+      groups.set(item.group, group);
+    }
+    return Array.from(groups.entries());
+  }, [data?.commodities]);
+
+  useEffect(() => {
+    if (!data) return;
+    if (!data.reports.some((report) => report.id === selectedReportId)) {
+      setSelectedReportId(data.reports[0]?.id ?? "");
+      setSelectedArchiveReleaseDate("");
+    }
+    if (data.metrics.length > 0 && !data.metrics.some((item) => item.id === metric)) {
+      setMetric(data.metrics[0].id);
+      setSelectedReleaseDate("");
+    }
+  }, [data, metric, selectedReportId]);
 
   useEffect(() => {
     const releases = selectedReportHistory?.releases ?? [];
@@ -1288,7 +1342,7 @@ export default function AgricultureReportDesk() {
   const endingStocksPoint = data.series.find((series) => series.metric_id === "ending_stocks")?.points.at(-1) ?? null;
   const briefing = buildBriefing(data);
   const selectedAnalysis = selectedReportHistory?.analysis ?? null;
-  const selectedDigest = reportDigest(selectedReportId, selectedReportHistory, endingStocksPoint);
+  const selectedDigest = reportDigest(activeReportId, selectedReportHistory, endingStocksPoint);
   const expectationReleaseDates = Array.from(new Set([
     ...data.schedule.filter((event) => event.report_id === "wasde").map((event) => event.date),
     ...(selectedSeries?.points.map((point) => point.release_date) ?? []),
@@ -1302,7 +1356,7 @@ export default function AgricultureReportDesk() {
             <ArrowLeft size={16} aria-hidden="true" /> Agriculture Index
           </Link>
           <h1 className="page-title">Agriculture Report Desk</h1>
-          <p className="mt-1 text-sm text-stealth-300">One brief across every major USDA release for {data.commodity.name}.</p>
+          <p className="mt-1 text-sm text-stealth-300">{data.commodity.report_count} mapped official {data.commodity.report_count === 1 ? "report" : "reports"} connected to {data.commodity.name} futures and their price response.</p>
         </div>
         <div className="flex flex-wrap items-end gap-3">
           <div>
@@ -1311,8 +1365,8 @@ export default function AgricultureReportDesk() {
           </div>
           <label className="min-w-[12rem] flex-1 sm:flex-none">
             <span className="block text-xs font-semibold text-stealth-400">Commodity</span>
-            <select value={symbol} onChange={(event) => { setSymbol(event.target.value); setSelectedReleaseDate(""); setSelectedArchiveReleaseDate(""); }} className={INPUT_CLASS}>
-              {data.commodities.map((item) => <option key={item.symbol} value={item.symbol}>{item.name}</option>)}
+            <select value={symbol} onChange={(event) => { setSymbol(event.target.value); setMetric("ending_stocks"); setSelectedReportId("wasde"); setSelectedReleaseDate(""); setSelectedArchiveReleaseDate(""); }} className={INPUT_CLASS}>
+              {commodityGroups.map(([group, values]) => <optgroup key={group} label={values.label}>{values.items.map((item) => <option key={item.symbol} value={item.symbol}>{item.name} · {item.report_count} {item.report_count === 1 ? "report" : "reports"}</option>)}</optgroup>)}
             </select>
           </label>
           <div>
@@ -1332,7 +1386,7 @@ export default function AgricultureReportDesk() {
       ) : null}
 
       {deskView === "impact" ? (
-        <PriceImpactWorkspace data={data} selectedReportId={selectedReportId} onSelectReport={(reportId) => { setSelectedReportId(reportId); setSelectedArchiveReleaseDate(""); }} />
+        <PriceImpactWorkspace data={data} selectedReportId={activeReportId} onSelectReport={(reportId) => { setSelectedReportId(reportId); setSelectedArchiveReleaseDate(""); }} />
       ) : (
       <section className="surface-card-strong min-w-0 overflow-hidden lg:grid lg:grid-cols-[minmax(20rem,0.72fr)_minmax(0,1.55fr)]" aria-label={`${data.commodity.name} agriculture briefing`}>
         <div className="border-b border-stealth-700 lg:border-b-0 lg:border-r">
@@ -1361,14 +1415,14 @@ export default function AgricultureReportDesk() {
             </div>
             <label className="block border-t border-stealth-700 p-4 lg:hidden">
               <span className="sr-only">Report family</span>
-              <select value={selectedReportId} onChange={(event) => { setSelectedReportId(event.target.value); setSelectedArchiveReleaseDate(""); }} className={INPUT_CLASS}>
+              <select value={activeReportId} onChange={(event) => { setSelectedReportId(event.target.value); setSelectedArchiveReleaseDate(""); }} className={INPUT_CLASS}>
                 {data.reports.map((report) => <option key={report.id} value={report.id}>{report.name} · {reportDigest(report.id, data.report_histories[report.id] ?? null, endingStocksPoint).comparison}</option>)}
               </select>
             </label>
             <div className="hidden divide-y divide-stealth-700 lg:block" role="group" aria-label="Agriculture report feed">
               {data.reports.map((report) => {
                 const digest = reportDigest(report.id, data.report_histories[report.id] ?? null, endingStocksPoint);
-                const selected = report.id === selectedReportId;
+                const selected = report.id === activeReportId;
                 return (
                   <button key={report.id} type="button" aria-pressed={selected} onClick={() => { setSelectedReportId(report.id); setSelectedArchiveReleaseDate(""); }} className={`grid min-h-[3.45rem] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-2 text-left transition focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 md:px-5 ${selected ? "bg-sky-300/[0.10]" : "hover:bg-stealth-800/70"}`}>
                     <span className="min-w-0">
@@ -1402,7 +1456,7 @@ export default function AgricultureReportDesk() {
           ) : null}
 
           <div className="px-4 py-4 md:px-5">
-            {selectedReportId === "wasde" && selectedSeries && latest ? (
+            {activeReportId === "wasde" && selectedSeries && latest ? (
               <>
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex flex-wrap gap-1" role="group" aria-label="WASDE metric">
@@ -1458,7 +1512,7 @@ export default function AgricultureReportDesk() {
             </summary>
             <div className="border-t border-stealth-700 px-4 py-4 md:px-5">
               {selectedReport ? <p className="max-w-3xl text-sm leading-6 text-stealth-300">{selectedReport.description}</p> : null}
-              {selectedReportId === "wasde" ? (
+              {activeReportId === "wasde" ? (
                 <dl className="mt-3 space-y-2 text-sm leading-6">
                   {Object.entries(data.methodology).map(([key, value]) => <div key={key}><dt className="inline font-semibold capitalize text-stealth-200">{key}: </dt><dd className="inline text-stealth-400">{value}</dd></div>)}
                 </dl>
@@ -1473,7 +1527,7 @@ export default function AgricultureReportDesk() {
             </div>
           </details>
 
-          {selectedReportId === "wasde" ? <details className="group border-t border-stealth-700">
+          {activeReportId === "wasde" ? <details className="group border-t border-stealth-700">
             <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-3 px-4 py-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 md:px-5">
               <span><span className="block text-sm font-semibold text-stealth-100">Expectation journal</span><span className="block text-xs text-stealth-500">Record a pre-release number in this browser</span></span>
               <span className="text-xs font-semibold text-sky-200 group-open:hidden">Open</span><span className="hidden text-xs font-semibold text-sky-200 group-open:inline">Close</span>

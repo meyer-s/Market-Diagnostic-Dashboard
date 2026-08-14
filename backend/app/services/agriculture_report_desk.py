@@ -31,8 +31,8 @@ from app.core.db import SessionLocal
 from app.models.agriculture_report_release import AgricultureReportRelease
 from app.models.agriculture_wasde_observation import AgricultureWasdeObservation
 from app.services.agriculture_report_archive import NASS_ARCHIVES, REPORT_ARCHIVE_START
-from app.services.agriculture_index import AGRICULTURE_SYMBOLS
-from app.services.ingestion.yahoo_client import YahooClient, YahooClientError
+from app.services.agriculture_index import AGRICULTURE_SYMBOLS, GROUP_LABELS
+from app.services.ingestion.yahoo_client import YahooClient
 
 
 EASTERN = ZoneInfo("America/New_York")
@@ -75,15 +75,51 @@ class WasdeArchiveSource:
     required: bool = True
 
 
-COMMODITIES: dict[str, dict[str, str]] = {
-    "ZC": {"name": "Corn", "usda": "Corn", "ticker": "ZC=F", "price_unit": "cents per bushel"},
-    "ZS": {"name": "Soybeans", "usda": "Oilseed, Soybean", "ticker": "ZS=F", "price_unit": "cents per bushel"},
-    "ZW": {"name": "Chicago Wheat", "usda": "Wheat", "ticker": "ZW=F", "price_unit": "cents per bushel"},
-    "KE": {"name": "KC Hard Red Winter Wheat", "usda": "Wheat", "ticker": "KE=F", "price_unit": "cents per bushel"},
-    "MW": {"name": "Minneapolis Spring Wheat", "usda": "Wheat", "ticker": "MWE=F", "price_unit": "cents per bushel"},
-    "ZO": {"name": "Oats", "usda": "Oats", "ticker": "ZO=F", "price_unit": "cents per bushel"},
-    "ZR": {"name": "Rough Rice", "usda": "Rice", "ticker": "ZR=F", "price_unit": "dollars per hundredweight"},
-    "CT": {"name": "Cotton", "usda": "Cotton", "ticker": "CT=F", "price_unit": "cents per pound"},
+_FULL_CROP_REPORTS = (
+    "wasde", "crop_production", "crop_progress", "export_sales",
+    "export_inspections", "grain_stocks", "acreage", "cot",
+)
+_RICE_REPORTS = (
+    "wasde", "crop_production", "crop_progress", "export_sales",
+    "grain_stocks", "acreage", "cot",
+)
+_COTTON_REPORTS = (
+    "wasde", "crop_production", "crop_progress", "export_sales", "acreage", "cot",
+)
+_WASDE_AND_COT = ("wasde", "cot")
+_COT_ONLY = ("cot",)
+_SOY_COMPLEX_SCOPES = {
+    "crop_production": "ZS",
+    "crop_progress": "ZS",
+    "export_sales": "ZS",
+    "export_inspections": "ZS",
+    "grain_stocks": "ZS",
+    "acreage": "ZS",
+}
+
+
+COMMODITIES: dict[str, dict[str, Any]] = {
+    "ZS": {"name": "Soybeans", "usda": "Oilseed, Soybean", "ticker": "ZS=F", "tickers": ("ZS=F",), "price_unit": "cents per bushel", "group": "grains_oilseeds", "report_ids": _FULL_CROP_REPORTS},
+    "ZC": {"name": "Corn", "usda": "Corn", "ticker": "ZC=F", "tickers": ("ZC=F",), "price_unit": "cents per bushel", "group": "grains_oilseeds", "report_ids": _FULL_CROP_REPORTS},
+    "ZW": {"name": "Chicago Wheat", "usda": "Wheat", "ticker": "ZW=F", "tickers": ("ZW=F",), "price_unit": "cents per bushel", "group": "grains_oilseeds", "report_ids": _FULL_CROP_REPORTS},
+    "KE": {"name": "KC Hard Red Winter Wheat", "usda": "Wheat", "ticker": "KE=F", "tickers": ("KE=F", "KW=F"), "price_unit": "cents per bushel", "group": "grains_oilseeds", "report_ids": _FULL_CROP_REPORTS},
+    "MW": {"name": "Minneapolis Spring Wheat", "usda": "Wheat", "ticker": "MWE=F", "tickers": ("MWE=F", "MW=F"), "price_unit": "cents per bushel", "group": "grains_oilseeds", "report_ids": _FULL_CROP_REPORTS},
+    "ZL": {"name": "Soybean Oil", "usda": "Oil, Soybean", "ticker": "ZL=F", "tickers": ("ZL=F",), "price_unit": "cents per pound", "group": "grains_oilseeds", "report_ids": _FULL_CROP_REPORTS, "report_scopes": _SOY_COMPLEX_SCOPES},
+    "ZM": {"name": "Soybean Meal", "usda": "Meal, Soybean", "ticker": "ZM=F", "tickers": ("ZM=F",), "price_unit": "dollars per short ton", "group": "grains_oilseeds", "report_ids": _FULL_CROP_REPORTS, "report_scopes": _SOY_COMPLEX_SCOPES},
+    "ZO": {"name": "Oats", "usda": "Oats", "ticker": "ZO=F", "tickers": ("ZO=F",), "price_unit": "cents per bushel", "group": "grains_oilseeds", "report_ids": _FULL_CROP_REPORTS},
+    "ZR": {"name": "Rough Rice", "usda": "Rice", "ticker": "ZR=F", "tickers": ("ZR=F",), "price_unit": "dollars per hundredweight", "group": "grains_oilseeds", "report_ids": _RICE_REPORTS},
+    "LE": {"name": "Live Cattle", "usda": "Beef", "ticker": "LE=F", "tickers": ("LE=F",), "price_unit": "cents per pound", "group": "livestock", "report_ids": _WASDE_AND_COT},
+    "GF": {"name": "Feeder Cattle", "usda": "Beef", "ticker": "GF=F", "tickers": ("GF=F",), "price_unit": "cents per pound", "group": "livestock", "report_ids": _WASDE_AND_COT},
+    "HE": {"name": "Lean Hogs", "usda": "Pork", "ticker": "HE=F", "tickers": ("HE=F",), "price_unit": "cents per pound", "group": "livestock", "report_ids": _WASDE_AND_COT},
+    "DC": {"name": "Class III Milk", "usda": "Milk, Class III", "ticker": "DC=F", "tickers": ("DC=F",), "price_unit": "dollars per hundredweight", "group": "dairy", "report_ids": _WASDE_AND_COT},
+    "DAIRY_CLASS_IV": {"name": "Class IV Milk", "usda": "Milk, Class IV", "ticker": "GDK=F", "tickers": ("GDK=F",), "price_unit": "dollars per hundredweight", "group": "dairy", "report_ids": _WASDE_AND_COT},
+    "LBR": {"name": "Lumber", "usda": "", "ticker": "LBR=F", "tickers": ("LBR=F",), "price_unit": "dollars per thousand board feet", "group": "lumber", "report_ids": _COT_ONLY},
+    "KC": {"name": "Coffee", "usda": "", "ticker": "KC=F", "tickers": ("KC=F",), "price_unit": "cents per pound", "group": "softs", "report_ids": _COT_ONLY},
+    "CC": {"name": "Cocoa", "usda": "", "ticker": "CC=F", "tickers": ("CC=F",), "price_unit": "dollars per metric ton", "group": "softs", "report_ids": _COT_ONLY},
+    "SB": {"name": "Sugar", "usda": "Sugar", "ticker": "SB=F", "tickers": ("SB=F",), "price_unit": "cents per pound", "group": "softs", "report_ids": _WASDE_AND_COT},
+    "CT": {"name": "Cotton", "usda": "Cotton", "ticker": "CT=F", "tickers": ("CT=F",), "price_unit": "cents per pound", "group": "softs", "report_ids": _COTTON_REPORTS},
+    "OJ": {"name": "Orange Juice", "usda": "", "ticker": "OJ=F", "tickers": ("OJ=F",), "price_unit": "cents per pound", "group": "softs", "report_ids": _COT_ONLY},
+    "RS": {"name": "Canola", "usda": "", "ticker": "RS=F", "tickers": ("RS=F",), "price_unit": "Canadian dollars per metric tonne", "group": "softs", "report_ids": _COT_ONLY},
 }
 
 METRICS: tuple[dict[str, Any], ...] = (
@@ -115,7 +151,35 @@ METRICS: tuple[dict[str, Any], ...] = (
         "orientation": -1,
         "bullish_when": "lower than the prior estimate",
     },
+    {
+        "id": "price_forecast",
+        "label": "Price forecast",
+        "attribute": ("Prices",),
+        "orientation": 1,
+        "bullish_when": "higher than the prior estimate",
+    },
 )
+
+
+def _report_ids_for(symbol: str) -> tuple[str, ...]:
+    return tuple(COMMODITIES[symbol]["report_ids"])
+
+
+def _report_scope_for(symbol: str, report_id: str) -> str:
+    return str(COMMODITIES[symbol].get("report_scopes", {}).get(report_id, symbol))
+
+
+def _public_commodity(symbol: str, commodity: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "symbol": symbol,
+        "name": commodity["name"],
+        "usda": commodity["usda"],
+        "ticker": commodity["ticker"],
+        "price_unit": commodity["price_unit"],
+        "group": commodity["group"],
+        "group_label": GROUP_LABELS[commodity["group"]],
+        "report_count": len(commodity["report_ids"]),
+    }
 
 
 def _wasde_archive_sources(since: date, through: date) -> list[WasdeArchiveSource]:
@@ -474,15 +538,16 @@ def _load_report_histories(
     release_limit: int = 160,
 ) -> dict[str, dict[str, Any]]:
     requested_start = _report_history_start(years, reference)
-    report_ids = [report["id"] for report in REPORT_CATALOG if report["id"] != "wasde"]
+    report_ids = [report_id for report_id in _report_ids_for(symbol) if report_id != "wasde"]
     histories = {report_id: _empty_report_history(report_id, requested_start) for report_id in report_ids}
+    source_scopes = {_report_scope_for(symbol, report_id) for report_id in report_ids}
     db = SessionLocal()
     try:
         rows = (
             db.query(AgricultureReportRelease)
             .filter(
                 AgricultureReportRelease.report_id.in_(report_ids),
-                AgricultureReportRelease.scope_key.in_((symbol, "ALL")),
+                AgricultureReportRelease.scope_key.in_((*source_scopes, "ALL")),
                 AgricultureReportRelease.release_date >= requested_start,
                 AgricultureReportRelease.release_date <= reference,
             )
@@ -499,7 +564,8 @@ def _load_report_histories(
     for row in rows:
         grouped.setdefault((row.report_id, row.scope_key), []).append(row)
     for report_id in report_ids:
-        direct = grouped.get((report_id, symbol), [])
+        source_scope = _report_scope_for(symbol, report_id)
+        direct = grouped.get((report_id, source_scope), [])
         universal = grouped.get((report_id, "ALL"), [])
         # NASS source documents are universal report releases. Commodity-scoped
         # rows enrich those same dates with parsed national metrics; they should
@@ -508,15 +574,17 @@ def _load_report_histories(
         selected = universal if merge_scoped_metrics else (direct or universal)
         if not selected:
             continue
-        scope_key = symbol if direct else "ALL"
-        if scope_key == symbol:
-            metric_scope_name = COMMODITIES[symbol]["name"]
-            if report_id in {"grain_stocks", "export_inspections"} and symbol in {"ZW", "KE", "MW"}:
+        scope_key = source_scope if direct else "ALL"
+        if direct:
+            metric_scope_name = COMMODITIES[source_scope]["name"]
+            if report_id in {"grain_stocks", "export_inspections"} and source_scope in {"ZW", "KE", "MW"}:
                 metric_scope_name = "All wheat"
-            elif report_id == "crop_progress" and symbol in {"ZW", "KE"}:
+            elif report_id == "crop_progress" and source_scope in {"ZW", "KE"}:
                 metric_scope_name = "Winter wheat"
-            elif report_id == "crop_progress" and symbol == "MW":
+            elif report_id == "crop_progress" and source_scope == "MW":
                 metric_scope_name = "Spring wheat"
+            if source_scope != symbol:
+                metric_scope_name = f"{metric_scope_name} underlying-crop metrics for {COMMODITIES[symbol]['name']}"
             scope_label = (
                 f"{metric_scope_name} metrics · full release archive"
                 if merge_scoped_metrics
@@ -671,6 +739,7 @@ def _select_backfill_observations(
     commodity_lookup = {
         item["usda"].strip().lower(): item["usda"]
         for item in COMMODITIES.values()
+        if item["usda"]
     }
     metric_lookup = {
         attribute.strip().lower(): (metric["id"], attribute)
@@ -949,23 +1018,29 @@ def _standardize_metric(points: list[dict[str, Any]], orientation: int) -> None:
         }
 
 
-def _price_history(ticker: str, start: date, end: date) -> tuple[list[dict[str, Any]], list[str]]:
-    warnings: list[str] = []
-    try:
-        rows = YahooClient().fetch_series(
-            ticker,
-            start_date=(start - timedelta(days=10)).isoformat(),
-            end_date=(end + timedelta(days=8)).isoformat(),
-        )
-    except YahooClientError as exc:
-        return [], [f"Futures history is temporarily unavailable: {exc}"]
-    clean = [row for row in rows if row.get("value") is not None]
-    if not clean:
-        return [], ["Futures history returned no usable daily closes."]
-    base = float(clean[0]["value"])
-    for row in clean:
-        row["rebased"] = round(float(row["value"]) / base * 100, 4) if base else None
-    return clean, warnings
+def _price_history(tickers: str | Iterable[str], start: date, end: date) -> tuple[list[dict[str, Any]], list[str]]:
+    attempted = (tickers,) if isinstance(tickers, str) else tuple(tickers)
+    errors: list[str] = []
+    for ticker in attempted:
+        try:
+            rows = YahooClient().fetch_series(
+                ticker,
+                start_date=(start - timedelta(days=10)).isoformat(),
+                end_date=(end + timedelta(days=8)).isoformat(),
+            )
+        except Exception as exc:
+            errors.append(str(exc))
+            continue
+        clean = [row for row in rows if row.get("value") is not None]
+        if not clean:
+            continue
+        base = float(clean[0]["value"])
+        for row in clean:
+            row.setdefault("ticker", ticker)
+            row["rebased"] = round(float(row["value"]) / base * 100, 4) if base else None
+        return clean, []
+    detail = f": {errors[-1]}" if errors else "."
+    return [], [f"Futures history returned no usable daily closes for {', '.join(attempted)}{detail}"]
 
 
 def _attach_reactions(series: list[dict[str, Any]], prices: list[dict[str, Any]]) -> None:
@@ -1204,7 +1279,7 @@ def _build_impact_model(
     series: list[dict[str, Any]],
     report_histories: dict[str, dict[str, Any]],
     prices: list[dict[str, Any]],
-    commodity: dict[str, str],
+    commodity: dict[str, Any],
 ) -> dict[str, Any]:
     price_rows = [row for row in prices if row.get("value") is not None]
     price_dates = [date.fromisoformat(row["date"]) for row in price_rows]
@@ -1214,7 +1289,9 @@ def _build_impact_model(
     latest_signals: dict[str, float | None] = {}
     latest_price_date = price_dates[-1] if price_dates else None
 
-    for report_id, definition in REPORT_IMPACT_DEFINITIONS.items():
+    applicable_report_ids = set(commodity["report_ids"])
+    for report_id in commodity["report_ids"]:
+        definition = REPORT_IMPACT_DEFINITIONS[report_id]
         signal_rows = (
             _wasde_signal_inputs(series)
             if report_id == "wasde"
@@ -1310,6 +1387,8 @@ def _build_impact_model(
 
     relationships = []
     for relationship in REPORT_RELATIONSHIPS:
+        if not {relationship["source_report_id"], relationship["target_report_id"]}.issubset(applicable_report_ids):
+            continue
         source_signal = latest_signals.get(relationship["source_report_id"])
         target_signal = latest_signals.get(relationship["target_report_id"])
         if source_signal is None or target_signal is None:
@@ -1455,56 +1534,60 @@ def build_report_desk(symbol: str = "ZC", years: int = 2, selected_metric: str =
     years = max(1, min(years, 150))
     now = datetime.now(EASTERN)
     commodity = COMMODITIES[symbol]
+    applicable_report_ids = set(_report_ids_for(symbol))
     warnings: list[str] = []
-    wasde_rows = _load_wasde_history(years, now.date())
-    if not wasde_rows:
+    wasde_rows = _load_wasde_history(years, now.date()) if "wasde" in applicable_report_ids else []
+    if "wasde" in applicable_report_ids and not wasde_rows:
         warnings.append("USDA WASDE history is temporarily unavailable; the release calendar and source links remain usable.")
 
     series: list[dict[str, Any]] = []
-    for metric in METRICS:
-        points = _select_metric_rows(wasde_rows, commodity["usda"], metric["attribute"])
-        _standardize_metric(points, metric["orientation"])
-        if points:
-            series.append({
-                "id": f"wasde:{metric['id']}",
-                "report_id": "wasde",
-                "report": "WASDE",
-                "metric_id": metric["id"],
-                "label": metric["label"],
-                "bullish_when": metric["bullish_when"],
-                "unit": points[-1]["unit"],
-                "points": points,
-            })
+    if commodity["usda"]:
+        for metric in METRICS:
+            points = _select_metric_rows(wasde_rows, commodity["usda"], metric["attribute"])
+            _standardize_metric(points, metric["orientation"])
+            if points:
+                series.append({
+                    "id": f"wasde:{metric['id']}",
+                    "report_id": "wasde",
+                    "report": "WASDE",
+                    "metric_id": metric["id"],
+                    "label": metric["label"],
+                    "bullish_when": metric["bullish_when"],
+                    "unit": points[-1]["unit"],
+                    "points": points,
+                })
 
     history_start = _history_start(years, now.date())
     prices, price_warnings = _price_history(
-        commodity["ticker"],
+        commodity["tickers"],
         history_start,
         now.date(),
     )
     warnings.extend(price_warnings)
     _attach_reactions(series, prices)
-    schedule = build_release_calendar(now)
+    schedule = [event for event in build_release_calendar(now) if event["report_id"] in applicable_report_ids]
     next_release = schedule[0] if schedule else None
-    selected_layer = next((layer for layer in series if layer["metric_id"] == selected_metric), None)
+    selected_layer = next((layer for layer in series if layer["metric_id"] == selected_metric), series[0] if series else None)
     latest_release = selected_layer["points"][-1] if selected_layer and selected_layer["points"] else None
     release_dates = sorted({
         date.fromisoformat(point["release_date"])
         for layer in series
         for point in layer["points"]
     })
-    history_complete = bool(release_dates) and release_dates[0] <= history_start + timedelta(days=45)
-    if years > 3 and not history_complete:
+    history_complete = bool(release_dates) and release_dates[0] <= history_start + timedelta(days=45) if "wasde" in applicable_report_ids else False
+    if "wasde" in applicable_report_ids and years > 3 and not history_complete:
         warnings.append(
             "The persisted USDA archive does not yet cover the full selected window; run the WASDE history backfill."
         )
     report_histories = _load_report_histories(symbol, years, now.date())
-    if not any(history["release_count"] for history in report_histories.values()):
+    if report_histories and not any(history["release_count"] for history in report_histories.values()):
         warnings.append(
-            "The non-WASDE release archive is empty; run the agriculture report-history backfill."
+            "The mapped non-WASDE release archive is empty for this future; run the agriculture report-history backfill."
         )
     report_catalog = []
     for report in REPORT_CATALOG:
+        if report["id"] not in applicable_report_ids:
+            continue
         item = dict(report)
         if report["id"] == "wasde":
             item.update({
@@ -1525,34 +1608,51 @@ def build_report_desk(symbol: str = "ZC", years: int = 2, selected_metric: str =
                     "coverage_label": "Chart + history",
                 })
         report_catalog.append(item)
+    available_metric_ids = {layer["metric_id"] for layer in series}
+    visible_metrics = [
+        {key: value for key, value in metric.items() if key != "attribute"}
+        for metric in METRICS
+        if metric["id"] in available_metric_ids
+    ]
+    non_wasde_dates = sorted({
+        date.fromisoformat(release["release_date"])
+        for history in report_histories.values()
+        for release in history["releases"]
+    })
+    observed_dates = release_dates or non_wasde_dates
+    coverage_source = (
+        "USDA WASDE as-reported CSV archive"
+        if release_dates
+        else "CFTC and mapped official release archives"
+    )
     impact_model = _build_impact_model(series, report_histories, prices, commodity)
     return {
         "as_of": now.isoformat(),
-        "commodity": {"symbol": symbol, **commodity},
-        "commodities": [{"symbol": code, **item} for code, item in COMMODITIES.items()],
+        "commodity": _public_commodity(symbol, commodity),
+        "commodities": [_public_commodity(code, item) for code, item in COMMODITIES.items()],
         "selected_metric": selected_metric,
         "years": years,
         "history_coverage": {
             "structured_start_date": WASDE_STRUCTURED_START.isoformat(),
             "requested_start_date": history_start.isoformat(),
-            "observed_start_date": release_dates[0].isoformat() if release_dates else None,
-            "observed_end_date": release_dates[-1].isoformat() if release_dates else None,
-            "release_count": len(release_dates),
+            "observed_start_date": observed_dates[0].isoformat() if observed_dates else None,
+            "observed_end_date": observed_dates[-1].isoformat() if observed_dates else None,
+            "release_count": len(observed_dates),
             "complete": history_complete,
-            "source": "USDA WASDE as-reported CSV archive",
+            "source": coverage_source,
         },
         "next_release": next_release,
         "latest_release": latest_release,
         "reports": report_catalog,
         "report_histories": report_histories,
         "schedule": schedule,
-        "metrics": [{key: value for key, value in metric.items() if key != "attribute"} for metric in METRICS],
+        "metrics": visible_metrics,
         "series": series,
         "price_history": prices,
         "impact_model": impact_model,
         "takeaways": _build_takeaways(series, selected_metric),
         "methodology": {
-            "actuals": "USDA WASDE CSVs plus official NASS, FAS, FGIS, and CFTC archives, preserved by the source's release or report date.",
+            "actuals": "Only reports mapped to this future are shown. Observations come from USDA WASDE, NASS, FAS, FGIS, and CFTC official archives and retain the source's release or report date.",
             "expectations": "User-entered only. USDA does not publish market consensus expectations.",
             "standardization": "Each metric uses the z-score of like-market-year release revisions; positive always means price-supportive.",
             "futures": f"Adjusted daily closes for {commodity['ticker']}, rebased to 100 at the start of the selected window.",
