@@ -1,9 +1,9 @@
 /*
-THESIS: One report, one primary read, and one visual should answer what changed before deeper evidence is opened.
+THESIS: All reports should resolve into one commodity brief, with individual evidence inspected in place.
 OWN-WORLD: Evidence Field — dark, exacting, source-forward, and operational.
-STORY: Choose a report, understand its latest change, then open source evidence or the expectation journal only when needed.
-FIRST VIEWPORT: A complete report navigator above one focused report workspace.
-FORM: A linear evidence workspace with progressive disclosure for supporting detail.
+STORY: Read the whole-picture signal, scan the report feed, then inspect one piece of evidence without leaving the page.
+FIRST VIEWPORT: A synthesized market brief and report feed beside one compact evidence pane.
+FORM: A master-detail research inbox with progressive disclosure for source material.
 */
 
 import { useEffect, useMemo, useState } from "react";
@@ -34,7 +34,6 @@ import {
   YAxis,
 } from "recharts";
 
-import DataScroller from "../components/ui/DataScroller";
 import PageState from "../components/ui/PageState";
 import SegmentedControl from "../components/ui/SegmentedControl";
 import { useApi } from "../hooks/useApi";
@@ -222,12 +221,6 @@ function readExpectations(): Expectations {
   }
 }
 
-function confidenceLabel(confidence: ReleaseEvent["confidence"]) {
-  if (confidence === "official") return "Official date";
-  if (confidence === "recurring") return "Recurring time";
-  return "Expected date";
-}
-
 function coverageTone(coverage: ReportCoverage) {
   if (coverage === "chart_ready") return "border-emerald-400/40 bg-emerald-400/10 text-emerald-200";
   if (coverage === "history_ready") return "border-sky-400/40 bg-sky-400/10 text-sky-200";
@@ -287,17 +280,6 @@ function archiveTimeSeries(history: ReportHistory, metricIds: string[], limit = 
     .slice(-limit);
 }
 
-type ComparisonTile = {
-  label: string;
-  display: string;
-  detail: string;
-  currentLabel: string;
-  currentValue: number;
-  baselineLabel: string;
-  baselineValue: number;
-  unit?: string;
-};
-
 function metricDigits(value: number) {
   return Math.abs(value) < 1_000 && !Number.isInteger(value) ? 1 : 0;
 }
@@ -307,43 +289,9 @@ function signedPercentChange(current: number, baseline: number | null | undefine
   return (current / baseline - 1) * 100;
 }
 
-function comparisonDisplay(delta: number | null, suffix = "%") {
-  if (delta === null || Number.isNaN(delta)) return "—";
-  const digits = suffix === " pts" ? 0 : 1;
-  return `${delta > 0 ? "↑ " : delta < 0 ? "↓ " : "→ "}${delta > 0 ? "+" : ""}${delta.toFixed(digits)}${suffix}`;
-}
-
-function comparisonDetail(delta: number | null, baselineLabel: string) {
-  if (delta === null) return `No usable ${baselineLabel.toLowerCase()} baseline`;
-  if (Math.abs(delta) < 0.05) return `In line with ${baselineLabel.toLowerCase()}`;
-  return `${delta > 0 ? "Higher" : "Lower"} than ${baselineLabel.toLowerCase()}`;
-}
-
-function ComparisonBars({ tile, unit }: { tile: ComparisonTile; unit: string }) {
-  const scale = Math.max(Math.abs(tile.currentValue), Math.abs(tile.baselineValue), 1);
-  const currentWidth = `${Math.max(4, Math.abs(tile.currentValue) / scale * 100)}%`;
-  const baselineWidth = `${Math.max(4, Math.abs(tile.baselineValue) / scale * 100)}%`;
-  const digits = metricDigits(Math.max(Math.abs(tile.currentValue), Math.abs(tile.baselineValue)));
-
-  return (
-    <div className="mt-4 hidden space-y-2 sm:block" role="img" aria-label={`${tile.currentLabel} ${formatValue(tile.currentValue, digits)} ${tile.unit ?? unit}; ${tile.baselineLabel} ${formatValue(tile.baselineValue, digits)} ${tile.unit ?? unit}`}>
-      <div className="grid grid-cols-[3.25rem_minmax(0,1fr)_auto] items-center gap-2 text-xs text-stealth-400">
-        <span>{tile.currentLabel}</span>
-        <span className="h-2 overflow-hidden rounded-full bg-stealth-900"><span className="block h-full rounded-full bg-sky-300" style={{ width: currentWidth }} /></span>
-        <span className="tabular-nums text-stealth-200">{formatValue(tile.currentValue, digits)}</span>
-      </div>
-      <div className="grid grid-cols-[3.25rem_minmax(0,1fr)_auto] items-center gap-2 text-xs text-stealth-500">
-        <span>{tile.baselineLabel}</span>
-        <span className="h-2 overflow-hidden rounded-full bg-stealth-900"><span className="block h-full rounded-full bg-stealth-500" style={{ width: baselineWidth }} /></span>
-        <span className="tabular-nums text-stealth-300">{formatValue(tile.baselineValue, digits)}</span>
-      </div>
-    </div>
-  );
-}
-
 function chartShell(chart: ReactNode, ariaLabel: string) {
   return (
-    <div className="mt-5 h-[360px] min-w-0 rounded-xl bg-stealth-900/35 px-1 pt-3 md:h-[410px] md:px-3" aria-label={ariaLabel}>
+    <div className="h-[230px] min-w-0 bg-stealth-900/25 px-1 pt-2 md:h-[320px] md:px-2" aria-label={ariaLabel}>
       {chart}
     </div>
   );
@@ -362,84 +310,6 @@ function ArchiveReportInsights({ history, commodityName }: { history: ReportHist
   }
 
   const latestRelease = history.releases.find((release) => release.release_date === analysis.latest_release_date) ?? history.releases[0];
-  const primaryMetric = latestRelease ? releaseMetric(latestRelease, analysis.primary_metric_id) : null;
-  const comparisons: ComparisonTile[] = [];
-  const addPercentComparison = (label: string, baseline: number | null | undefined, baselineLabel: string) => {
-    if (baseline === null || baseline === undefined) return;
-    const delta = signedPercentChange(analysis.latest_value, baseline);
-    comparisons.push({
-      label,
-      display: comparisonDisplay(delta),
-      detail: comparisonDetail(delta, baselineLabel),
-      currentLabel: "Now",
-      currentValue: analysis.latest_value,
-      baselineLabel,
-      baselineValue: baseline,
-    });
-  };
-  const addPointComparison = (label: string, baseline: number | null | undefined, baselineLabel: string) => {
-    if (baseline === null || baseline === undefined) return;
-    const delta = analysis.latest_value - baseline;
-    comparisons.push({
-      label,
-      display: comparisonDisplay(delta, " pts"),
-      detail: comparisonDetail(delta, baselineLabel),
-      currentLabel: "Now",
-      currentValue: analysis.latest_value,
-      baselineLabel,
-      baselineValue: baseline,
-    });
-  };
-  const addRawComparison = (label: string, baseline: number | null | undefined, baselineLabel: string) => {
-    if (baseline === null || baseline === undefined) return;
-    const delta = analysis.latest_value - baseline;
-    comparisons.push({
-      label,
-      display: `${delta > 0 ? "↑ +" : delta < 0 ? "↓ " : "→ "}${compactNumber(delta)}`,
-      detail: comparisonDetail(delta, baselineLabel),
-      currentLabel: "Now",
-      currentValue: analysis.latest_value,
-      baselineLabel,
-      baselineValue: baseline,
-    });
-  };
-
-  if (analysis.chart_kind === "progress_benchmark") {
-    addPointComparison("Week over week", primaryMetric?.previous_week, "Prior week");
-    addPointComparison(
-      primaryMetric?.five_year_average !== null && primaryMetric?.five_year_average !== undefined ? "Against normal" : "Year over year",
-      primaryMetric?.five_year_average ?? primaryMetric?.previous_year,
-      primaryMetric?.five_year_average !== null && primaryMetric?.five_year_average !== undefined ? "5Y avg" : "Last year",
-    );
-  } else if (analysis.chart_kind === "production_trend") {
-    addPercentComparison("Year over year", releaseMetric(latestRelease, "production_year_ago")?.value, "Year ago");
-    addPercentComparison("Latest revision", analysis.previous_value, "Prior est.");
-  } else if (analysis.chart_kind === "stocks_composition") {
-    addPercentComparison("Year over year", releaseMetric(latestRelease, "total_stocks_year_ago")?.value, "Year ago");
-    const total = releaseMetric(latestRelease, "total_stocks")?.value;
-    const onFarm = releaseMetric(latestRelease, "on_farm_stocks")?.value;
-    if (total && onFarm !== null && onFarm !== undefined) {
-      const share = onFarm / total * 100;
-      comparisons.push({ label: "Storage mix", display: `${share.toFixed(1)}%`, detail: "Of total stocks held on farm", currentLabel: "On farm", currentValue: share, baselineLabel: "Total", baselineValue: 100, unit: "Percent" });
-    }
-  } else if (analysis.chart_kind === "acreage_comparison") {
-    addPercentComparison("Year over year", releaseMetric(latestRelease, "planted_area_year_ago")?.value, "Year ago");
-    const planted = releaseMetric(latestRelease, "planted_area")?.value;
-    const harvested = releaseMetric(latestRelease, "harvested_area")?.value;
-    if (planted && harvested !== null && harvested !== undefined) {
-      const share = harvested / planted * 100;
-      comparisons.push({ label: "Harvest footprint", display: `${share.toFixed(1)}%`, detail: "Of planted area expected harvested", currentLabel: "Harvest", currentValue: share, baselineLabel: "Planted", baselineValue: 100, unit: "Percent" });
-    }
-  } else if (analysis.chart_kind === "positioning_balance") {
-    addRawComparison("Weekly move", analysis.previous_value, "Prior report");
-    addRawComparison("Against recent positioning", analysis.four_report_average, "4-report avg");
-  } else if (analysis.chart_kind === "sales_flow") {
-    addRawComparison("Versus last report", analysis.previous_value, "Prior report");
-    addRawComparison("Versus recent pace", analysis.four_report_average, "4-report avg");
-  } else {
-    addPercentComparison("Versus last report", analysis.previous_value, "Prior report");
-    addPercentComparison("Versus recent pace", analysis.four_report_average, "4-report avg");
-  }
 
   let chart: ReactNode = null;
 
@@ -583,41 +453,154 @@ function ArchiveReportInsights({ history, commodityName }: { history: ReportHist
 
   return (
     <>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="page-kicker">Report interpretation</p>
-          <h2 className="mt-1 text-xl font-semibold text-stealth-100">{analysis.title}</h2>
-        </div>
-        <span className="rounded-full border border-sky-400/45 bg-sky-400/10 px-3 py-1.5 text-xs font-semibold text-sky-200">{formatDate(analysis.latest_release_date)}</span>
-      </div>
-
-      <section className="mt-5 overflow-hidden rounded-xl border border-stealth-600 bg-stealth-900/30" aria-labelledby="archive-at-a-glance">
-        <h3 id="archive-at-a-glance" className="sr-only">What this report is saying</h3>
-        <div className={`grid ${comparisons.length > 1 ? "grid-cols-2 md:grid-cols-3" : "md:grid-cols-2"}`}>
-          <div className={`border-b border-stealth-700 bg-sky-300/[0.06] p-4 md:col-span-1 md:border-b-0 md:p-5 ${comparisons.length > 1 ? "col-span-2" : ""}`}>
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-sky-200">Latest reading</p>
-            <p className="mt-2 text-3xl font-semibold tabular-nums text-stealth-100 md:text-4xl">{formatValue(analysis.latest_value, metricDigits(analysis.latest_value))}</p>
-            <p className="mt-1 text-sm text-stealth-300">{primaryMetric?.label ?? analysis.headline} · {analysis.unit}</p>
-          </div>
-          {comparisons.slice(0, 2).map((tile, index) => (
-            <div key={tile.label} className={`p-4 md:border-l md:border-stealth-700 md:p-5 ${index === 0 && comparisons.length > 1 ? "border-r border-stealth-700 md:border-r-0" : ""}`}>
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stealth-400">{tile.label}</p>
-              <p className="mt-2 text-2xl font-semibold tabular-nums text-sky-100 md:text-3xl">{tile.display}</p>
-              <p className="mt-1 text-sm text-stealth-300">{tile.detail}</p>
-              <ComparisonBars tile={tile} unit={analysis.unit} />
-            </div>
-          ))}
-        </div>
-        <div className="flex items-start gap-3 border-t border-stealth-700 px-4 py-3.5 md:px-5">
-          <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-sky-300" aria-hidden="true" />
-          <p className="text-sm leading-6 text-stealth-200"><strong className="font-semibold text-stealth-100">Bottom line:</strong> {analysis.body}</p>
-        </div>
-      </section>
-
       {chart}
-      <p className="mt-3 text-xs leading-5 text-stealth-500">{analysis.subtitle} · Native report units · Gaps indicate no safely comparable national observation.</p>
     </>
   );
+}
+
+type ReportDigest = {
+  date: string | null;
+  value: string;
+  comparison: string;
+};
+
+type BriefingLine = {
+  label: string;
+  text: string;
+  reportId: string;
+};
+
+function movement(delta: number | null, suffix = "%") {
+  if (delta === null || Number.isNaN(delta)) return "No comparison";
+  const digits = suffix === " pts" ? 0 : 1;
+  return `${delta > 0 ? "+" : ""}${delta.toFixed(digits)}${suffix}`;
+}
+
+function signedCompact(value: number | null) {
+  if (value === null || Number.isNaN(value)) return "No comparison";
+  return `${value > 0 ? "+" : ""}${compactNumber(value)}`;
+}
+
+function compactMetric(value: number, unit: string) {
+  const normalized = unit.toLowerCase();
+  if (normalized === "percent") return `${formatValue(value, 1)}%`;
+  if (normalized.includes("million bushel")) return `${formatValue(value, 0)}M bu`;
+  if (normalized.includes("million acre")) return `${formatValue(value, 1)}M acres`;
+  if (normalized.includes("metric ton")) return `${compactNumber(value)} MT`;
+  if (normalized.includes("contract")) return `${compactNumber(value)} contracts`;
+  return `${formatValue(value, metricDigits(value))} ${unit}`;
+}
+
+function reportDigest(reportId: string, history: ReportHistory | null, endingStocks: MetricPoint | null): ReportDigest {
+  if (reportId === "wasde") {
+    return endingStocks ? {
+      date: endingStocks.release_date,
+      value: compactMetric(endingStocks.value, endingStocks.unit),
+      comparison: `${movement(endingStocks.revision, endingStocks.unit.toLowerCase().includes("million bushel") ? "M bu" : "")} revision`,
+    } : { date: null, value: "No release", comparison: "Awaiting structured history" };
+  }
+
+  const analysis = history?.analysis;
+  if (!history || !analysis) return { date: null, value: "Source archive", comparison: "No comparable national metric" };
+  const latestRelease = history.releases.find((release) => release.release_date === analysis.latest_release_date) ?? history.releases[0];
+  const primary = latestRelease ? releaseMetric(latestRelease, analysis.primary_metric_id) : null;
+  let delta: number | null = null;
+  let suffix = "%";
+  let baselineLabel = "vs prior report";
+
+  if (analysis.chart_kind === "progress_benchmark") {
+    const baseline = primary?.previous_year ?? primary?.five_year_average ?? primary?.previous_week;
+    delta = baseline === null || baseline === undefined ? null : analysis.latest_value - baseline;
+    suffix = " pts";
+    baselineLabel = primary?.previous_year !== null && primary?.previous_year !== undefined
+      ? "vs last year"
+      : primary?.five_year_average !== null && primary?.five_year_average !== undefined ? "vs 5Y avg" : "vs prior week";
+  } else if (analysis.chart_kind === "production_trend") {
+    delta = signedPercentChange(analysis.latest_value, analysis.previous_value);
+    baselineLabel = "vs prior estimate";
+  } else if (analysis.chart_kind === "stocks_composition") {
+    delta = signedPercentChange(analysis.latest_value, releaseMetric(latestRelease, "total_stocks_year_ago")?.value);
+    baselineLabel = "vs last year";
+  } else if (analysis.chart_kind === "acreage_comparison") {
+    delta = signedPercentChange(analysis.latest_value, releaseMetric(latestRelease, "planted_area_year_ago")?.value);
+    baselineLabel = "vs last year";
+  } else if (analysis.chart_kind === "positioning_balance") {
+    const baseline = analysis.four_report_average ?? analysis.previous_value;
+    const rawDelta = baseline === null ? null : analysis.latest_value - baseline;
+    return {
+      date: analysis.latest_release_date,
+      value: compactMetric(analysis.latest_value, analysis.unit),
+      comparison: `${signedCompact(rawDelta)} contracts vs ${analysis.four_report_average !== null ? "4-report avg" : "prior report"}`,
+    };
+  } else {
+    delta = signedPercentChange(analysis.latest_value, analysis.four_report_average ?? analysis.previous_value);
+    baselineLabel = analysis.four_report_average !== null ? "vs 4-report pace" : "vs prior report";
+  }
+
+  return {
+    date: analysis.latest_release_date,
+    value: compactMetric(analysis.latest_value, analysis.unit),
+    comparison: `${movement(delta, suffix)} ${baselineLabel}`,
+  };
+}
+
+function buildBriefing(data: ReportDeskData): BriefingLine[] {
+  const endingStocks = data.series.find((series) => series.metric_id === "ending_stocks")?.points.at(-1) ?? null;
+  const grainStocks = data.report_histories.grain_stocks?.analysis ?? null;
+  const grainRelease = data.report_histories.grain_stocks?.releases[0] ?? null;
+  const grainYearAgo = grainRelease ? releaseMetric(grainRelease, "total_stocks_year_ago")?.value : null;
+  const grainDelta = grainStocks ? signedPercentChange(grainStocks.latest_value, grainYearAgo) : null;
+
+  const production = data.report_histories.crop_production?.analysis ?? null;
+  const productionDelta = production ? signedPercentChange(production.latest_value, production.previous_value) : null;
+  const progressHistory = data.report_histories.crop_progress ?? null;
+  const progress = progressHistory?.analysis ?? null;
+  const progressRelease = progressHistory?.releases.find((release) => release.release_date === progress?.latest_release_date) ?? progressHistory?.releases[0];
+  const progressMetric = progressRelease && progress ? releaseMetric(progressRelease, progress.primary_metric_id) : null;
+  const progressDelta = progress && progressMetric?.previous_year !== null && progressMetric?.previous_year !== undefined
+    ? progress.latest_value - progressMetric.previous_year
+    : null;
+  const acreage = data.report_histories.acreage?.analysis ?? null;
+  const acreageRelease = data.report_histories.acreage?.releases[0] ?? null;
+  const acreageYearAgo = acreageRelease ? releaseMetric(acreageRelease, "planted_area_year_ago")?.value : null;
+  const acreageDelta = acreage ? signedPercentChange(acreage.latest_value, acreageYearAgo) : null;
+
+  const sales = data.report_histories.export_sales?.analysis ?? null;
+  const inspections = data.report_histories.export_inspections?.analysis ?? null;
+  const salesDelta = sales ? signedPercentChange(sales.latest_value, sales.four_report_average) : null;
+  const inspectionsDelta = inspections ? signedPercentChange(inspections.latest_value, inspections.four_report_average) : null;
+
+  const positioning = data.report_histories.cot?.analysis ?? null;
+  const positioningDelta = positioning && positioning.four_report_average !== null
+    ? positioning.latest_value - positioning.four_report_average
+    : null;
+
+  return [
+    {
+      label: "Balance sheet",
+      reportId: "wasde",
+      text: endingStocks
+        ? `Ending stocks ${endingStocks.revision !== null && endingStocks.revision < 0 ? "cut" : "raised"} ${formatValue(Math.abs(endingStocks.revision ?? 0), 0)}M bu; quarterly stocks ${movement(grainDelta)} year over year.`
+        : "Balance-sheet history is not available for this commodity.",
+    },
+    {
+      label: "Supply & fields",
+      reportId: "crop_production",
+      text: `Production ${movement(productionDelta)} vs prior estimate; conditions ${movement(progressDelta, " pts")} year over year; acreage ${movement(acreageDelta)} year over year.`,
+    },
+    {
+      label: "Demand",
+      reportId: "export_sales",
+      text: `Export sales ${movement(salesDelta)} and inspections ${movement(inspectionsDelta)} vs their four-report pace.`,
+    },
+    {
+      label: "Positioning",
+      reportId: "cot",
+      text: positioning
+        ? `Noncommercial net ${compactNumber(positioning.latest_value)} contracts, ${signedCompact(positioningDelta)} vs the four-report average.`
+        : "Positioning history is not available for this commodity.",
+    },
+  ];
 }
 
 export default function AgricultureReportDesk() {
@@ -736,77 +719,41 @@ export default function AgricultureReportDesk() {
 
   const latest = selectedSeries?.points.at(-1) ?? null;
   const latestSignal = latest?.bullish_signal_z;
+  const endingStocksPoint = data.series.find((series) => series.metric_id === "ending_stocks")?.points.at(-1) ?? null;
+  const briefing = buildBriefing(data);
+  const selectedAnalysis = selectedReportHistory?.analysis ?? null;
+  const selectedDigest = reportDigest(selectedReportId, selectedReportHistory, endingStocksPoint);
+  const expectationReleaseDates = Array.from(new Set([
+    ...data.schedule.filter((event) => event.report_id === "wasde").map((event) => event.date),
+    ...(selectedSeries?.points.map((point) => point.release_date) ?? []),
+  ])).sort().reverse();
 
   return (
-    <div className="page-shell-wide page-stack space-y-5 md:space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
+    <div className="page-shell-wide space-y-4 md:space-y-5">
+      <header className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
-          <Link to="/agriculture" className="mb-3 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-stealth-300 transition hover:text-sky-300">
+          <Link to="/agriculture" className="mb-2 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-stealth-300 transition hover:text-sky-300">
             <ArrowLeft size={16} aria-hidden="true" /> Agriculture Index
           </Link>
-          <p className="page-kicker">Evidence workspace</p>
           <h1 className="page-title">Agriculture Report Desk</h1>
-          <p className="page-subtitle max-w-4xl">Choose a report, read the latest change, then open the source only when you need it.</p>
+          <p className="mt-1 text-sm text-stealth-300">One brief across every major USDA release for {data.commodity.name}.</p>
         </div>
-        <a className="field-button field-button-secondary gap-2" href={buildApiUrl("/agriculture/report-desk/calendar.ics")} download>
-          <Download size={16} aria-hidden="true" /> Add release calendar
-        </a>
-      </header>
-
-      <section aria-labelledby="report-family-title" className="surface-card overflow-hidden">
-        <div className="border-b border-stealth-700 px-4 py-3 md:px-5">
-          <h2 id="report-family-title" className="text-sm font-semibold text-stealth-100">Choose a report</h2>
-        </div>
-        <label className="block p-4 md:hidden">
-          <span className="sr-only">Report family</span>
-          <select value={selectedReportId} onChange={(event) => { setSelectedReportId(event.target.value); setSelectedArchiveReleaseDate(""); }} className={INPUT_CLASS}>
-            {data.reports.map((report) => <option key={report.id} value={report.id}>{report.name} · {(report.release_count ?? 0).toLocaleString()} releases</option>)}
-          </select>
-        </label>
-        <div className="hidden grid-cols-4 gap-px bg-stealth-700 md:grid xl:grid-cols-8" role="group" aria-label="Agriculture report families">
-          {data.reports.map((report) => (
-            <button
-              key={report.id}
-              type="button"
-              aria-pressed={selectedReportId === report.id}
-              onClick={() => { setSelectedReportId(report.id); setSelectedArchiveReleaseDate(""); }}
-              className={`min-h-[4.5rem] bg-stealth-900 px-3 py-3 text-left transition focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 ${selectedReportId === report.id ? "bg-sky-300/[0.10] text-sky-100" : "text-stealth-300 hover:bg-stealth-800 hover:text-stealth-100"}`}
-            >
-              <span className="block text-sm font-semibold leading-5">{report.name}</span>
-              <span className="mt-1 block text-xs tabular-nums text-stealth-500">{(report.release_count ?? 0).toLocaleString()} releases</span>
-            </button>
-          ))}
-        </div>
-      </section>
-
-      <section aria-label="Report filters" className="surface-card overflow-hidden">
-        <div className="grid divide-y divide-stealth-700 md:grid-cols-3 md:divide-x md:divide-y-0">
-          <label className="p-4">
-            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-stealth-500">Commodity</span>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="min-w-[12rem] flex-1 sm:flex-none">
+            <span className="block text-xs font-semibold text-stealth-400">Commodity</span>
             <select value={symbol} onChange={(event) => { setSymbol(event.target.value); setSelectedReleaseDate(""); setSelectedArchiveReleaseDate(""); }} className={INPUT_CLASS}>
               {data.commodities.map((item) => <option key={item.symbol} value={item.symbol}>{item.name}</option>)}
             </select>
           </label>
-          {selectedReportId === "wasde" ? (
-            <label className="p-4">
-              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-stealth-500">WASDE metric</span>
-              <select value={metric} onChange={(event) => { setMetric(event.target.value); setSelectedReleaseDate(""); }} className={INPUT_CLASS}>
-                {data.metrics.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-              </select>
-            </label>
-          ) : (
-            <div className="p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stealth-500">Comparison</p>
-              <p className="mt-2 text-sm font-semibold text-stealth-100">{selectedReportHistory?.analysis?.title ?? "Official source history"}</p>
-              <p className="mt-1 text-xs text-stealth-500">{selectedReportHistory?.analysis?.comparison_basis ?? "No comparable national metric"}</p>
-            </div>
-          )}
-          <div className="p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stealth-500">History</p>
-            <div className="mt-2"><SegmentedControl label="Report history window" value={years} options={[{ value: 1, label: "1Y" }, { value: 3, label: "3Y" }, { value: 5, label: "5Y" }, { value: 10, label: "10Y" }, { value: 150, label: "All" }]} onChange={setYears} accent="emerald" /></div>
+          <div>
+            <span className="block text-xs font-semibold text-stealth-400">History</span>
+            <div className="mt-1"><SegmentedControl label="Report history window" value={years} options={[{ value: 1, label: "1Y" }, { value: 3, label: "3Y" }, { value: 5, label: "5Y" }, { value: 10, label: "10Y" }, { value: 150, label: "All" }]} onChange={setYears} accent="emerald" /></div>
           </div>
+          <a aria-label="Download release calendar" className="field-button field-button-secondary gap-2" href={buildApiUrl("/agriculture/report-desk/calendar.ics")} download>
+            <Download size={16} aria-hidden="true" /> <span className="hidden sm:inline">Calendar</span>
+          </a>
         </div>
-      </section>
+      </header>
 
       {data.warnings.length > 0 ? (
         <div className="rounded-lg border border-amber-300/40 bg-amber-300/[0.07] px-4 py-3 text-sm text-amber-100" role="status">
@@ -814,253 +761,161 @@ export default function AgricultureReportDesk() {
         </div>
       ) : null}
 
-      <section className="surface-card-strong min-w-0 overflow-hidden">
-        {selectedReport ? (
-          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-stealth-700 px-4 py-4 md:px-6 md:py-5">
-            <div>
-              <div className="flex flex-wrap items-center gap-3">
-                <h2 className="text-2xl font-semibold text-stealth-100">{selectedReport.name}</h2>
-                <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${coverageTone(selectedReport.coverage)}`}>{selectedReport.coverage_label}</span>
+      <section className="surface-card-strong min-w-0 overflow-hidden lg:grid lg:grid-cols-[minmax(20rem,0.72fr)_minmax(0,1.55fr)]" aria-label={`${data.commodity.name} agriculture briefing`}>
+        <div className="border-b border-stealth-700 lg:border-b-0 lg:border-r">
+          <div className="px-4 py-4 md:px-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-stealth-100">The whole picture</h2>
+                <p className="mt-1 text-xs text-stealth-400">Latest official releases · {formatDate(data.as_of)}</p>
               </div>
-              <p className="mt-1 text-sm text-stealth-400">{selectedReport.agency} · {selectedReport.cadence} · {selectedReport.release_time}</p>
-              {nextSelectedReportRelease ? <p className="mt-2 flex items-center gap-2 text-sm text-sky-200"><Clock3 size={15} aria-hidden="true" /> Next release {formatDate(nextSelectedReportRelease.release_at)} at {nextSelectedReportRelease.time_label}</p> : null}
+              <span className="rounded-full border border-stealth-600 px-2.5 py-1 text-xs font-semibold text-stealth-300">{data.reports.length} reports</span>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <a href={selectedReport.source_url} target="_blank" rel="noreferrer" className="field-button field-button-primary gap-2">Official report <ExternalLink size={15} aria-hidden="true" /></a>
-              <a href={selectedReport.archive_url} target="_blank" rel="noreferrer" className="field-button field-button-secondary gap-2">Archive <ExternalLink size={15} aria-hidden="true" /></a>
-            </div>
-          </div>
-        ) : null}
-
-        <div className="p-4 md:p-6">
-          {selectedReportId === "wasde" && selectedSeries && latest ? (
-            <>
-              <div className="grid divide-y divide-stealth-700 border-b border-stealth-700 sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
-                <div className="pb-4 sm:pr-5 xl:pb-5">
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stealth-500">Latest {selectedSeries.label.toLowerCase()}</p>
-                  <p className="mt-2 text-3xl font-semibold tabular-nums text-stealth-100">{formatValue(latest.value)}</p>
-                  <p className="mt-1 text-sm text-stealth-400">{latest.unit} · {latest.market_year}</p>
-                </div>
-                <div className="py-4 sm:pl-5 sm:pt-0 xl:px-5 xl:pb-5">
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stealth-500">Revision</p>
-                  <p className="mt-2 text-2xl font-semibold tabular-nums text-stealth-100">{formatSigned(latest.revision)}</p>
-                  <p className="mt-1 text-sm text-stealth-400">From {formatValue(latest.prior_value)}</p>
-                </div>
-                <div className="py-4 sm:border-t sm:border-stealth-700 sm:pr-5 xl:border-t-0 xl:px-5 xl:pt-0">
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stealth-500">Supply-demand read</p>
-                  <p className="mt-2 text-2xl font-semibold text-stealth-100">{signalLabel(latestSignal)}</p>
-                  <p className="mt-1 text-sm text-stealth-400">{formatSigned(latestSignal, "σ")} versus history</p>
-                </div>
-                <div className="pt-4 sm:border-t sm:border-stealth-700 sm:pl-5 xl:border-t-0 xl:pl-5 xl:pt-0">
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stealth-500">Futures response</p>
-                  <p className="mt-2 text-2xl font-semibold tabular-nums text-stealth-100">{formatSigned(latest.reaction_1d_pct, "%")}</p>
-                  <p className="mt-1 text-sm text-stealth-400">Release-day close · 5D {formatSigned(latest.reaction_5d_pct, "%")}</p>
-                </div>
-              </div>
-
-              <div className="mt-5 flex flex-wrap items-end justify-between gap-3">
-                <div>
-                  <h3 className="text-lg font-semibold text-stealth-100">{selectedSeries.label} history</h3>
-                  <p className="mt-1 text-sm text-stealth-400">Official values as published. Saved expectations appear as a dashed line.</p>
-                </div>
-                <button type="button" aria-pressed={showFutures} onClick={() => setShowFutures((current) => !current)} className={`field-button gap-2 ${showFutures ? "field-button-primary" : "field-button-secondary"}`}>
-                  {showFutures ? "Hide futures context" : "Compare with futures"}
+            <div className="mt-3 divide-y divide-stealth-700 border-y border-stealth-700">
+              {briefing.map((item) => (
+                <button key={item.label} type="button" onClick={() => setSelectedReportId(item.reportId)} className="grid min-h-14 w-full grid-cols-[6.5rem_minmax(0,1fr)] gap-3 py-2.5 text-left transition hover:text-sky-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300">
+                  <span className="text-xs font-semibold text-sky-200">{item.label}</span>
+                  <span className="text-xs leading-5 text-stealth-300">{item.text}</span>
                 </button>
-              </div>
+              ))}
+            </div>
+          </div>
 
-              <div className="mt-4 h-[360px] min-w-0 rounded-xl bg-stealth-900/35 px-1 pt-3 md:h-[470px] md:px-3">
-                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                  <LineChart data={focusedWasdeChartData} margin={{ top: 12, right: showFutures ? 8 : 18, bottom: 8, left: 0 }} accessibilityLayer aria-label={`${selectedSeries.label} official history${showFutures ? ` compared with ${data.commodity.name} futures` : ""}`}>
-                    <CartesianGrid stroke="rgba(98,117,142,0.38)" vertical={false} />
-                    <XAxis dataKey="timestamp" type="number" domain={["dataMin", "dataMax"]} tickFormatter={chartDateLabel} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} />
-                    <YAxis yAxisId="report" width={64} domain={["auto", "auto"]} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} />
-                    {showFutures ? <YAxis yAxisId="price" orientation="right" width={52} domain={["auto", "auto"]} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} /> : null}
-                    <Tooltip content={<ArchiveTooltip />} />
-                    <Legend verticalAlign="top" height={34} wrapperStyle={{ fontSize: 12, color: "#d6dee9" }} />
-                    <Line yAxisId="report" type="monotone" dataKey="actual" name={`Official ${selectedSeries.label}`} stroke="#a8d2ff" strokeWidth={3.2} dot={{ r: 3, fill: "#a8d2ff" }} activeDot={{ r: 6 }} connectNulls isAnimationActive={false} />
-                    <Line yAxisId="report" type="monotone" dataKey="expectation" name="Your expectation" stroke="#f3cb69" strokeWidth={2} strokeDasharray="7 5" dot={{ r: 4, fill: "#0e1520", stroke: "#f3cb69", strokeWidth: 2 }} connectNulls isAnimationActive={false} />
-                    {showFutures ? <Line yAxisId="price" type="monotone" dataKey="futures" name={`${data.commodity.name} futures (100)`} stroke="#91a4bd" strokeWidth={1.6} dot={false} opacity={0.8} isAnimationActive={false} /> : null}
-                  </LineChart>
-                </ResponsiveContainer>
+          <div className="border-t border-stealth-700">
+            <div className="flex items-center justify-between px-4 py-2.5 md:px-5">
+              <h3 className="text-xs font-semibold text-stealth-300">Report feed</h3>
+              <span className="text-xs text-stealth-500">Select to inspect</span>
+            </div>
+            <label className="block border-t border-stealth-700 p-4 lg:hidden">
+              <span className="sr-only">Report family</span>
+              <select value={selectedReportId} onChange={(event) => { setSelectedReportId(event.target.value); setSelectedArchiveReleaseDate(""); }} className={INPUT_CLASS}>
+                {data.reports.map((report) => <option key={report.id} value={report.id}>{report.name} · {reportDigest(report.id, data.report_histories[report.id] ?? null, endingStocksPoint).comparison}</option>)}
+              </select>
+            </label>
+            <div className="hidden divide-y divide-stealth-700 lg:block" role="group" aria-label="Agriculture report feed">
+              {data.reports.map((report) => {
+                const digest = reportDigest(report.id, data.report_histories[report.id] ?? null, endingStocksPoint);
+                const selected = report.id === selectedReportId;
+                return (
+                  <button key={report.id} type="button" aria-pressed={selected} onClick={() => { setSelectedReportId(report.id); setSelectedArchiveReleaseDate(""); }} className={`grid min-h-[3.45rem] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-2 text-left transition focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 md:px-5 ${selected ? "bg-sky-300/[0.10]" : "hover:bg-stealth-800/70"}`}>
+                    <span className="min-w-0">
+                      <span className={`block truncate text-sm font-semibold ${selected ? "text-sky-100" : "text-stealth-200"}`}>{report.name}</span>
+                      <span className="mt-0.5 block truncate text-xs text-stealth-500">{digest.date ? formatDate(digest.date, false) : report.coverage_label} · {digest.comparison}</span>
+                    </span>
+                    <span className="whitespace-nowrap text-xs font-semibold tabular-nums text-stealth-300">{digest.value}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        <article id="report-detail" className="min-w-0">
+          {selectedReport ? (
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-stealth-700 px-4 py-4 md:px-5">
+              <div>
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <h2 className="text-2xl font-semibold text-stealth-100">{selectedReport.name}</h2>
+                  <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${coverageTone(selectedReport.coverage)}`}>{selectedReport.coverage_label}</span>
+                </div>
+                <p className="mt-1 text-sm text-stealth-400">{selectedAnalysis?.title ?? selectedReport.description}</p>
+                {nextSelectedReportRelease ? <p className="mt-1.5 flex items-center gap-2 text-xs text-sky-200"><Clock3 size={14} aria-hidden="true" /> Next {formatDate(nextSelectedReportRelease.release_at)} · {nextSelectedReportRelease.time_label}</p> : null}
               </div>
-              <p className="mt-3 text-sm leading-6 text-stealth-300"><strong className="font-semibold text-stealth-100">Latest read:</strong> {data.takeaways[0]?.body}</p>
-            </>
-          ) : selectedReportHistory ? (
-            <ArchiveReportInsights history={selectedReportHistory} commodityName={selectedReportHistory.scope_label ?? data.commodity.name} />
+              <div className="flex gap-2">
+                <a href={selectedReport.source_url} target="_blank" rel="noreferrer" className="field-button field-button-primary gap-2">Source <ExternalLink size={14} aria-hidden="true" /></a>
+                <a href={selectedReport.archive_url} target="_blank" rel="noreferrer" className="field-button field-button-secondary gap-2">Archive <ExternalLink size={14} aria-hidden="true" /></a>
+              </div>
+            </div>
           ) : null}
-        </div>
-      </section>
 
-      <details className="surface-card group overflow-hidden">
-        <summary className="flex min-h-16 cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 md:px-5">
-          <span>
-            <span className="block text-sm font-semibold text-stealth-100">Release details</span>
-            <span className="mt-1 block text-xs text-stealth-500">Raw metrics, dated records, and source documents</span>
-          </span>
-          <span className="text-xs font-semibold text-sky-200 group-open:hidden">Open</span>
-          <span className="hidden text-xs font-semibold text-sky-200 group-open:inline">Close</span>
-        </summary>
-        <div className="border-t border-stealth-700 p-4 md:p-5">
-          {selectedReport ? <p className="max-w-3xl text-sm leading-6 text-stealth-300">{selectedReport.description}</p> : null}
-          {selectedReportId === "wasde" && selectedSeries && latest ? (
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <div className="rounded-lg bg-stealth-900/45 p-4"><p className="text-xs text-stealth-500">Latest result</p><p className="mt-1 text-xl font-semibold tabular-nums text-stealth-100">{formatValue(latest.value)}</p><p className="text-xs text-stealth-500">{latest.unit} · {latest.market_year}</p></div>
-              <div className="rounded-lg bg-stealth-900/45 p-4"><p className="text-xs text-stealth-500">Prior estimate</p><p className="mt-1 text-xl font-semibold tabular-nums text-stealth-100">{formatValue(latest.prior_value)}</p><p className="text-xs text-stealth-500">Revision {formatSigned(latest.revision)}</p></div>
-            </div>
-          ) : selectedReportHistory && selectedArchiveRelease ? (
-            <div className="mt-4 space-y-4">
-              <label className="block max-w-2xl">
-                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-stealth-500">Release date</span>
-                <select value={selectedArchiveRelease.release_date} onChange={(event) => setSelectedArchiveReleaseDate(event.target.value)} className={INPUT_CLASS}>
-                  {selectedReportHistory.releases.map((release) => <option key={release.release_date} value={release.release_date}>{formatDate(release.release_date)} · {release.title}</option>)}
-                </select>
-              </label>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                {selectedArchiveRelease.metrics.slice(0, 4).map((releaseMetric) => (
-                  <div key={releaseMetric.id} className="rounded-lg bg-stealth-900/45 p-4"><p className="text-xs text-stealth-500">{releaseMetric.label}</p><p className="mt-1 text-xl font-semibold tabular-nums text-stealth-100">{formatValue(releaseMetric.value, 1)}</p><p className="text-xs text-stealth-500">{releaseMetric.unit}</p></div>
-                ))}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {selectedArchiveRelease.documents.map((document) => <a key={`${document.format}:${document.url}`} href={document.url} target="_blank" rel="noreferrer" className="field-button field-button-secondary gap-2">Open {document.label} <ExternalLink size={14} aria-hidden="true" /></a>)}
-                {selectedArchiveRelease.documents.length === 0 ? <a href={selectedArchiveRelease.source_url} target="_blank" rel="noreferrer" className="field-button field-button-secondary gap-2">Open release <ExternalLink size={14} aria-hidden="true" /></a> : null}
-              </div>
-            </div>
-          ) : <p className="mt-4 text-sm text-stealth-400">No dated release is available for this selection.</p>}
-        </div>
-      </details>
-
-      {selectedReportId === "wasde" ? <details className="surface-card group overflow-hidden">
-        <summary className="flex min-h-16 cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 md:px-5">
-          <span><span className="block text-sm font-semibold text-stealth-100">Expectation journal</span><span className="mt-1 block text-xs text-stealth-500">Record your number and review past release reactions</span></span>
-          <span className="text-xs font-semibold text-sky-200 group-open:hidden">Open</span><span className="hidden text-xs font-semibold text-sky-200 group-open:inline">Close</span>
-        </summary>
-        <div className="border-t border-stealth-700 p-4 md:p-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="page-kicker">Event inspector</p>
-            <h2 id="release-inspector-title" className="mt-1 text-xl font-semibold text-stealth-100">Expectation, result, and price response</h2>
-            <p className="mt-2 text-sm text-stealth-400">Select any release to reconstruct what was known. Expectations are yours, are never backfilled, and stay in this browser.</p>
-          </div>
-          <div className="flex max-w-full gap-2 overflow-x-auto pb-1">
-            {data.schedule.filter((event) => event.report_id === "wasde").slice(0, 4).map((event) => (
-              <button key={event.release_at} type="button" onClick={() => setSelectedReleaseDate(event.date)} aria-pressed={selectedReleaseDate === event.date} className={`min-h-11 shrink-0 rounded-lg border px-3 text-xs font-semibold ${selectedReleaseDate === event.date ? "border-sky-400 bg-sky-400/10 text-sky-100" : "border-stealth-700 text-stealth-300"}`}>
-                {formatDate(event.date)}
-              </button>
-            ))}
-            {selectedSeries?.points.slice(-8).reverse().map((point) => (
-              <button key={point.release_date} type="button" onClick={() => setSelectedReleaseDate(point.release_date)} aria-pressed={selectedReleaseDate === point.release_date} className={`min-h-11 shrink-0 rounded-lg border px-3 text-xs font-semibold ${selectedReleaseDate === point.release_date ? "border-sky-400 bg-sky-400/10 text-sky-100" : "border-stealth-700 text-stealth-300"}`}>
-                {formatDate(point.release_date)}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)]">
-          <div className="surface-card p-4">
-            <h3 className="text-sm font-semibold text-stealth-100">Set your expectation</h3>
-            <p className="mt-1 text-xs leading-5 text-stealth-500">No third-party consensus is labeled or inferred. Enter the number you want judged against the release.</p>
-            <div className="mt-4 grid gap-3 sm:grid-cols-[0.8fr_1.2fr]">
-              <label className="form-field">
-                <span className="form-field-label">Expected {selectedSeries?.label.toLowerCase() ?? "result"}</span>
-                <input type="number" step="any" value={expectationInput} onChange={(event) => setExpectationInput(event.target.value)} className={INPUT_CLASS} placeholder="Enter value" />
-                <span className="form-field-hint">{selectedSeries?.unit ?? "Report units"}</span>
-              </label>
-              <label className="form-field">
-                <span className="form-field-label">Thesis note <span className="form-field-required">Optional</span></span>
-                <input type="text" value={expectationNote} onChange={(event) => setExpectationNote(event.target.value)} className={INPUT_CLASS} placeholder="Why this is your expectation" />
-                <span className="form-field-hint">Saved only on this device.</span>
-              </label>
-            </div>
-            <button type="button" className="field-button field-button-primary mt-4 gap-2" onClick={saveExpectation} disabled={!selectedReleaseDate || !canSaveExpectation}>
-              {savedExpectation ? <Check size={16} aria-hidden="true" /> : <Save size={16} aria-hidden="true" />} {savedExpectation ? "Update expectation" : "Save expectation"}
-            </button>
+          <div className="px-4 py-4 md:px-5">
+            {selectedReportId === "wasde" && selectedSeries && latest ? (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-wrap gap-1" role="group" aria-label="WASDE metric">
+                    {data.metrics.map((item) => <button key={item.id} type="button" aria-pressed={metric === item.id} onClick={() => { setMetric(item.id); setSelectedReleaseDate(""); }} className={`min-h-11 rounded-lg px-3 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${metric === item.id ? "bg-sky-300 text-stealth-950" : "text-stealth-300 hover:bg-stealth-800"}`}>{item.label}</button>)}
+                  </div>
+                  <button type="button" aria-pressed={showFutures} onClick={() => setShowFutures((current) => !current)} className={`field-button gap-2 ${showFutures ? "field-button-primary" : "field-button-secondary"}`}>
+                    {showFutures ? "Hide futures" : "Add futures"}
+                  </button>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-y border-stealth-700 py-3 sm:grid-cols-4">
+                  <div><p className="text-xs text-stealth-500">Latest</p><p className="mt-1 text-xl font-semibold tabular-nums text-stealth-100">{formatValue(latest.value)}</p><p className="text-xs text-stealth-400">{latest.market_year}</p></div>
+                  <div><p className="text-xs text-stealth-500">Revision</p><p className="mt-1 text-xl font-semibold tabular-nums text-stealth-100">{formatSigned(latest.revision)}</p><p className="text-xs text-stealth-400">From {formatValue(latest.prior_value)}</p></div>
+                  <div><p className="text-xs text-stealth-500">Report read</p><p className="mt-1 text-lg font-semibold text-stealth-100">{signalLabel(latestSignal)}</p><p className="text-xs text-stealth-400">{formatSigned(latestSignal, "σ")}</p></div>
+                  <div><p className="text-xs text-stealth-500">Futures response</p><p className="mt-1 text-xl font-semibold tabular-nums text-stealth-100">{formatSigned(latest.reaction_1d_pct, "%")}</p><p className="text-xs text-stealth-400">Release day</p></div>
+                </div>
+                <div className="mt-3 h-[230px] min-w-0 bg-stealth-900/25 px-1 pt-2 md:h-[320px] md:px-2">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                    <LineChart data={focusedWasdeChartData} margin={{ top: 10, right: showFutures ? 6 : 14, bottom: 4, left: 0 }} accessibilityLayer aria-label={`${selectedSeries.label} official history${showFutures ? ` compared with ${data.commodity.name} futures` : ""}`}>
+                      <CartesianGrid stroke="rgba(98,117,142,0.34)" vertical={false} />
+                      <XAxis dataKey="timestamp" type="number" domain={["dataMin", "dataMax"]} tickFormatter={chartDateLabel} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} />
+                      <YAxis yAxisId="report" width={60} domain={["auto", "auto"]} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} />
+                      {showFutures ? <YAxis yAxisId="price" orientation="right" width={48} domain={["auto", "auto"]} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} /> : null}
+                      <Tooltip content={<ArchiveTooltip />} />
+                      <Legend verticalAlign="top" height={30} wrapperStyle={{ fontSize: 12, color: "#d6dee9" }} />
+                      <Line yAxisId="report" type="monotone" dataKey="actual" name={selectedSeries.label} stroke="#a8d2ff" strokeWidth={3} dot={{ r: 2.5, fill: "#a8d2ff" }} activeDot={{ r: 5 }} connectNulls isAnimationActive={false} />
+                      <Line yAxisId="report" type="monotone" dataKey="expectation" name="Your expectation" stroke="#f3cb69" strokeWidth={2} strokeDasharray="7 5" dot={{ r: 3.5, fill: "#0e1520", stroke: "#f3cb69", strokeWidth: 2 }} connectNulls isAnimationActive={false} />
+                      {showFutures ? <Line yAxisId="price" type="monotone" dataKey="futures" name={`${data.commodity.name} futures (100)`} stroke="#91a4bd" strokeWidth={1.6} dot={false} opacity={0.8} isAnimationActive={false} /> : null}
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+                <p className="mt-3 text-sm leading-6 text-stealth-300"><strong className="font-semibold text-stealth-100">Read:</strong> {data.takeaways[0]?.body}</p>
+              </>
+            ) : selectedReportHistory && selectedAnalysis ? (
+              <>
+                <div className="grid gap-3 border-b border-stealth-700 pb-3 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-end sm:gap-6">
+                  <div>
+                    <p className="text-xs text-stealth-500">Latest · {formatDate(selectedAnalysis.latest_release_date)}</p>
+                    <p className="mt-1 text-3xl font-semibold tabular-nums text-stealth-100">{selectedDigest.value}</p>
+                    <p className="mt-1 text-sm font-semibold text-sky-200">{selectedDigest.comparison}</p>
+                  </div>
+                  <p className="max-w-3xl text-sm leading-6 text-stealth-200"><strong className="font-semibold text-stealth-100">Read:</strong> {selectedAnalysis.body}</p>
+                </div>
+                <div className="mt-3"><ArchiveReportInsights history={selectedReportHistory} commodityName={selectedReportHistory.scope_label ?? data.commodity.name} /></div>
+                <p className="mt-2 text-xs leading-5 text-stealth-500">{selectedAnalysis.subtitle} · Native report units · Gaps indicate no safely comparable national observation.</p>
+              </>
+            ) : <p className="py-12 text-center text-sm text-stealth-400">Comparable chart data is not available for this selection.</p>}
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="surface-card-muted p-3.5">
-              <p className="text-xs uppercase tracking-[0.12em] text-stealth-500">Expectation</p>
-              <p className="mt-2 text-xl font-semibold text-amber-200">{savedExpectation ? formatValue(savedExpectation.value) : "Not set"}</p>
-              <p className="mt-1 text-xs text-stealth-500">{selectedSeries?.unit ?? "—"}</p>
-            </div>
-            <div className="surface-card-muted p-3.5">
-              <p className="text-xs uppercase tracking-[0.12em] text-stealth-500">Official result</p>
-              <p className="mt-2 text-xl font-semibold text-stealth-100">{formatValue(activePoint?.value)}</p>
-              <p className="mt-1 text-xs text-stealth-500">{activePoint?.market_year ?? "Awaiting release"}</p>
-            </div>
-            <div className="surface-card-muted p-3.5">
-              <p className="text-xs uppercase tracking-[0.12em] text-stealth-500">Report signal</p>
-              <p className={`mt-2 text-xl font-semibold ${activePoint?.bullish_signal_z === null || activePoint?.bullish_signal_z === undefined ? "text-stealth-300" : activePoint.bullish_signal_z >= 0 ? "text-emerald-200" : "text-rose-200"}`}>{formatSigned(activePoint?.bullish_signal_z, "σ")}</p>
-              <p className="mt-1 text-xs text-stealth-500">Positive = price-supportive</p>
-            </div>
-            <div className="surface-card-muted p-3.5">
-              <p className="text-xs uppercase tracking-[0.12em] text-stealth-500">Futures reaction</p>
-              <p className="mt-2 text-xl font-semibold text-sky-200">{formatSigned(activePoint?.reaction_1d_pct, "%")}</p>
-              <p className="mt-1 text-xs text-stealth-500">5 sessions {formatSigned(activePoint?.reaction_5d_pct, "%")}</p>
-            </div>
-          </div>
-        </div>
-        </div>
-      </details> : null}
-
-      <section className="space-y-4">
-        <div className="surface-card min-w-0 p-4 md:p-5">
-          <details className="group">
-            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">
-              <span className="flex items-center gap-3">
-                <Info className="shrink-0 text-sky-300" size={18} aria-hidden="true" />
-                <span>
-                  <span className="block text-sm font-semibold text-stealth-100">Method and source notes</span>
-                  <span className="mt-0.5 block text-xs text-stealth-500">Definitions, units, and interpretation limits</span>
-                </span>
-              </span>
-              <span className="text-xs font-semibold text-sky-200 group-open:hidden">Show</span>
-              <span className="hidden text-xs font-semibold text-sky-200 group-open:inline">Hide</span>
+          <details className="group border-t border-stealth-700">
+            <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-3 px-4 py-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 md:px-5">
+              <span className="flex items-center gap-2.5"><Info size={16} className="text-sky-300" aria-hidden="true" /><span><span className="block text-sm font-semibold text-stealth-100">Evidence & sources</span><span className="block text-xs text-stealth-500">Raw release, definitions, and methodology</span></span></span>
+              <span className="text-xs font-semibold text-sky-200 group-open:hidden">Open</span><span className="hidden text-xs font-semibold text-sky-200 group-open:inline">Close</span>
             </summary>
-            <div className="mt-4 border-t border-stealth-700 pt-4">
+            <div className="border-t border-stealth-700 px-4 py-4 md:px-5">
+              {selectedReport ? <p className="max-w-3xl text-sm leading-6 text-stealth-300">{selectedReport.description}</p> : null}
               {selectedReportId === "wasde" ? (
-                <dl className="mt-3 space-y-3 text-sm leading-6">
-                  {Object.entries(data.methodology).map(([key, value]) => (
-                    <div key={key}><dt className="inline font-semibold capitalize text-stealth-200">{key}: </dt><dd className="inline text-stealth-400">{value}</dd></div>
-                  ))}
+                <dl className="mt-3 space-y-2 text-sm leading-6">
+                  {Object.entries(data.methodology).map(([key, value]) => <div key={key}><dt className="inline font-semibold capitalize text-stealth-200">{key}: </dt><dd className="inline text-stealth-400">{value}</dd></div>)}
                 </dl>
-              ) : (
-                <dl className="mt-3 space-y-3 text-sm leading-6">
-                  <div><dt className="inline font-semibold text-stealth-200">Comparison basis: </dt><dd className="inline text-stealth-400">{selectedReportHistory?.analysis?.comparison_basis ?? "No comparable national metric is available for this release."}</dd></div>
-                  <div><dt className="inline font-semibold text-stealth-200">Units: </dt><dd className="inline text-stealth-400">Values stay in the official source units shown on the chart; unlike WASDE signals, these series are not standardized across unlike measures.</dd></div>
-                  <div><dt className="inline font-semibold text-stealth-200">Archive scope: </dt><dd className="inline text-stealth-400">The visualization uses comparable observations within the selected history window. Older source documents remain available in the raw viewer when their layouts cannot be compared safely.</dd></div>
-                  <div><dt className="inline font-semibold text-stealth-200">Interpretation boundary: </dt><dd className="inline text-stealth-400">The summary describes the latest official release relative to its stated baseline; it does not infer market causation or unpublished consensus estimates.</dd></div>
-                </dl>
-              )}
+              ) : selectedReportHistory && selectedArchiveRelease ? (
+                <div className="mt-3 space-y-3">
+                  <label className="block max-w-xl"><span className="text-xs font-semibold text-stealth-400">Release date</span><select value={selectedArchiveRelease.release_date} onChange={(event) => setSelectedArchiveReleaseDate(event.target.value)} className={INPUT_CLASS}>{selectedReportHistory.releases.map((release) => <option key={release.release_date} value={release.release_date}>{formatDate(release.release_date)} · {release.title}</option>)}</select></label>
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{selectedArchiveRelease.metrics.slice(0, 4).map((item) => <div key={item.id}><p className="text-xs text-stealth-500">{item.label}</p><p className="mt-1 text-lg font-semibold tabular-nums text-stealth-100">{formatValue(item.value, 1)}</p><p className="text-xs text-stealth-500">{item.unit}</p></div>)}</div>
+                  <div className="flex flex-wrap gap-2">{selectedArchiveRelease.documents.map((document) => <a key={`${document.format}:${document.url}`} href={document.url} target="_blank" rel="noreferrer" className="field-button field-button-secondary gap-2">Open {document.label} <ExternalLink size={14} aria-hidden="true" /></a>)}</div>
+                  <p className="text-xs leading-5 text-stealth-500">{selectedAnalysis?.comparison_basis} Values remain in official source units; the summary does not infer market causation or unpublished consensus.</p>
+                </div>
+              ) : null}
             </div>
           </details>
-        </div>
-        <div className="surface-card min-w-0 p-4 md:p-5">
-          <details className="group">
-            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">
-              <span className="flex items-center gap-3">
-                <Clock3 className="shrink-0 text-sky-300" size={18} aria-hidden="true" />
-                <span>
-                  <span className="block text-sm font-semibold text-stealth-100">Upcoming release board</span>
-                  <span className="mt-0.5 block text-xs text-stealth-500">{data.schedule.length} scheduled agriculture releases</span>
-                </span>
-              </span>
-              <span className="text-xs font-semibold text-sky-200 group-open:hidden">Show</span>
-              <span className="hidden text-xs font-semibold text-sky-200 group-open:inline">Hide</span>
+
+          {selectedReportId === "wasde" ? <details className="group border-t border-stealth-700">
+            <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-3 px-4 py-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 md:px-5">
+              <span><span className="block text-sm font-semibold text-stealth-100">Expectation journal</span><span className="block text-xs text-stealth-500">Record a pre-release number in this browser</span></span>
+              <span className="text-xs font-semibold text-sky-200 group-open:hidden">Open</span><span className="hidden text-xs font-semibold text-sky-200 group-open:inline">Close</span>
             </summary>
-            <div className="mt-4 border-t border-stealth-700 pt-1">
-              <DataScroller label="Upcoming agriculture report schedule" hint="Official dates, recurring times, and expected dates are labeled separately.">
-                <table className="mt-3 min-w-[680px] w-full text-left text-xs">
-                  <thead className="border-b border-stealth-700 text-stealth-500"><tr><th className="py-2 pr-4 font-semibold">Report</th><th className="py-2 pr-4 font-semibold">Date</th><th className="py-2 pr-4 font-semibold">Time</th><th className="py-2 font-semibold">Timing status</th></tr></thead>
-                  <tbody className="divide-y divide-stealth-800">
-                    {data.schedule.slice(0, 9).map((event) => (
-                      <tr key={`${event.report_id}-${event.release_at}`} className="text-stealth-300"><td className="py-2.5 pr-4 font-semibold text-stealth-200">{event.report}</td><td className="py-2.5 pr-4">{formatDate(event.release_at)}</td><td className="py-2.5 pr-4">{event.time_label}</td><td className="py-2.5">{confidenceLabel(event.confidence)}</td></tr>
-                    ))}
-                  </tbody>
-                </table>
-              </DataScroller>
+            <div className="border-t border-stealth-700 px-4 py-4 md:px-5">
+              <div className="grid gap-3 md:grid-cols-3">
+                <label><span className="text-xs font-semibold text-stealth-400">Release</span><select value={selectedReleaseDate} onChange={(event) => setSelectedReleaseDate(event.target.value)} className={INPUT_CLASS}>{expectationReleaseDates.map((date) => <option key={date} value={date}>{formatDate(date)}</option>)}</select></label>
+                <label><span className="text-xs font-semibold text-stealth-400">Expected {selectedSeries?.label.toLowerCase()}</span><input type="number" step="any" value={expectationInput} onChange={(event) => setExpectationInput(event.target.value)} className={INPUT_CLASS} placeholder="Enter value" /></label>
+                <label><span className="text-xs font-semibold text-stealth-400">Thesis note · optional</span><input type="text" value={expectationNote} onChange={(event) => setExpectationNote(event.target.value)} className={INPUT_CLASS} placeholder="Why this is your expectation" /></label>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-stealth-400"><span>Your expectation <strong className="text-amber-200">{savedExpectation ? formatValue(savedExpectation.value) : "not set"}</strong></span><span>Official <strong className="text-stealth-100">{formatValue(activePoint?.value)}</strong></span><span>Signal <strong className="text-stealth-100">{formatSigned(activePoint?.bullish_signal_z, "σ")}</strong></span><span>Futures <strong className="text-sky-200">{formatSigned(activePoint?.reaction_1d_pct, "%")}</strong></span></div>
+              <button type="button" className="field-button field-button-primary mt-3 gap-2" onClick={saveExpectation} disabled={!selectedReleaseDate || !canSaveExpectation}>{savedExpectation ? <Check size={16} aria-hidden="true" /> : <Save size={16} aria-hidden="true" />}{savedExpectation ? "Update expectation" : "Save expectation"}</button>
             </div>
-          </details>
-        </div>
+          </details> : null}
+        </article>
       </section>
     </div>
   );

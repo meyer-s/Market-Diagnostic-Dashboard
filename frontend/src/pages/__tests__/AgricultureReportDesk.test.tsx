@@ -124,20 +124,22 @@ describe("AgricultureReportDesk", () => {
     useApiMock.mockReturnValue({ data: payload, loading: false, error: null, refetch: vi.fn() });
   });
 
-  it("presents one focused WASDE view with direct report navigation", () => {
+  it("summarizes the whole agriculture picture beside the selected report", () => {
     render(<MemoryRouter><AgricultureReportDesk /></MemoryRouter>);
 
     expect(screen.getByRole("heading", { name: "Agriculture Report Desk" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Choose a report" })).toBeTruthy();
-    expect(screen.getByText("Latest ending stocks")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Compare with futures" })).toBeTruthy();
-    expect(screen.getByText("Release details")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "The whole picture" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Report feed" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Balance sheet/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Supply & fields/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Demand/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Positioning/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Add futures" })).toBeTruthy();
+    expect(screen.getByText("Evidence & sources")).toBeTruthy();
     expect(screen.getByText("Expectation journal")).toBeTruthy();
     expect(screen.getByText("Chart ready")).toBeTruthy();
-    expect(screen.getByText("Method and source notes")).toBeTruthy();
-    expect(screen.queryByText("Ending stocks expectation")).toBeNull();
     expect(screen.getByRole("button", { name: "All" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /WASDE.*24 releases/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /WASDE.*revision/ })).toBeTruthy();
   });
 
   it("renders imported release history and raw documents for non-WASDE reports", () => {
@@ -145,19 +147,14 @@ describe("AgricultureReportDesk", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Crop Progress/ }));
     expect(screen.getByText("Chart + history")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Crop Progress.*18 releases/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Crop Progress.*61%/ })).toBeTruthy();
     expect(screen.getByRole("option", { name: /Crop Progress release/ })).toBeTruthy();
     expect(screen.getByRole("link", { name: /Open TXT/ })).toBeTruthy();
-    expect(screen.getByText("What this report is saying")).toBeTruthy();
-    expect(screen.getByText("Latest reading")).toBeTruthy();
-    expect(screen.getByText("Week over week")).toBeTruthy();
-    expect(screen.getAllByText("→ 0 pts").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/11 pts vs last year/).length).toBeGreaterThan(0);
     expect(screen.getByText(/11 points above last year/)).toBeTruthy();
     expect(screen.getByText("5Y avg / prior year")).toBeTruthy();
-    expect(screen.getByText("Method and source notes")).toBeTruthy();
-    expect(screen.getByText(/these series are not standardized across unlike measures/)).toBeTruthy();
+    expect(screen.getByText("Evidence & sources")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Expectation, result, and price response" })).toBeNull();
-    expect(screen.queryByText("Official raw source connected")).toBeNull();
   });
 
   it("opens the latest record when switching between families with overlapping dates", () => {
@@ -179,6 +176,6 @@ describe("AgricultureReportDesk", () => {
 
     expect(window.localStorage.getItem("agriculture-report-expectations-v1")).toContain("2050");
     expect(screen.getByRole("button", { name: "Update expectation" })).toBeTruthy();
-    expect(screen.getByText("Your expectation")).toBeTruthy();
+    expect(screen.getAllByText(/Your expectation/).length).toBeGreaterThan(0);
   });
 });

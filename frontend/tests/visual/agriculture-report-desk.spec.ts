@@ -196,17 +196,17 @@ async function openDesk(page: Page, width: number, height: number) {
 
 test("report desk is readable, responsive, and accessible", async ({ page }, testInfo) => {
   await openDesk(page, 1440, 1000);
-  await expect(page.getByRole("heading", { name: "Choose a report" })).toBeVisible();
-  await expect(page.getByText("Latest ending stocks")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Compare with futures" })).toBeVisible();
-  await expect(page.getByText("Release details")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "The whole picture" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Report feed" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Balance sheet/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add futures" })).toBeVisible();
+  await expect(page.getByText("Evidence & sources")).toBeVisible();
   await expect(page.getByRole("button", { name: "All" })).toBeVisible();
-  await expect(page.getByRole("button", { name: /WASDE.*36 releases/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /WASDE.*revision/ })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("agriculture-report-desk-wasde-desktop.png"), fullPage: true });
   for (const reportName of ["Crop Production", "Crop Progress", "Export Sales", "Export Inspections", "Grain Stocks", "Acreage", "Commitments of Traders"]) {
     await page.getByRole("button", { name: new RegExp(reportName) }).click();
-    await expect(page.getByText("Latest reading")).toBeVisible();
-    await expect(page.getByText("Bottom line:")).toBeVisible();
+    await expect(page.getByText("Read:")).toBeVisible();
     await expect(page.locator(".recharts-wrapper").last()).toBeVisible();
   }
   await page.getByRole("button", { name: /Crop Progress/ }).click();
@@ -220,7 +220,7 @@ test("report desk is readable, responsive, and accessible", async ({ page }, tes
 
   await openDesk(page, 390, 844);
   await page.getByLabel("Report family").selectOption("crop_progress");
-  await expect(page.getByText("Latest reading")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Crop Progress" })).toBeVisible();
   const mobileBars = page.locator(".recharts-bar-rectangle path");
   await expect.poll(() => mobileBars.evaluateAll((bars) => bars.map((bar) => bar.getBBox().height).filter((height) => height > 20).length)).toBeGreaterThanOrEqual(6);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
