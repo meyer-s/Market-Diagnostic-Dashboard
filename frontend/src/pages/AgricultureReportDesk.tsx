@@ -1,9 +1,9 @@
 /*
-THESIS: All reports should resolve into one commodity brief and one evidence-weighted price scenario, with individual effects inspected in place.
+THESIS: Each report tells a different market story; the desk refuses one generic chart repeated under eight labels.
 OWN-WORLD: Evidence Field — dark, exacting, source-forward, and operational.
-STORY: See the combined price pressure, trace how reports reinforce or conflict, then inspect the historical effect behind one contribution.
-FIRST VIEWPORT: A total five-session futures scenario and signed report contributions beside one selected report relationship plot.
-FORM: A two-mode master-detail research inbox; Price impact leads and Market brief preserves the official-data view.
+STORY: See combined price pressure, read the selected report in its native analytical form, then see what futures historically did after comparable reads.
+FIRST VIEWPORT: Total five-session association and signed contributions beside a report-native chart, outcome profile, and connected evidence.
+FORM: A two-mode master-detail research desk; eight chart contracts share one price-response grammar without sharing one visual form.
 */
 
 import { useEffect, useMemo, useState } from "react";
@@ -24,14 +24,13 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   ComposedChart,
   Legend,
   Line,
   LineChart,
   ReferenceLine,
   ResponsiveContainer,
-  Scatter,
-  ScatterChart,
   Tooltip,
   XAxis,
   YAxis,
@@ -250,6 +249,66 @@ type ImpactModel = {
   methodology: Record<string, string>;
 };
 
+type ReportStoryContract = {
+  title: string;
+  question: string;
+  visual: string;
+  takeaway: string;
+};
+
+// Chart map: each report owns the form that answers its native analytical question.
+// Palette policy is a hard two-root cap: evidence blue, caution amber, and neutrals.
+const REPORT_STORY_CONTRACTS: Record<string, ReportStoryContract> = {
+  wasde: {
+    title: "Ending-stocks revisions",
+    question: "Did USDA tighten or loosen the balance sheet at each release?",
+    visual: "Signed revision bars",
+    takeaway: "Cuts are supply-demand supportive; increases are restrictive.",
+  },
+  crop_production: {
+    title: "Production estimate path",
+    question: "Is the national crop estimate moving above or below the prior crop?",
+    visual: "Estimate path",
+    takeaway: "The path shows whether expected supply is expanding or contracting.",
+  },
+  crop_progress: {
+    title: "Field progress against benchmarks",
+    question: "Are crop conditions and development ahead of USDA benchmarks?",
+    visual: "Benchmark bars",
+    takeaway: "Current readings are compared directly with the prior week and historical benchmark.",
+  },
+  export_sales: {
+    title: "Booked demand versus shipments",
+    question: "Are new export commitments strengthening, and are they becoming shipments?",
+    visual: "Flow bridge",
+    takeaway: "Bookings lead demand; shipped volume shows whether that demand is being realized.",
+  },
+  export_inspections: {
+    title: "Physical export pace",
+    question: "Are weekly inspections running above or below their recent pace?",
+    visual: "Pace bars",
+    takeaway: "Weekly volume is read against a four-report moving baseline.",
+  },
+  grain_stocks: {
+    title: "Inventory location and change",
+    question: "Where are inventories held, and how does the total compare with last year?",
+    visual: "Storage composition",
+    takeaway: "On-farm and off-farm stocks build the current total; last year anchors the comparison.",
+  },
+  acreage: {
+    title: "Planted and harvested footprint",
+    question: "Did producers expand or reduce the crop footprint versus last year?",
+    visual: "Footprint comparison",
+    takeaway: "Planted and harvested area define the supply base before yield is known.",
+  },
+  cot: {
+    title: "Speculative positioning balance",
+    question: "Are noncommercial traders increasing or reducing net exposure?",
+    visual: "Positioning balance",
+    takeaway: "Net positioning is read alongside total open interest to preserve scale context.",
+  },
+};
+
 type SavedExpectation = {
   value: number;
   note: string;
@@ -433,22 +492,22 @@ function ArchiveReportInsights({ history, commodityName }: { history: ReportHist
     const rows = archiveTimeSeries(history, ["net_sales", "weekly_exports"], 52);
     chart = chartShell(
       <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-        <LineChart data={rows} margin={{ top: 12, right: 10, bottom: 6, left: 2 }} accessibilityLayer aria-label="Weekly net export sales and exports shipped history">
+        <ComposedChart data={rows} margin={{ top: 12, right: 10, bottom: 6, left: 2 }} accessibilityLayer aria-label="Weekly net export sales and exports shipped history">
           <CartesianGrid stroke="rgba(98,117,142,0.38)" vertical={false} />
           <XAxis dataKey="timestamp" type="number" domain={["dataMin", "dataMax"]} tickFormatter={chartDateLabel} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} />
           <YAxis width={62} tickFormatter={compactNumber} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} />
           <Tooltip content={<ArchiveTooltip />} />
           <Legend verticalAlign="top" height={34} wrapperStyle={{ fontSize: 12, color: "#d6dee9" }} />
           <ReferenceLine y={0} stroke="#6f8199" strokeDasharray="3 3" />
-          <Line type="monotone" dataKey="net_sales" name="Net sales" stroke="#a8d2ff" strokeWidth={3.1} dot={false} activeDot={{ r: 6 }} isAnimationActive={false} />
-          <Line type="monotone" dataKey="weekly_exports" name="Exports shipped" stroke="#91a4bd" strokeWidth={2} strokeDasharray="6 4" dot={false} isAnimationActive={false} />
-        </LineChart>
+          <Bar dataKey="net_sales" name="New net sales" fill="#a8d2ff" maxBarSize={18} isAnimationActive={false} />
+          <Line type="monotone" dataKey="weekly_exports" name="Exports shipped" stroke="#f3cb69" strokeWidth={2.5} dot={false} activeDot={{ r: 6 }} isAnimationActive={false} />
+        </ComposedChart>
       </ResponsiveContainer>,
       `${commodityName} weekly net export sales and exports shipped`,
     );
   } else if (analysis.chart_kind === "inspection_pace") {
     const rawRows = archiveTimeSeries(history, ["inspected_volume"], 56);
-    const rows = rawRows.map((row, index) => {
+    const rows = rawRows.map<Record<string, number | string | null>>((row, index) => {
       const window = rawRows.slice(Math.max(0, index - 3), index + 1).map((item) => Number(item.inspected_volume));
       return { ...row, rolling_average: window.reduce((sum, value) => sum + value, 0) / window.length };
     });
@@ -468,21 +527,22 @@ function ArchiveReportInsights({ history, commodityName }: { history: ReportHist
     );
   } else if (analysis.chart_kind === "stocks_composition") {
     const yearAgoStocks = releaseMetric(latestRelease, "total_stocks_year_ago");
-    const rows = [
-      { name: "Total", current: releaseMetric(latestRelease, "total_stocks")?.value ?? null, yearAgo: yearAgoStocks?.value ?? null },
-      { name: "On farm", current: releaseMetric(latestRelease, "on_farm_stocks")?.value ?? null, yearAgo: releaseMetric(latestRelease, "on_farm_stocks_year_ago")?.value ?? null },
-      { name: "Off farm", current: releaseMetric(latestRelease, "off_farm_stocks")?.value ?? null, yearAgo: releaseMetric(latestRelease, "off_farm_stocks_year_ago")?.value ?? null },
-    ];
+    const rows = [{
+      name: "Current stocks",
+      onFarm: releaseMetric(latestRelease, "on_farm_stocks")?.value ?? null,
+      offFarm: releaseMetric(latestRelease, "off_farm_stocks")?.value ?? null,
+    }];
     chart = chartShell(
       <ResponsiveContainer width="100%" height="100%" minWidth={0}>
         <BarChart data={rows} layout="vertical" margin={{ top: 12, right: 18, bottom: 8, left: 6 }} accessibilityLayer aria-label="Latest total on-farm and off-farm stocks compared with year ago">
           <CartesianGrid stroke="rgba(98,117,142,0.38)" horizontal={false} />
-          <XAxis type="number" tickFormatter={compactNumber} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} />
-          <YAxis dataKey="name" type="category" width={68} stroke="#62758e" tick={{ fill: "#d6dee9", fontSize: 12 }} />
+          <XAxis type="number" domain={[0, "auto"]} tickFormatter={compactNumber} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} />
+          <YAxis dataKey="name" type="category" width={94} stroke="#62758e" tick={{ fill: "#d6dee9", fontSize: 12 }} />
           <Tooltip content={<ArchiveTooltip />} />
           <Legend verticalAlign="top" height={34} wrapperStyle={{ fontSize: 12, color: "#d6dee9" }} />
-          <Bar dataKey="current" name="Current stocks" fill="#a8d2ff" radius={[0, 4, 4, 0]} maxBarSize={28} isAnimationActive={false} />
-          <Bar dataKey="yearAgo" name={yearAgoStocks?.comparison_quality ? "Implied year ago" : "Year ago"} fill="#62758e" radius={[0, 4, 4, 0]} maxBarSize={28} isAnimationActive={false} />
+          {yearAgoStocks?.value !== null && yearAgoStocks?.value !== undefined ? <ReferenceLine x={yearAgoStocks.value} stroke="#f3cb69" strokeWidth={2} strokeDasharray="5 4" label={{ value: yearAgoStocks.comparison_quality ? "Implied year-ago total" : "Year-ago total", position: "insideTopRight", fill: "#f3cb69", fontSize: 12 }} /> : null}
+          <Bar dataKey="onFarm" name="On farm" stackId="stocks" fill="#a8d2ff" maxBarSize={42} isAnimationActive={false} />
+          <Bar dataKey="offFarm" name="Off farm" stackId="stocks" fill="#62758e" radius={[0, 4, 4, 0]} maxBarSize={42} isAnimationActive={false} />
         </BarChart>
       </ResponsiveContainer>,
       `${commodityName} latest stocks by storage position compared with year ago where published`,
@@ -698,15 +758,278 @@ function relationshipTone(status: ImpactRelationship["status"]) {
   return "border-stealth-600 bg-stealth-800/70 text-stealth-300";
 }
 
-function ImpactTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload?: ImpactObservation }> }) {
-  const observation = payload?.[0]?.payload;
-  if (!active || !observation) return null;
+type StoryTable = {
+  caption: string;
+  columns: string[];
+  rows: Array<{ key: string; cells: string[] }>;
+};
+
+type OutcomeBucketKey = "restrictive" | "mixed" | "supportive";
+
+type OutcomeBucket = {
+  key: OutcomeBucketKey;
+  label: string;
+  medianReturn: number | null;
+  upShare: number | null;
+  sampleSize: number;
+};
+
+function median(values: number[]) {
+  if (!values.length) return null;
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function outcomeBucketKey(signal: number | null | undefined): OutcomeBucketKey | null {
+  if (signal === null || signal === undefined) return null;
+  if (signal > 0.25) return "supportive";
+  if (signal < -0.25) return "restrictive";
+  return "mixed";
+}
+
+function buildOutcomeProfile(observations: ImpactObservation[]): OutcomeBucket[] {
+  const complete = observations.filter((observation) => (
+    observation.signal_z !== null && observation.reaction_5d_pct !== null
+  ));
+  return ([
+    ["restrictive", "Restrictive read"],
+    ["mixed", "Near-normal read"],
+    ["supportive", "Supportive read"],
+  ] as const).map(([key, label]) => {
+    const rows = complete.filter((observation) => outcomeBucketKey(observation.signal_z) === key);
+    const returns = rows.map((observation) => Number(observation.reaction_5d_pct));
+    return {
+      key,
+      label,
+      medianReturn: median(returns),
+      upShare: returns.length ? returns.filter((value) => value > 0).length / returns.length : null,
+      sampleSize: returns.length,
+    };
+  });
+}
+
+function buildStoryTable(data: ReportDeskData, reportId: string): StoryTable | null {
+  if (reportId === "wasde") {
+    const series = data.series.find((layer) => layer.metric_id === "ending_stocks") ?? data.series[0];
+    if (!series) return null;
+    return {
+      caption: `WASDE ${series.label.toLowerCase()} revisions in ${series.unit}`,
+      columns: ["Release", "Official", "Prior estimate", "Revision"],
+      rows: [...series.points].slice(-24).reverse().map((point) => ({
+        key: point.release_date,
+        cells: [
+          formatDate(point.release_date),
+          compactMetric(point.value, point.unit),
+          point.prior_value === null ? "—" : compactMetric(point.prior_value, point.unit),
+          point.revision === null ? "—" : `${point.revision > 0 ? "+" : ""}${compactMetric(point.revision, point.unit)}`,
+        ],
+      })),
+    };
+  }
+
+  const history = data.report_histories[reportId];
+  const analysis = history?.analysis;
+  if (!history || !analysis) return null;
+  const latestRelease = history.releases.find((release) => release.release_date === analysis.latest_release_date) ?? history.releases[0];
+  if (!latestRelease) return null;
+
+  if (analysis.chart_kind === "progress_benchmark") {
+    return {
+      caption: "Latest crop progress and condition readings with published benchmarks",
+      columns: ["Measure", "Current", "Previous week", "Benchmark"],
+      rows: latestRelease.metrics.filter((metric) => metric.chart_group).slice(0, 6).map((metric) => ({
+        key: metric.id,
+        cells: [
+          metric.label,
+          compactMetric(metric.value, metric.unit),
+          metric.previous_week === null || metric.previous_week === undefined ? "—" : compactMetric(metric.previous_week, metric.unit),
+          metric.five_year_average !== null && metric.five_year_average !== undefined
+            ? `${compactMetric(metric.five_year_average, metric.unit)} · 5Y avg`
+            : metric.previous_year !== null && metric.previous_year !== undefined ? `${compactMetric(metric.previous_year, metric.unit)} · year ago` : "—",
+        ],
+      })),
+    };
+  }
+
+  if (analysis.chart_kind === "stocks_composition" || analysis.chart_kind === "acreage_comparison") {
+    const ids = analysis.chart_kind === "stocks_composition"
+      ? [["total_stocks", "total_stocks_year_ago"], ["on_farm_stocks", "on_farm_stocks_year_ago"], ["off_farm_stocks", "off_farm_stocks_year_ago"]]
+      : [["planted_area", "planted_area_year_ago"], ["harvested_area", "harvested_area_year_ago"]];
+    return {
+      caption: `${analysis.title} values from the latest release`,
+      columns: ["Measure", "Current", "Year ago"],
+      rows: ids.map(([currentId, yearAgoId]) => {
+        const current = releaseMetric(latestRelease, currentId);
+        const yearAgo = releaseMetric(latestRelease, yearAgoId);
+        return {
+          key: currentId,
+          cells: [current?.label ?? currentId, current ? compactMetric(current.value, current.unit) : "—", yearAgo ? compactMetric(yearAgo.value, yearAgo.unit) : "—"],
+        };
+      }),
+    };
+  }
+
+  if (analysis.chart_kind === "inspection_pace") {
+    const rawRows = archiveTimeSeries(history, ["inspected_volume"], 56);
+    const rows = rawRows.map<Record<string, number | string | null>>((row, index) => {
+      const window = rawRows.slice(Math.max(0, index - 3), index + 1).map((item) => Number(item.inspected_volume));
+      return { ...row, rolling_average: window.reduce((sum, value) => sum + value, 0) / window.length };
+    });
+    return {
+      caption: `${analysis.title} weekly volume and four-report pace`,
+      columns: ["Release", "Weekly inspections", "4-week pace"],
+      rows: [...rows].reverse().map((row) => ({
+        key: String(row.releaseDate),
+        cells: [
+          formatDate(String(row.releaseDate)),
+          compactMetric(Number(row.inspected_volume), analysis.unit),
+          compactMetric(Number(row.rolling_average), analysis.unit),
+        ],
+      })),
+    };
+  }
+
+  const metricIds = analysis.chart_kind === "production_trend"
+    ? ["production", "production_year_ago"]
+    : analysis.chart_kind === "sales_flow" ? ["net_sales", "weekly_exports"]
+      : ["noncommercial_net", "open_interest"];
+  const rowLimit = analysis.chart_kind === "production_trend" ? 60 : analysis.chart_kind === "sales_flow" ? 52 : 104;
+  const rows = archiveTimeSeries(history, metricIds, rowLimit);
+  const columns = metricIds.map((metricId) => history.releases
+    .map((release) => releaseMetric(release, metricId))
+    .find((metric): metric is ReportReleaseMetric => Boolean(metric))?.label ?? metricId);
+  return {
+    caption: `${analysis.title} recent release values`,
+    columns: ["Release", ...columns],
+    rows: [...rows].reverse().map((row) => ({
+      key: String(row.releaseDate),
+      cells: [
+        formatDate(String(row.releaseDate)),
+        ...metricIds.map((metricId) => {
+          const value = row[metricId];
+          return value === null || value === undefined ? "—" : compactMetric(Number(value), analysis.unit);
+        }),
+      ],
+    })),
+  };
+}
+
+function ValuesDisclosure({ table, label }: { table: StoryTable; label: string }) {
   return (
-    <div className="max-w-[280px] rounded-lg border border-stealth-600 bg-stealth-900/95 p-3 shadow-xl">
-      <p className="text-xs font-semibold text-stealth-100">{formatDate(observation.release_date)}</p>
-      <p className="mt-2 text-xs text-stealth-300">Report pressure <strong className="text-stealth-100">{formatSigned(observation.signal_z, "σ")}</strong></p>
-      <p className="mt-1 text-xs text-stealth-300">Five-session futures <strong className="text-stealth-100">{formatSigned(observation.reaction_5d_pct, "%")}</strong></p>
-    </div>
+    <details className="group mt-2 border-y border-stealth-700">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 py-2 text-xs font-semibold text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><span>{label}</span><span className="group-open:hidden">Open</span><span className="hidden group-open:inline">Close</span></summary>
+      <div className="max-h-64 overflow-auto border-t border-stealth-700" role="region" aria-label={`${table.caption} values`} tabIndex={0}>
+        <table className="w-full min-w-[31rem] text-left text-xs">
+          <caption className="sr-only">{table.caption}</caption>
+          <thead className="sticky top-0 bg-stealth-900 text-stealth-400"><tr>{table.columns.map((column, index) => <th key={column} className={`px-2 py-2 font-semibold ${index ? "text-right" : ""}`}>{column}</th>)}</tr></thead>
+          <tbody className="divide-y divide-stealth-700 text-stealth-300">{table.rows.map((row) => <tr key={row.key}>{row.cells.map((cell, index) => <td key={`${row.key}:${index}`} className={`px-2 py-2 tabular-nums ${index ? "text-right" : ""}`}>{cell}</td>)}</tr>)}</tbody>
+        </table>
+      </div>
+    </details>
+  );
+}
+
+function ReportStory({ data, impact }: { data: ReportDeskData; impact: ReportImpact }) {
+  const contract = REPORT_STORY_CONTRACTS[impact.report_id] ?? REPORT_STORY_CONTRACTS.wasde;
+  const history = data.report_histories[impact.report_id] ?? null;
+  const endingStocks = data.series.find((series) => series.metric_id === "ending_stocks") ?? data.series[0] ?? null;
+  const latestWasde = endingStocks?.points.at(-1) ?? null;
+  const table = buildStoryTable(data, impact.report_id);
+  let chart: ReactNode = null;
+  let latestRead = history?.analysis?.body ?? impact.signal_basis ?? "A comparable report read is not available.";
+
+  if (impact.report_id === "wasde" && endingStocks) {
+    const rows = endingStocks.points.filter((point) => point.revision !== null).slice(-24).map((point) => ({
+      timestamp: new Date(`${point.release_date}T12:00:00`).getTime(),
+      revision: point.revision,
+    }));
+    if (latestWasde) {
+      const revisionVerb = latestWasde.revision === null ? "was unchanged" : latestWasde.revision < 0 ? "was cut" : "was raised";
+      latestRead = `${endingStocks.label} ${revisionVerb} by ${formatValue(Math.abs(latestWasde.revision ?? 0), 0)} ${endingStocks.unit.toLowerCase()} to ${formatValue(latestWasde.value, 0)}. ${contract.takeaway}`;
+    }
+    chart = chartShell(
+      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+        <BarChart data={rows} margin={{ top: 12, right: 10, bottom: 6, left: 2 }} accessibilityLayer aria-label={`${data.commodity.name} WASDE ending stocks revisions by release`}>
+          <CartesianGrid stroke="rgba(98,117,142,0.38)" vertical={false} />
+          <XAxis dataKey="timestamp" type="number" domain={["dataMin", "dataMax"]} tickFormatter={chartDateLabel} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} />
+          <YAxis width={62} tickFormatter={compactNumber} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} />
+          <Tooltip content={<ArchiveTooltip />} />
+          <ReferenceLine y={0} stroke="#91a4bd" />
+          <Bar dataKey="revision" name="Ending stocks revision" radius={[3, 3, 0, 0]} maxBarSize={24} isAnimationActive={false}>{rows.map((row) => <Cell key={row.timestamp} fill={Number(row.revision) <= 0 ? "#a8d2ff" : "#f3cb69"} />)}</Bar>
+        </BarChart>
+      </ResponsiveContainer>,
+      `${data.commodity.name} WASDE ending stocks revisions; negative bars are stocks cuts and positive bars are increases`,
+    );
+  } else if (history) {
+    chart = <ArchiveReportInsights history={history} commodityName={history.scope_label ?? data.commodity.name} />;
+  }
+
+  return (
+    <section className="mt-4" aria-labelledby="report-story-title">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h3 id="report-story-title" className="text-base font-semibold text-stealth-100">{contract.title}</h3>
+          <p className="mt-1 text-xs leading-5 text-stealth-400">{contract.question}</p>
+        </div>
+        <span className="rounded-md border border-stealth-600 bg-stealth-800 px-2 py-1 text-xs font-semibold text-stealth-300">{contract.visual}</span>
+      </div>
+      <p className="mt-2 text-xs leading-5 text-stealth-500">{contract.takeaway} · Latest release {impact.latest_release_date ? formatDate(impact.latest_release_date) : "unavailable"}</p>
+      <div className="mt-2">{chart ?? <div className="flex h-[230px] items-center justify-center border-y border-stealth-700 px-6 text-center text-sm text-stealth-400">Comparable chart metrics are not available for this report and commodity.</div>}</div>
+      <p className="mt-3 text-sm leading-6 text-stealth-300"><strong className="font-semibold text-stealth-100">Latest report:</strong> {latestRead}</p>
+      {table?.rows.length ? <ValuesDisclosure table={table} label="View report chart values" /> : null}
+    </section>
+  );
+}
+
+function OutcomeProfile({ impact }: { impact: ReportImpact }) {
+  const complete = impact.observations.filter((observation) => observation.signal_z !== null && observation.reaction_5d_pct !== null);
+  const profile = buildOutcomeProfile(impact.observations);
+  const currentKey = outcomeBucketKey(impact.signal_z);
+  const currentBucket = profile.find((bucket) => bucket.key === currentKey) ?? null;
+  const maxMedian = Math.max(0.25, ...profile.map((bucket) => Math.abs(bucket.medianReturn ?? 0)));
+
+  if (!complete.length) {
+    return (
+      <section className="mt-5 border-y border-stealth-700 py-5 text-center" aria-labelledby="outcome-profile-title">
+        <h3 id="outcome-profile-title" className="text-base font-semibold text-stealth-100">Five-session response by report read</h3>
+        <p className="mx-auto mt-2 max-w-lg text-xs leading-5 text-stealth-500">No complete report-to-price observations are available yet. This report remains visible, but historical price behavior is withheld.</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="mt-5" aria-labelledby="outcome-profile-title">
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div><h3 id="outcome-profile-title" className="text-base font-semibold text-stealth-100">Five-session response by report read</h3><p className="mt-1 text-xs leading-5 text-stealth-500">Median futures reaction after restrictive, near-normal, and supportive {impact.report} releases</p></div>
+        <span className="text-xs text-stealth-400">n={complete.length} complete releases</span>
+      </div>
+      <div className="mt-3 space-y-2" role="group" aria-label={`${impact.report} median five-session futures response by report read`}>
+        {profile.map((bucket) => {
+          const selected = bucket.key === currentKey;
+          const thinSample = bucket.sampleSize < 5;
+          const width = bucket.medianReturn === null ? 0 : Math.min(50, Math.abs(bucket.medianReturn) / maxMedian * 50);
+          return (
+            <div key={bucket.key} className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 rounded-lg px-3 py-2.5 sm:grid-cols-[minmax(7.5rem,0.8fr)_minmax(8rem,1.4fr)_minmax(7rem,0.8fr)] ${selected ? "bg-sky-300/[0.10] ring-1 ring-inset ring-sky-300/30" : "bg-stealth-900/30"}`} aria-label={`${bucket.label}: median ${formatSigned(bucket.medianReturn, "%")}, ${thinSample ? "thin sample" : bucket.upShare === null ? "up share unavailable" : `futures higher ${formatValue(bucket.upShare * 100, 0)} percent of releases`}, sample ${bucket.sampleSize}`}>
+              <span><span className="block text-sm font-semibold text-stealth-200">{bucket.label}</span>{selected ? <span className="mt-0.5 block text-xs font-semibold text-sky-200">Current read</span> : null}</span>
+              <span className="relative col-span-2 row-start-2 block h-2 rounded-full bg-stealth-800 sm:col-span-1 sm:col-start-2 sm:row-start-1" aria-hidden="true"><span className="absolute inset-y-[-3px] left-1/2 w-px bg-stealth-500" />{bucket.medianReturn !== null && bucket.medianReturn >= 0 ? <span className="absolute inset-y-0 left-1/2 rounded-r-full bg-sky-300" style={{ width: `${width}%` }} /> : null}{bucket.medianReturn !== null && bucket.medianReturn < 0 ? <span className="absolute inset-y-0 right-1/2 rounded-l-full bg-amber-300" style={{ width: `${width}%` }} /> : null}</span>
+              <span className="text-right sm:col-start-3 sm:row-start-1"><span className={`block text-sm font-semibold tabular-nums ${bucket.medianReturn === null ? "text-stealth-500" : bucket.medianReturn >= 0 ? "text-sky-200" : "text-amber-200"}`}>{formatSigned(bucket.medianReturn, "%")}</span><span className="mt-0.5 block text-xs text-stealth-500">{bucket.upShare === null ? "No sample" : thinSample ? `Thin sample · n=${bucket.sampleSize}` : `Up ${formatValue(bucket.upShare * 100, 0)}% · n=${bucket.sampleSize}`}</span></span>
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-3 text-sm leading-6 text-stealth-300"><strong className="font-semibold text-stealth-100">Historical read:</strong> {currentBucket?.medianReturn !== null && currentBucket?.medianReturn !== undefined && currentBucket.sampleSize >= 5 ? `The current ${currentBucket.label.toLowerCase()} bucket was followed by a ${formatSigned(currentBucket.medianReturn, "%")} median futures move over five sessions; futures finished higher after ${formatValue((currentBucket.upShare ?? 0) * 100, 0)}% of those ${currentBucket.sampleSize} releases.` : currentBucket?.sampleSize ? `Only ${currentBucket.sampleSize} comparable ${currentBucket.label.toLowerCase()} releases are available, so the sample is too thin for a reliable directional summary.` : "The current report read does not have enough comparable releases for a bucket-level summary."} These are associated outcomes, not isolated causal effects.</p>
+      <details className="group mt-2 border-y border-stealth-700">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 py-2 text-xs font-semibold text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><span>View historical release outcomes</span><span className="group-open:hidden">Open</span><span className="hidden group-open:inline">Close</span></summary>
+        <div className="max-h-64 overflow-auto border-t border-stealth-700" role="region" aria-label={`${impact.report} historical release outcomes`} tabIndex={0}>
+          <table className="w-full min-w-[36rem] text-left text-xs">
+            <caption className="sr-only">{impact.report} historical report reads and five-session futures outcomes</caption>
+            <thead className="sticky top-0 bg-stealth-900 text-stealth-400"><tr><th className="px-2 py-2 font-semibold">Release</th><th className="px-2 py-2 font-semibold">Report read</th><th className="px-2 py-2 text-right font-semibold">5-session futures</th><th className="px-2 py-2 font-semibold">Direction match</th></tr></thead>
+            <tbody className="divide-y divide-stealth-700 text-stealth-300">{[...complete].reverse().map((observation, index) => { const aligned = Number(observation.signal_z) * Number(observation.reaction_5d_pct); return <tr key={`${observation.release_date}:${observation.price_event_date}:${index}`}><td className="px-2 py-2 tabular-nums">{formatDate(observation.release_date)}</td><td className="px-2 py-2">{pressureLabel(observation.signal_z)} · {formatSigned(observation.signal_z, "σ")}</td><td className="px-2 py-2 text-right tabular-nums">{formatSigned(observation.reaction_5d_pct, "%")}</td><td className="px-2 py-2">{Math.abs(aligned) < 0.005 ? "Neutral" : aligned > 0 ? "Aligned" : "Opposed"}</td></tr>; })}</tbody>
+          </table>
+        </div>
+      </details>
+    </section>
   );
 }
 
@@ -726,14 +1049,7 @@ function PriceImpactWorkspace({
   const related = model.relationships.filter((relationship) => (
     relationship.source_report_id === selectedImpact?.report_id || relationship.target_report_id === selectedImpact?.report_id
   ));
-  const scatterData = selectedImpact?.observations.filter((observation) => (
-    observation.signal_z !== null && observation.reaction_5d_pct !== null
-  )) ?? [];
-  const latestScatter = scatterData.at(-1) ?? null;
-  const historicalScatter = latestScatter ? scatterData.slice(0, -1) : scatterData;
   const maxContribution = Math.max(0.1, ...model.reports.map((report) => Math.abs(report.contribution_5d_pct ?? 0)));
-  const correlation = selectedImpact?.historical_5d.correlation ?? null;
-  const alignment = selectedImpact?.historical_5d.alignment_rate ?? null;
 
   return (
     <section className="surface-card-strong min-w-0 overflow-hidden lg:grid lg:grid-cols-[minmax(21rem,0.78fr)_minmax(0,1.5fr)]" aria-label={`${data.commodity.name} report price impact`}>
@@ -810,7 +1126,7 @@ function PriceImpactWorkspace({
               <h2 className="text-2xl font-semibold text-stealth-100">{selectedImpact?.report ?? "Report effect"}</h2>
               {selectedImpact ? <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${selectedImpact.confidence === "Insufficient" ? "border-stealth-600 bg-stealth-800 text-stealth-300" : "border-sky-300/40 bg-sky-300/[0.08] text-sky-100"}`}>{selectedImpact.confidence} evidence</span> : null}
             </div>
-            <p className="mt-1 text-sm text-stealth-400">Historical report pressure and subsequent {data.commodity.name} futures returns</p>
+            <p className="mt-1 text-sm text-stealth-400">What this release says, what {data.commodity.name} futures historically did next, and how the evidence connects</p>
           </div>
           {selectedCatalog ? <div className="flex gap-2"><a href={selectedCatalog.source_url} target="_blank" rel="noreferrer" className="field-button field-button-primary gap-2">Source <ExternalLink size={14} aria-hidden="true" /></a><a href={selectedCatalog.archive_url} target="_blank" rel="noreferrer" className="field-button field-button-secondary gap-2">Archive <ExternalLink size={14} aria-hidden="true" /></a></div> : null}
         </div>
@@ -823,7 +1139,9 @@ function PriceImpactWorkspace({
             <div><p className="text-xs text-stealth-500">Combined contribution</p><p className="mt-1 text-xl font-semibold tabular-nums text-sky-100">{formatSigned(selectedImpact.contribution_5d_pct, "%")}</p><p className="text-xs text-stealth-400">Weight {formatValue(selectedImpact.model_weight * 100, 0)}%</p></div>
           </div>
 
-          <div className="mt-3">
+          <ReportStory data={data} impact={selectedImpact} />
+
+          <div className="mt-5 border-y border-stealth-700 py-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div><h3 className="text-sm font-semibold text-stealth-100">Connected reports</h3><p className="mt-0.5 text-xs text-stealth-500">Current directional agreement; arrows show information flow, not causation.</p></div>
               <span className="text-xs text-stealth-500">{related.length} links</span>
@@ -832,42 +1150,13 @@ function PriceImpactWorkspace({
               {related.length ? related.map((relationship) => {
                 const otherId = relationship.source_report_id === selectedImpact.report_id ? relationship.target_report_id : relationship.source_report_id;
                 const sourceSelected = relationship.source_report_id === selectedImpact.report_id;
-                return <button key={`${relationship.source_report_id}:${relationship.target_report_id}`} type="button" onClick={() => onSelectReport(otherId)} title={relationship.description} className={`inline-flex min-h-11 items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${relationshipTone(relationship.status)}`}><span>{sourceSelected ? selectedImpact.report : relationship.source_report}</span><ArrowRight size={13} aria-hidden="true" /><span>{sourceSelected ? relationship.target_report : selectedImpact.report}</span><span className="font-normal opacity-80">· {relationship.status}</span></button>;
+                return <button key={`${relationship.source_report_id}:${relationship.target_report_id}`} type="button" onClick={() => onSelectReport(otherId)} title={relationship.description} className={`inline-flex min-h-11 items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${relationshipTone(relationship.status)}`}><span>{sourceSelected ? selectedImpact.report : relationship.source_report}</span><ArrowRight size={13} aria-hidden="true" /><span>{sourceSelected ? relationship.target_report : selectedImpact.report}</span><span className="font-normal opacity-80">· {relationship.kind} · {relationship.status}</span></button>;
               }) : <p className="text-xs text-stealth-500">No direct report-to-report link is defined for this selection.</p>}
             </div>
           </div>
 
-          <div className="mt-4">
-            <div className="flex flex-wrap items-end justify-between gap-2">
-              <div><h3 className="text-sm font-semibold text-stealth-100">Report pressure vs. five-session futures return</h3><p className="mt-0.5 text-xs text-stealth-500">Each point is one published release · x = standardized report pressure · y = subsequent futures return</p></div>
-              <span className="text-xs text-stealth-400">n={selectedImpact.historical_5d.sample_size} · r={correlation === null ? "—" : correlation.toFixed(2)}</span>
-            </div>
-            {selectedImpact.historical_5d.sample_size >= 8 ? <div className="mt-2 h-[250px] min-w-0 bg-stealth-900/25 md:h-[315px]" aria-label={`${selectedImpact.report} report pressure relationship with five-session futures returns`}>
-              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                <ScatterChart margin={{ top: 12, right: 14, bottom: 24, left: 4 }} accessibilityLayer aria-label={`${selectedImpact.report} report pressure and five-session futures return by release`}>
-                  <CartesianGrid stroke="rgba(98,117,142,0.34)" />
-                  <XAxis type="number" dataKey="signal_z" name="Report pressure" unit="σ" domain={["auto", "auto"]} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} label={{ value: "Report pressure (σ)", position: "insideBottom", offset: -14, fill: "#91a4bd", fontSize: 12 }} />
-                  <YAxis type="number" dataKey="reaction_5d_pct" name="Five-session return" unit="%" domain={["auto", "auto"]} width={54} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} />
-                  <ReferenceLine x={0} stroke="#91a4bd" strokeDasharray="4 4" />
-                  <ReferenceLine y={0} stroke="#91a4bd" strokeDasharray="4 4" />
-                  <Tooltip content={<ImpactTooltip />} />
-                  <Scatter name="Historical releases" data={historicalScatter} fill="#8ebdea" opacity={0.7} isAnimationActive={false} />
-                  {latestScatter ? <Scatter name="Latest complete release" data={[latestScatter]} fill="#f3cb69" stroke="#0e1520" strokeWidth={2} isAnimationActive={false} /> : null}
-                </ScatterChart>
-              </ResponsiveContainer>
-            </div> : <div className="mt-2 flex h-[250px] items-center justify-center border-y border-stealth-700 px-6 text-center md:h-[315px]"><div><p className="text-sm font-semibold text-stealth-200">Historical model withheld</p><p className="mx-auto mt-2 max-w-lg text-xs leading-5 text-stealth-500">{selectedImpact.report} has {selectedImpact.historical_5d.sample_size} complete five-session observations. At least 8 are required before plotting or contributing to the scenario.</p></div></div>}
-            {scatterData.length ? <details className="group mt-2 border-y border-stealth-700">
-              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 py-2 text-xs font-semibold text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><span>View plotted release values</span><span className="group-open:hidden">Open</span><span className="hidden group-open:inline">Close</span></summary>
-              <div className="max-h-64 overflow-auto border-t border-stealth-700">
-                <table className="w-full min-w-[31rem] text-left text-xs">
-                  <caption className="sr-only">{selectedImpact.report} plotted historical values</caption>
-                  <thead className="sticky top-0 bg-stealth-900 text-stealth-400"><tr><th className="px-2 py-2 font-semibold">Release</th><th className="px-2 py-2 text-right font-semibold">Pressure</th><th className="px-2 py-2 text-right font-semibold">5-session return</th><th className="px-2 py-2 font-semibold">Point</th></tr></thead>
-                  <tbody className="divide-y divide-stealth-700 text-stealth-300">{[...scatterData].reverse().map((observation) => <tr key={`${observation.release_date}:${observation.price_event_date}`}><td className="px-2 py-2 tabular-nums">{formatDate(observation.release_date)}</td><td className="px-2 py-2 text-right tabular-nums">{formatSigned(observation.signal_z, "σ")}</td><td className="px-2 py-2 text-right tabular-nums">{formatSigned(observation.reaction_5d_pct, "%")}</td><td className="px-2 py-2">{observation === latestScatter ? "Latest complete release" : "Historical release"}</td></tr>)}</tbody>
-                </table>
-              </div>
-            </details> : null}
-            <p className="mt-3 text-sm leading-6 text-stealth-300"><strong className="font-semibold text-stealth-100">Read:</strong> {selectedImpact.signal_basis ?? "A comparable report pressure is unavailable."} {alignment !== null ? `${formatValue(alignment * 100, 0)}% of comparable historical releases moved in the same direction over five sessions.` : "Historical directional alignment is not yet stable enough to report."}</p>
-          </div>
+          <OutcomeProfile impact={selectedImpact} />
+
         </div> : null}
 
         <details className="group border-t border-stealth-700">

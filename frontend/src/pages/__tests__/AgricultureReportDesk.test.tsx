@@ -14,14 +14,13 @@ vi.mock("recharts", () => {
     Bar: ({ name }: { name?: string }) => name ? <span>{name}</span> : null,
     BarChart: Shell,
     CartesianGrid: () => null,
+    Cell: () => null,
     ComposedChart: Shell,
     Legend: () => null,
     Line: ({ name }: { name?: string }) => name ? <span>{name}</span> : null,
     LineChart: Shell,
     ReferenceLine: () => null,
     ResponsiveContainer: Shell,
-    Scatter: ({ name }: { name?: string }) => name ? <span>{name}</span> : null,
-    ScatterChart: Shell,
     Tooltip: () => null,
     XAxis: () => null,
     YAxis: () => null,
@@ -147,9 +146,17 @@ describe("AgricultureReportDesk", () => {
     expect(screen.getByText("Association-implied marker")).toBeTruthy();
     expect(screen.getByText(/Association-based scenario, not a forecast/)).toBeTruthy();
     expect(screen.getByRole("group", { name: "Report price contributions" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Report pressure vs. five-session futures return" })).toBeTruthy();
-    expect(screen.getByText("View plotted release values")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Ending-stocks revisions" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Five-session response by report read" })).toBeTruthy();
+    expect(screen.getByText("View report chart values")).toBeTruthy();
+    expect(screen.getByText("View historical release outcomes")).toBeTruthy();
     expect(screen.getByText(/n=12/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /Crop Progress:.*five-session contribution/ }));
+    expect(screen.getByRole("heading", { name: "Field progress against benchmarks" })).toBeTruthy();
+    expect(screen.getByText("Benchmark bars")).toBeTruthy();
+    expect(screen.getByText(/historical price behavior is withheld/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /WASDE:.*five-session contribution/ }));
 
     fireEvent.click(screen.getByRole("button", { name: "Market brief" }));
     expect(screen.getByRole("heading", { name: "The whole picture" })).toBeTruthy();

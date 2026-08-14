@@ -255,11 +255,29 @@ test("report desk is readable, responsive, and accessible", async ({ page }, tes
   await expect(page.getByText("Association-implied marker")).toBeVisible();
   await expect(page.getByText(/Association-based scenario, not a forecast/)).toBeVisible();
   await expect(page.getByRole("group", { name: "Report price contributions" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Report pressure vs. five-session futures return" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Ending-stocks revisions" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Five-session response by report read" })).toBeVisible();
+  await expect(page.getByText("View report chart values")).toBeVisible();
+  await expect(page.getByText("View historical release outcomes")).toBeVisible();
+  const impactStories = [
+    ["WASDE", "Ending-stocks revisions"],
+    ["Crop Production", "Production estimate path"],
+    ["Crop Progress", "Field progress against benchmarks"],
+    ["Export Sales", "Booked demand versus shipments"],
+    ["Export Inspections", "Physical export pace"],
+    ["Grain Stocks", "Inventory location and change"],
+    ["Acreage", "Planted and harvested footprint"],
+    ["Commitments of Traders", "Speculative positioning balance"],
+  ] as const;
+  for (const [reportName, storyTitle] of impactStories) {
+    await page.getByRole("button", { name: new RegExp(`${reportName}:.*five-session contribution|${reportName}:.*model unavailable`) }).click();
+    await expect(page.getByRole("heading", { name: storyTitle })).toBeVisible();
+    await expect(page.locator(".recharts-wrapper").last()).toBeVisible();
+  }
   await page.getByRole("button", { name: /Crop Progress:.*five-session contribution/ }).click();
   await expect(page.getByRole("heading", { name: "Crop Progress", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Connected reports" })).toBeVisible();
-  await expect(page.locator(".recharts-scatter")).toHaveCount(2);
+  await expect(page.getByRole("heading", { name: "Field progress against benchmarks" })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("agriculture-report-desk-impact-desktop.png"), fullPage: true });
   await page.getByRole("button", { name: "Market brief" }).click();
   await expect(page.getByRole("heading", { name: "The whole picture" })).toBeVisible();

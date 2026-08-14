@@ -9,9 +9,9 @@ related_targets: ["frontend/src/routes/registry.tsx","frontend/src/pages/Agricul
 
 - Scope: `/agriculture/reports`; visitor mode: Operate.
 - Audience and job: an independent agriculture futures trader reviewing scheduled releases without opening every source or tab.
-- Primary task: move from the official raw release to a standardized, cross-report interpretation and compare that interpretation with the associated futures response.
+- Primary task: understand what each official release says in its native analytical form, then compare that read with the associated futures response and the broader report system.
 - Proof: USDA as-reported WASDE history, official source/archive links, labeled calendar confidence, adjusted futures closes, and transparent methodology.
 - Constraints: never invent market consensus; expectations are user-entered and device-local; association is not causation; archive-only report families must remain visibly distinct from chart-ready data.
-- Direction: Evidence Field extension with a current-release strip, a 40/60 raw-and-insights split, multi-layer report chart, and persistent event inspector.
-- Memorable moment: one graph makes heterogeneous report revisions comparable while keeping the raw number and provenance one glance away.
-- Unresolved: add chart-ready historical adapters for Crop Progress, Crop Production, Export Sales/Inspections, Grain Stocks, Acreage, and COT as official machine-readable contracts are validated.
+- Direction: Evidence Field extension with a two-mode master-detail desk. The Impact view pairs signed report contributions with a report-native story chart and one shared five-session outcome profile; the Market Brief preserves the dated raw-release workflow.
+- Memorable moment: switching reports changes both the analytical question and the visual grammar while the price-response summary remains directly comparable.
+- Unresolved: keep monitoring the strength and recency of the historical response samples, and expose expectations only when a real user-entered or published benchmark exists.
