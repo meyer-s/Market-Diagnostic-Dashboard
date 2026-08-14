@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import zipfile
 from datetime import date, datetime
+from statistics import mean
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -70,6 +71,8 @@ def test_report_desk_combines_official_history_and_price_reactions(monkeypatch: 
     assert len(payload["reports"]) >= 7
     ending_stocks = next(layer for layer in payload["series"] if layer["metric_id"] == "ending_stocks")
     assert ending_stocks["points"][0]["reaction_1d_pct"] == 1.0
+    assert len(payload["impact_model"]["reports"]) == 8
+    assert "not a forecast or causal estimate" in payload["impact_model"]["methodology"]["scenario"]
     assert payload["takeaways"][-1]["title"] == "Interpretation boundary"
 
 
@@ -95,6 +98,64 @@ def test_five_session_reaction_waits_for_a_complete_forward_window() -> None:
     desk._attach_reactions(series, complete_prices)
 
     assert point["reaction_5d_pct"] == 5.0
+
+
+def test_report_price_reactions_use_publication_session_and_after_close_rules() -> None:
+    price_dates = [date(2026, 8, day) for day in (6, 7, 10, 11, 12, 13, 14, 17, 18, 19)]
+    closes = [100.0, 101.0, 102.0, 104.0, 105.0, 107.1, 108.0, 109.0, 110.0, 111.0]
+
+    export_sales = desk._report_price_reaction("export_sales", date(2026, 8, 6), price_dates, closes)
+    crop_progress = desk._report_price_reaction("crop_progress", date(2026, 8, 10), price_dates, closes)
+
+    assert export_sales["price_event_date"] == "2026-08-13"
+    assert export_sales["reaction_1d_pct"] == 2.0
+    assert crop_progress["price_event_date"] == "2026-08-10"
+    assert crop_progress["reaction_1d_pct"] == pytest.approx(1.961, abs=0.001)
+
+
+def test_relationship_statistics_calibrate_directional_signal_to_forward_return() -> None:
+    observations = [
+        {"signal_z": signal, "reaction_5d_pct": signal * 1.5}
+        for signal in (-2.0, -1.5, -1.0, -0.5, 0.5, 1.0, 1.5, 2.0)
+    ]
+
+    stats = desk._relationship_statistics(observations, "reaction_5d_pct")
+    confidence, reliability = desk._impact_confidence(stats["sample_size"], stats["correlation"])
+
+    assert stats["sample_size"] == 8
+    assert stats["correlation"] == 1.0
+    assert stats["slope"] == 1.5
+    assert stats["alignment_rate"] == 1.0
+    assert confidence == "Moderate"
+    assert reliability > 0
+
+
+def test_non_wasde_signals_are_centered_standard_scores() -> None:
+    history = {
+        "releases": [
+            {"release_date": f"2026-0{index}-01", "metrics": [{"id": "production_yoy_pct", "value": value}]}
+            for index, value in enumerate((-8.0, -2.0, 4.0, 10.0), start=1)
+        ],
+        "analysis": {"primary_metric_id": "production_yoy_pct"},
+    }
+
+    rows = desk._non_wasde_signal_inputs("crop_production", history)
+
+    assert mean(row["signal_z"] for row in rows) == pytest.approx(0.0, abs=0.001)
+    assert desk.pstdev(row["signal_z"] for row in rows) == pytest.approx(1.0, abs=0.001)
+
+
+def test_same_session_reports_share_one_event_weight() -> None:
+    reports = [
+        {"report_id": "wasde", "price_event_date": "2026-08-12", "reliability": 0.8, "freshness": 1.0},
+        {"report_id": "crop_production", "price_event_date": "2026-08-12", "reliability": 0.4, "freshness": 1.0},
+        {"report_id": "export_sales", "price_event_date": "2026-08-13", "reliability": 0.6, "freshness": 1.0},
+    ]
+
+    effective = desk._same_session_effective_weights(reports)
+
+    assert effective["wasde"] + effective["crop_production"] == pytest.approx(0.8)
+    assert effective["export_sales"] == pytest.approx(0.6)
 
 
 def test_calendar_labels_official_recurring_and_expected_dates() -> None:

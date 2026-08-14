@@ -146,13 +146,51 @@ function reportDeskFixture() {
     time_label: new Date(releaseAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) + " ET",
     confidence,
   }));
+  const impactSignals = [0.9, 0.6, 1.2, 0.4, 0.2, -0.8, 1.0, 0.1];
+  const impactContributions = [0.72, -0.02, 0.12, 0.1, 0.02, 0.11, null, 0];
+  const impactReports = reports.map((report, reportIndex) => {
+    const sampleSize = report.id === "acreage" ? 3 : 12 + reportIndex * 3;
+    const observations = Array.from({ length: sampleSize }, (_, index) => {
+      const signal = ((index % 7) - 3) / 2;
+      return {
+        release_date: new Date(Date.UTC(2024, index % 12, 5 + (index % 20))).toISOString().slice(0, 10),
+        price_event_date: new Date(Date.UTC(2024, index % 12, 6 + (index % 20))).toISOString().slice(0, 10),
+        raw_signal: signal,
+        signal_z: signal,
+        signal_basis: `${report.name} benchmark pressure`,
+        reaction_1d_pct: signal * 0.35 + Math.sin(index) * 0.2,
+        reaction_5d_pct: signal * 0.7 + Math.sin(index) * 0.45,
+      };
+    });
+    const contribution = impactContributions[reportIndex];
+    return {
+      report_id: report.id,
+      report: report.name,
+      channel: report.id === "export_sales" || report.id === "export_inspections" ? "Demand" : report.id === "cot" ? "Positioning" : report.id === "wasde" || report.id === "grain_stocks" ? "Balance sheet" : "Supply",
+      latest_release_date: "2026-08-12",
+      price_event_date: "2026-08-12",
+      signal_z: impactSignals[reportIndex],
+      signal_basis: `${report.name} benchmark pressure; positive means price-supportive`,
+      latest_reaction_1d_pct: 1.4 - reportIndex * 0.22,
+      latest_reaction_5d_pct: reportIndex > 3 ? null : 2.1 - reportIndex * 0.3,
+      historical_1d: { sample_size: sampleSize, correlation: report.id === "acreage" ? null : 0.28, slope: report.id === "acreage" ? null : 0.55, alignment_rate: report.id === "acreage" ? null : 0.59, residual_pct: report.id === "acreage" ? null : 1.6 },
+      historical_5d: { sample_size: sampleSize, correlation: report.id === "acreage" ? null : 0.36, slope: report.id === "acreage" ? null : 0.9, alignment_rate: report.id === "acreage" ? null : 0.64, residual_pct: report.id === "acreage" ? null : 2.4 },
+      model_5d_pct: report.id === "acreage" ? null : impactSignals[reportIndex] * 0.9,
+      contribution_5d_pct: contribution,
+      confidence: report.id === "acreage" ? "Insufficient" : sampleSize >= 20 ? "Established" : "Moderate",
+      reliability: report.id === "acreage" ? 0 : 0.45,
+      freshness: 0.9,
+      model_weight: contribution === null ? 0 : Math.max(0.03, Math.abs(contribution)),
+      observations,
+    };
+  });
   return {
     as_of: "2026-08-13T11:00:00-04:00",
-    commodity: { symbol: "ZC", name: "Corn", usda: "Corn", ticker: "ZC=F" },
+    commodity: { symbol: "ZC", name: "Corn", usda: "Corn", ticker: "ZC=F", price_unit: "cents per bushel" },
     commodities: [
-      { symbol: "ZC", name: "Corn", usda: "Corn", ticker: "ZC=F" },
-      { symbol: "ZS", name: "Soybeans", usda: "Soybeans", ticker: "ZS=F" },
-      { symbol: "ZW", name: "Chicago Wheat", usda: "Wheat", ticker: "ZW=F" },
+      { symbol: "ZC", name: "Corn", usda: "Corn", ticker: "ZC=F", price_unit: "cents per bushel" },
+      { symbol: "ZS", name: "Soybeans", usda: "Soybeans", ticker: "ZS=F", price_unit: "cents per bushel" },
+      { symbol: "ZW", name: "Chicago Wheat", usda: "Wheat", ticker: "ZW=F", price_unit: "cents per bushel" },
     ],
     selected_metric: "ending_stocks", years: 3,
     history_coverage: {
@@ -169,6 +207,23 @@ function reportDeskFixture() {
     report_histories: archiveHistories(),
     metrics: metricMeta.map(([id, label, orientation]) => ({ id, label, orientation, bullish_when: orientation < 0 ? "lower" : "higher" })),
     series, price_history: priceHistory,
+    impact_model: {
+      as_of: "2026-08-13",
+      price_unit: "cents per bushel",
+      horizon_sessions: 5,
+      aggregate: { direction: "Price-supportive", current_price: 472.75, projected_5d_pct: 1.05, projected_5d_price: 477.71, lower_5d_price: 469.4, upper_5d_price: 486.1, uncertainty_5d_pct: 1.75, contributors_included: 7 },
+      reports: impactReports,
+      relationships: [
+        { source_report_id: "acreage", target_report_id: "crop_production", source_report: "Acreage", target_report: "Crop Production", kind: "sets the planted base for", status: "Confirming", description: "Acreage sets the planted base for Crop Production; latest signals confirm." },
+        { source_report_id: "crop_progress", target_report_id: "crop_production", source_report: "Crop Progress", target_report: "Crop Production", kind: "leads the yield read in", status: "Confirming", description: "Crop Progress leads Crop Production; latest signals confirm." },
+        { source_report_id: "crop_production", target_report_id: "wasde", source_report: "Crop Production", target_report: "WASDE", kind: "feeds", status: "Confirming", description: "Crop Production feeds WASDE; latest signals confirm." },
+        { source_report_id: "grain_stocks", target_report_id: "wasde", source_report: "Grain Stocks", target_report: "WASDE", kind: "checks", status: "Conflicting", description: "Grain Stocks conflicts with WASDE." },
+        { source_report_id: "export_sales", target_report_id: "export_inspections", source_report: "Export Sales", target_report: "Export Inspections", kind: "precedes", status: "Mixed", description: "Export Sales and Export Inspections are mixed." },
+        { source_report_id: "export_inspections", target_report_id: "wasde", source_report: "Export Inspections", target_report: "WASDE", kind: "tests", status: "Confirming", description: "Export Inspections confirms WASDE." },
+        { source_report_id: "cot", target_report_id: "wasde", source_report: "Commitments of Traders", target_report: "WASDE", kind: "confirms", status: "Mixed", description: "Positioning is mixed with WASDE." },
+      ],
+      methodology: { signal: "Positive means price-supportive.", reaction: "Returns use the public release session.", scenario: "Historical association, not a causal forecast.", uncertainty: "Historical residual range." },
+    },
     takeaways: [
       { tone: "positive", title: "Standardized release read", body: "The latest ending-stocks revision was supply-demand supportive at +0.90σ." },
       { tone: "positive", title: "Price confirmation", body: "Futures moved +1.40% through the release-day close, aligned with the report direction." },
@@ -196,9 +251,21 @@ async function openDesk(page: Page, width: number, height: number) {
 
 test("report desk is readable, responsive, and accessible", async ({ page }, testInfo) => {
   await openDesk(page, 1440, 1000);
+  await expect(page.getByRole("heading", { name: "Combined report-price association" })).toBeVisible();
+  await expect(page.getByText("Association-implied marker")).toBeVisible();
+  await expect(page.getByText(/Association-based scenario, not a forecast/)).toBeVisible();
+  await expect(page.getByRole("group", { name: "Report price contributions" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Report pressure vs. five-session futures return" })).toBeVisible();
+  await page.getByRole("button", { name: /Crop Progress:.*five-session contribution/ }).click();
+  await expect(page.getByRole("heading", { name: "Crop Progress", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Connected reports" })).toBeVisible();
+  await expect(page.locator(".recharts-scatter")).toHaveCount(2);
+  await page.screenshot({ path: testInfo.outputPath("agriculture-report-desk-impact-desktop.png"), fullPage: true });
+  await page.getByRole("button", { name: "Market brief" }).click();
   await expect(page.getByRole("heading", { name: "The whole picture" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Report feed" })).toBeVisible();
   await expect(page.getByRole("button", { name: /Balance sheet/ })).toBeVisible();
+  await page.getByRole("button", { name: /WASDE.*revision/ }).click();
   await expect(page.getByRole("button", { name: "Add futures" })).toBeVisible();
   await expect(page.getByText("Evidence & sources")).toBeVisible();
   await expect(page.getByRole("button", { name: "All" })).toBeVisible();
@@ -219,6 +286,13 @@ test("report desk is readable, responsive, and accessible", async ({ page }, tes
   expect(desktopAxe.violations).toEqual([]);
 
   await openDesk(page, 390, 844);
+  await expect(page.getByRole("heading", { name: "Combined report-price association" })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Report price contributions" }).getByRole("button")).toHaveCount(8);
+  await page.getByRole("button", { name: /Crop Progress:.*five-session contribution/ }).click();
+  await expect(page.getByRole("heading", { name: "Crop Progress", exact: true })).toBeVisible();
+  await page.evaluate(() => { window.scrollTo(0, 0); (document.activeElement as HTMLElement | null)?.blur(); });
+  await page.screenshot({ path: testInfo.outputPath("agriculture-report-desk-impact-mobile.png"), fullPage: true });
+  await page.getByRole("button", { name: "Market brief" }).click();
   await page.getByLabel("Report family").selectOption("crop_progress");
   await expect(page.getByRole("heading", { name: "Crop Progress" })).toBeVisible();
   const mobileBars = page.locator(".recharts-bar-rectangle path");

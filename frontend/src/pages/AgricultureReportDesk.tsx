@@ -1,9 +1,9 @@
 /*
-THESIS: All reports should resolve into one commodity brief, with individual evidence inspected in place.
+THESIS: All reports should resolve into one commodity brief and one evidence-weighted price scenario, with individual effects inspected in place.
 OWN-WORLD: Evidence Field — dark, exacting, source-forward, and operational.
-STORY: Read the whole-picture signal, scan the report feed, then inspect one piece of evidence without leaving the page.
-FIRST VIEWPORT: A synthesized market brief and report feed beside one compact evidence pane.
-FORM: A master-detail research inbox with progressive disclosure for source material.
+STORY: See the combined price pressure, trace how reports reinforce or conflict, then inspect the historical effect behind one contribution.
+FIRST VIEWPORT: A total five-session futures scenario and signed report contributions beside one selected report relationship plot.
+FORM: A two-mode master-detail research inbox; Price impact leads and Market brief preserves the official-data view.
 */
 
 import { useEffect, useMemo, useState } from "react";
@@ -11,6 +11,7 @@ import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowLeft,
+  ArrowRight,
   Check,
   Clock3,
   Download,
@@ -29,6 +30,8 @@ import {
   LineChart,
   ReferenceLine,
   ResponsiveContainer,
+  Scatter,
+  ScatterChart,
   Tooltip,
   XAxis,
   YAxis,
@@ -152,8 +155,8 @@ type ReportSeries = {
 
 type ReportDeskData = {
   as_of: string;
-  commodity: { symbol: string; name: string; usda: string; ticker: string };
-  commodities: Array<{ symbol: string; name: string; usda: string; ticker: string }>;
+  commodity: { symbol: string; name: string; usda: string; ticker: string; price_unit: string };
+  commodities: Array<{ symbol: string; name: string; usda: string; ticker: string; price_unit: string }>;
   selected_metric: string;
   years: number;
   history_coverage: {
@@ -173,9 +176,78 @@ type ReportDeskData = {
   metrics: Array<{ id: string; label: string; orientation: number; bullish_when: string }>;
   series: ReportSeries[];
   price_history: Array<{ date: string; value: number; rebased: number; ticker: string }>;
+  impact_model: ImpactModel;
   takeaways: Array<{ tone: "positive" | "negative" | "warning" | "neutral"; title: string; body: string }>;
   methodology: Record<string, string>;
   warnings: string[];
+};
+
+type ImpactStatistics = {
+  sample_size: number;
+  correlation: number | null;
+  slope: number | null;
+  alignment_rate: number | null;
+  residual_pct: number | null;
+};
+
+type ImpactObservation = {
+  release_date: string;
+  price_event_date: string;
+  raw_signal: number;
+  signal_z: number | null;
+  signal_basis: string;
+  reaction_1d_pct: number | null;
+  reaction_5d_pct: number | null;
+};
+
+type ReportImpact = {
+  report_id: string;
+  report: string;
+  channel: string;
+  latest_release_date: string | null;
+  price_event_date: string | null;
+  signal_z: number | null;
+  signal_basis: string | null;
+  latest_reaction_1d_pct: number | null;
+  latest_reaction_5d_pct: number | null;
+  historical_1d: ImpactStatistics;
+  historical_5d: ImpactStatistics;
+  model_5d_pct: number | null;
+  contribution_5d_pct: number | null;
+  confidence: "Established" | "Moderate" | "Weak" | "Insufficient";
+  reliability: number;
+  freshness: number;
+  model_weight: number;
+  observations: ImpactObservation[];
+};
+
+type ImpactRelationship = {
+  source_report_id: string;
+  target_report_id: string;
+  source_report: string;
+  target_report: string;
+  kind: string;
+  status: "Confirming" | "Conflicting" | "Mixed" | "Unavailable";
+  description: string;
+};
+
+type ImpactModel = {
+  as_of: string | null;
+  price_unit: string;
+  horizon_sessions: number;
+  aggregate: {
+    direction: "Price-supportive" | "Price-restrictive" | "Balanced" | "Unavailable";
+    current_price: number | null;
+    projected_5d_pct: number | null;
+    projected_5d_price: number | null;
+    lower_5d_price: number | null;
+    upper_5d_price: number | null;
+    uncertainty_5d_pct: number | null;
+    contributors_included: number;
+  };
+  reports: ReportImpact[];
+  relationships: ImpactRelationship[];
+  methodology: Record<string, string>;
 };
 
 type SavedExpectation = {
@@ -206,6 +278,10 @@ function formatValue(value: number | null | undefined, digits = 1) {
 function formatSigned(value: number | null | undefined, suffix = "") {
   if (value === null || value === undefined || Number.isNaN(value)) return "—";
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}${suffix}`;
+}
+
+function formatFreshness(value: number) {
+  return `${Math.round(value * 100)}% fresh`;
 }
 
 function expectationKey(symbol: string, reportId: string, metricId: string, releaseDate: string) {
@@ -603,9 +679,210 @@ function buildBriefing(data: ReportDeskData): BriefingLine[] {
   ];
 }
 
+function formatFuturesPrice(value: number | null | undefined, unit: string) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  if (unit.startsWith("dollars")) return `$${value.toFixed(2)}`;
+  return `${value.toFixed(2)}¢`;
+}
+
+function pressureLabel(value: number | null | undefined) {
+  if (value === null || value === undefined) return "Unscored";
+  if (value >= 0.25) return "Price-supportive";
+  if (value <= -0.25) return "Price-restrictive";
+  return "Mixed";
+}
+
+function relationshipTone(status: ImpactRelationship["status"]) {
+  if (status === "Confirming") return "border-sky-300/40 bg-sky-300/[0.08] text-sky-100";
+  if (status === "Conflicting") return "border-amber-300/40 bg-amber-300/[0.08] text-amber-100";
+  return "border-stealth-600 bg-stealth-800/70 text-stealth-300";
+}
+
+function ImpactTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload?: ImpactObservation }> }) {
+  const observation = payload?.[0]?.payload;
+  if (!active || !observation) return null;
+  return (
+    <div className="max-w-[280px] rounded-lg border border-stealth-600 bg-stealth-900/95 p-3 shadow-xl">
+      <p className="text-xs font-semibold text-stealth-100">{formatDate(observation.release_date)}</p>
+      <p className="mt-2 text-xs text-stealth-300">Report pressure <strong className="text-stealth-100">{formatSigned(observation.signal_z, "σ")}</strong></p>
+      <p className="mt-1 text-xs text-stealth-300">Five-session futures <strong className="text-stealth-100">{formatSigned(observation.reaction_5d_pct, "%")}</strong></p>
+    </div>
+  );
+}
+
+function PriceImpactWorkspace({
+  data,
+  selectedReportId,
+  onSelectReport,
+}: {
+  data: ReportDeskData;
+  selectedReportId: string;
+  onSelectReport: (reportId: string) => void;
+}) {
+  const model = data.impact_model;
+  const aggregate = model.aggregate;
+  const selectedImpact = model.reports.find((report) => report.report_id === selectedReportId) ?? model.reports[0] ?? null;
+  const selectedCatalog = data.reports.find((report) => report.id === selectedImpact?.report_id) ?? null;
+  const related = model.relationships.filter((relationship) => (
+    relationship.source_report_id === selectedImpact?.report_id || relationship.target_report_id === selectedImpact?.report_id
+  ));
+  const scatterData = selectedImpact?.observations.filter((observation) => (
+    observation.signal_z !== null && observation.reaction_5d_pct !== null
+  )) ?? [];
+  const latestScatter = scatterData.at(-1) ?? null;
+  const historicalScatter = latestScatter ? scatterData.slice(0, -1) : scatterData;
+  const maxContribution = Math.max(0.1, ...model.reports.map((report) => Math.abs(report.contribution_5d_pct ?? 0)));
+  const correlation = selectedImpact?.historical_5d.correlation ?? null;
+  const alignment = selectedImpact?.historical_5d.alignment_rate ?? null;
+
+  return (
+    <section className="surface-card-strong min-w-0 overflow-hidden lg:grid lg:grid-cols-[minmax(21rem,0.78fr)_minmax(0,1.5fr)]" aria-label={`${data.commodity.name} report price impact`}>
+      <div className="border-b border-stealth-700 lg:border-b-0 lg:border-r">
+        <div className="px-4 py-4 md:px-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-stealth-100">Combined report-price association</h2>
+              <p className="mt-1 text-xs text-stealth-400">Evidence-weighted five-session scenario · {model.as_of ? formatDate(model.as_of) : "price unavailable"}</p>
+            </div>
+            <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${aggregate.projected_5d_pct !== null && aggregate.projected_5d_pct < -0.15 ? "border-amber-300/40 bg-amber-300/[0.08] text-amber-100" : "border-sky-300/40 bg-sky-300/[0.08] text-sky-100"}`}>{aggregate.direction}</span>
+          </div>
+
+          <div className="mt-4 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 border-y border-stealth-700 py-3">
+            <div>
+              <p className="text-xs text-stealth-500">Current futures</p>
+              <p className="mt-1 text-2xl font-semibold tabular-nums text-stealth-100">{formatFuturesPrice(aggregate.current_price, model.price_unit)}</p>
+            </div>
+            <ArrowRight size={18} className="text-stealth-500" aria-hidden="true" />
+            <div className="text-right">
+              <p className="text-xs text-stealth-500">Association-implied marker</p>
+              <p className="mt-1 text-2xl font-semibold tabular-nums text-sky-100">{formatFuturesPrice(aggregate.projected_5d_price, model.price_unit)}</p>
+              <p className="text-xs font-semibold tabular-nums text-sky-200">{formatSigned(aggregate.projected_5d_pct, "%")}</p>
+            </div>
+          </div>
+          <p className="mt-2 border-l-2 border-amber-300/70 pl-3 text-xs leading-5 text-stealth-300">
+            <strong className="font-semibold text-amber-100">Association-based scenario, not a forecast.</strong> Same-session reports share one event weight; the range does not estimate cross-report covariance.
+          </p>
+          <p className="mt-2 text-xs leading-5 text-stealth-500">
+            Historical residual span {formatFuturesPrice(aggregate.lower_5d_price, model.price_unit)}–{formatFuturesPrice(aggregate.upper_5d_price, model.price_unit)} · {aggregate.contributors_included} report models included
+          </p>
+        </div>
+
+        <div className="border-t border-stealth-700">
+          <div className="flex items-center justify-between px-4 py-2.5 md:px-5">
+            <h3 className="text-xs font-semibold text-stealth-300">Report contributions</h3>
+            <span className="text-xs text-stealth-500">Sum = {formatSigned(aggregate.projected_5d_pct, "%")}</span>
+          </div>
+          <div className="grid grid-cols-2 lg:block lg:divide-y lg:divide-stealth-700" role="group" aria-label="Report price contributions">
+            {model.reports.map((report) => {
+              const selected = report.report_id === selectedImpact?.report_id;
+              const contribution = report.contribution_5d_pct;
+              const width = contribution === null ? 0 : Math.min(50, Math.abs(contribution) / maxContribution * 50);
+              return (
+                <button
+                  key={report.report_id}
+                  type="button"
+                  aria-pressed={selected}
+                  aria-label={`${report.report}: ${pressureLabel(report.signal_z)}, ${contribution === null ? "model unavailable" : `${formatSigned(contribution, "%")} five-session contribution`}`}
+                  onClick={() => onSelectReport(report.report_id)}
+                  className={`grid min-h-[5.25rem] w-full grid-cols-[minmax(0,1fr)_auto] content-center gap-x-2 gap-y-2 border-t border-stealth-700 px-3 py-2 text-left transition odd:border-r focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 lg:min-h-[3.75rem] lg:grid-cols-[minmax(7.5rem,0.9fr)_minmax(6rem,1fr)_4.2rem] lg:items-center lg:gap-3 lg:border-r-0 lg:border-t-0 lg:px-5 ${selected ? "bg-sky-300/[0.10]" : "hover:bg-stealth-800/70"}`}
+                >
+                  <span className="min-w-0 lg:col-start-1 lg:row-start-1">
+                    <span className={`block truncate text-sm font-semibold ${selected ? "text-sky-100" : "text-stealth-200"}`}>{report.report}</span>
+                    <span className="mt-0.5 block truncate text-xs text-stealth-500"><span className="hidden lg:inline">{report.channel} · </span>{report.latest_release_date ? formatDate(report.latest_release_date, false) : "No release"} · {formatFreshness(report.freshness)}</span>
+                  </span>
+                  <span className={`text-right text-xs font-semibold tabular-nums lg:col-start-3 lg:row-start-1 ${contribution === null ? "text-stealth-500" : contribution >= 0 ? "text-sky-200" : "text-amber-200"}`}>{formatSigned(contribution, "%")}</span>
+                  <span className="relative col-span-2 row-start-2 block h-2 rounded-full bg-stealth-800 lg:col-span-1 lg:col-start-2 lg:row-start-1" aria-hidden="true">
+                    <span className="absolute inset-y-[-2px] left-1/2 w-px bg-stealth-500" />
+                    {contribution !== null && contribution >= 0 ? <span className="absolute inset-y-0 left-1/2 rounded-r-full bg-sky-300" style={{ width: `${width}%` }} /> : null}
+                    {contribution !== null && contribution < 0 ? <span className="absolute inset-y-0 right-1/2 rounded-l-full bg-amber-300" style={{ width: `${width}%` }} /> : null}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      <article className="min-w-0">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-stealth-700 px-4 py-4 md:px-5">
+          <div>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h2 className="text-2xl font-semibold text-stealth-100">{selectedImpact?.report ?? "Report effect"}</h2>
+              {selectedImpact ? <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${selectedImpact.confidence === "Insufficient" ? "border-stealth-600 bg-stealth-800 text-stealth-300" : "border-sky-300/40 bg-sky-300/[0.08] text-sky-100"}`}>{selectedImpact.confidence} evidence</span> : null}
+            </div>
+            <p className="mt-1 text-sm text-stealth-400">Historical report pressure and subsequent {data.commodity.name} futures returns</p>
+          </div>
+          {selectedCatalog ? <div className="flex gap-2"><a href={selectedCatalog.source_url} target="_blank" rel="noreferrer" className="field-button field-button-primary gap-2">Source <ExternalLink size={14} aria-hidden="true" /></a><a href={selectedCatalog.archive_url} target="_blank" rel="noreferrer" className="field-button field-button-secondary gap-2">Archive <ExternalLink size={14} aria-hidden="true" /></a></div> : null}
+        </div>
+
+        {selectedImpact ? <div className="px-4 py-4 md:px-5">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-3 border-b border-stealth-700 pb-3 sm:grid-cols-4">
+            <div><p className="text-xs text-stealth-500">Current pressure</p><p className="mt-1 text-lg font-semibold text-stealth-100">{pressureLabel(selectedImpact.signal_z)}</p><p className="text-xs text-stealth-400">{formatSigned(selectedImpact.signal_z, "σ")}</p></div>
+            <div><p className="text-xs text-stealth-500">Latest next close</p><p className="mt-1 text-xl font-semibold tabular-nums text-stealth-100">{formatSigned(selectedImpact.latest_reaction_1d_pct, "%")}</p><p className="text-xs text-stealth-400">Observed</p></div>
+            <div><p className="text-xs text-stealth-500">Five-session model</p><p className="mt-1 text-xl font-semibold tabular-nums text-stealth-100">{formatSigned(selectedImpact.model_5d_pct, "%")}</p><p className="text-xs text-stealth-400">Before blend weight</p></div>
+            <div><p className="text-xs text-stealth-500">Combined contribution</p><p className="mt-1 text-xl font-semibold tabular-nums text-sky-100">{formatSigned(selectedImpact.contribution_5d_pct, "%")}</p><p className="text-xs text-stealth-400">Weight {formatValue(selectedImpact.model_weight * 100, 0)}%</p></div>
+          </div>
+
+          <div className="mt-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div><h3 className="text-sm font-semibold text-stealth-100">Connected reports</h3><p className="mt-0.5 text-xs text-stealth-500">Current directional agreement; arrows show information flow, not causation.</p></div>
+              <span className="text-xs text-stealth-500">{related.length} links</span>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {related.length ? related.map((relationship) => {
+                const otherId = relationship.source_report_id === selectedImpact.report_id ? relationship.target_report_id : relationship.source_report_id;
+                const sourceSelected = relationship.source_report_id === selectedImpact.report_id;
+                return <button key={`${relationship.source_report_id}:${relationship.target_report_id}`} type="button" onClick={() => onSelectReport(otherId)} title={relationship.description} className={`inline-flex min-h-11 items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${relationshipTone(relationship.status)}`}><span>{sourceSelected ? selectedImpact.report : relationship.source_report}</span><ArrowRight size={13} aria-hidden="true" /><span>{sourceSelected ? relationship.target_report : selectedImpact.report}</span><span className="font-normal opacity-80">· {relationship.status}</span></button>;
+              }) : <p className="text-xs text-stealth-500">No direct report-to-report link is defined for this selection.</p>}
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <div className="flex flex-wrap items-end justify-between gap-2">
+              <div><h3 className="text-sm font-semibold text-stealth-100">Report pressure vs. five-session futures return</h3><p className="mt-0.5 text-xs text-stealth-500">Each point is one published release · x = standardized report pressure · y = subsequent futures return</p></div>
+              <span className="text-xs text-stealth-400">n={selectedImpact.historical_5d.sample_size} · r={correlation === null ? "—" : correlation.toFixed(2)}</span>
+            </div>
+            {selectedImpact.historical_5d.sample_size >= 8 ? <div className="mt-2 h-[250px] min-w-0 bg-stealth-900/25 md:h-[315px]" aria-label={`${selectedImpact.report} report pressure relationship with five-session futures returns`}>
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                <ScatterChart margin={{ top: 12, right: 14, bottom: 24, left: 4 }} accessibilityLayer aria-label={`${selectedImpact.report} report pressure and five-session futures return by release`}>
+                  <CartesianGrid stroke="rgba(98,117,142,0.34)" />
+                  <XAxis type="number" dataKey="signal_z" name="Report pressure" unit="σ" domain={["auto", "auto"]} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} label={{ value: "Report pressure (σ)", position: "insideBottom", offset: -14, fill: "#91a4bd", fontSize: 12 }} />
+                  <YAxis type="number" dataKey="reaction_5d_pct" name="Five-session return" unit="%" domain={["auto", "auto"]} width={54} stroke="#62758e" tick={{ fill: "#b7c3d3", fontSize: 12 }} />
+                  <ReferenceLine x={0} stroke="#91a4bd" strokeDasharray="4 4" />
+                  <ReferenceLine y={0} stroke="#91a4bd" strokeDasharray="4 4" />
+                  <Tooltip content={<ImpactTooltip />} />
+                  <Scatter name="Historical releases" data={historicalScatter} fill="#8ebdea" opacity={0.7} isAnimationActive={false} />
+                  {latestScatter ? <Scatter name="Latest complete release" data={[latestScatter]} fill="#f3cb69" stroke="#0e1520" strokeWidth={2} isAnimationActive={false} /> : null}
+                </ScatterChart>
+              </ResponsiveContainer>
+            </div> : <div className="mt-2 flex h-[250px] items-center justify-center border-y border-stealth-700 px-6 text-center md:h-[315px]"><div><p className="text-sm font-semibold text-stealth-200">Historical model withheld</p><p className="mx-auto mt-2 max-w-lg text-xs leading-5 text-stealth-500">{selectedImpact.report} has {selectedImpact.historical_5d.sample_size} complete five-session observations. At least 8 are required before plotting or contributing to the scenario.</p></div></div>}
+            {scatterData.length ? <details className="group mt-2 border-y border-stealth-700">
+              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 py-2 text-xs font-semibold text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><span>View plotted release values</span><span className="group-open:hidden">Open</span><span className="hidden group-open:inline">Close</span></summary>
+              <div className="max-h-64 overflow-auto border-t border-stealth-700">
+                <table className="w-full min-w-[31rem] text-left text-xs">
+                  <caption className="sr-only">{selectedImpact.report} plotted historical values</caption>
+                  <thead className="sticky top-0 bg-stealth-900 text-stealth-400"><tr><th className="px-2 py-2 font-semibold">Release</th><th className="px-2 py-2 text-right font-semibold">Pressure</th><th className="px-2 py-2 text-right font-semibold">5-session return</th><th className="px-2 py-2 font-semibold">Point</th></tr></thead>
+                  <tbody className="divide-y divide-stealth-700 text-stealth-300">{[...scatterData].reverse().map((observation) => <tr key={`${observation.release_date}:${observation.price_event_date}`}><td className="px-2 py-2 tabular-nums">{formatDate(observation.release_date)}</td><td className="px-2 py-2 text-right tabular-nums">{formatSigned(observation.signal_z, "σ")}</td><td className="px-2 py-2 text-right tabular-nums">{formatSigned(observation.reaction_5d_pct, "%")}</td><td className="px-2 py-2">{observation === latestScatter ? "Latest complete release" : "Historical release"}</td></tr>)}</tbody>
+                </table>
+              </div>
+            </details> : null}
+            <p className="mt-3 text-sm leading-6 text-stealth-300"><strong className="font-semibold text-stealth-100">Read:</strong> {selectedImpact.signal_basis ?? "A comparable report pressure is unavailable."} {alignment !== null ? `${formatValue(alignment * 100, 0)}% of comparable historical releases moved in the same direction over five sessions.` : "Historical directional alignment is not yet stable enough to report."}</p>
+          </div>
+        </div> : null}
+
+        <details className="group border-t border-stealth-700">
+          <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-3 px-4 py-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 md:px-5"><span className="flex items-center gap-2.5"><Info size={16} className="text-sky-300" aria-hidden="true" /><span><span className="block text-sm font-semibold text-stealth-100">Impact method</span><span className="block text-xs text-stealth-500">Timing, weighting, uncertainty, and interpretation limits</span></span></span><span className="text-xs font-semibold text-sky-200 group-open:hidden">Open</span><span className="hidden text-xs font-semibold text-sky-200 group-open:inline">Close</span></summary>
+          <dl className="space-y-2 border-t border-stealth-700 px-4 py-4 text-sm leading-6 md:px-5">{Object.entries(model.methodology).map(([key, value]) => <div key={key}><dt className="inline font-semibold capitalize text-stealth-200">{key}: </dt><dd className="inline text-stealth-400">{value}</dd></div>)}</dl>
+        </details>
+      </article>
+    </section>
+  );
+}
+
 export default function AgricultureReportDesk() {
   const [symbol, setSymbol] = useState("ZC");
   const [years, setYears] = useState<1 | 3 | 5 | 10 | 150>(3);
+  const [deskView, setDeskView] = useState<"impact" | "brief">("impact");
   const [metric, setMetric] = useState("ending_stocks");
   const [selectedReportId, setSelectedReportId] = useState("wasde");
   const [showFutures, setShowFutures] = useState(false);
@@ -739,6 +1016,10 @@ export default function AgricultureReportDesk() {
           <p className="mt-1 text-sm text-stealth-300">One brief across every major USDA release for {data.commodity.name}.</p>
         </div>
         <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <span className="block text-xs font-semibold text-stealth-400">View</span>
+            <div className="mt-1"><SegmentedControl label="Report desk view" value={deskView} options={[{ value: "impact", label: "Price impact" }, { value: "brief", label: "Market brief" }]} onChange={setDeskView} accent="sky" /></div>
+          </div>
           <label className="min-w-[12rem] flex-1 sm:flex-none">
             <span className="block text-xs font-semibold text-stealth-400">Commodity</span>
             <select value={symbol} onChange={(event) => { setSymbol(event.target.value); setSelectedReleaseDate(""); setSelectedArchiveReleaseDate(""); }} className={INPUT_CLASS}>
@@ -761,6 +1042,9 @@ export default function AgricultureReportDesk() {
         </div>
       ) : null}
 
+      {deskView === "impact" ? (
+        <PriceImpactWorkspace data={data} selectedReportId={selectedReportId} onSelectReport={(reportId) => { setSelectedReportId(reportId); setSelectedArchiveReleaseDate(""); }} />
+      ) : (
       <section className="surface-card-strong min-w-0 overflow-hidden lg:grid lg:grid-cols-[minmax(20rem,0.72fr)_minmax(0,1.55fr)]" aria-label={`${data.commodity.name} agriculture briefing`}>
         <div className="border-b border-stealth-700 lg:border-b-0 lg:border-r">
           <div className="px-4 py-4 md:px-5">
@@ -917,6 +1201,7 @@ export default function AgricultureReportDesk() {
           </details> : null}
         </article>
       </section>
+      )}
     </div>
   );
 }

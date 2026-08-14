@@ -15,6 +15,7 @@ from bisect import bisect_left
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
+from math import sqrt
 from pathlib import Path
 from statistics import mean, pstdev
 from threading import Lock
@@ -75,14 +76,14 @@ class WasdeArchiveSource:
 
 
 COMMODITIES: dict[str, dict[str, str]] = {
-    "ZC": {"name": "Corn", "usda": "Corn", "ticker": "ZC=F"},
-    "ZS": {"name": "Soybeans", "usda": "Oilseed, Soybean", "ticker": "ZS=F"},
-    "ZW": {"name": "Chicago Wheat", "usda": "Wheat", "ticker": "ZW=F"},
-    "KE": {"name": "KC Hard Red Winter Wheat", "usda": "Wheat", "ticker": "KE=F"},
-    "MW": {"name": "Minneapolis Spring Wheat", "usda": "Wheat", "ticker": "MWE=F"},
-    "ZO": {"name": "Oats", "usda": "Oats", "ticker": "ZO=F"},
-    "ZR": {"name": "Rough Rice", "usda": "Rice", "ticker": "ZR=F"},
-    "CT": {"name": "Cotton", "usda": "Cotton", "ticker": "CT=F"},
+    "ZC": {"name": "Corn", "usda": "Corn", "ticker": "ZC=F", "price_unit": "cents per bushel"},
+    "ZS": {"name": "Soybeans", "usda": "Oilseed, Soybean", "ticker": "ZS=F", "price_unit": "cents per bushel"},
+    "ZW": {"name": "Chicago Wheat", "usda": "Wheat", "ticker": "ZW=F", "price_unit": "cents per bushel"},
+    "KE": {"name": "KC Hard Red Winter Wheat", "usda": "Wheat", "ticker": "KE=F", "price_unit": "cents per bushel"},
+    "MW": {"name": "Minneapolis Spring Wheat", "usda": "Wheat", "ticker": "MWE=F", "price_unit": "cents per bushel"},
+    "ZO": {"name": "Oats", "usda": "Oats", "ticker": "ZO=F", "price_unit": "cents per bushel"},
+    "ZR": {"name": "Rough Rice", "usda": "Rice", "ticker": "ZR=F", "price_unit": "dollars per hundredweight"},
+    "CT": {"name": "Cotton", "usda": "Cotton", "ticker": "CT=F", "price_unit": "cents per pound"},
 }
 
 METRICS: tuple[dict[str, Any], ...] = (
@@ -241,6 +242,27 @@ REPORT_CATALOG: tuple[dict[str, Any], ...] = (
         "source_url": "https://www.cftc.gov/MarketReports/CommitmentsofTraders/index.htm",
         "archive_url": "https://publicreporting.cftc.gov/Commitments-of-Traders/Legacy_All/srt6-5q2f",
     },
+)
+
+REPORT_IMPACT_DEFINITIONS: dict[str, dict[str, Any]] = {
+    "wasde": {"channel": "Balance sheet", "half_life_days": 45},
+    "crop_production": {"channel": "Supply", "half_life_days": 45},
+    "crop_progress": {"channel": "Supply", "half_life_days": 14},
+    "export_sales": {"channel": "Demand", "half_life_days": 14},
+    "export_inspections": {"channel": "Demand", "half_life_days": 14},
+    "grain_stocks": {"channel": "Balance sheet", "half_life_days": 120},
+    "acreage": {"channel": "Supply", "half_life_days": 400},
+    "cot": {"channel": "Positioning", "half_life_days": 14},
+}
+
+REPORT_RELATIONSHIPS: tuple[dict[str, str], ...] = (
+    {"source_report_id": "acreage", "target_report_id": "crop_production", "kind": "sets the planted base for"},
+    {"source_report_id": "crop_progress", "target_report_id": "crop_production", "kind": "leads the yield read in"},
+    {"source_report_id": "crop_production", "target_report_id": "wasde", "kind": "feeds the supply side of"},
+    {"source_report_id": "grain_stocks", "target_report_id": "wasde", "kind": "checks implied disappearance in"},
+    {"source_report_id": "export_sales", "target_report_id": "export_inspections", "kind": "precedes physical shipments in"},
+    {"source_report_id": "export_inspections", "target_report_id": "wasde", "kind": "tests the export assumptions in"},
+    {"source_report_id": "cot", "target_report_id": "wasde", "kind": "shows whether positioning confirms"},
 )
 
 _WASDE_2026_DATES = (
@@ -970,6 +992,369 @@ def _attach_reactions(series: list[dict[str, Any]], prices: list[dict[str, Any]]
             )
 
 
+def _effective_price_event_date(report_id: str, observation_date: date) -> date:
+    """Map period-ending datasets to the session when traders received them."""
+    offsets = {
+        "export_sales": 7,  # FAS week ending Thursday, published the following Thursday.
+        "export_inspections": 4,  # FGIS week ending Thursday, published Monday.
+        "cot": 3,  # Tuesday positions, published Friday.
+    }
+    return observation_date + timedelta(days=offsets.get(report_id, 0))
+
+
+def _report_price_reaction(
+    report_id: str,
+    observation_date: date,
+    price_dates: list[date],
+    closes: list[float],
+) -> dict[str, Any]:
+    event_date = _effective_price_event_date(report_id, observation_date)
+    event_index = bisect_left(price_dates, event_date)
+    if event_index >= len(closes):
+        return {
+            "price_event_date": event_date.isoformat(),
+            "reaction_1d_pct": None,
+            "reaction_5d_pct": None,
+        }
+
+    exact_session = price_dates[event_index] == event_date
+    after_close = report_id == "crop_progress" and exact_session
+    if after_close:
+        base_index = event_index
+        response_index = event_index + 1
+        day_five_index = event_index + 5
+    else:
+        base_index = event_index - 1
+        response_index = event_index
+        day_five_index = event_index + 4
+    if base_index < 0 or response_index >= len(closes):
+        reaction_1d = None
+    else:
+        base = closes[base_index]
+        reaction_1d = round((closes[response_index] / base - 1) * 100, 3) if base else None
+    if base_index < 0 or day_five_index >= len(closes):
+        reaction_5d = None
+    else:
+        base = closes[base_index]
+        reaction_5d = round((closes[day_five_index] / base - 1) * 100, 3) if base else None
+    return {
+        "price_event_date": event_date.isoformat(),
+        "reaction_1d_pct": reaction_1d,
+        "reaction_5d_pct": reaction_5d,
+    }
+
+
+def _metric_value(release: dict[str, Any], metric_id: str) -> float | None:
+    metric = _metric_by_id(release, metric_id)
+    return _safe_float(metric.get("value")) if metric else None
+
+
+def _non_wasde_signal_inputs(report_id: str, history: dict[str, Any]) -> list[dict[str, Any]]:
+    releases = list(reversed(history.get("releases", [])))
+    primary_metric_id = (history.get("analysis") or {}).get("primary_metric_id")
+    rows: list[dict[str, Any]] = []
+    primary_values: list[float] = []
+    for release in releases:
+        raw_signal: float | None = None
+        basis = ""
+        primary_value = _metric_value(release, primary_metric_id) if primary_metric_id else None
+        if report_id == "crop_production":
+            year_change = _metric_value(release, "production_yoy_pct")
+            if year_change is not None:
+                raw_signal = -year_change
+                basis = "Production versus the year-ago crop; lower supply is price-supportive"
+            elif primary_value is not None and primary_values:
+                raw_signal = -(primary_value / primary_values[-1] - 1) * 100 if primary_values[-1] else None
+                basis = "Production revision versus the prior report; lower supply is price-supportive"
+        elif report_id == "crop_progress" and primary_metric_id:
+            metric = _metric_by_id(release, primary_metric_id)
+            if metric and primary_value is not None:
+                benchmark = _safe_float(metric.get("five_year_average"))
+                basis_label = "five-year average"
+                if benchmark is None:
+                    benchmark = _safe_float(metric.get("previous_year"))
+                    basis_label = "year-ago condition"
+                if benchmark is None:
+                    benchmark = _safe_float(metric.get("previous_week"))
+                    basis_label = "prior-week condition"
+                if benchmark is not None:
+                    raw_signal = -(primary_value - benchmark)
+                    basis = f"Crop condition versus the {basis_label}; weaker condition is price-supportive"
+        elif report_id in {"export_sales", "export_inspections"} and primary_value is not None:
+            baseline_values = primary_values[-4:]
+            if len(baseline_values) >= 4:
+                raw_signal = primary_value - mean(baseline_values)
+                basis = "Latest demand flow versus the prior four-report pace; stronger demand is price-supportive"
+        elif report_id == "grain_stocks":
+            year_change = _metric_value(release, "total_stocks_yoy_pct")
+            if year_change is not None:
+                raw_signal = -year_change
+                basis = "Stocks versus the comparable year-ago checkpoint; lower inventories are price-supportive"
+        elif report_id == "acreage":
+            year_change = _metric_value(release, "planted_area_yoy_pct")
+            if year_change is not None:
+                raw_signal = -year_change
+                basis = "Planted area versus the prior year; fewer acres are price-supportive"
+        elif report_id == "cot" and primary_value is not None and primary_values:
+            raw_signal = primary_value - primary_values[-1]
+            basis = "Weekly change in noncommercial net positioning; increased net length is price-supportive context"
+
+        if primary_value is not None:
+            primary_values.append(primary_value)
+        if raw_signal is not None:
+            rows.append({
+                "release_date": release["release_date"],
+                "raw_signal": raw_signal,
+                "signal_basis": basis,
+            })
+
+    raw_values = [row["raw_signal"] for row in rows]
+    signal_mean = mean(raw_values) if raw_values else 0.0
+    scale = sqrt(mean([(value - signal_mean) ** 2 for value in raw_values])) if raw_values else 0.0
+    for row in rows:
+        row["signal_z"] = round(max(-3.0, min(3.0, (row["raw_signal"] - signal_mean) / scale)), 3) if scale > 0 else None
+    return rows
+
+
+def _wasde_signal_inputs(series: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, list[float]] = {}
+    for layer in series:
+        for point in layer.get("points", []):
+            signal = point.get("bullish_signal_z")
+            if signal is not None:
+                grouped.setdefault(point["release_date"], []).append(float(signal))
+    return [
+        {
+            "release_date": released,
+            "raw_signal": round(mean(signals), 3),
+            "signal_z": round(mean(signals), 3),
+            "signal_basis": "Average of standardized WASDE supply, demand, and yield revisions",
+        }
+        for released, signals in sorted(grouped.items())
+    ]
+
+
+def _relationship_statistics(observations: list[dict[str, Any]], reaction_key: str) -> dict[str, Any]:
+    pairs = [
+        (float(row["signal_z"]), float(row[reaction_key]))
+        for row in observations
+        if row.get("signal_z") is not None and row.get(reaction_key) is not None
+    ]
+    if not pairs:
+        return {"sample_size": 0, "correlation": None, "slope": None, "alignment_rate": None, "residual_pct": None}
+    xs = [pair[0] for pair in pairs]
+    ys = [pair[1] for pair in pairs]
+    x_mean = mean(xs)
+    y_mean = mean(ys)
+    x_variance = sum((value - x_mean) ** 2 for value in xs)
+    y_variance = sum((value - y_mean) ** 2 for value in ys)
+    correlation = (
+        sum((x - x_mean) * (y - y_mean) for x, y in pairs) / sqrt(x_variance * y_variance)
+        if x_variance > 0 and y_variance > 0
+        else None
+    )
+    slope_denominator = sum(x * x for x in xs)
+    slope = sum(x * y for x, y in pairs) / slope_denominator if slope_denominator > 0 else None
+    aligned = [1.0 if x * y > 0 else 0.0 for x, y in pairs if abs(x) >= 0.1 and abs(y) >= 0.05]
+    residual = (
+        sqrt(mean([(y - slope * x) ** 2 for x, y in pairs]))
+        if slope is not None
+        else None
+    )
+    return {
+        "sample_size": len(pairs),
+        "correlation": round(correlation, 3) if correlation is not None else None,
+        "slope": round(slope, 4) if slope is not None else None,
+        "alignment_rate": round(mean(aligned), 3) if aligned else None,
+        "residual_pct": round(residual, 3) if residual is not None else None,
+    }
+
+
+def _impact_confidence(sample_size: int, correlation: float | None) -> tuple[str, float]:
+    if sample_size < 8 or correlation is None:
+        return "Insufficient", 0.0
+    strength = abs(correlation)
+    sample_factor = min(1.0, sample_size / 24)
+    reliability = sample_factor * min(1.0, strength / 0.5)
+    if sample_size >= 20 and strength >= 0.35:
+        label = "Established"
+    elif strength >= 0.2:
+        label = "Moderate"
+    else:
+        label = "Weak"
+    return label, round(reliability, 3)
+
+
+def _same_session_effective_weights(weighted_reports: list[dict[str, Any]]) -> dict[str, float]:
+    event_groups: dict[str, list[dict[str, Any]]] = {}
+    for report in weighted_reports:
+        event_key = report.get("price_event_date") or report["report_id"]
+        event_groups.setdefault(event_key, []).append(report)
+    effective_weights: dict[str, float] = {}
+    for event_reports in event_groups.values():
+        raw_weights = [report["reliability"] * report["freshness"] for report in event_reports]
+        group_weight = max(raw_weights)
+        group_total = sum(raw_weights)
+        for report, raw_weight in zip(event_reports, raw_weights, strict=True):
+            effective_weights[report["report_id"]] = group_weight * raw_weight / group_total if group_total else 0.0
+    return effective_weights
+
+
+def _build_impact_model(
+    series: list[dict[str, Any]],
+    report_histories: dict[str, dict[str, Any]],
+    prices: list[dict[str, Any]],
+    commodity: dict[str, str],
+) -> dict[str, Any]:
+    price_rows = [row for row in prices if row.get("value") is not None]
+    price_dates = [date.fromisoformat(row["date"]) for row in price_rows]
+    closes = [float(row["value"]) for row in price_rows]
+    catalog_by_id = {report["id"]: report for report in REPORT_CATALOG}
+    reports: list[dict[str, Any]] = []
+    latest_signals: dict[str, float | None] = {}
+    latest_price_date = price_dates[-1] if price_dates else None
+
+    for report_id, definition in REPORT_IMPACT_DEFINITIONS.items():
+        signal_rows = (
+            _wasde_signal_inputs(series)
+            if report_id == "wasde"
+            else _non_wasde_signal_inputs(report_id, report_histories.get(report_id, {}))
+        )
+        observations = []
+        for row in signal_rows:
+            released = date.fromisoformat(row["release_date"])
+            observations.append({
+                **row,
+                **_report_price_reaction(report_id, released, price_dates, closes),
+            })
+        latest = observations[-1] if observations else None
+        stats_1d = _relationship_statistics(observations, "reaction_1d_pct")
+        stats_5d = _relationship_statistics(observations, "reaction_5d_pct")
+        confidence, reliability = _impact_confidence(stats_5d["sample_size"], stats_5d["correlation"])
+        signal_z = latest.get("signal_z") if latest else None
+        latest_signals[report_id] = signal_z
+        model_5d = (
+            round(float(stats_5d["slope"]) * float(signal_z), 3)
+            if confidence != "Insufficient" and stats_5d["slope"] is not None and signal_z is not None
+            else None
+        )
+        event_date = date.fromisoformat(latest["price_event_date"]) if latest else None
+        age_days = max(0, (latest_price_date - event_date).days) if latest_price_date and event_date else None
+        freshness = (
+            round(0.5 ** (age_days / definition["half_life_days"]), 3)
+            if age_days is not None
+            else 0.0
+        )
+        reports.append({
+            "report_id": report_id,
+            "report": catalog_by_id[report_id]["name"],
+            "channel": definition["channel"],
+            "latest_release_date": latest.get("release_date") if latest else None,
+            "price_event_date": latest.get("price_event_date") if latest else None,
+            "signal_z": signal_z,
+            "signal_basis": latest.get("signal_basis") if latest else None,
+            "latest_reaction_1d_pct": latest.get("reaction_1d_pct") if latest else None,
+            "latest_reaction_5d_pct": latest.get("reaction_5d_pct") if latest else None,
+            "historical_1d": stats_1d,
+            "historical_5d": stats_5d,
+            "model_5d_pct": model_5d,
+            "contribution_5d_pct": None,
+            "confidence": confidence,
+            "reliability": reliability,
+            "freshness": freshness,
+            "observations": observations,
+        })
+
+    weighted_reports = [
+        report for report in reports
+        if report["model_5d_pct"] is not None and report["reliability"] > 0 and report["freshness"] > 0
+    ]
+    effective_weights = _same_session_effective_weights(weighted_reports)
+    total_weight = sum(effective_weights.values())
+    for report in weighted_reports:
+        normalized_weight = effective_weights[report["report_id"]] / total_weight if total_weight else 0.0
+        report["contribution_5d_pct"] = round(report["model_5d_pct"] * normalized_weight, 3)
+        report["model_weight"] = round(normalized_weight, 3)
+    for report in reports:
+        report.setdefault("model_weight", 0.0)
+
+    projected_pct = round(sum(report["contribution_5d_pct"] or 0.0 for report in reports), 3) if weighted_reports else None
+    uncertainty_pct = (
+        round(sqrt(sum(
+            ((report["historical_5d"]["residual_pct"] or 0.0) * report["model_weight"]) ** 2
+            for report in weighted_reports
+        )), 3)
+        if weighted_reports
+        else None
+    )
+    current_price = closes[-1] if closes else None
+    projected_price = current_price * (1 + projected_pct / 100) if current_price is not None and projected_pct is not None else None
+    lower_price = (
+        current_price * (1 + (projected_pct - uncertainty_pct) / 100)
+        if current_price is not None and projected_pct is not None and uncertainty_pct is not None
+        else None
+    )
+    upper_price = (
+        current_price * (1 + (projected_pct + uncertainty_pct) / 100)
+        if current_price is not None and projected_pct is not None and uncertainty_pct is not None
+        else None
+    )
+    if projected_pct is None:
+        direction = "Unavailable"
+    elif projected_pct >= 0.15:
+        direction = "Price-supportive"
+    elif projected_pct <= -0.15:
+        direction = "Price-restrictive"
+    else:
+        direction = "Balanced"
+
+    relationships = []
+    for relationship in REPORT_RELATIONSHIPS:
+        source_signal = latest_signals.get(relationship["source_report_id"])
+        target_signal = latest_signals.get(relationship["target_report_id"])
+        if source_signal is None or target_signal is None:
+            status = "Unavailable"
+        elif abs(source_signal) < 0.25 or abs(target_signal) < 0.25:
+            status = "Mixed"
+        elif source_signal * target_signal > 0:
+            status = "Confirming"
+        else:
+            status = "Conflicting"
+        source_name = catalog_by_id[relationship["source_report_id"]]["name"]
+        target_name = catalog_by_id[relationship["target_report_id"]]["name"]
+        relationships.append({
+            **relationship,
+            "source_report": source_name,
+            "target_report": target_name,
+            "status": status,
+            "description": f"{source_name} {relationship['kind']} {target_name}; their latest price-pressure signals are {status.lower()}.",
+        })
+
+    return {
+        "as_of": latest_price_date.isoformat() if latest_price_date else None,
+        "price_unit": commodity["price_unit"],
+        "horizon_sessions": 5,
+        "aggregate": {
+            "direction": direction,
+            "current_price": round(current_price, 4) if current_price is not None else None,
+            "projected_5d_pct": projected_pct,
+            "projected_5d_price": round(projected_price, 4) if projected_price is not None else None,
+            "lower_5d_price": round(lower_price, 4) if lower_price is not None else None,
+            "upper_5d_price": round(upper_price, 4) if upper_price is not None else None,
+            "uncertainty_5d_pct": uncertainty_pct,
+            "contributors_included": len(weighted_reports),
+        },
+        "reports": reports,
+        "relationships": relationships,
+        "methodology": {
+            "signal": "Each report is oriented so positive means price-supportive, then scaled against its own published history.",
+            "reaction": "Next-close and five-session reactions use the trading session when the report became public; period-ending datasets are shifted to their publication date.",
+            "scenario": "The five-session scenario is a freshness- and evidence-weighted blend of historical report/return associations, not a forecast or causal estimate. Reports released into the same price session share one event weight to limit double counting.",
+            "uncertainty": "The overlap-sensitive range combines each included model's historical residual variation after same-session event weighting; it does not estimate cross-report covariance and is not a probability interval.",
+        },
+    }
+
+
 def _next_release_weekday(reference: datetime, weekday: int, release_time: time) -> date:
     offset = (weekday - reference.weekday()) % 7
     candidate = reference.date() + timedelta(days=offset)
@@ -1140,6 +1525,7 @@ def build_report_desk(symbol: str = "ZC", years: int = 2, selected_metric: str =
                     "coverage_label": "Chart + history",
                 })
         report_catalog.append(item)
+    impact_model = _build_impact_model(series, report_histories, prices, commodity)
     return {
         "as_of": now.isoformat(),
         "commodity": {"symbol": symbol, **commodity},
@@ -1163,6 +1549,7 @@ def build_report_desk(symbol: str = "ZC", years: int = 2, selected_metric: str =
         "metrics": [{key: value for key, value in metric.items() if key != "attribute"} for metric in METRICS],
         "series": series,
         "price_history": prices,
+        "impact_model": impact_model,
         "takeaways": _build_takeaways(series, selected_metric),
         "methodology": {
             "actuals": "USDA WASDE CSVs plus official NASS, FAS, FGIS, and CFTC archives, preserved by the source's release or report date.",

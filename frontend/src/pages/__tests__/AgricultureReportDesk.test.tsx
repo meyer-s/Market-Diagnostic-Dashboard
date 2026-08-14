@@ -20,6 +20,8 @@ vi.mock("recharts", () => {
     LineChart: Shell,
     ReferenceLine: () => null,
     ResponsiveContainer: Shell,
+    Scatter: ({ name }: { name?: string }) => name ? <span>{name}</span> : null,
+    ScatterChart: Shell,
     Tooltip: () => null,
     XAxis: () => null,
     YAxis: () => null,
@@ -43,8 +45,8 @@ const point = {
 
 const payload = {
   as_of: "2026-08-13T12:00:00-04:00",
-  commodity: { symbol: "ZC", name: "Corn", usda: "Corn", ticker: "ZC=F" },
-  commodities: [{ symbol: "ZC", name: "Corn", usda: "Corn", ticker: "ZC=F" }],
+  commodity: { symbol: "ZC", name: "Corn", usda: "Corn", ticker: "ZC=F", price_unit: "cents per bushel" },
+  commodities: [{ symbol: "ZC", name: "Corn", usda: "Corn", ticker: "ZC=F", price_unit: "cents per bushel" }],
   selected_metric: "ending_stocks",
   years: 2,
   history_coverage: { structured_start_date: "2010-04-09", requested_start_date: "2024-08-13", observed_start_date: "2024-09-12", observed_end_date: "2026-08-12", release_count: 24, complete: true, source: "USDA WASDE as-reported CSV archive" },
@@ -111,6 +113,19 @@ const payload = {
   metrics: [{ id: "ending_stocks", label: "Ending stocks", orientation: -1, bullish_when: "lower" }],
   series: [{ id: "wasde:ending_stocks", report_id: "wasde", report: "WASDE", metric_id: "ending_stocks", label: "Ending stocks", bullish_when: "lower", unit: "Million Bushels", points: [point] }],
   price_history: [{ date: "2026-08-12", value: 410, rebased: 100, ticker: "ZC=F" }],
+  impact_model: {
+    as_of: "2026-08-13",
+    price_unit: "cents per bushel",
+    horizon_sessions: 5,
+    aggregate: { direction: "Price-supportive", current_price: 410, projected_5d_pct: 1.25, projected_5d_price: 415.125, lower_5d_price: 402, upper_5d_price: 428, uncertainty_5d_pct: 3.1, contributors_included: 2 },
+    reports: [
+      { report_id: "wasde", report: "WASDE", channel: "Balance sheet", latest_release_date: "2026-08-12", price_event_date: "2026-08-12", signal_z: 1.2, signal_basis: "Average standardized WASDE revisions", latest_reaction_1d_pct: 1.4, latest_reaction_5d_pct: 2.1, historical_1d: { sample_size: 12, correlation: 0.32, slope: 0.8, alignment_rate: 0.67, residual_pct: 1.5 }, historical_5d: { sample_size: 12, correlation: 0.4, slope: 1.1, alignment_rate: 0.67, residual_pct: 2.6 }, model_5d_pct: 1.32, contribution_5d_pct: 0.8, confidence: "Moderate", reliability: 0.4, freshness: 1, model_weight: 0.6, observations: Array.from({ length: 12 }, (_, index) => ({ release_date: `2025-${String(index + 1).padStart(2, "0")}-12`, price_event_date: `2025-${String(index + 1).padStart(2, "0")}-12`, raw_signal: index % 2 ? 1 : -1, signal_z: index % 2 ? 1 : -1, signal_basis: "Average standardized WASDE revisions", reaction_1d_pct: index % 2 ? 0.5 : -0.4, reaction_5d_pct: index % 2 ? 1.2 : -0.8 })) },
+      { report_id: "crop_progress", report: "Crop Progress", channel: "Supply", latest_release_date: "2026-08-10", price_event_date: "2026-08-10", signal_z: 0.7, signal_basis: "Crop condition versus year ago", latest_reaction_1d_pct: 0.4, latest_reaction_5d_pct: null, historical_1d: { sample_size: 18, correlation: 0.22, slope: 0.4, alignment_rate: 0.56, residual_pct: 1.4 }, historical_5d: { sample_size: 18, correlation: 0.25, slope: 0.7, alignment_rate: 0.61, residual_pct: 2.2 }, model_5d_pct: 0.49, contribution_5d_pct: 0.45, confidence: "Moderate", reliability: 0.3, freshness: 0.9, model_weight: 0.4, observations: [] },
+      { report_id: "cot", report: "Commitments of Traders", channel: "Positioning", latest_release_date: "2026-08-17", price_event_date: "2026-08-20", signal_z: null, signal_basis: null, latest_reaction_1d_pct: null, latest_reaction_5d_pct: null, historical_1d: { sample_size: 0, correlation: null, slope: null, alignment_rate: null, residual_pct: null }, historical_5d: { sample_size: 0, correlation: null, slope: null, alignment_rate: null, residual_pct: null }, model_5d_pct: null, contribution_5d_pct: null, confidence: "Insufficient", reliability: 0, freshness: 0, model_weight: 0, observations: [] },
+    ],
+    relationships: [{ source_report_id: "crop_progress", target_report_id: "wasde", source_report: "Crop Progress", target_report: "WASDE", kind: "leads", status: "Confirming", description: "Crop Progress leads WASDE; their latest signals confirm." }],
+    methodology: { signal: "Positive means supportive.", reaction: "Uses publication session.", scenario: "Historical association, not a causal forecast.", uncertainty: "Residual variation." },
+  },
   takeaways: [{ tone: "positive", title: "Standardized release read", body: "Supportive revision." }, { tone: "neutral", title: "Price confirmation", body: "Price aligned." }, { tone: "neutral", title: "Interpretation boundary", body: "Association is not causation." }],
   methodology: { actuals: "Official USDA", expectations: "User-entered only" },
   warnings: [],
@@ -128,6 +143,15 @@ describe("AgricultureReportDesk", () => {
     render(<MemoryRouter><AgricultureReportDesk /></MemoryRouter>);
 
     expect(screen.getByRole("heading", { name: "Agriculture Report Desk" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Combined report-price association" })).toBeTruthy();
+    expect(screen.getByText("Association-implied marker")).toBeTruthy();
+    expect(screen.getByText(/Association-based scenario, not a forecast/)).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Report price contributions" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Report pressure vs. five-session futures return" })).toBeTruthy();
+    expect(screen.getByText("View plotted release values")).toBeTruthy();
+    expect(screen.getByText(/n=12/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Market brief" }));
     expect(screen.getByRole("heading", { name: "The whole picture" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Report feed" })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Balance sheet/ })).toBeTruthy();
@@ -145,6 +169,7 @@ describe("AgricultureReportDesk", () => {
   it("renders imported release history and raw documents for non-WASDE reports", () => {
     render(<MemoryRouter><AgricultureReportDesk /></MemoryRouter>);
 
+    fireEvent.click(screen.getByRole("button", { name: "Market brief" }));
     fireEvent.click(screen.getByRole("button", { name: /Crop Progress/ }));
     expect(screen.getByText("Chart + history")).toBeTruthy();
     expect(screen.getByRole("button", { name: /Crop Progress.*61%/ })).toBeTruthy();
@@ -160,6 +185,7 @@ describe("AgricultureReportDesk", () => {
   it("opens the latest record when switching between families with overlapping dates", () => {
     render(<MemoryRouter><AgricultureReportDesk /></MemoryRouter>);
 
+    fireEvent.click(screen.getByRole("button", { name: "Market brief" }));
     fireEvent.click(screen.getByRole("button", { name: /Crop Progress/ }));
     expect(screen.getByLabelText("Release date")).toHaveProperty("value", "2026-08-10");
     fireEvent.click(screen.getByRole("button", { name: /Commitments of Traders/ }));
@@ -171,6 +197,7 @@ describe("AgricultureReportDesk", () => {
   it("saves user expectations locally", () => {
     render(<MemoryRouter><AgricultureReportDesk /></MemoryRouter>);
 
+    fireEvent.click(screen.getByRole("button", { name: "Market brief" }));
     fireEvent.change(screen.getByLabelText(/Expected ending stocks/i), { target: { value: "2050" } });
     fireEvent.click(screen.getByRole("button", { name: "Save expectation" }));
 
