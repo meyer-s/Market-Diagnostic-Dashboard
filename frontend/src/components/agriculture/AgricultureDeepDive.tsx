@@ -112,20 +112,6 @@ function sectorRead(score: number): { label: string; tone: string } {
   return { label: "Mixed momentum", tone: "text-amber-200" };
 }
 
-function trendRead(value: number | null): string {
-  if (value === null) return "Trend unavailable";
-  if (value >= 2) return "Rising";
-  if (value <= -2) return "Falling";
-  return "Range-bound";
-}
-
-function breadthRead(value: number | null): string {
-  if (value === null) return "Unavailable";
-  if (value >= 65) return "Broad";
-  if (value >= 45) return "Mixed";
-  return "Narrow";
-}
-
 function correlationMeaning(value: number): string {
   const strength = Math.abs(value) >= 0.7 ? "strongly" : Math.abs(value) >= 0.4 ? "moderately" : "loosely";
   return value >= 0 ? `move together ${strength}` : `move in opposite directions ${strength}`;
@@ -310,35 +296,33 @@ export default function AgricultureDeepDive({ data }: { data: AgricultureDeepDiv
     <div className="space-y-5 md:space-y-6">
       <section aria-labelledby="sector-ranking-heading">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
-          <h2 id="sector-ranking-heading" className="text-xl font-semibold text-white">Sector ranking</h2>
-          <p className="text-xs text-stealth-400">Momentum · 0–100</p>
+          <h2 id="sector-ranking-heading" className="text-xl font-semibold text-white">Sector mix</h2>
+          <p className="text-xs text-stealth-400">Weight order · score 0–100</p>
         </div>
 
-        <div className="mt-3 overflow-hidden rounded-2xl border border-stealth-700 bg-stealth-900/35">
-          <div className="hidden grid-cols-[minmax(190px,1.4fr)_minmax(120px,.8fr)_100px_120px_120px] gap-4 border-b border-stealth-700 px-4 py-2 text-xs font-semibold text-stealth-400 md:grid">
-            <span>Sector</span><span>Momentum</span><span>Weight</span><span>20 days</span><span>Breadth</span>
-          </div>
-          <div role="list" aria-label="Ranked agriculture sectors">
+        <div className="mt-3 overflow-hidden rounded-2xl border border-stealth-700 bg-stealth-700/80">
+          <div role="list" aria-label="Agriculture sector mix" className="grid grid-cols-2 gap-px sm:grid-cols-3 xl:grid-cols-6">
             {rankedGroups.map((group, index) => {
               const active = selectedGroup?.group === group.group;
               const read = sectorRead(group.group_composite);
               const change20 = group.changes["20d"];
               return (
-                <div key={group.group} role="listitem" className="border-b border-stealth-700/70 last:border-b-0">
+                <div key={group.group} role="listitem" className="bg-stealth-950/80">
                   <button
                     type="button"
                     aria-pressed={active}
                     onClick={() => setSelectedGroupKey(group.group)}
-                    className={`grid min-h-14 w-full grid-cols-2 gap-1.5 px-4 py-2.5 text-left transition focus-visible:relative focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 md:grid-cols-[minmax(190px,1.4fr)_minmax(120px,.8fr)_100px_120px_120px] md:items-center md:gap-4 ${active ? "bg-sky-400/10" : "hover:bg-stealth-800/60"}`}
+                    className={`min-h-16 w-full px-3 py-2.5 text-left transition focus-visible:relative focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 ${active ? "bg-sky-400/12" : "hover:bg-stealth-800/60"}`}
                   >
-                  <span className="col-span-2 flex min-w-0 items-center gap-3 md:col-span-1">
-                    <span className="w-5 shrink-0 text-xs tabular-nums text-stealth-500">{index + 1}</span>
-                    <span><span className="block font-semibold text-white">{group.label}</span><span className={`mt-0.5 block text-xs ${read.tone}`}>{read.label}</span></span>
-                  </span>
-                  <span className="text-sm text-stealth-200"><span className="mr-1 text-xs text-stealth-500 md:hidden">Score</span><span className="font-semibold tabular-nums text-white">{group.group_composite.toFixed(1)}</span>/100</span>
-                  <span className="text-sm tabular-nums text-stealth-200"><span className="mr-1 text-xs text-stealth-500 md:hidden">Weight</span>{group.effective_weight.toFixed(1)}%</span>
-                  <span className="text-sm text-stealth-200"><span className="block">{trendRead(change20)}</span><span className="text-xs tabular-nums text-stealth-400">{formatSignedPercent(change20)}</span></span>
-                  <span className="text-sm text-stealth-200"><span className="block">{breadthRead(group.breadth_score)}</span><span className="text-xs tabular-nums text-stealth-400">{group.breadth_score === null ? "Unavailable" : `${group.breadth_score.toFixed(1)}% participating`}</span></span>
+                    <span className="flex min-w-0 items-start gap-2">
+                      <span className="w-4 shrink-0 pt-0.5 text-xs tabular-nums text-stealth-500">{index + 1}</span>
+                      <span className="min-w-0"><span className="block truncate text-sm font-semibold text-white">{group.label}</span><span className={`mt-0.5 block text-xs ${read.tone}`}>{read.label} · <span className="tabular-nums">{group.group_composite.toFixed(1)}</span></span></span>
+                    </span>
+                    <span className="mt-2 grid grid-cols-3 gap-1 text-xs tabular-nums text-stealth-300">
+                      <span><span className="sr-only">Weight </span>Wt {group.effective_weight.toFixed(0)}%</span>
+                      <span><span className="sr-only">20-day change </span>20d {formatSignedPercent(change20, 1)}</span>
+                      <span><span className="sr-only">Breadth </span>Br {group.breadth_score === null ? "—" : `${group.breadth_score.toFixed(0)}%`}</span>
+                    </span>
                   </button>
                 </div>
               );
@@ -349,15 +333,12 @@ export default function AgricultureDeepDive({ data }: { data: AgricultureDeepDiv
 
       {selectedGroup && selectedComponent ? (
         <section aria-labelledby="contract-workspace-heading" className="overflow-hidden rounded-2xl border border-stealth-700 bg-stealth-900/35">
-          <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-stealth-700 px-4 py-3 md:px-5">
-            <h2 id="contract-workspace-heading" className="text-xl font-semibold text-white">{selectedGroup.label}</h2>
-            <p className="text-xs text-stealth-400">Select contract</p>
-          </div>
           <div className="min-w-0">
-            <div className="min-w-0 overflow-hidden border-b border-stealth-700 px-3 py-2.5">
+            <div className="flex min-w-0 items-center gap-3 overflow-hidden border-b border-stealth-700 px-3 py-2">
+              <h2 id="contract-workspace-heading" className="shrink-0 text-base font-semibold text-white">{selectedGroup.label}</h2>
               <p id="agriculture-contract-scroll-hint" className="sr-only">Scroll horizontally to inspect more contracts.</p>
               <div
-                className="flex gap-2 overflow-x-auto pb-1"
+                className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto pb-1"
                 role="region"
                 aria-label={`${selectedGroup.label} contract selector`}
                 aria-describedby="agriculture-contract-scroll-hint"
@@ -371,17 +352,17 @@ export default function AgricultureDeepDive({ data }: { data: AgricultureDeepDiv
                       type="button"
                       aria-pressed={active}
                       onClick={() => setSelectedIndicatorsByGroup((current) => ({ ...current, [selectedGroup.group]: component.code }))}
-                      className={`min-h-12 min-w-44 rounded-xl px-3 py-2 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${active ? "bg-sky-400/12 text-white" : "text-stealth-300 hover:bg-stealth-800/70 hover:text-white"}`}
+                      className={`min-h-11 shrink-0 rounded-lg px-3 py-1.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${active ? "bg-sky-400/12 text-white" : "text-stealth-300 hover:bg-stealth-800/70 hover:text-white"}`}
                     >
-                      <span className="block truncate text-sm font-semibold">{component.name}</span><span className="mt-0.5 block text-xs tabular-nums text-stealth-400">{component.code} · {component.score.toFixed(1)} · 20d {formatSignedPercent(component.changes["20d"])}</span>
+                      <span className="text-sm font-semibold">{component.name}</span><span className="ml-2 text-xs tabular-nums text-stealth-400">{component.score.toFixed(0)} · {formatSignedPercent(component.changes["20d"], 1)}</span>
                     </button>
                   );
                 })}
               </div>
             </div>
-            <div className="min-w-0 p-4 md:px-5 md:py-4">
-              <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-                <div className="flex flex-wrap items-baseline gap-2"><h3 className="text-lg font-semibold text-white">{selectedComponent.name}</h3><p className="text-xs text-stealth-400">{selectedComponent.code}{selectedComponent.ticker ? ` · ${selectedComponent.ticker}` : ""}</p></div>
+            <div className="min-w-0 px-4 py-3 md:px-5">
+              <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+                <div className="flex flex-wrap items-baseline gap-2"><h3 className="text-base font-semibold text-white">{selectedComponent.name}</h3><p className="text-xs text-stealth-400">{selectedComponent.code}{selectedComponent.ticker ? ` · ${selectedComponent.ticker}` : ""}</p></div>
                 <p className="text-xs text-stealth-400">{formatSnapshot(data.as_of)}</p>
               </div>
               {selectedContext?.data ? (

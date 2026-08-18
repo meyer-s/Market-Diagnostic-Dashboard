@@ -114,11 +114,10 @@ describe("AgricultureDeepDive", () => {
   it("prioritizes one ranked sector and one contract thesis", async () => {
     render(<AgricultureDeepDive data={deepDiveData} />);
 
-    expect(screen.getByRole("heading", { name: "Sector ranking" })).toBeTruthy();
-    expect(screen.getAllByText("Momentum").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Weight").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("20 days").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Breadth").length).toBeGreaterThan(0);
+    expect(screen.getByRole("heading", { name: "Sector mix" })).toBeTruthy();
+    expect(screen.getByText("Weight order · score 0–100")).toBeTruthy();
+    expect(screen.getAllByText("Strong momentum", { exact: false }).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("20d", { exact: false }).length).toBeGreaterThan(0);
     expect(screen.getByRole("heading", { name: "Grains / Oilseeds" })).toBeTruthy();
 
     await waitFor(() => expect(apiFetchMock).toHaveBeenCalledTimes(1));
@@ -158,7 +157,7 @@ describe("AgricultureDeepDive", () => {
     const legacySnapshot = { ...deepDiveData, correlations: undefined, macro_pressure: undefined, special_signals: undefined };
     render(<AgricultureDeepDive data={legacySnapshot} />);
 
-    expect(screen.getByRole("heading", { name: "Sector ranking" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Sector mix" })).toBeTruthy();
     expect(screen.getByText("Relationship history is not available.")).toBeTruthy();
     expect(screen.getAllByText("Macro evidence is unavailable in this snapshot.").length).toBeGreaterThan(0);
   });
