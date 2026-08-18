@@ -105,9 +105,9 @@ describe("AgricultureIndex Deep Dive composition", () => {
 
     expect(screen.getByRole("heading", { level: 1, name: "Agriculture Index" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Stable Expansion" })).toBeTruthy();
-    expect(screen.getByText("Shared market snapshot")).toBeTruthy();
-    expect(screen.getByText("What matters now")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Analyze report impact" }).getAttribute("href")).toBe("/agriculture/reports");
+    expect(screen.getByText("Coverage")).toBeTruthy();
+    expect(screen.getByText("Lead")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Report impact" }).getAttribute("href")).toBe("/agriculture/reports");
     expect(useApiMock.mock.calls.map(([endpoint]) => endpoint)).toEqual([
       "/agriculture/overview?days=365",
       "/agriculture/long-view",

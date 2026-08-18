@@ -207,25 +207,20 @@ function FallbackContractRead({
 function Disclosure({
   title,
   interpretation,
-  timestamp,
   children,
 }: {
   title: string;
   interpretation: string;
-  timestamp: string;
   children: ReactNode;
 }) {
   return (
     <details className="group rounded-2xl border border-stealth-700 bg-stealth-900/35 open:bg-stealth-900/55">
-      <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 md:px-5">
+      <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-4 px-4 py-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 md:px-5">
         <span>
           <span className="block text-sm font-semibold text-white">{title}</span>
           <span className="mt-0.5 block text-xs leading-5 text-stealth-300">{interpretation}</span>
         </span>
-        <span className="shrink-0 text-right text-xs text-stealth-400">
-          <span className="hidden sm:block">{timestamp}</span>
-          <span className="ml-3 inline-block transition-transform group-open:rotate-180" aria-hidden="true">⌄</span>
-        </span>
+        <span className="shrink-0 text-stealth-400 transition-transform group-open:rotate-180" aria-hidden="true">⌄</span>
       </summary>
       <div className="border-t border-stealth-700/80 px-4 py-5 md:px-5">{children}</div>
     </details>
@@ -301,7 +296,6 @@ export default function AgricultureDeepDive({ data }: { data: AgricultureDeepDiv
   const macroEntries = Object.entries(data.macro_pressure ?? {}).filter(([key]) => key !== "biofuel_proxy");
   const pressuringCount = macroEntries.filter(([, item]) => item.status.toLowerCase().includes("pressur")).length;
   const supportiveCount = macroEntries.filter(([, item]) => item.status.toLowerCase().includes("support")).length;
-  const snapshot = `Snapshot ${formatSnapshot(data.as_of)}`;
   const correlationSummary = strongestRelationships[0]
     ? `${groupLabels.get(strongestRelationships[0].left) ?? formatGroupCode(strongestRelationships[0].left)} and ${groupLabels.get(strongestRelationships[0].right) ?? formatGroupCode(strongestRelationships[0].right)} are the strongest current relationship.`
     : "Relationship history is not available.";
@@ -313,19 +307,16 @@ export default function AgricultureDeepDive({ data }: { data: AgricultureDeepDiv
     : "All displayed price and macro inputs are available in this snapshot.";
 
   return (
-    <div className="space-y-6 md:space-y-8">
+    <div className="space-y-5 md:space-y-6">
       <section aria-labelledby="sector-ranking-heading">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 id="sector-ranking-heading" className="text-xl font-semibold text-white">Where leadership sits</h2>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-stealth-300">Sectors are ranked by their weight in the composite. Select one row to inspect its contracts without expanding the rest of the page.</p>
-          </div>
-          <p className="text-xs text-stealth-400">Scores are momentum composites from 0–100</p>
+        <div className="flex flex-wrap items-baseline justify-between gap-3">
+          <h2 id="sector-ranking-heading" className="text-xl font-semibold text-white">Sector ranking</h2>
+          <p className="text-xs text-stealth-400">Momentum · 0–100</p>
         </div>
 
-        <div className="mt-4 overflow-hidden rounded-2xl border border-stealth-700 bg-stealth-900/35">
+        <div className="mt-3 overflow-hidden rounded-2xl border border-stealth-700 bg-stealth-900/35">
           <div className="hidden grid-cols-[minmax(190px,1.4fr)_minmax(120px,.8fr)_100px_120px_120px] gap-4 border-b border-stealth-700 px-4 py-2 text-xs font-semibold text-stealth-400 md:grid">
-            <span>Sector</span><span>Momentum score</span><span>Index weight</span><span>20-day trend</span><span>Breadth</span>
+            <span>Sector</span><span>Momentum</span><span>Weight</span><span>20 days</span><span>Breadth</span>
           </div>
           <div role="list" aria-label="Ranked agriculture sectors">
             {rankedGroups.map((group, index) => {
@@ -338,7 +329,7 @@ export default function AgricultureDeepDive({ data }: { data: AgricultureDeepDiv
                     type="button"
                     aria-pressed={active}
                     onClick={() => setSelectedGroupKey(group.group)}
-                    className={`grid min-h-16 w-full grid-cols-2 gap-2 px-4 py-3 text-left transition focus-visible:relative focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 md:grid-cols-[minmax(190px,1.4fr)_minmax(120px,.8fr)_100px_120px_120px] md:items-center md:gap-4 ${active ? "bg-sky-400/10" : "hover:bg-stealth-800/60"}`}
+                    className={`grid min-h-14 w-full grid-cols-2 gap-1.5 px-4 py-2.5 text-left transition focus-visible:relative focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 md:grid-cols-[minmax(190px,1.4fr)_minmax(120px,.8fr)_100px_120px_120px] md:items-center md:gap-4 ${active ? "bg-sky-400/10" : "hover:bg-stealth-800/60"}`}
                   >
                   <span className="col-span-2 flex min-w-0 items-center gap-3 md:col-span-1">
                     <span className="w-5 shrink-0 text-xs tabular-nums text-stealth-500">{index + 1}</span>
@@ -358,17 +349,17 @@ export default function AgricultureDeepDive({ data }: { data: AgricultureDeepDiv
 
       {selectedGroup && selectedComponent ? (
         <section aria-labelledby="contract-workspace-heading" className="overflow-hidden rounded-2xl border border-stealth-700 bg-stealth-900/35">
-          <div className="border-b border-stealth-700 px-4 py-4 md:px-5">
-            <h2 id="contract-workspace-heading" className="text-xl font-semibold text-white">Inspect {selectedGroup.label}</h2>
-            <p className="mt-1 text-sm text-stealth-300">Choose one contract; only its thesis stays open.</p>
+          <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-stealth-700 px-4 py-3 md:px-5">
+            <h2 id="contract-workspace-heading" className="text-xl font-semibold text-white">{selectedGroup.label}</h2>
+            <p className="text-xs text-stealth-400">Select contract</p>
           </div>
-          <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(260px,.72fr)_minmax(0,1.6fr)]">
-            <div className="min-w-0 overflow-hidden border-b border-stealth-700 p-3 lg:border-b-0 lg:border-r">
-              <p id="agriculture-contract-scroll-hint" className="sr-only">Scroll horizontally to inspect more contracts on smaller screens.</p>
+          <div className="min-w-0">
+            <div className="min-w-0 overflow-hidden border-b border-stealth-700 px-3 py-2.5">
+              <p id="agriculture-contract-scroll-hint" className="sr-only">Scroll horizontally to inspect more contracts.</p>
               <div
-                className="flex gap-2 overflow-x-auto pb-1 lg:grid lg:gap-1 lg:overflow-visible lg:pb-0"
-                role="group"
-                aria-label={`Select a ${selectedGroup.label} contract`}
+                className="flex gap-2 overflow-x-auto pb-1"
+                role="region"
+                aria-label={`${selectedGroup.label} contract selector`}
                 aria-describedby="agriculture-contract-scroll-hint"
                 tabIndex={0}
               >
@@ -380,19 +371,18 @@ export default function AgricultureDeepDive({ data }: { data: AgricultureDeepDiv
                       type="button"
                       aria-pressed={active}
                       onClick={() => setSelectedIndicatorsByGroup((current) => ({ ...current, [selectedGroup.group]: component.code }))}
-                      className={`grid min-h-14 min-w-40 grid-cols-[1fr_auto] items-center gap-3 rounded-xl px-3 py-2 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 lg:min-w-0 ${active ? "bg-sky-400/12 text-white" : "text-stealth-300 hover:bg-stealth-800/70 hover:text-white"}`}
+                      className={`min-h-12 min-w-44 rounded-xl px-3 py-2 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${active ? "bg-sky-400/12 text-white" : "text-stealth-300 hover:bg-stealth-800/70 hover:text-white"}`}
                     >
-                      <span className="min-w-0"><span className="block truncate text-sm font-semibold">{component.name}</span><span className="mt-0.5 block text-xs text-stealth-400">{component.code} · 20d {formatSignedPercent(component.changes["20d"])}</span></span>
-                      <span className="text-right text-xs tabular-nums text-stealth-300"><span className="block font-semibold text-white">{component.score.toFixed(1)}</span><span>score</span></span>
+                      <span className="block truncate text-sm font-semibold">{component.name}</span><span className="mt-0.5 block text-xs tabular-nums text-stealth-400">{component.code} · {component.score.toFixed(1)} · 20d {formatSignedPercent(component.changes["20d"])}</span>
                     </button>
                   );
                 })}
               </div>
             </div>
-            <div className="min-w-0 p-4 md:p-5">
-              <div className="mb-5 flex flex-wrap items-baseline justify-between gap-3">
-                <div><h3 className="text-lg font-semibold text-white">{selectedComponent.name}</h3><p className="mt-1 text-xs text-stealth-400">{selectedComponent.code}{selectedComponent.ticker ? ` · ${selectedComponent.ticker}` : ""}</p></div>
-                <p className="text-xs text-stealth-400">Sector metrics · Snapshot {formatSnapshot(data.as_of)}</p>
+            <div className="min-w-0 p-4 md:px-5 md:py-4">
+              <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+                <div className="flex flex-wrap items-baseline gap-2"><h3 className="text-lg font-semibold text-white">{selectedComponent.name}</h3><p className="text-xs text-stealth-400">{selectedComponent.code}{selectedComponent.ticker ? ` · ${selectedComponent.ticker}` : ""}</p></div>
+                <p className="text-xs text-stealth-400">{formatSnapshot(data.as_of)}</p>
               </div>
               {selectedContext?.data ? (
                 <CompactContextDigest context={selectedContext.data} variant="indicator" />
@@ -407,12 +397,12 @@ export default function AgricultureDeepDive({ data }: { data: AgricultureDeepDiv
       ) : null}
 
       <section aria-labelledby="secondary-evidence-heading" className="space-y-3">
-        <div>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 id="secondary-evidence-heading" className="text-xl font-semibold text-white">Supporting evidence</h2>
-          <p className="mt-1 text-sm text-stealth-300">Open these only when the current read needs a deeper check. Every section uses the same snapshot.</p>
+          <p className="text-xs text-stealth-400">{formatSnapshot(data.as_of)}</p>
         </div>
 
-        <Disclosure title="Relationships" interpretation={correlationSummary} timestamp={snapshot}>
+        <Disclosure title="Relationships" interpretation={correlationSummary}>
           <div className="space-y-5">
             <div>
               <h3 className="text-sm font-semibold text-white">Strongest relationships</h3>
@@ -461,7 +451,7 @@ export default function AgricultureDeepDive({ data }: { data: AgricultureDeepDiv
           </div>
         </Disclosure>
 
-        <Disclosure title="Macro pressure" interpretation={macroSummary} timestamp={snapshot}>
+        <Disclosure title="Macro pressure" interpretation={macroSummary}>
             <div className="divide-y divide-stealth-700/70 rounded-xl border border-stealth-700">
             {macroEntries.map(([key, item]) => {
               const value = item.change_20d ?? item.spread_20d;
@@ -491,7 +481,7 @@ export default function AgricultureDeepDive({ data }: { data: AgricultureDeepDiv
           </div>
         </Disclosure>
 
-        <Disclosure title="Data quality" interpretation={dataQualitySummary} timestamp={snapshot}>
+        <Disclosure title="Data quality" interpretation={dataQualitySummary}>
           <dl className="grid gap-4 sm:grid-cols-3">
             <div><dt className="text-xs font-semibold text-stealth-400">Contracts available</dt><dd className="mt-1 text-lg font-semibold tabular-nums text-white">{data.availability.available_symbol_count}/{data.availability.total_configured_symbols}</dd></div>
             <div><dt className="text-xs font-semibold text-stealth-400">Sectors available</dt><dd className="mt-1 text-lg font-semibold tabular-nums text-white">{data.availability.available_group_count}/6</dd></div>

@@ -114,19 +114,19 @@ describe("AgricultureDeepDive", () => {
   it("prioritizes one ranked sector and one contract thesis", async () => {
     render(<AgricultureDeepDive data={deepDiveData} />);
 
-    expect(screen.getByRole("heading", { name: "Where leadership sits" })).toBeTruthy();
-    expect(screen.getByText("Momentum score")).toBeTruthy();
-    expect(screen.getByText("Index weight")).toBeTruthy();
-    expect(screen.getByText("20-day trend")).toBeTruthy();
-    expect(screen.getByText("Breadth")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Inspect Grains / Oilseeds" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Sector ranking" })).toBeTruthy();
+    expect(screen.getAllByText("Momentum").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Weight").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("20 days").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Breadth").length).toBeGreaterThan(0);
+    expect(screen.getByRole("heading", { name: "Grains / Oilseeds" })).toBeTruthy();
 
     await waitFor(() => expect(apiFetchMock).toHaveBeenCalledTimes(1));
     expect(apiFetchMock).toHaveBeenCalledWith("/agriculture/context?symbol=ZC");
-    expect(await screen.findByText("Directional bias")).toBeTruthy();
-    expect(screen.getByText("Setup source")).toBeTruthy();
-    expect(screen.getByText("Confidence · 0–100")).toBeTruthy();
-    expect(screen.getByText("Action state")).toBeTruthy();
+    expect(await screen.findByText("Bias")).toBeTruthy();
+    expect(screen.getByText("Source")).toBeTruthy();
+    expect(screen.getByText("Confidence")).toBeTruthy();
+    expect(screen.getByText("Action")).toBeTruthy();
     expect(screen.getByText("Occurred yesterday — update pending")).toBeTruthy();
   });
 
@@ -135,7 +135,7 @@ describe("AgricultureDeepDive", () => {
     await waitFor(() => expect(apiFetchMock).toHaveBeenCalledTimes(1));
 
     fireEvent.click(screen.getByRole("button", { name: /Livestock/i }));
-    expect(screen.getByRole("heading", { name: "Inspect Livestock" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Livestock" })).toBeTruthy();
     await waitFor(() => expect(apiFetchMock).toHaveBeenCalledWith("/agriculture/context?symbol=LE"));
     expect(apiFetchMock).toHaveBeenCalledTimes(2);
   });
@@ -158,7 +158,7 @@ describe("AgricultureDeepDive", () => {
     const legacySnapshot = { ...deepDiveData, correlations: undefined, macro_pressure: undefined, special_signals: undefined };
     render(<AgricultureDeepDive data={legacySnapshot} />);
 
-    expect(screen.getByRole("heading", { name: "Where leadership sits" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Sector ranking" })).toBeTruthy();
     expect(screen.getByText("Relationship history is not available.")).toBeTruthy();
     expect(screen.getAllByText("Macro evidence is unavailable in this snapshot.").length).toBeGreaterThan(0);
   });

@@ -321,8 +321,32 @@ function SourceLinks({
 }) {
   if (!links.length) return null;
 
+  if (dense) {
+    return (
+      <details className="group mt-4 border-t border-stealth-700/80">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 py-2 text-xs font-semibold text-stealth-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">
+          <span>Sources · {links.length}</span>
+          <span className="transition-transform group-open:rotate-180" aria-hidden="true">⌄</span>
+        </summary>
+        <div className="flex flex-wrap gap-2 pb-1">
+          {links.map((link) => (
+            <a
+              key={`${link.label}-${link.url}`}
+              href={link.url}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="inline-flex min-h-11 items-center rounded-lg border border-stealth-600 bg-stealth-900/70 px-3 text-xs font-semibold text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-400/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+            >
+              {link.label}<span aria-hidden="true"> ↗</span><span className="sr-only">, opens in a new tab</span>
+            </a>
+          ))}
+        </div>
+      </details>
+    );
+  }
+
   return (
-    <div className={dense ? "mt-5 border-t border-stealth-700/80 pt-4" : "mt-5 border-t border-stealth-700/80 pt-4"}>
+    <div className="mt-5 border-t border-stealth-700/80 pt-4">
       <p className="text-xs font-semibold text-stealth-300">Supporting sources</p>
       <div className="mt-2 flex flex-wrap gap-2">
         {links.map((link) => (
@@ -409,19 +433,16 @@ export function CompactContextDigest({
   if (dense) {
     return (
       <div>
-        <p className="max-w-3xl text-sm leading-6 text-stealth-200">{compactSummary(context)}</p>
-        {context.as_of ? <p className="mt-1 text-xs text-stealth-400">Contract evidence checked {formatDateTime(context.as_of)}</p> : null}
-
-        <dl className="mt-5 grid border-y border-stealth-700/80 sm:grid-cols-2 xl:grid-cols-4 xl:divide-x xl:divide-stealth-700/80">
-          <div className="py-3 xl:pr-4"><dt className="text-xs font-semibold text-stealth-400">Directional bias</dt><dd className={`mt-1 text-sm font-semibold ${biasTextTone(context.context_score.net_bias)}`}>{biasLabel(context.context_score.net_bias)}</dd></div>
-          <div className="border-t border-stealth-700/80 py-3 sm:border-t-0 xl:px-4"><dt className="text-xs font-semibold text-stealth-400">Setup source</dt><dd className="mt-1 text-sm font-semibold text-white">{setupSourceLabel(context)}</dd></div>
-          <div className="border-t border-stealth-700/80 py-3 sm:border-t-0 xl:px-4"><dt className="text-xs font-semibold text-stealth-400">Confidence · 0–100</dt><dd className="mt-1 text-sm font-semibold text-white">{properCase(context.context_score.confidence)} · <span className="tabular-nums">{context.context_score.confidence_score.toFixed(1)}</span></dd></div>
-          <div className="border-t border-stealth-700/80 py-3 sm:border-t-0 xl:pl-4"><dt className="text-xs font-semibold text-stealth-400">Action state</dt><dd className="mt-1 text-sm font-semibold text-white">{actionStateLabel(context)}</dd></div>
+        <dl className="grid grid-cols-2 border-y border-stealth-700/80 xl:grid-cols-4">
+          <div className="border-b border-stealth-700/80 py-2.5 pr-3 xl:border-b-0"><dt className="text-xs font-semibold text-stealth-400">Bias</dt><dd className={`mt-1 text-sm font-semibold ${biasTextTone(context.context_score.net_bias)}`}>{biasLabel(context.context_score.net_bias)}</dd></div>
+          <div className="border-b border-l border-stealth-700/80 py-2.5 pl-3 xl:border-b-0 xl:px-4"><dt className="text-xs font-semibold text-stealth-400">Source</dt><dd className="mt-1 text-sm font-semibold text-white">{setupSourceLabel(context)}</dd></div>
+          <div className="py-2.5 pr-3 xl:border-l xl:border-stealth-700/80 xl:px-4"><dt className="text-xs font-semibold text-stealth-400">Confidence</dt><dd className="mt-1 text-sm font-semibold text-white">{properCase(context.context_score.confidence)} · <span className="tabular-nums">{context.context_score.confidence_score.toFixed(1)}</span></dd></div>
+          <div className="border-l border-stealth-700/80 py-2.5 pl-3 xl:px-4"><dt className="text-xs font-semibold text-stealth-400">Action</dt><dd className="mt-1 text-sm font-semibold text-white">{actionStateLabel(context)}</dd></div>
         </dl>
 
-        <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1.25fr)_minmax(220px,.75fr)]">
+        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(220px,.75fr)]">
           <div>
-            <p className="text-xs font-semibold text-stealth-300">What is carrying the read</p>
+            <p className="text-xs font-semibold text-stealth-300">Drivers</p>
             <div className="mt-2 flex flex-wrap gap-2">
               {leadingDrivers.length ? leadingDrivers.map((entry) => (
                 <button
@@ -443,7 +464,7 @@ export function CompactContextDigest({
               </div>
             ) : null}
           </div>
-          <div className="border-t border-stealth-700/80 pt-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
+          <div className="border-t border-stealth-700/80 pt-3 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0">
             <p className="text-xs font-semibold text-stealth-400">{catalyst.heading}</p>
             <p className="mt-1 text-sm font-semibold text-white">{catalyst.name}</p>
             <p className={`mt-1 text-xs ${catalyst.isPast ? "text-amber-200" : "text-stealth-300"}`}>{catalyst.timing}</p>

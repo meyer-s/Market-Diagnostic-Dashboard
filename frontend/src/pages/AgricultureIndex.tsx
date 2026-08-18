@@ -254,12 +254,6 @@ function formatCompositeMove(value: number | null | undefined): string {
   return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
-function stabilityMeaning(score: number): string {
-  if (score >= 70) return "Internals are broadly stable";
-  if (score >= 55) return "Usable, but uneven beneath the headline";
-  return "Fragile internals need confirmation";
-}
-
 function daysForTimeframe(timeframe: Timeframe): number {
   if (timeframe === "30d") return 30;
   if (timeframe === "90d") return 90;
@@ -386,43 +380,29 @@ export default function AgricultureIndex() {
       <div>
         <p className="page-kicker">Tools</p>
         <h1 className="page-title">Agriculture Index</h1>
-        <p className="page-subtitle max-w-4xl">See the current agriculture regime, where leadership sits, and which contract evidence deserves attention next.</p>
       </div>
 
       <section id="agriculture-now" aria-labelledby="agriculture-now-title" className="section-anchor surface-card-strong overflow-hidden p-0">
-        <div className="grid gap-5 p-5 md:p-6 lg:grid-cols-[minmax(0,1.55fr)_minmax(260px,.65fr)] lg:gap-8">
-          <div>
-            <p className="text-sm font-semibold text-sky-200">Today’s read</p>
-            <h2 id="agriculture-now-title" className={`mt-2 text-2xl font-semibold tracking-[-0.02em] md:text-3xl ${getRegimeTone(overview.regime_label)}`}>{overview.regime_label}</h2>
-            <p id="agriculture-summary" className="mt-3 max-w-3xl text-sm leading-6 text-stealth-200">{overview.summary}</p>
+        <div className="grid grid-cols-2 gap-px bg-stealth-700/80 xl:grid-cols-[minmax(220px,1.25fr)_repeat(3,minmax(112px,.55fr))_minmax(190px,.9fr)_auto]">
+          <div className="col-span-2 bg-stealth-950/45 px-4 py-3 xl:col-span-1 md:px-5">
+            <p className="text-xs font-semibold text-sky-200">Today</p>
+            <h2 id="agriculture-now-title" className={`mt-1 text-xl font-semibold tracking-[-0.02em] ${getRegimeTone(overview.regime_label)}`}>{overview.regime_label}</h2>
           </div>
-          <div className="lg:border-l lg:border-stealth-700 lg:pl-6">
-            <p className="text-xs font-semibold text-stealth-400">Shared market snapshot</p>
-            <p className="mt-1 text-sm font-medium text-white">{formatSnapshot(overview.as_of)}</p>
-            <p className="mt-2 text-xs leading-5 text-stealth-300">{overview.availability.available_symbol_count} of {overview.availability.total_configured_symbols} contracts · {overview.availability.available_group_count} of 6 sectors</p>
+          <dl className="contents">
+            <div className="bg-stealth-950/45 px-4 py-3"><dt className="text-xs font-semibold text-stealth-400">Stability · 0–100</dt><dd className={`mt-1 text-lg font-semibold tabular-nums ${getScoreTone(overview.stability_score)}`}>{overview.stability_score.toFixed(1)}</dd></div>
+            <div className="bg-stealth-950/45 px-4 py-3"><dt className="text-xs font-semibold text-stealth-400">5 days</dt><dd className="mt-1 text-lg font-semibold tabular-nums text-white">{formatCompositeMove(overview.composite.changes["5d"])}</dd></div>
+            <div className="bg-stealth-950/45 px-4 py-3"><dt className="text-xs font-semibold text-stealth-400">20 days</dt><dd className="mt-1 text-lg font-semibold tabular-nums text-white">{formatCompositeMove(overview.composite.changes["20d"])}</dd></div>
+            <div className="bg-stealth-950/45 px-4 py-3"><dt className="text-xs font-semibold text-stealth-400">Coverage</dt><dd className="mt-1 text-sm font-semibold text-white">{overview.availability.available_symbol_count}/{overview.availability.total_configured_symbols} contracts · {overview.availability.available_group_count}/6 sectors</dd><dd className="mt-1 text-xs text-stealth-400">{formatSnapshot(overview.as_of)}</dd></div>
+          </dl>
+          <div className="col-span-2 flex items-center bg-stealth-950/45 p-3 xl:col-span-1">
+            <Link to="/agriculture/reports" className="field-button field-button-secondary min-h-11 w-full whitespace-nowrap xl:w-auto">Report impact</Link>
           </div>
         </div>
 
-        <dl className="grid border-y border-stealth-700/80 sm:grid-cols-3 sm:divide-x sm:divide-stealth-700/80">
-          <div className="px-5 py-4 md:px-6"><dt className="text-xs font-semibold text-stealth-400">Stability score · 0–100</dt><dd className={`mt-1 text-xl font-semibold tabular-nums ${getScoreTone(overview.stability_score)}`}>{overview.stability_score.toFixed(1)}</dd><dd className="mt-1 text-xs text-stealth-300">{stabilityMeaning(overview.stability_score)}</dd></div>
-          <div className="border-t border-stealth-700/80 px-5 py-4 sm:border-t-0 md:px-6"><dt className="text-xs font-semibold text-stealth-400">What changed · 5 days</dt><dd className="mt-1 text-xl font-semibold tabular-nums text-white">{formatCompositeMove(overview.composite.changes["5d"])}</dd><dd className="mt-1 text-xs text-stealth-300">Agriculture composite</dd></div>
-          <div className="border-t border-stealth-700/80 px-5 py-4 sm:border-t-0 md:px-6"><dt className="text-xs font-semibold text-stealth-400">Trend · 20 days</dt><dd className="mt-1 text-xl font-semibold tabular-nums text-white">{formatCompositeMove(overview.composite.changes["20d"])}</dd><dd className="mt-1 text-xs text-stealth-300">Agriculture composite</dd></div>
-        </dl>
-
-        <div className="grid gap-5 p-5 md:p-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(250px,.6fr)] lg:gap-8">
-          <div>
-            <h3 className="text-sm font-semibold text-white">What matters now</h3>
-            <ol className="mt-3 divide-y divide-stealth-700/70">
-              {momentumLeader ? <li className="py-2 text-sm leading-6 text-stealth-200"><span className="font-semibold text-white">Leadership:</span> {momentumLeader.label} has the strongest sector momentum at {momentumLeader.group_composite.toFixed(1)}/100.</li> : null}
-              {momentumLaggard ? <li className="py-2 text-sm leading-6 text-stealth-200"><span className="font-semibold text-white">Lag:</span> {momentumLaggard.label} is weakest at {momentumLaggard.group_composite.toFixed(1)}/100.</li> : null}
-              {narrowestBreadth ? <li className="py-2 text-sm leading-6 text-stealth-200"><span className="font-semibold text-white">Participation:</span> {narrowestBreadth.label} has the narrowest breadth at {narrowestBreadth.breadth_score?.toFixed(1)}%.</li> : null}
-            </ol>
-          </div>
-          <div className="lg:border-l lg:border-stealth-700 lg:pl-6">
-            <p className="text-sm font-semibold text-white">Need the release-level cause?</p>
-            <p className="mt-1 text-xs leading-5 text-stealth-300">Compare USDA and CFTC reports with the futures reaction.</p>
-            <Link to="/agriculture/reports" className="field-button field-button-secondary mt-3 min-h-11">Analyze report impact</Link>
-          </div>
+        <div className="flex flex-wrap gap-x-6 gap-y-1 border-t border-stealth-700/80 px-4 py-3 text-xs text-stealth-300 md:px-5">
+          {momentumLeader ? <p><span className="font-semibold text-white">Lead</span> · {momentumLeader.label} {momentumLeader.group_composite.toFixed(1)}</p> : null}
+          {momentumLaggard ? <p><span className="font-semibold text-white">Weak</span> · {momentumLaggard.label} {momentumLaggard.group_composite.toFixed(1)}</p> : null}
+          {narrowestBreadth ? <p><span className="font-semibold text-white">Narrow breadth</span> · {narrowestBreadth.label} {narrowestBreadth.breadth_score?.toFixed(1)}%</p> : null}
         </div>
       </section>
 
