@@ -34,6 +34,7 @@ from app.services.option_scanner_exposure import (
 )
 from app.services.options_opportunity import OPPORTUNITY_MODEL_VERSION, compute_opportunity_score, opportunity_grade
 from app.services.options_review_window import parse_review_window
+from app.services.option_strategy_engine import strategy_plan_from_event
 from app.services.options_alerts import _send_webhook
 from app.services.scanner_repeat_evidence import (
     load_scanner_repeat_evidence_context,
@@ -622,6 +623,7 @@ def _ranked_opportunity_from_event(
         "field_context": option_field_context_from_event(event),
         "learning_evaluation": _stored_learning_evaluation(event),
         "review_window": _review_window_payload(event),
+        "strategy_plan": strategy_plan_from_event(event),
         "selected_contract": {
             "expiry": event.selected_expiry,
             "dte": event.selected_dte,
@@ -1194,6 +1196,7 @@ def build_scanner_summary(lookback_days: int = 45, run_limit: int = 8, event_lim
             "field_context": option_field_context_from_event(event),
             "learning_evaluation": _stored_learning_evaluation(event),
             "review_window": _review_window_payload(event),
+            "strategy_plan": strategy_plan_from_event(event),
             "selected_contract": {
                 "expiry": event.selected_expiry,
                 "dte": event.selected_dte,

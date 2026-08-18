@@ -29,6 +29,15 @@ export interface OptionPosition {
   source_match_method: string | null;
   source_match_confidence: number | null;
   source_match_notes: string | null;
+  strategy_type?: string;
+  strategy_model_version?: string | null;
+  strategy_legs?: OptionStrategyLeg[] | null;
+  strategy_net_premium?: number | null;
+  strategy_max_loss?: number | null;
+  strategy_max_profit?: number | null;
+  strategy_breakevens?: number[];
+  strategy_direction?: string | null;
+  strategy_volatility_exposure?: string | null;
   evaluation_min_hold_days: number | null;
   evaluation_hold_days: number | null;
   evaluation_start_date: string | null;
@@ -148,6 +157,22 @@ export interface PositionMetrics {
     percent: number | null;
     source: string | null;
   };
+  strategy?: {
+    strategy_type: string | null;
+    direction: string | null;
+    volatility_exposure: string | null;
+    legs: OptionStrategyLeg[];
+    current_value: number | null;
+    midpoint_value: number | null;
+    entry_net_premium: number | null;
+    max_loss_per_unit: number | null;
+    max_loss_total: number | null;
+    max_profit_per_unit: number | null;
+    breakevens: number[];
+    greeks: OptionStrategyGreeks;
+    quote_status: OptionStrategyQuoteStatus;
+    quote_issues: string[];
+  } | null;
 }
 
 export interface PositionPayload {
@@ -184,6 +209,8 @@ export interface PositionRowScanContext {
   selected_premium: number | null;
   selected_convexity_profit_pct: number | null;
   selected_convexity_probability_itm: number | null;
+  selected_strategy_type?: string | null;
+  strategy_plan?: OptionStrategyPlan | null;
 }
 
 export interface PositionRowContext {
@@ -398,26 +425,28 @@ export interface SuggestedDecisionWindow {
   continuation_condition: string;
 }
 
+export interface OptionRiskPolicy {
+  id: number;
+  policy_version: number;
+  name: string;
+  active: boolean;
+  approval_status: string;
+  portfolio_capital: number | null;
+  default_trade_risk_budget: number | null;
+  max_single_position_premium_pct: number | null;
+  max_directional_premium_pct: number | null;
+  max_expiry_bucket_premium_pct: number | null;
+  max_option_spread_pct: number | null;
+  min_dte_for_add: number | null;
+}
+
 export interface PositionThesisAssessmentResponse {
   position_id: number;
   mandate: OptionPositionMandate;
   assessment: PositionThesisAssessment;
   suggested_window: SuggestedDecisionWindow;
   review_defaults: Record<string, string | number | null | undefined>;
-  risk_policy: {
-    id: number;
-    policy_version: number;
-    name: string;
-    active: boolean;
-    approval_status: string;
-    portfolio_capital: number | null;
-    default_trade_risk_budget: number | null;
-    max_single_position_premium_pct: number | null;
-    max_directional_premium_pct: number | null;
-    max_expiry_bucket_premium_pct: number | null;
-    max_option_spread_pct: number | null;
-    min_dte_for_add: number | null;
-  };
+  risk_policy: OptionRiskPolicy;
   history: PositionThesisAssessment[];
   automated_execution_enabled: false;
   execution_note: string;
@@ -538,6 +567,15 @@ export interface ClosedPositionRow {
   source_opportunity_grade: string | null;
   source_opportunity_rank_score: number | null;
   source_opportunity_model_version: string | null;
+  strategy_type?: string;
+  strategy_model_version?: string | null;
+  strategy_legs?: OptionStrategyLeg[] | null;
+  strategy_net_premium?: number | null;
+  strategy_max_loss?: number | null;
+  strategy_max_profit?: number | null;
+  strategy_breakevens?: number[];
+  strategy_direction?: string | null;
+  strategy_volatility_exposure?: string | null;
   learning_outcome?: OptionTradeLearningOutcome | null;
 }
 
@@ -840,6 +878,7 @@ export interface ScannerRankedOpportunity {
   position_match?: ScannerPositionMatch | null;
   field_context?: OptionMarketFieldContext | null;
   learning_evaluation?: OptionLearningEvaluation | null;
+  strategy_plan?: OptionStrategyPlan | null;
   selected_contract: {
     expiry: string | null;
     dte: number | null;
@@ -862,6 +901,93 @@ export interface ScannerRankedOpportunity {
     planned_loss_pct?: number | null;
     target_profit_pct?: number | null;
   };
+}
+
+export type OptionStrategyQuoteStatus = "actionable" | "manual_price_discovery";
+
+export interface OptionStrategyGreeks {
+  delta: number;
+  delta_shares?: number;
+  gamma: number;
+  theta: number;
+  vega: number;
+}
+
+export interface OptionStrategyLeg {
+  action: "buy" | "sell";
+  option_type: "call" | "put";
+  strike: number;
+  expiration: string;
+  quantity: number;
+  bid?: number | null;
+  ask?: number | null;
+  last?: number | null;
+  mid?: number | null;
+  premium?: number | null;
+  price_source?: string | null;
+  spread_pct?: number | null;
+  volume?: number | null;
+  open_interest?: number | null;
+  implied_volatility?: number | null;
+  last_trade_at?: string | null;
+  quote_source?: string | null;
+  quality?: string | null;
+  greeks?: Partial<OptionStrategyGreeks> | null;
+  current_quote?: Record<string, unknown> | null;
+  closing_mark?: number | null;
+  closing_mark_basis?: string | null;
+}
+
+export interface OptionStrategyCandidate {
+  strategy_type: string;
+  label: string;
+  direction: string;
+  volatility_exposure: string;
+  expiration: string;
+  dte: number;
+  legs: OptionStrategyLeg[];
+  net_debit: number;
+  midpoint_debit: number | null;
+  entry_price_basis: string;
+  max_loss: number;
+  max_profit: number | null;
+  max_profit_label: string;
+  breakevens: number[];
+  risk_defined: true;
+  status: OptionStrategyQuoteStatus;
+  quote_issues: string[];
+  expected_move_pct: number;
+  iv_hv_ratio: number | null;
+  greeks: OptionStrategyGreeks;
+  rationale: string;
+  success_condition: string;
+}
+
+export interface OptionStrategyPlan {
+  model_version: string;
+  generated_at: string;
+  symbol: string;
+  underlying_price: number;
+  market_read: {
+    direction: string;
+    expected_move_pct: number;
+    iv30: number | null;
+    hv30: number | null;
+    iv_hv_ratio: number | null;
+    volatility_value: string;
+  };
+  primary: OptionStrategyCandidate;
+  alternatives: OptionStrategyCandidate[];
+  selection_note: string;
+  excluded_structures: Array<{ label: string; reason: string }>;
+  data_source: string | null;
+  quote_source: string | null;
+  observed_at: string | null;
+}
+
+export interface OptionStrategyPlanResponse {
+  strategy_plan: OptionStrategyPlan;
+  plan_source: "event_time_receipt" | "current_chain_preview";
 }
 
 export interface ScannerRun {

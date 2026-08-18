@@ -770,6 +770,163 @@ def test_create_position_rejects_duplicate_resubmission(secret_options_client) -
     assert "Duplicate open position" in second.json()["detail"]
 
 
+def test_create_risk_defined_position_reprices_and_persists_structure(
+    secret_options_client,
+) -> None:
+    client, _session_local = secret_options_client
+    payload = {
+        **_position_payload(),
+        "contracts": 2,
+        "fill_price": 1.5,
+        "total_cost": 300.0,
+        "strategy_type": "call_debit_spread",
+        "strategy_model_version": "risk_defined_structures_v1",
+        "strategy_direction": "bullish",
+        "strategy_volatility_exposure": "moderately_long_vol",
+        "strategy_legs": [
+            {
+                "action": "buy",
+                "option_type": "call",
+                "strike": 80.0,
+                "expiration": "2026-07-17",
+                "quantity": 1,
+            },
+            {
+                "action": "sell",
+                "option_type": "call",
+                "strike": 85.0,
+                "expiration": "2026-07-17",
+                "quantity": 1,
+            },
+        ],
+    }
+
+    response = client.post("/secret/options/positions", json=payload)
+
+    assert response.status_code == 200, response.json()
+    position = response.json()["position"]
+    assert position["strategy_type"] == "call_debit_spread"
+    assert position["strategy_max_loss"] == 150.0
+    assert position["strategy_max_profit"] == 350.0
+    assert position["strategy_breakevens"] == [81.5]
+    assert [leg["action"] for leg in position["strategy_legs"]] == ["buy", "sell"]
+
+
+def test_create_risk_defined_position_rejects_cost_above_defined_loss(
+    secret_options_client,
+) -> None:
+    client, _session_local = secret_options_client
+    payload = {
+        **_position_payload(),
+        "contracts": 2,
+        "fill_price": 1.5,
+        "total_cost": 450.0,
+        "strategy_type": "call_debit_spread",
+        "strategy_legs": [
+            {"action": "buy", "option_type": "call", "strike": 80.0, "quantity": 1},
+            {"action": "sell", "option_type": "call", "strike": 85.0, "quantity": 1},
+        ],
+    }
+
+    response = client.post("/secret/options/positions", json=payload)
+
+    assert response.status_code == 400
+    assert "defined maximum loss ($300.00)" in response.json()["detail"]
+
+
+def test_create_risk_defined_position_rejects_mislabeled_legs(
+    secret_options_client,
+) -> None:
+    client, _session_local = secret_options_client
+    payload = {
+        **_position_payload(),
+        "contracts": 1,
+        "fill_price": 1.5,
+        "total_cost": 150.0,
+        "strategy_type": "call_debit_spread",
+        "strategy_legs": [
+            {"action": "buy", "option_type": "put", "strike": 80.0, "quantity": 1},
+            {"action": "sell", "option_type": "put", "strike": 85.0, "quantity": 1},
+        ],
+    }
+
+    response = client.post("/secret/options/positions", json=payload)
+
+    assert response.status_code == 400
+    assert "one long and one short call" in response.json()["detail"]
+
+
+def test_risk_defined_position_greeks_aggregate_all_legs(
+    secret_options_client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, _session_local = secret_options_client
+    created = client.post(
+        "/secret/options/positions",
+        json={
+            **_position_payload(),
+            "contracts": 1,
+            "fill_price": 1.5,
+            "total_cost": 150.0,
+            "strategy_type": "call_debit_spread",
+            "strategy_legs": [
+                {"action": "buy", "option_type": "call", "strike": 80.0, "quantity": 1},
+                {"action": "sell", "option_type": "call", "strike": 85.0, "quantity": 1},
+            ],
+        },
+    )
+    position_id = created.json()["position"]["id"]
+    monkeypatch.setattr(
+        secret_options,
+        "_compute_position_metrics",
+        lambda _position: {
+            "market": {"current_price": 82.0},
+            "volatility": 0.3,
+            "volatility_source": "strategy_leg_blend",
+            "dte": 30,
+            "greeks": {"delta": 0.22, "gamma": 0.01, "theta": -1.5, "vega": 3.2},
+        },
+    )
+
+    response = client.get(f"/secret/options/greeks/{position_id}")
+
+    assert response.status_code == 200, response.json()
+    body = response.json()
+    assert body["model_info"]["model"] == "Aggregated Black-Scholes legs"
+    assert body["current_greeks"]["delta"] == 0.22
+    assert len(body["price_curve"]) == 51
+    assert len(body["theta_curve"]) == 30
+    assert any(abs(point["delta"]) > 0 for point in body["price_curve"])
+
+
+def test_scanner_strategy_plan_endpoint_returns_event_time_receipt(
+    secret_options_client,
+) -> None:
+    client, session_local = secret_options_client
+    plan = {
+        "model_version": "risk_defined_structures_v1",
+        "symbol": "SYY",
+        "primary": {"strategy_type": "call_debit_spread", "max_loss": 150.0},
+        "alternatives": [],
+    }
+    with session_local() as db:
+        event = OptionAlertEvent(
+            symbol="SYY",
+            triggered_at=datetime.utcnow(),
+            selected_strategy_type="call_debit_spread",
+            strategy_model_version="risk_defined_structures_v1",
+            strategy_plan_json=json.dumps(plan),
+        )
+        db.add(event)
+        db.commit()
+        event_id = event.id
+
+    response = client.get(f"/secret/options/scanner-events/{event_id}/strategy-plan")
+
+    assert response.status_code == 200
+    assert response.json() == {"strategy_plan": plan, "plan_source": "event_time_receipt"}
+
+
 def _decision_review_payload() -> dict[str, object]:
     review_date = date.today()
     return {
@@ -805,7 +962,10 @@ def test_decision_reviews_are_append_only_and_capture_market_snapshot(
     client, session_local = secret_options_client
     created = client.post(
         "/secret/options/positions",
-        json={**_position_payload(), "expiration": "2026-08-21"},
+        json={
+            **_position_payload(),
+            "expiration": (date.today() + timedelta(days=30)).isoformat(),
+        },
     )
     position_id = created.json()["position"]["id"]
     metrics_compute_count = 0

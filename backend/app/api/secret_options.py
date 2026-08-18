@@ -44,6 +44,13 @@ from app.services.market_data.factory import get_market_data_provider
 from app.services.market_data.provider import MarketDataProvider
 from app.services.option_field_context import build_option_field_context
 from app.services.options_quotes import option_quote_from_row
+from app.services.option_strategy_engine import (
+    STRATEGY_MODEL_VERSION,
+    build_risk_defined_strategy,
+    reprice_defined_risk_strategy,
+    strategy_plan_from_event,
+    validate_strategy_legs,
+)
 from app.services.options_review_window import ReviewWindow, compute_review_window, parse_review_window
 from app.services.options_opportunity import (
     OPPORTUNITY_MODEL_VERSION,
@@ -161,6 +168,17 @@ def _is_finite_number(value: object) -> bool:
         return False
 
 
+def _finite_number(value: object) -> Optional[float]:
+    return float(value) if _is_finite_number(value) else None
+
+
+def _finite_int(value: object) -> Optional[int]:
+    number = _finite_number(value)
+    if number is None or not float(number).is_integer():
+        return None
+    return int(number)
+
+
 def _json_safe(value: Any) -> Any:
     """Convert non-finite live-market values to JSON-safe nulls."""
     if value is None or isinstance(value, (str, bool)):
@@ -198,6 +216,11 @@ class OptionPositionCreate(BaseModel):
     dte_at_entry: Optional[int] = None
     underlying_reference: Optional[float] = None
     source_event_id: Optional[int] = None
+    strategy_type: str = "single_leg"
+    strategy_model_version: Optional[str] = None
+    strategy_legs: Optional[list[Dict[str, Any]]] = None
+    strategy_direction: Optional[str] = None
+    strategy_volatility_exposure: Optional[str] = None
 
 
 class ClosePositionRequest(BaseModel):
@@ -332,6 +355,97 @@ def _parse_date(value: Optional[str]) -> Optional[date]:
     if not value:
         return None
     return datetime.strptime(value, "%Y-%m-%d").date()
+
+
+_SUPPORTED_DEBIT_STRATEGIES = {
+    "call_debit_spread",
+    "put_debit_spread",
+    "long_straddle",
+    "long_strangle",
+    "long_call_butterfly",
+    "long_put_butterfly",
+}
+
+
+def _strategy_position_fields(payload: OptionPositionCreate) -> Dict[str, object]:
+    strategy_type = str(payload.strategy_type or "single_leg").strip().lower()
+    if strategy_type == "single_leg":
+        return {
+            "strategy_type": "single_leg",
+            "strategy_model_version": None,
+            "strategy_legs_json": None,
+            "strategy_net_premium": None,
+            "strategy_max_loss": None,
+            "strategy_max_profit": None,
+            "strategy_breakevens_json": None,
+            "strategy_direction": None,
+            "strategy_volatility_exposure": None,
+        }
+    if strategy_type not in _SUPPORTED_DEBIT_STRATEGIES:
+        raise HTTPException(status_code=400, detail=f"Unsupported option strategy '{strategy_type}'.")
+    legs = payload.strategy_legs or []
+    if len(legs) < 2:
+        raise HTTPException(status_code=400, detail="A risk-defined strategy needs at least two recorded legs.")
+    normalized_legs: list[Dict[str, object]] = []
+    for index, raw_leg in enumerate(legs, start=1):
+        if not isinstance(raw_leg, dict):
+            raise HTTPException(status_code=400, detail=f"Strategy leg {index} is invalid.")
+        action = str(raw_leg.get("action") or "").strip().lower()
+        option_type = str(raw_leg.get("option_type") or "").strip().lower()
+        strike = _finite_number(raw_leg.get("strike"))
+        quantity = _finite_int(raw_leg.get("quantity"))
+        expiration = str(raw_leg.get("expiration") or payload.expiration).strip()
+        if action not in {"buy", "sell"} or option_type not in {"call", "put"}:
+            raise HTTPException(status_code=400, detail=f"Strategy leg {index} needs buy/sell and call/put.")
+        if strike is None or strike <= 0 or quantity is None or quantity <= 0:
+            raise HTTPException(status_code=400, detail=f"Strategy leg {index} needs a positive strike and quantity.")
+        try:
+            expiration_date = date.fromisoformat(expiration)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=f"Strategy leg {index} has an invalid expiration.") from exc
+        if expiration_date != _parse_date(payload.expiration):
+            raise HTTPException(status_code=400, detail="All strategy legs must use the position expiration.")
+        normalized_legs.append(
+            _json_safe(
+                {
+                    **raw_leg,
+                    "action": action,
+                    "option_type": option_type,
+                    "strike": strike,
+                    "quantity": quantity,
+                    "expiration": expiration,
+                }
+            )
+        )
+    try:
+        validate_strategy_legs(strategy_type, normalized_legs)
+        risk = reprice_defined_risk_strategy(
+            normalized_legs,
+            payload.fill_price,
+            spot=payload.underlying_at_entry or payload.underlying_reference,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    expected_total_cost = float(risk["max_loss"]) * payload.contracts
+    if abs(float(payload.total_cost) - expected_total_cost) > max(1.0, expected_total_cost * 0.02):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Total cost must match the defined maximum loss (${expected_total_cost:,.2f}) "
+                "for the entered debit and quantity."
+            ),
+        )
+    return {
+        "strategy_type": strategy_type,
+        "strategy_model_version": payload.strategy_model_version or STRATEGY_MODEL_VERSION,
+        "strategy_legs_json": json_dumps(normalized_legs),
+        "strategy_net_premium": risk["net_premium"],
+        "strategy_max_loss": risk["max_loss"],
+        "strategy_max_profit": risk["max_profit"],
+        "strategy_breakevens_json": json_dumps(risk["breakevens"]),
+        "strategy_direction": str(payload.strategy_direction or "defined").strip().lower(),
+        "strategy_volatility_exposure": str(payload.strategy_volatility_exposure or "mixed").strip().lower(),
+    }
 
 
 def _nullable_equals(column: Any, value: Any) -> Any:
@@ -1511,12 +1625,211 @@ def _compute_position_opportunity_signal(
     }
 
 
+def _compute_strategy_position_metrics(
+    position: OptionPosition,
+    provider: MarketDataProvider,
+    legs: list[Dict[str, object]],
+) -> Dict[str, object]:
+    market = _market_data_for_symbol(provider, position.symbol)
+    try:
+        hist = provider.daily_bars(position.symbol, days=180)
+    except Exception:
+        hist = None
+    try:
+        hv30 = compute_historical_volatility(hist, 30) if hist is not None else None
+    except Exception:
+        hv30 = None
+    spot = market.get("current_price") or position.underlying_reference or position.underlying_at_entry
+    dte_values: list[int] = []
+    current_legs: list[Dict[str, object]] = []
+    natural_value = 0.0
+    midpoint_value = 0.0
+    natural_complete = True
+    midpoint_complete = True
+    aggregate = {"delta": 0.0, "gamma": 0.0, "theta": 0.0, "vega": 0.0}
+    implied_vols: list[float] = []
+    quality_issues: list[str] = []
+    anchor_quote: Dict[str, object] = _quote_payload_from_row(None)
+
+    for index, leg in enumerate(legs):
+        expiration = _parse_date(str(leg.get("expiration") or position.expiration.isoformat())) or position.expiration
+        strike = _finite_number(leg.get("strike"))
+        option_type = str(leg.get("option_type") or "").strip().lower()
+        action = str(leg.get("action") or "").strip().lower()
+        quantity = _finite_int(leg.get("quantity")) or 1
+        if strike is None or option_type not in {"call", "put"} or action not in {"buy", "sell"}:
+            quality_issues.append(f"Leg {index + 1} is incomplete")
+            continue
+        row = _resolve_option_row(provider, position.symbol, expiration, option_type, strike)
+        quote = _quote_payload_from_row(row)
+        if index == 0 or (action == "buy" and not anchor_quote.get("price_source")):
+            anchor_quote = quote
+        dte = max((expiration - date.today()).days, 0)
+        dte_values.append(dte)
+        bid = _finite_number(quote.get("bid"))
+        ask = _finite_number(quote.get("ask"))
+        mid = _finite_number(quote.get("mid"))
+        close_mark = bid if action == "buy" else ask
+        sign = 1 if action == "buy" else -1
+        if close_mark is None or close_mark <= 0:
+            natural_complete = False
+            quality_issues.append(f"{action} {option_type} {strike:g} has no executable closing quote")
+        else:
+            natural_value += sign * quantity * close_mark
+        if mid is None or mid <= 0:
+            midpoint_complete = False
+        else:
+            midpoint_value += sign * quantity * mid
+
+        sigma = _finite_number(quote.get("implied_volatility"))
+        if sigma is not None and sigma > 5:
+            sigma /= 100.0
+        if sigma is None or sigma < 0.05 or sigma > 5:
+            sigma = float(hv30) / 100.0 if _is_finite_number(hv30) and float(hv30) > 0 else 0.30
+        implied_vols.extend([sigma] * quantity)
+        if spot and _is_finite_number(spot) and dte > 0:
+            greeks = calculate_greeks(
+                S=float(spot),
+                K=strike,
+                T=dte / 365.0,
+                r=RISK_FREE_RATE,
+                sigma=sigma,
+                option_type=option_type,
+            )
+            for key in aggregate:
+                aggregate[key] += sign * quantity * float(greeks[key])
+        spread_pct = _finite_number(quote.get("spread_pct"))
+        if spread_pct is not None and spread_pct > 25:
+            quality_issues.append(f"{option_type} {strike:g} spread is {spread_pct:.1f}%")
+        current_legs.append(
+            {
+                **leg,
+                "expiration": expiration.isoformat(),
+                "strike": strike,
+                "option_type": option_type,
+                "action": action,
+                "quantity": quantity,
+                "current_quote": quote,
+                "closing_mark": close_mark,
+                "closing_mark_basis": "bid" if action == "buy" else "ask",
+            }
+        )
+
+    if natural_complete and current_legs and natural_value < 0:
+        quality_issues.append("Combined natural closing value is below zero; use price discovery")
+        natural_complete = False
+    if midpoint_complete and current_legs and midpoint_value < 0:
+        midpoint_complete = False
+    option_price = round(natural_value, 4) if natural_complete and current_legs else None
+    midpoint_price = round(midpoint_value, 4) if midpoint_complete and current_legs else None
+    pnl_dollar = (
+        (option_price - position.fill_price) * position.contracts * 100.0
+        if option_price is not None
+        else None
+    )
+    pnl_percent = pnl_dollar / position.total_cost * 100.0 if pnl_dollar is not None and position.total_cost else None
+    average_iv = sum(implied_vols) / len(implied_vols) if implied_vols else 0.30
+    volatility_signal = _compute_volatility_signal(position, provider, market, anchor_quote, hv30)
+    opportunity_signal = _compute_position_opportunity_signal(position, anchor_quote, volatility_signal)
+    field_context = build_option_field_context(
+        hist,
+        option_type=position.option_type,
+        position_action=getattr(position, "action", None),
+        strategy_scope=str(getattr(position, "strategy_type", None) or "multi_leg"),
+        observed_at=_parse_market_timestamp(market.get("last_updated")),
+        data_source=str(market.get("data_source") or getattr(provider, "name", "unknown")),
+        timeframe="1D",
+    )
+    aggregate_greeks = {
+        "delta": round(aggregate["delta"], 4),
+        "gamma": round(aggregate["gamma"], 6),
+        "theta": round(aggregate["theta"], 2),
+        "vega": round(aggregate["vega"], 2),
+    }
+    spreads = [
+        float(item["current_quote"]["spread_pct"])
+        for item in current_legs
+        if _is_finite_number(item.get("current_quote", {}).get("spread_pct"))
+    ]
+    open_interests = [
+        int(item["current_quote"]["open_interest"])
+        for item in current_legs
+        if _is_finite_number(item.get("current_quote", {}).get("open_interest"))
+    ]
+    volumes = [
+        int(item["current_quote"]["volume"])
+        for item in current_legs
+        if _is_finite_number(item.get("current_quote", {}).get("volume"))
+    ]
+    return {
+        "market": {**market, "implied_volatility": average_iv},
+        "option_price": option_price,
+        "option_price_source": "strategy_natural" if option_price is not None else None,
+        "quote": {
+            "bid": None,
+            "ask": None,
+            "last": None,
+            "mid": midpoint_price,
+            "spread": None,
+            "spread_pct": max(spreads) if spreads else None,
+            "volume": min(volumes) if volumes else None,
+            "open_interest": min(open_interests) if open_interests else None,
+            "implied_volatility": average_iv,
+            "last_trade_at": None,
+            "data_source": market.get("data_source"),
+            "quote_source": market.get("quote_source"),
+            "quality": "multi_leg" if not quality_issues else "manual_price_discovery",
+        },
+        "volatility": average_iv,
+        "volatility_source": "strategy_leg_blend",
+        "hv30": hv30,
+        "volatility_signal": volatility_signal,
+        "opportunity": opportunity_signal,
+        "technical_snapshot": technical_snapshot_from_frame(hist),
+        "field_context": field_context,
+        "dte": min(dte_values) if dte_values else None,
+        "greeks": aggregate_greeks,
+        "pnl": {
+            "dollar": pnl_dollar,
+            "percent": pnl_percent,
+            "source": "strategy_natural" if option_price is not None else None,
+        },
+        "strategy": {
+            "strategy_type": getattr(position, "strategy_type", None),
+            "direction": getattr(position, "strategy_direction", None),
+            "volatility_exposure": getattr(position, "strategy_volatility_exposure", None),
+            "legs": current_legs,
+            "current_value": option_price,
+            "midpoint_value": midpoint_price,
+            "entry_net_premium": position.fill_price,
+            "max_loss_per_unit": getattr(position, "strategy_max_loss", None),
+            "max_loss_total": (
+                float(position.strategy_max_loss) * position.contracts
+                if _is_finite_number(getattr(position, "strategy_max_loss", None))
+                else position.total_cost
+            ),
+            "max_profit_per_unit": getattr(position, "strategy_max_profit", None),
+            "breakevens": json_loads(getattr(position, "strategy_breakevens_json", None), []),
+            "greeks": {**aggregate_greeks, "delta_shares": round(aggregate["delta"] * 100.0, 1)},
+            "quote_status": "actionable" if not quality_issues else "manual_price_discovery",
+            "quote_issues": quality_issues,
+        },
+    }
+
+
 def _compute_position_metrics(
     position: OptionPosition,
     provider: Optional[MarketDataProvider] = None,
     include_chain_snapshot: bool = False,
 ) -> Dict[str, object]:
     provider = provider or get_market_data_provider()
+    strategy_legs = json_loads(getattr(position, "strategy_legs_json", None), [])
+    if (
+        str(getattr(position, "strategy_type", None) or "single_leg") != "single_leg"
+        and isinstance(strategy_legs, list)
+        and len(strategy_legs) >= 2
+    ):
+        return _compute_strategy_position_metrics(position, provider, strategy_legs)
     market = _market_data_for_symbol(provider, position.symbol)
 
     option_row = _resolve_option_row(
@@ -1817,6 +2130,15 @@ def _serialize_position(
         "source_match_method": position.source_match_method,
         "source_match_confidence": position.source_match_confidence,
         "source_match_notes": position.source_match_notes,
+        "strategy_type": getattr(position, "strategy_type", None) or "single_leg",
+        "strategy_model_version": getattr(position, "strategy_model_version", None),
+        "strategy_legs": json_loads(getattr(position, "strategy_legs_json", None), None),
+        "strategy_net_premium": getattr(position, "strategy_net_premium", None),
+        "strategy_max_loss": getattr(position, "strategy_max_loss", None),
+        "strategy_max_profit": getattr(position, "strategy_max_profit", None),
+        "strategy_breakevens": json_loads(getattr(position, "strategy_breakevens_json", None), []),
+        "strategy_direction": getattr(position, "strategy_direction", None),
+        "strategy_volatility_exposure": getattr(position, "strategy_volatility_exposure", None),
         **(evaluation_window or {
             "evaluation_min_hold_days": None,
             "evaluation_hold_days": None,
@@ -1928,6 +2250,8 @@ def _position_row_context_payload(db, positions: list[OptionPosition]) -> Dict[s
                 "selected_premium": event.selected_premium,
                 "selected_convexity_profit_pct": event.selected_convexity_profit_pct,
                 "selected_convexity_probability_itm": event.selected_convexity_probability_itm,
+                "selected_strategy_type": getattr(event, "selected_strategy_type", None),
+                "strategy_plan": strategy_plan_from_event(event),
             }
         contexts[str(position.id)] = {
             "position_id": position.id,
@@ -1979,6 +2303,15 @@ def _serialize_closed_position(
         "source_match_method": position.source_match_method,
         "source_match_confidence": position.source_match_confidence,
         "source_match_notes": position.source_match_notes,
+        "strategy_type": getattr(position, "strategy_type", None) or "single_leg",
+        "strategy_model_version": getattr(position, "strategy_model_version", None),
+        "strategy_legs": json_loads(getattr(position, "strategy_legs_json", None), None),
+        "strategy_net_premium": getattr(position, "strategy_net_premium", None),
+        "strategy_max_loss": getattr(position, "strategy_max_loss", None),
+        "strategy_max_profit": getattr(position, "strategy_max_profit", None),
+        "strategy_breakevens": json_loads(getattr(position, "strategy_breakevens_json", None), []),
+        "strategy_direction": getattr(position, "strategy_direction", None),
+        "strategy_volatility_exposure": getattr(position, "strategy_volatility_exposure", None),
         **_opportunity_rank_payload_for_event(source_event, prefix="source_opportunity"),
     }
 
@@ -2406,6 +2739,8 @@ def _find_duplicate_open_position(
     option_type: str,
     fill_price: float,
     total_cost: float,
+    strategy_type: str = "single_leg",
+    strategy_legs_json: Optional[str] = None,
     exclude_id: Optional[int] = None,
 ) -> Optional[OptionPosition]:
     query = db.query(OptionPosition).filter(
@@ -2419,10 +2754,38 @@ def _find_duplicate_open_position(
         OptionPosition.option_type == option_type,
         OptionPosition.fill_price == fill_price,
         OptionPosition.total_cost == total_cost,
+        OptionPosition.strategy_type == strategy_type,
     )
     if exclude_id is not None:
         query = query.filter(OptionPosition.id != exclude_id)
-    return query.first()
+    requested_legs = json_loads(strategy_legs_json, [])
+    requested_signature = sorted(
+        (
+            str(leg.get("action") or ""),
+            int(leg.get("quantity") or 0),
+            str(leg.get("option_type") or ""),
+            float(leg.get("strike") or 0.0),
+            str(leg.get("expiration") or ""),
+        )
+        for leg in requested_legs
+        if isinstance(leg, dict)
+    )
+    for candidate in query.all():
+        candidate_legs = json_loads(getattr(candidate, "strategy_legs_json", None), [])
+        candidate_signature = sorted(
+            (
+                str(leg.get("action") or ""),
+                int(leg.get("quantity") or 0),
+                str(leg.get("option_type") or ""),
+                float(leg.get("strike") or 0.0),
+                str(leg.get("expiration") or ""),
+            )
+            for leg in candidate_legs
+            if isinstance(leg, dict)
+        )
+        if candidate_signature == requested_signature:
+            return candidate
+    return None
 
 
 def _find_duplicate_closed_position(
@@ -2983,6 +3346,68 @@ def get_scanner_run(run_id: int):
         raise HTTPException(status_code=404, detail=str(exc))
 
 
+@router.get("/scanner-events/{event_id}/strategy-plan")
+def get_scanner_event_strategy_plan(
+    event_id: int,
+    refresh: bool = Query(False),
+):
+    """Return the event-time receipt, or build a current non-persisted plan for legacy hits."""
+    with get_db_session() as db:
+        event = db.query(OptionAlertEvent).filter(OptionAlertEvent.id == event_id).first()
+        if not event:
+            raise HTTPException(status_code=404, detail="Scanner event not found")
+        stored = strategy_plan_from_event(event)
+        if stored is not None and not refresh:
+            return _json_safe({"strategy_plan": stored, "plan_source": "event_time_receipt"})
+
+        provider = get_market_data_provider()
+        market = _market_data_for_symbol(provider, event.symbol)
+        current_price = _finite_number(market.get("current_price"))
+        if current_price is None or current_price <= 0:
+            raise HTTPException(status_code=503, detail="A current underlying price is required to build the strategy.")
+        recipe = _extract_training_recipe(event.message)
+        hold_days = int(
+            event.review_max_hold_days
+            or recipe.get("hold_days")
+            or 14
+        )
+        move_candidates = [
+            float(value) * math.sqrt(max(hold_days, 1) / 252.0)
+            for value in (event.hv30, event.iv30)
+            if _finite_number(value) is not None and float(value) > 0
+        ]
+        expected_move_pct = max(2.0, min(14.0, sum(move_candidates) / len(move_candidates))) if move_candidates else 4.0
+        inferred_type = str(event.selected_option_type or _infer_training_option_type(_strip_ansi(event.message)) or "").lower()
+        direction = "Calls" if inferred_type == "call" else "Puts" if inferred_type == "put" else "Neutral"
+        selected_contract = (
+            {
+                "expiry": event.selected_expiry,
+                "dte": event.selected_dte,
+                "strike": event.selected_strike,
+                "side": inferred_type.upper() if inferred_type else None,
+            }
+            if event.selected_expiry
+            else None
+        )
+        plan = build_risk_defined_strategy(
+            provider=provider,
+            symbol=event.symbol,
+            current_price=current_price,
+            direction=direction,
+            hold_days=hold_days,
+            expected_move_pct=expected_move_pct,
+            iv30=event.iv30,
+            hv30=event.hv30,
+            selected_contract=selected_contract,
+        )
+        if plan is None:
+            raise HTTPException(
+                status_code=503,
+                detail="The current chain does not contain enough executable legs for a risk-defined plan.",
+            )
+        return _json_safe({"strategy_plan": plan, "plan_source": "current_chain_preview"})
+
+
 @router.post("/scanner-impressions")
 def create_scanner_impressions(
     payload: ScannerImpressionBatch,
@@ -3050,6 +3475,7 @@ def create_position(http_request: Request, payload: OptionPositionCreate):
         expiration = _parse_date(payload.expiration)
         symbol = payload.symbol.upper()
         option_type = payload.option_type.lower()
+        strategy_fields = _strategy_position_fields(payload)
         duplicate = _find_duplicate_open_position(
             db,
             trade_date=trade_date,
@@ -3062,6 +3488,8 @@ def create_position(http_request: Request, payload: OptionPositionCreate):
             option_type=option_type,
             fill_price=payload.fill_price,
             total_cost=payload.total_cost,
+            strategy_type=str(strategy_fields["strategy_type"]),
+            strategy_legs_json=strategy_fields["strategy_legs_json"],
         )
         if duplicate:
             raise HTTPException(
@@ -3095,6 +3523,7 @@ def create_position(http_request: Request, payload: OptionPositionCreate):
             source_match_method=attribution["source_match_method"],
             source_match_confidence=attribution["source_match_confidence"],
             source_match_notes=attribution["source_match_notes"],
+            **strategy_fields,
         )
         db.add(position)
         db.flush()
@@ -3147,6 +3576,7 @@ def update_position(position_id: int, http_request: Request, payload: OptionPosi
         expiration = _parse_date(payload.expiration)
         symbol = payload.symbol.upper()
         option_type = payload.option_type.lower()
+        strategy_fields = _strategy_position_fields(payload)
         duplicate = _find_duplicate_open_position(
             db,
             trade_date=trade_date,
@@ -3159,6 +3589,8 @@ def update_position(position_id: int, http_request: Request, payload: OptionPosi
             option_type=option_type,
             fill_price=payload.fill_price,
             total_cost=payload.total_cost,
+            strategy_type=str(strategy_fields["strategy_type"]),
+            strategy_legs_json=strategy_fields["strategy_legs_json"],
             exclude_id=position_id,
         )
         if duplicate:
@@ -3193,6 +3625,8 @@ def update_position(position_id: int, http_request: Request, payload: OptionPosi
         position.source_match_method = attribution["source_match_method"]
         position.source_match_confidence = attribution["source_match_confidence"]
         position.source_match_notes = attribution["source_match_notes"]
+        for field, value in strategy_fields.items():
+            setattr(position, field, value)
         event_type = (
             "resized_up"
             if payload.contracts > quantity_before
@@ -3950,29 +4384,85 @@ def get_position_greeks(
 
         T = dte / 365.0
         
-        # Generate price curves (delta and gamma)
-        price_curve = generate_delta_gamma_curve(
-            K=position.strike,
-            T=T,
-            r=RISK_FREE_RATE,
-            sigma=volatility,
-            option_type=position.option_type,
-            current_price=spot,
-            price_range_pct=price_range_pct,
-            num_points=51
+        strategy_legs = json_loads(getattr(position, "strategy_legs_json", None), [])
+        multi_leg = (
+            str(getattr(position, "strategy_type", None) or "single_leg") != "single_leg"
+            and isinstance(strategy_legs, list)
+            and len(strategy_legs) >= 2
         )
-        
-        # Generate theta curve (from current DTE down to 1 day)
         max_days = min(time_range_days, max(dte, 1))
-        theta_curve = generate_theta_curve(
-            S=spot,
-            K=position.strike,
-            r=RISK_FREE_RATE,
-            sigma=volatility,
-            option_type=position.option_type,
-            current_dte=max_days,
-            min_days=1
-        )
+        if multi_leg:
+            price_curve: list[Dict[str, float]] = []
+            theta_by_day: Dict[int, float] = {}
+            for leg in strategy_legs:
+                strike = _finite_number(leg.get("strike"))
+                quantity = _finite_int(leg.get("quantity")) or 1
+                option_type = str(leg.get("option_type") or "").lower()
+                action = str(leg.get("action") or "").lower()
+                if strike is None or option_type not in {"call", "put"} or action not in {"buy", "sell"}:
+                    continue
+                sign = 1.0 if action == "buy" else -1.0
+                leg_price_curve = generate_delta_gamma_curve(
+                    K=strike,
+                    T=T,
+                    r=RISK_FREE_RATE,
+                    sigma=volatility,
+                    option_type=option_type,
+                    current_price=spot,
+                    price_range_pct=price_range_pct,
+                    num_points=51,
+                )
+                if not price_curve:
+                    price_curve = [
+                        {"price": point["price"], "delta": 0.0, "gamma": 0.0}
+                        for point in leg_price_curve
+                    ]
+                for index, point in enumerate(leg_price_curve):
+                    price_curve[index]["delta"] += sign * quantity * point["delta"]
+                    price_curve[index]["gamma"] += sign * quantity * point["gamma"]
+                for point in generate_theta_curve(
+                    S=spot,
+                    K=strike,
+                    r=RISK_FREE_RATE,
+                    sigma=volatility,
+                    option_type=option_type,
+                    current_dte=max_days,
+                    min_days=1,
+                ):
+                    day = int(point["days"])
+                    theta_by_day[day] = theta_by_day.get(day, 0.0) + sign * quantity * point["theta"]
+            price_curve = [
+                {
+                    "price": point["price"],
+                    "delta": round(point["delta"], 6),
+                    "gamma": round(point["gamma"], 8),
+                }
+                for point in price_curve
+            ]
+            theta_curve = [
+                {"days": day, "theta": round(theta_by_day[day], 6)}
+                for day in sorted(theta_by_day, reverse=True)
+            ]
+        else:
+            price_curve = generate_delta_gamma_curve(
+                K=position.strike,
+                T=T,
+                r=RISK_FREE_RATE,
+                sigma=volatility,
+                option_type=position.option_type,
+                current_price=spot,
+                price_range_pct=price_range_pct,
+                num_points=51,
+            )
+            theta_curve = generate_theta_curve(
+                S=spot,
+                K=position.strike,
+                r=RISK_FREE_RATE,
+                sigma=volatility,
+                option_type=position.option_type,
+                current_dte=max_days,
+                min_days=1,
+            )
         
         # Current Greeks
         current_greeks = metrics.get("greeks")
@@ -3982,7 +4472,7 @@ def get_position_greeks(
             "theta_curve": theta_curve,
             "current_greeks": current_greeks,
             "model_info": {
-                "model": "Black-Scholes (European)",
+                "model": "Aggregated Black-Scholes legs" if multi_leg else "Black-Scholes (European)",
                 "risk_free_rate": RISK_FREE_RATE,
                 "volatility": volatility,
                 "volatility_source": metrics.get("volatility_source"),
@@ -4069,6 +4559,15 @@ def close_position(
             source_match_method=position.source_match_method,
             source_match_confidence=position.source_match_confidence,
             source_match_notes=position.source_match_notes,
+            strategy_type=getattr(position, "strategy_type", None) or "single_leg",
+            strategy_model_version=getattr(position, "strategy_model_version", None),
+            strategy_legs_json=getattr(position, "strategy_legs_json", None),
+            strategy_net_premium=getattr(position, "strategy_net_premium", None),
+            strategy_max_loss=getattr(position, "strategy_max_loss", None),
+            strategy_max_profit=getattr(position, "strategy_max_profit", None),
+            strategy_breakevens_json=getattr(position, "strategy_breakevens_json", None),
+            strategy_direction=getattr(position, "strategy_direction", None),
+            strategy_volatility_exposure=getattr(position, "strategy_volatility_exposure", None),
         )
         db.add(closed)
         db.flush()
@@ -4189,6 +4688,16 @@ def restore_closed_position(closed_position_id: int, http_request: Request):
             total_cost = closed.total_cost
         account = snapshot.get("account") if "account" in snapshot else closed.account
         action = snapshot.get("action") if "action" in snapshot else "Buy to Open"
+        restored_strategy_type = str(
+            snapshot.get("strategy_type")
+            or getattr(closed, "strategy_type", None)
+            or "single_leg"
+        )
+        restored_strategy_legs_json = (
+            json_dumps(snapshot.get("strategy_legs"))
+            if snapshot.get("strategy_legs")
+            else getattr(closed, "strategy_legs_json", None)
+        )
 
         duplicate = _find_duplicate_open_position(
             db,
@@ -4202,6 +4711,8 @@ def restore_closed_position(closed_position_id: int, http_request: Request):
             option_type=option_type,
             fill_price=fill_price,
             total_cost=total_cost,
+            strategy_type=restored_strategy_type,
+            strategy_legs_json=restored_strategy_legs_json,
         )
         if duplicate:
             raise HTTPException(
@@ -4253,6 +4764,31 @@ def restore_closed_position(closed_position_id: int, http_request: Request):
                 snapshot.get("source_match_notes")
                 if "source_match_notes" in snapshot
                 else closed.source_match_notes
+            ),
+            strategy_type=restored_strategy_type,
+            strategy_model_version=(
+                snapshot.get("strategy_model_version")
+                if "strategy_model_version" in snapshot
+                else getattr(closed, "strategy_model_version", None)
+            ),
+            strategy_legs_json=restored_strategy_legs_json,
+            strategy_net_premium=snapshot_float("strategy_net_premium", getattr(closed, "strategy_net_premium", None)),
+            strategy_max_loss=snapshot_float("strategy_max_loss", getattr(closed, "strategy_max_loss", None)),
+            strategy_max_profit=snapshot_float("strategy_max_profit", getattr(closed, "strategy_max_profit", None)),
+            strategy_breakevens_json=(
+                json_dumps(snapshot.get("strategy_breakevens"))
+                if snapshot.get("strategy_breakevens") is not None
+                else getattr(closed, "strategy_breakevens_json", None)
+            ),
+            strategy_direction=(
+                snapshot.get("strategy_direction")
+                if "strategy_direction" in snapshot
+                else getattr(closed, "strategy_direction", None)
+            ),
+            strategy_volatility_exposure=(
+                snapshot.get("strategy_volatility_exposure")
+                if "strategy_volatility_exposure" in snapshot
+                else getattr(closed, "strategy_volatility_exposure", None)
             ),
         )
         db.add(restored)

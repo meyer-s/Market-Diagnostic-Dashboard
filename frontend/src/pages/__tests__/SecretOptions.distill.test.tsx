@@ -513,7 +513,7 @@ describe("Secret Options desktop distillation", () => {
     expect(await screen.findByText("Recorded decision · review #1")).not.toBeNull();
     expect(await screen.findByText("Reduce to 1")).not.toBeNull();
     expect((await screen.findAllByLabelText(/ALPHA\. confirmed decision window.*Next review Aug 2, 2026.*Decision deadline Aug 15, 2026/)).length).toBeGreaterThan(0);
-    expect((await screen.findAllByText(/\d+d review overdue/)).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(/\d+d (?:review overdue|past decision)/)).length).toBeGreaterThan(0);
   });
 
   it("applies a recorded review response without refetching the position workspace", async () => {

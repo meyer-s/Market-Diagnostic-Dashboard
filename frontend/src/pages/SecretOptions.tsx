@@ -82,6 +82,7 @@ import {
   scannerPositionMatchBadgeClass,
   scannerPositionMatchTextClass,
   ScannerHitDetail,
+  StrategyPlanCard,
 } from "../features/secretOptions";
 import type {
   OptionPosition,
@@ -109,6 +110,11 @@ import type {
   OptionalityCluster,
   OptionalityClusterResponse,
   ScannerRankedOpportunity,
+  OptionStrategyCandidate,
+  OptionStrategyLeg,
+  OptionStrategyPlan,
+  OptionStrategyPlanResponse,
+  OptionRiskPolicy,
   ScannerRun,
   ScannerSummaryResponse,
   ScannerRunResponse,
@@ -739,6 +745,16 @@ const buildPositionRowContextTooltip = (
   return lines.join("\n");
 };
 
+const formatStrategyName = (value: string | null | undefined) =>
+  (value || "single leg")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+
+const positionContractSummary = (position: OptionPosition) =>
+  position.strategy_type && position.strategy_type !== "single_leg"
+    ? `${formatStrategyName(position.strategy_type)} · ${position.strategy_legs?.length ?? 0} legs`
+    : `${position.option_type.toUpperCase()} $${formatNumber(position.strike, 2)}`;
+
 function PositionIndexBadges({ context }: { context: PositionRowContext | null | undefined }) {
   if (!context?.index_memberships.length) return null;
   return (
@@ -830,7 +846,7 @@ function MobilePositionCard({
             <PositionIndexBadges context={rowContext} />
           </div>
           <div className="mt-0.5 truncate text-xs text-stealth-400">
-            {position.option_type.toUpperCase()} ${formatNumber(position.strike, 2)} · {formatDate(position.expiration)} · {metrics.dte ?? "—"} DTE
+            {positionContractSummary(position)} · {formatDate(position.expiration)} · {metrics.dte ?? "—"} DTE
           </div>
         </div>
         <div className="shrink-0 text-right tabular-nums">
@@ -1192,6 +1208,11 @@ type PositionFormPayload = {
   dte_at_entry: number | null;
   underlying_reference: number | null;
   source_event_id: number | null;
+  strategy_type: string;
+  strategy_model_version: string | null;
+  strategy_legs: OptionStrategyLeg[] | null;
+  strategy_direction: string | null;
+  strategy_volatility_exposure: string | null;
 };
 
 interface ScannerTradePrefillContext {
@@ -1199,7 +1220,42 @@ interface ScannerTradePrefillContext {
   symbol: string;
   priceBasis: string;
   missingFields: string[];
+  strategyLabel?: string;
+  maxLossPerUnit?: number;
 }
+
+interface PositionFormStrategyContext {
+  strategyType: string;
+  label: string;
+  modelVersion: string | null;
+  legs: OptionStrategyLeg[];
+  direction: string | null;
+  volatilityExposure: string | null;
+  maxLossPerUnit: number | null;
+  maxProfitPerUnit: number | null;
+  breakevens: number[];
+}
+
+const formStrategyBreakevens = (
+  strategy: PositionFormStrategyContext,
+  netDebit: number | null,
+) => {
+  if (netDebit === null || netDebit <= 0) return strategy.breakevens;
+  const ordered = [...strategy.legs].sort((left, right) => left.strike - right.strike);
+  const longLeg = strategy.legs.find((leg) => leg.action === "buy");
+  if (strategy.strategyType === "call_debit_spread" && longLeg) return [longLeg.strike + netDebit];
+  if (strategy.strategyType === "put_debit_spread" && longLeg) return [longLeg.strike - netDebit];
+  if (strategy.strategyType === "long_straddle" && ordered[0]) {
+    return [ordered[0].strike - netDebit, ordered[0].strike + netDebit];
+  }
+  if (strategy.strategyType === "long_strangle" && ordered.length === 2) {
+    return [ordered[0].strike - netDebit, ordered[1].strike + netDebit];
+  }
+  if (strategy.strategyType.includes("butterfly") && ordered.length === 3) {
+    return [ordered[0].strike + netDebit, ordered[2].strike - netDebit];
+  }
+  return strategy.breakevens;
+};
 
 type ClosedPositionFormPayload = {
   trade_date: string;
@@ -1229,6 +1285,10 @@ const asNumber = (value: string | number | null | undefined): number | null => {
 const normalizedNullableText = (value: string | null | undefined) => (value || "").trim().toUpperCase();
 const duplicateNumber = (value: number | null | undefined) =>
   value === null || value === undefined || !Number.isFinite(value) ? "" : Number(value).toFixed(4);
+const strategyLegSignature = (legs: OptionStrategyLeg[] | null | undefined) =>
+  (legs ?? [])
+    .map((leg) => `${leg.action}:${leg.quantity}:${leg.option_type}:${duplicateNumber(leg.strike)}:${leg.expiration}`)
+    .join(",");
 
 const openPositionSignature = (
   item: PositionFormPayload | OptionPosition
@@ -1244,6 +1304,8 @@ const openPositionSignature = (
     item.option_type.trim().toLowerCase(),
     duplicateNumber(item.fill_price),
     duplicateNumber(item.total_cost),
+    item.strategy_type ?? "single_leg",
+    strategyLegSignature(item.strategy_legs),
   ].join("|");
 
 const closedPositionSignature = (
@@ -1500,6 +1562,7 @@ export default function SecretOptions() {
   const [formData, setFormData] = useState(initialFormState);
   const [formSourceEventId, setFormSourceEventId] = useState<number | null>(null);
   const [scannerTradePrefill, setScannerTradePrefill] = useState<ScannerTradePrefillContext | null>(null);
+  const [formStrategy, setFormStrategy] = useState<PositionFormStrategyContext | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingPositionId, setEditingPositionId] = useState<number | null>(null);
   const [showCloseModal, setShowCloseModal] = useState(false);
@@ -1547,6 +1610,10 @@ export default function SecretOptions() {
   const sentScannerImpressionsRef = useRef<Set<string>>(new Set());
   const scannerImpressionPayloadsRef = useRef<Map<string, ScannerImpressionWire>>(new Map());
   const [expandedScannerHitId, setExpandedScannerHitId] = useState<number | null>(null);
+  const [strategyPlansByEvent, setStrategyPlansByEvent] = useState<Record<number, OptionStrategyPlan>>({});
+  const [strategyPlanLoadingId, setStrategyPlanLoadingId] = useState<number | null>(null);
+  const [strategyPlanError, setStrategyPlanError] = useState<string | null>(null);
+  const strategyPlanRequestsRef = useRef(new Set<number>());
   const [loadingScannerRunDetail, setLoadingScannerRunDetail] = useState(false);
   const [positionFilter, setPositionFilter] = useState<PositionFilter>("all");
   const [positionsLoadedAt, setPositionsLoadedAt] = useState<Date | null>(null);
@@ -1580,6 +1647,7 @@ export default function SecretOptions() {
   const [thesisAssessmentError, setThesisAssessmentError] = useState<string | null>(null);
   const [learningSummary, setLearningSummary] = useState<OptionLearningSummary | null>(null);
   const [portfolioCapitalInput, setPortfolioCapitalInput] = useState("");
+  const [scannerRiskPolicy, setScannerRiskPolicy] = useState<OptionRiskPolicy | null>(null);
   const [riskPolicySaving, setRiskPolicySaving] = useState(false);
   const [showDecisionReviewModal, setShowDecisionReviewModal] = useState(false);
   const [decisionReviewMode, setDecisionReviewMode] = useState<DecisionReviewMode>("override");
@@ -1651,6 +1719,10 @@ export default function SecretOptions() {
     setScannerRunDetail(null);
     scannerRunDetailRef.current = null;
     setExpandedScannerHitId(null);
+    setStrategyPlansByEvent({});
+    setStrategyPlanLoadingId(null);
+    setStrategyPlanError(null);
+    strategyPlanRequestsRef.current.clear();
     setPositionsLoadedAt(null);
     setPositionRefreshProgress(null);
     setZoneInputsByPosition({});
@@ -1659,9 +1731,11 @@ export default function SecretOptions() {
     setDecisionWindowsByPosition({});
     setThesisAssessmentsByPosition({});
     setLearningSummary(null);
+    setScannerRiskPolicy(null);
     setPortfolioCapitalInput("");
     setHoveredPositionId(null);
     setScannerTradePrefill(null);
+    setFormStrategy(null);
     setFormSourceEventId(null);
     setShowAddModal(false);
     setShowCloseModal(false);
@@ -2101,7 +2175,10 @@ export default function SecretOptions() {
           min_dte_for_add: policy.min_dte_for_add ?? 21,
         }),
       });
-      await loadThesisAssessment(selectedThesisAssessment.position_id, true);
+      await Promise.all([
+        loadThesisAssessment(selectedThesisAssessment.position_id, true),
+        loadRiskPolicy(),
+      ]);
     } catch (err: unknown) {
       setThesisAssessmentError(err instanceof Error ? err.message : "Failed to save the risk policy.");
     } finally {
@@ -2189,6 +2266,7 @@ export default function SecretOptions() {
     setEditingPositionId(null);
     setFormSourceEventId(null);
     setScannerTradePrefill(null);
+    setFormStrategy(null);
     resetForm();
     setFormError(null);
   };
@@ -2232,6 +2310,11 @@ export default function SecretOptions() {
       dte_at_entry: optionalNumber(formData.dte_at_entry),
       underlying_reference: optionalNumber(formData.underlying_reference),
       source_event_id: formSourceEventId,
+      strategy_type: formStrategy?.strategyType ?? "single_leg",
+      strategy_model_version: formStrategy?.modelVersion ?? null,
+      strategy_legs: formStrategy?.legs ?? null,
+      strategy_direction: formStrategy?.direction ?? null,
+      strategy_volatility_exposure: formStrategy?.volatilityExposure ?? null,
     };
   };
 
@@ -2274,6 +2357,24 @@ export default function SecretOptions() {
     setEditingPositionId(position.id);
     setFormSourceEventId(position.source_event_id ?? null);
     setScannerTradePrefill(null);
+    setFormStrategy(
+      position.strategy_type &&
+      position.strategy_type !== "single_leg" &&
+      position.strategy_legs &&
+      position.strategy_legs.length >= 2
+        ? {
+            strategyType: position.strategy_type,
+            label: decisionLabel(position.strategy_type),
+            modelVersion: position.strategy_model_version ?? null,
+            legs: position.strategy_legs,
+            direction: position.strategy_direction ?? null,
+            volatilityExposure: position.strategy_volatility_exposure ?? null,
+            maxLossPerUnit: position.strategy_max_loss ?? null,
+            maxProfitPerUnit: position.strategy_max_profit ?? null,
+            breakevens: position.strategy_breakevens ?? [],
+          }
+        : null,
+    );
     setFormError(null);
     setFormData({
       trade_date: position.trade_date || "",
@@ -2310,6 +2411,16 @@ export default function SecretOptions() {
     setShowAddModal(true);
   };
 
+  const loadRiskPolicy = async () => {
+    try {
+      const data = await apiFetch<{ risk_policy: OptionRiskPolicy }>("/secret/options/risk-policy");
+      setScannerRiskPolicy(data.risk_policy);
+      setPortfolioCapitalInput((current) => current || String(data.risk_policy.portfolio_capital ?? ""));
+    } catch (err: unknown) {
+      console.error("Failed to load option risk policy:", err);
+    }
+  };
+
   const selectOptionsWorkspace = (workspace: OptionsWorkspace) => {
     setOptionsWorkspace(workspace);
     if (workspace !== "scanner") return;
@@ -2338,6 +2449,7 @@ export default function SecretOptions() {
       loadDecisionReviewWindows(),
       loadOptionalityClusters(),
       loadScannerSummary(),
+      loadRiskPolicy(),
     ]);
   };
 
@@ -2352,8 +2464,71 @@ export default function SecretOptions() {
     resetSecretWorkspace();
   };
 
-  const openScannerTradePrefill = (opportunity: ScannerRankedOpportunity) => {
+  const openScannerTradePrefill = (
+    opportunity: ScannerRankedOpportunity,
+    strategyCandidate?: OptionStrategyCandidate,
+  ) => {
     const contract = opportunity.selected_contract;
+    const strategyPlan = strategyPlansByEvent[opportunity.event_id] ?? opportunity.strategy_plan ?? null;
+    if (strategyCandidate && strategyPlan) {
+      const anchorLeg = strategyCandidate.legs.find((leg) => leg.action === "buy") ?? strategyCandidate.legs[0];
+      const riskBudget = scannerRiskPolicy?.default_trade_risk_budget ?? null;
+      const budgetUnits = riskBudget && strategyCandidate.max_loss > 0
+        ? Math.floor(riskBudget / strategyCandidate.max_loss)
+        : 1;
+      const contracts = Math.max(1, budgetUnits);
+      const missingFields = [
+        !anchorLeg?.expiration ? "expiration" : null,
+        anchorLeg?.strike === null || anchorLeg?.strike === undefined ? "strike" : null,
+        !anchorLeg?.option_type ? "option type" : null,
+        !Number.isFinite(strategyCandidate.net_debit) || strategyCandidate.net_debit <= 0 ? "net debit" : null,
+      ].filter((field): field is string => Boolean(field));
+
+      setEditingPositionId(null);
+      setFormError(null);
+      setFormSourceEventId(opportunity.event_id);
+      setFormStrategy({
+        strategyType: strategyCandidate.strategy_type,
+        label: strategyCandidate.label,
+        modelVersion: strategyPlan.model_version,
+        legs: strategyCandidate.legs,
+        direction: strategyCandidate.direction,
+        volatilityExposure: strategyCandidate.volatility_exposure,
+        maxLossPerUnit: strategyCandidate.max_loss,
+        maxProfitPerUnit: strategyCandidate.max_profit,
+        breakevens: strategyCandidate.breakevens,
+      });
+      setScannerTradePrefill({
+        eventId: opportunity.event_id,
+        symbol: opportunity.symbol.trim().toUpperCase(),
+        priceBasis: strategyCandidate.entry_price_basis,
+        missingFields,
+        strategyLabel: strategyCandidate.label,
+        maxLossPerUnit: strategyCandidate.max_loss,
+      });
+      setFormData({
+        ...initialFormState,
+        trade_date: opportunity.triggered_at?.slice(0, 10) || todayInputValue(),
+        action: "Buy to Open",
+        contracts: String(contracts),
+        symbol: opportunity.symbol.trim().toUpperCase(),
+        expiration: anchorLeg?.expiration || strategyCandidate.expiration,
+        strike: anchorLeg?.strike !== null && anchorLeg?.strike !== undefined ? String(anchorLeg.strike) : "",
+        option_type: anchorLeg?.option_type || "call",
+        fill_price: strategyCandidate.net_debit.toFixed(2),
+        total_cost: (strategyCandidate.max_loss * contracts).toFixed(2),
+        underlying_at_entry: String(strategyPlan.underlying_price),
+        estimated_delta: String(strategyCandidate.greeks.delta),
+        shares_equivalent: String(Math.round(strategyCandidate.greeks.delta * 100 * contracts)),
+        dte_at_entry: String(strategyCandidate.dte),
+        underlying_reference: String(strategyPlan.underlying_price),
+      });
+      setExpandedScannerHitId(null);
+      setShowAddModal(true);
+      return;
+    }
+
+    setFormStrategy(null);
     const sections = parseScannerAlertSections(opportunity.message);
     const setup = scannerAlertValue(sections, "EXAMPLE TRADE", "Setup") || "";
     const setupContracts = Number(setup.match(/(\d+)\s*x/i)?.[1] || 1);
@@ -2409,7 +2584,18 @@ export default function SecretOptions() {
   const handleFieldChange =
     (field: keyof typeof initialFormState) =>
     (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-      setFormData((prev) => ({ ...prev, [field]: event.target.value }));
+      const value = event.target.value;
+      setFormData((prev) => {
+        const next = { ...prev, [field]: value };
+        if (formStrategy && (field === "contracts" || field === "fill_price")) {
+          const contracts = Number(field === "contracts" ? value : prev.contracts);
+          const netDebit = Number(field === "fill_price" ? value : prev.fill_price);
+          if (Number.isFinite(contracts) && contracts > 0 && Number.isFinite(netDebit) && netDebit > 0) {
+            next.total_cost = (contracts * netDebit * 100).toFixed(2);
+          }
+        }
+        return next;
+      });
     };
 
   const handleClosedFieldChange =
@@ -3026,6 +3212,7 @@ export default function SecretOptions() {
       // data only when its corresponding control is opened.
       void loadOptionalityClusters();
       void loadScannerSummary();
+      void loadRiskPolicy();
     })();
     return () => {
       cancelled = true;
@@ -3343,6 +3530,9 @@ export default function SecretOptions() {
     () => selectedScannerHits.find((hit) => hit.event_id === expandedScannerHitId) ?? null,
     [expandedScannerHitId, selectedScannerHits]
   );
+  const selectedScannerStrategyPlan = selectedScannerHit
+    ? strategyPlansByEvent[selectedScannerHit.event_id] ?? selectedScannerHit.strategy_plan ?? null
+    : null;
   const selectedScannerHitContract = selectedScannerHit?.selected_contract ?? null;
   const selectedScannerHitPositionMatch = presentScannerPositionMatch(selectedScannerHit?.position_match);
   const selectedScannerHitContractLabel =
@@ -3357,6 +3547,38 @@ export default function SecretOptions() {
             : ""
         }`
       : "contract pending";
+
+  useEffect(() => {
+    const eventId = selectedScannerHit?.event_id;
+    if (
+      !eventId ||
+      selectedScannerHit.strategy_plan ||
+      strategyPlansByEvent[eventId] ||
+      strategyPlanRequestsRef.current.has(eventId)
+    ) {
+      return;
+    }
+    strategyPlanRequestsRef.current.add(eventId);
+    setStrategyPlanLoadingId(eventId);
+    setStrategyPlanError(null);
+    void apiFetch<OptionStrategyPlanResponse>(`/secret/options/scanner-events/${eventId}/strategy-plan`)
+      .then((response) => {
+        setStrategyPlansByEvent((current) => ({
+          ...current,
+          [eventId]: response.strategy_plan,
+        }));
+      })
+      .catch((err: unknown) => {
+        setStrategyPlanError(
+          err instanceof Error
+            ? err.message
+            : "A risk-defined plan could not be built from the current chain.",
+        );
+      })
+      .finally(() => {
+        setStrategyPlanLoadingId((current) => (current === eventId ? null : current));
+      });
+  }, [selectedScannerHit?.event_id, selectedScannerHit?.strategy_plan, strategyPlansByEvent]);
   const selectedScannerRunActive = selectedScannerRun ? isActiveScannerRun(selectedScannerRun) : false;
   const selectedScannerRunProgress =
     selectedScannerRun && selectedScannerRun.total_symbols > 0
@@ -4020,6 +4242,7 @@ export default function SecretOptions() {
     setEditingPositionId(null);
     setFormSourceEventId(null);
     setScannerTradePrefill(null);
+    setFormStrategy(null);
     resetForm();
     setFormError(null);
     setShowAddModal(true);
@@ -4624,6 +4847,7 @@ export default function SecretOptions() {
                     <p className="text-sm text-stealth-400">Select a completed run to inspect its hits.</p>
                   ) : selectedScannerHits.map((hit) => {
                     const contract = hit.selected_contract;
+                    const strategyPlan = strategyPlansByEvent[hit.event_id] ?? hit.strategy_plan ?? null;
                     const match = presentScannerPositionMatch(hit.position_match);
                     const field = presentOptionMarketField(hit.field_context);
                     return (
@@ -4649,8 +4873,9 @@ export default function SecretOptions() {
                               ) : null}
                             </div>
                             <p className="mt-0.5 truncate text-xs text-stealth-400">
-                              {contract.option_type?.toUpperCase() ?? "Option"} {contract.strike !== null ? formatNumber(contract.strike, 2) : "pending"} · {hit.group}
+                              {strategyPlan?.primary.label ?? `${contract.option_type?.toUpperCase() ?? "Option"} ${contract.strike !== null ? formatNumber(contract.strike, 2) : "pending"}`} · {hit.group}
                             </p>
+                            {strategyPlan ? <p className="mt-1 text-xs text-rose-200">Defined loss {formatCurrency(strategyPlan.primary.max_loss)} / unit</p> : null}
                           </div>
                           <span className={`rounded border px-2 py-1 text-xs font-semibold tabular-nums ${opportunityScoreClass(hit.score)}`}>
                             #{hit.display_ordinal ?? hit.applied_rank ?? "—"} · {hit.grade ?? hit.score.toFixed(0)}
@@ -4907,7 +5132,7 @@ export default function SecretOptions() {
                               <PositionIndexBadges context={rowContext} />
                             </div>
                             <div className="truncate text-xs uppercase tracking-wide text-stealth-500">
-                              {position.option_type} ${formatNumber(position.strike, 2)} / {position.contracts} ctr
+                              {positionContractSummary(position)} / {position.contracts} unit{position.contracts === 1 ? "" : "s"}
                             </div>
                           </div>
                         </div>
@@ -5230,6 +5455,7 @@ export default function SecretOptions() {
                 <div className="divide-y divide-stealth-800/80">
                 {selectedScannerHits.map((opportunity) => {
                   const contract = opportunity.selected_contract;
+                  const strategyPlan = strategyPlansByEvent[opportunity.event_id] ?? opportunity.strategy_plan ?? null;
                   const positionMatch = presentScannerPositionMatch(opportunity.position_match);
                   const marketField = presentOptionMarketField(opportunity.field_context);
                   const isSelected = expandedScannerHitId === opportunity.event_id;
@@ -5256,7 +5482,7 @@ export default function SecretOptions() {
                         <div className="min-w-0">
                           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                             <div className="truncate text-stealth-200">
-                              {contractLabel}
+                              {strategyPlan?.primary.label ?? contractLabel}
                               {contract.expiry ? ` · ${formatDate(contract.expiry)}` : ""}
                               {contract.dte !== null && contract.dte !== undefined ? ` · ${contract.dte} DTE` : ""}
                             </div>
@@ -5280,7 +5506,9 @@ export default function SecretOptions() {
                             ) : null}
                           </div>
                           <div className="truncate text-xs text-stealth-500">
-                            {opportunity.group} · 30D chain pct {formatPercent(opportunity.iv_percentile, 0)} · IV/HV {formatPointChange(opportunity.iv_hv_spread, 1)}
+                            {opportunity.group}
+                            {strategyPlan ? ` · max loss ${formatCurrency(strategyPlan.primary.max_loss)}` : ""}
+                            {` · 30D chain pct ${formatPercent(opportunity.iv_percentile, 0)} · IV/HV ${formatPointChange(opportunity.iv_hv_spread, 1)}`}
                             {contract.reward_risk !== null && contract.reward_risk !== undefined ? ` · ${contract.reward_risk.toFixed(2)}R` : ""}
                             {contract.open_interest !== null && contract.open_interest !== undefined ? ` · OI ${contract.open_interest}` : ""}
                           </div>
@@ -5422,7 +5650,7 @@ export default function SecretOptions() {
             {selected ? (
               <>
                 <h2 className="truncate text-sm font-semibold text-stealth-100">
-                  {selected.position.symbol} {selected.position.option_type.toUpperCase()} ${formatNumber(selected.position.strike, 2)}
+                  {selected.position.symbol} {positionContractSummary(selected.position)}
                 </h2>
                 <p className="mt-0.5 text-xs font-medium text-stealth-400">
                   {formatDate(selected.position.expiration)} · {selected.metrics.dte ?? "n/a"} DTE · {selected.position.contracts} held
@@ -5441,6 +5669,49 @@ export default function SecretOptions() {
             )}
           </div>
         </div>
+
+        {selected?.position.strategy_type && selected.position.strategy_type !== "single_leg" ? (
+          <section aria-labelledby="tracked-structure-heading" className="mb-2 border-y border-stealth-700 py-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-xs font-semibold text-emerald-200">Risk-defined structure</div>
+                <h3 id="tracked-structure-heading" className="mt-0.5 text-sm font-semibold text-stealth-100">
+                  {formatStrategyName(selected.position.strategy_type)}
+                </h3>
+                <div className="mt-0.5 text-xs text-stealth-400">
+                  {decisionLabel(selected.position.strategy_direction)} · {decisionLabel(selected.position.strategy_volatility_exposure)}
+                </div>
+              </div>
+              <div className="text-right text-xs">
+                <div className="text-stealth-500">Maximum loss</div>
+                <div className="font-semibold text-rose-200">
+                  {formatCurrency(
+                    selected.metrics.strategy?.max_loss_total
+                    ?? ((selected.position.strategy_max_loss ?? selected.position.fill_price * 100) * selected.position.contracts),
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-stealth-300">
+              {(selected.metrics.strategy?.legs ?? selected.position.strategy_legs ?? []).map((leg, index) => (
+                <span key={`${leg.action}-${leg.option_type}-${leg.strike}-${index}`}>
+                  {leg.action === "buy" ? "+" : "−"} {leg.quantity} {leg.option_type.toUpperCase()} ${leg.strike.toFixed(2)}
+                </span>
+              ))}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-stealth-500">
+              <span>Current debit {formatCurrency(selected.metrics.strategy?.current_value)}</span>
+              <span>Break-even {(selected.metrics.strategy?.breakevens ?? selected.position.strategy_breakevens ?? []).map((value) => `$${value.toFixed(2)}`).join(" / ") || "n/a"}</span>
+              <span>Net delta {formatSigned(selected.metrics.strategy?.greeks.delta ?? selected.metrics.greeks?.delta, 2)}</span>
+              <span>Net vega {formatSigned(selected.metrics.strategy?.greeks.vega ?? selected.metrics.greeks?.vega, 2)}</span>
+            </div>
+            {selected.metrics.strategy?.quote_issues.length ? (
+              <div className="mt-2 text-xs leading-5 text-amber-200">
+                Pricing review: {selected.metrics.strategy.quote_issues.join("; ")}.
+              </div>
+            ) : null}
+          </section>
+        ) : null}
 
         {selected && (
           <div className="mb-2 rounded-xl border border-sky-700/45 bg-sky-950/20 p-3">
@@ -6342,19 +6613,44 @@ export default function SecretOptions() {
               </div>
             </div>
             <div className="min-h-0 overflow-x-hidden overflow-y-auto">
+              {strategyPlanLoadingId === selectedScannerHit.event_id && !selectedScannerStrategyPlan ? (
+                <div className="border-b border-stealth-800 bg-stealth-900/55 px-4 py-4 text-sm text-stealth-300" role="status">
+                  Building a risk-defined structure from the current chain…
+                </div>
+              ) : null}
+              {strategyPlanError && !selectedScannerStrategyPlan ? (
+                <div className="border-b border-amber-700/45 bg-amber-950/25 px-4 py-3 text-xs leading-5 text-amber-100" role="alert">
+                  Risk-defined plan unavailable: {strategyPlanError} You can still inspect or track the original contract below.
+                </div>
+              ) : null}
+              {selectedScannerStrategyPlan ? (
+                <StrategyPlanCard
+                  plan={selectedScannerStrategyPlan}
+                  riskBudget={scannerRiskPolicy?.default_trade_risk_budget}
+                  disabled={secretMutationDisabled}
+                  onUse={(candidate) => openScannerTradePrefill(selectedScannerHit, candidate)}
+                />
+              ) : null}
               <ScannerHitDetail opportunity={selectedScannerHit} />
             </div>
             <div className="flex shrink-0 flex-col gap-2 border-t border-stealth-800 bg-stealth-950/95 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 sm:flex-row sm:items-center sm:justify-between sm:pb-3">
               <div className="text-xs leading-relaxed text-stealth-400">
-                Prefills one training lot from the recorded scanner contract and preserves event #{selectedScannerHit.event_id} for attribution.
+                {selectedScannerStrategyPlan
+                  ? `The structure above is the system default. The original single contract remains available for comparison and preserves event #${selectedScannerHit.event_id}.`
+                  : `Prefills one training lot from the recorded scanner contract and preserves event #${selectedScannerHit.event_id} for attribution.`}
               </div>
               <button
                 type="button"
                 onClick={() => openScannerTradePrefill(selectedScannerHit)}
-                className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-emerald-700 px-4 text-sm font-semibold text-white transition hover:bg-emerald-600 active:bg-emerald-800"
+                disabled={secretMutationDisabled}
+                className={`inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-45 ${
+                  selectedScannerStrategyPlan
+                    ? "border border-stealth-600 text-stealth-200 hover:border-stealth-400 hover:text-white"
+                    : "bg-emerald-700 text-white hover:bg-emerald-600 active:bg-emerald-800"
+                }`}
               >
                 <Plus className="h-4 w-4" aria-hidden="true" />
-                Add training trade
+                {selectedScannerStrategyPlan ? "Use original single leg" : "Add training trade"}
               </button>
             </div>
           </div>
@@ -6382,7 +6678,7 @@ export default function SecretOptions() {
                     ? "Revise decision window"
                     : selectedDecisionReviews?.latest_review
                       ? "Override current grade"
-                      : "Capture mandate and decision"} · {selected.position.symbol} {selected.position.option_type.toUpperCase()} ${formatNumber(selected.position.strike, 2)}
+                      : "Capture mandate and decision"} · {selected.position.symbol} {positionContractSummary(selected.position)}
                 </h2>
                 <p className="mt-1 max-w-3xl text-xs text-stealth-400">
                   {decisionReviewMode === "window"
@@ -6742,7 +7038,7 @@ export default function SecretOptions() {
 
       {/* Trade Modal */}
       {showAddModal && renderModal(
-        editingPositionId ? "Edit trade" : scannerTradePrefill ? "Add scanner training trade" : "Add new trade",
+        editingPositionId ? "Edit trade" : formStrategy ? "Track risk-defined strategy" : scannerTradePrefill ? "Add scanner training trade" : "Add new trade",
         closeTradeModal,
         <div
           role="presentation"
@@ -6757,7 +7053,7 @@ export default function SecretOptions() {
             <div className="sticky -top-4 z-10 -mx-4 mb-4 flex items-start justify-between gap-3 border-b border-stealth-700 bg-stealth-800/95 px-4 pb-3 pt-1 backdrop-blur sm:-top-6 sm:-mx-6 sm:px-6 sm:pt-0">
               <div>
                 <h2 className="text-xl font-semibold">
-                  {editingPositionId ? "Edit Trade" : scannerTradePrefill ? "Add Scanner Training Trade" : "Add New Trade"}
+                  {editingPositionId ? "Edit Trade" : formStrategy ? `Track ${formStrategy.label}` : scannerTradePrefill ? "Add Scanner Training Trade" : "Add New Trade"}
                 </h2>
                 <p className="mt-1 text-xs leading-5 text-stealth-400">Review the required fields below. Cancel and save actions remain available while you scroll.</p>
               </div>
@@ -6783,7 +7079,7 @@ export default function SecretOptions() {
                   Prefilled from {scannerTradePrefill.symbol} scanner event #{scannerTradePrefill.eventId}
                 </div>
                 <div className="mt-1 text-stealth-300">
-                  Price basis: {scannerTradePrefill.priceBasis}. Confirm the quantity, recorded quote, account, and actual execution before adding. This logs a tracked position for learning; it does not submit a broker order.
+                  Price basis: {scannerTradePrefill.priceBasis}. Confirm the quantity, net debit, account, and actual execution before adding. This logs a tracked position for learning; it does not submit a broker order.
                 </div>
                 {scannerTradePrefill.missingFields.length > 0 ? (
                   <div className="mt-1 font-medium text-amber-200">
@@ -6791,6 +7087,35 @@ export default function SecretOptions() {
                   </div>
                 ) : null}
               </div>
+            ) : null}
+
+            {formStrategy ? (
+              <section aria-labelledby="trade-structure-heading" className="mb-4 border-y border-stealth-700 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h3 id="trade-structure-heading" className="text-sm font-semibold text-stealth-100">{formStrategy.label}</h3>
+                    <p className="mt-0.5 text-xs text-stealth-400">
+                      {decisionLabel(formStrategy.direction)} · {decisionLabel(formStrategy.volatilityExposure)}
+                    </p>
+                  </div>
+                  <div className="text-right text-xs">
+                    <div className="text-stealth-500">Defined loss / unit</div>
+                    <div className="font-semibold text-rose-200">
+                      {formatCurrency((asNumber(formData.fill_price) ?? (formStrategy.maxLossPerUnit ?? 0) / 100) * 100)}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-stealth-300">
+                  {formStrategy.legs.map((leg, index) => (
+                    <span key={`${leg.action}-${leg.option_type}-${leg.strike}-${index}`}>
+                      {leg.action === "buy" ? "+" : "−"} {leg.quantity} {leg.option_type.toUpperCase()} ${leg.strike.toFixed(2)}
+                    </span>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs text-stealth-500">
+                  Break-even {formStrategyBreakevens(formStrategy, asNumber(formData.fill_price)).map((value) => `$${value.toFixed(2)}`).join(" / ") || "not available"}. The structure fields stay locked together; only quantity and your actual net debit need confirmation.
+                </p>
+              </section>
             ) : null}
 
             <form
@@ -6817,6 +7142,7 @@ export default function SecretOptions() {
                     type="text"
                     value={formData.symbol}
                     onChange={handleFieldChange("symbol")}
+                    disabled={Boolean(formStrategy)}
                     placeholder="AAPL"
                     className="mt-1 w-full bg-stealth-900 border border-stealth-700 rounded px-3 py-2 text-sm text-stealth-200 uppercase"
                     required
@@ -6829,18 +7155,20 @@ export default function SecretOptions() {
                     type="date"
                     value={formData.expiration}
                     onChange={handleFieldChange("expiration")}
+                    disabled={Boolean(formStrategy)}
                     className="mt-1 w-full bg-stealth-900 border border-stealth-700 rounded px-3 py-2 text-sm text-stealth-200"
                     required
                   />
                 </label>
 
                 <label className="text-xs text-stealth-400">
-                  Strike *
+                  {formStrategy ? "Anchor Strike *" : "Strike *"}
                   <input
                     type="number"
                     step="0.01"
                     value={formData.strike}
                     onChange={handleFieldChange("strike")}
+                    disabled={Boolean(formStrategy)}
                     placeholder="100.00"
                     className="mt-1 w-full bg-stealth-900 border border-stealth-700 rounded px-3 py-2 text-sm text-stealth-200"
                     required
@@ -6848,10 +7176,11 @@ export default function SecretOptions() {
                 </label>
 
                 <label className="text-xs text-stealth-400">
-                  Type *
+                  {formStrategy ? "Anchor Type *" : "Type *"}
                   <select
                     value={formData.option_type}
                     onChange={handleFieldChange("option_type")}
+                    disabled={Boolean(formStrategy)}
                     className="mt-1 w-full bg-stealth-900 border border-stealth-700 rounded px-3 py-2 text-sm text-stealth-200"
                   >
                     <option value="call">Call</option>
@@ -6872,7 +7201,7 @@ export default function SecretOptions() {
                 </label>
 
                 <label className="text-xs text-stealth-400">
-                  Fill Price *
+                  {formStrategy ? "Net Debit *" : "Fill Price *"}
                   <input
                     type="number"
                     step="0.01"
@@ -6885,12 +7214,13 @@ export default function SecretOptions() {
                 </label>
 
                 <label className="text-xs text-stealth-400">
-                  Total Cost *
+                  {formStrategy ? "Defined Max Loss *" : "Total Cost *"}
                   <input
                     type="number"
                     step="0.01"
                     value={formData.total_cost}
                     onChange={handleFieldChange("total_cost")}
+                    readOnly={Boolean(formStrategy)}
                     placeholder="503.37"
                     className="mt-1 w-full bg-stealth-900 border border-stealth-700 rounded px-3 py-2 text-sm text-stealth-200"
                     required
@@ -6941,7 +7271,9 @@ export default function SecretOptions() {
                     : editingPositionId
                       ? "Save Changes"
                       : scannerTradePrefill
-                        ? "Add Training Trade"
+                        ? formStrategy
+                          ? "Track Risk-Defined Trade"
+                          : "Add Training Trade"
                         : "Add Trade"}
                 </button>
               </div>

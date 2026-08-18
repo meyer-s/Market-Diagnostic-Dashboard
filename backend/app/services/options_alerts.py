@@ -15,6 +15,10 @@ from app.services.market_data.provider import MarketDataProvider
 from app.services.option_field_context import build_option_field_context, option_field_event_fields
 from app.services.options_opportunity import compute_opportunity_score, opportunity_event_fields, selected_contract_signal_fields
 from app.services.options_quotes import select_atm_contract, select_optimal_contract
+from app.services.option_strategy_engine import (
+    build_risk_defined_strategy,
+    strategy_event_fields,
+)
 from app.services.options_review_window import ReviewWindow, compute_review_window
 from app.services.scanner_repeat_evidence import record_scanner_recurrence_events
 from app.utils.db_helpers import get_db_session
@@ -1100,6 +1104,17 @@ def run_options_alert_scan() -> dict:
                     if contract_side in {"CALL", "PUT"}
                     else None
                 )
+                strategy_plan = build_risk_defined_strategy(
+                    provider=provider,
+                    symbol=symbol,
+                    current_price=current_price,
+                    direction=direction,
+                    hold_days=hold_days,
+                    expected_move_pct=float(plan["target_move"]),
+                    iv30=iv30,
+                    hv30=metrics.get("hv30"),
+                    selected_contract=selected_contract,
+                )
                 review_window = _review_window_for_plan(
                     base_hold_days=hold_days,
                     iv30=iv30,
@@ -1118,7 +1133,11 @@ def run_options_alert_scan() -> dict:
                     hist,
                     option_type=contract_side,
                     position_action="buy_to_open",
-                    strategy_scope="single_leg",
+                    strategy_scope=(
+                        str((strategy_plan.get("primary") or {}).get("strategy_type"))
+                        if strategy_plan
+                        else "single_leg"
+                    ),
                     observed_at=event_time,
                     data_source=_provider_source(provider, "daily_bars"),
                     timeframe="1D",
@@ -1169,6 +1188,7 @@ def run_options_alert_scan() -> dict:
                     review_window_basis=review_window.basis,
                     **option_field_event_fields(field_context),
                     **_selected_contract_event_fields(selected_contract),
+                    **strategy_event_fields(strategy_plan),
                     **opportunity_event_fields(
                         iv_percentile=iv_percentile,
                         iv30=iv30,
