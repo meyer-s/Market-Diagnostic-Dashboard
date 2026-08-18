@@ -51,6 +51,9 @@ def get_agriculture_overview(days: int = Query(365, ge=90, le=1095)):
         "groups": data["groups"],
         "strongest_markets": data["strongest_markets"],
         "weakest_markets": data["weakest_markets"],
+        "correlations": data["correlations"],
+        "macro_pressure": data["macro_pressure"],
+        "special_signals": data["special_signals"],
         "availability": data["availability"],
         "warnings": data["warnings"],
     }

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 type BiasValue = "bullish" | "bearish" | "neutral" | "mixed" | string;
 
@@ -38,6 +38,7 @@ type TechnicalModule = {
 };
 
 export type AgricultureContextData = {
+  as_of?: string;
   symbol: string;
   commodity: string;
   metadata?: {
@@ -173,8 +174,83 @@ function freshnessTone(value?: string): string {
 }
 
 function compactSummary(context: AgricultureContextData): string {
-  const catalyst = context.report_calendar.next_report?.report ?? "the next report";
-  return `${context.commodity} is ${properCase(String(context.context_score.net_bias))} with ${context.context_score.confidence_score.toFixed(1)} confidence points ahead of ${catalyst}. Open a driver below to see what is carrying the read.`;
+  const catalyst = getCatalystPresentation(context);
+  const confidence = properCase(context.context_score.confidence);
+  if (catalyst.isPast) {
+    return `${context.commodity} has a ${properCase(String(context.context_score.net_bias)).toLowerCase()} bias with ${confidence.toLowerCase()} confidence. The release calendar is awaiting an update after ${catalyst.name}.`;
+  }
+  return `${context.commodity} has a ${properCase(String(context.context_score.net_bias)).toLowerCase()} bias with ${confidence.toLowerCase()} confidence. ${catalyst.name} is the next scheduled catalyst.`;
+}
+
+function biasTextTone(value?: BiasValue): string {
+  if (value === "bullish") return "text-emerald-200";
+  if (value === "bearish") return "text-rose-200";
+  if (value === "mixed") return "text-amber-200";
+  return "text-sky-200";
+}
+
+function getCatalystPresentation(context: AgricultureContextData): {
+  heading: string;
+  name: string;
+  timing: string;
+  isPast: boolean;
+} {
+  const nextReport = context.report_calendar.next_report;
+  if (!nextReport?.release_at) {
+    return { heading: "Catalyst calendar", name: "No near-term report", timing: "No scheduled release is available.", isPast: false };
+  }
+
+  const release = new Date(nextReport.release_at);
+  const reference = new Date(context.as_of ?? context.session.current_time_et ?? Date.now());
+  if (Number.isNaN(release.getTime()) || Number.isNaN(reference.getTime())) {
+    return { heading: "Next catalyst", name: nextReport.report, timing: formatDateTime(nextReport.release_at), isPast: false };
+  }
+
+  const releaseDay = new Date(release.getFullYear(), release.getMonth(), release.getDate()).getTime();
+  const referenceDay = new Date(reference.getFullYear(), reference.getMonth(), reference.getDate()).getTime();
+  const dayDelta = Math.round((releaseDay - referenceDay) / 86_400_000);
+  const isPast = release.getTime() < reference.getTime();
+  const exactTime = release.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+
+  if (isPast) {
+    const timing = dayDelta === -1
+      ? "Occurred yesterday — update pending"
+      : dayDelta === 0
+        ? "Occurred earlier today — update pending"
+        : `Scheduled ${release.toLocaleDateString()} — calendar refresh required`;
+    return { heading: "Calendar update", name: nextReport.report, timing, isPast: true };
+  }
+
+  const timing = dayDelta === 0
+    ? `Today at ${exactTime}`
+    : dayDelta === 1
+      ? `Tomorrow at ${exactTime}`
+      : `In ${dayDelta} days · ${release.toLocaleDateString()} at ${exactTime}`;
+  return { heading: "Next catalyst", name: nextReport.report, timing, isPast: false };
+}
+
+function biasLabel(value?: BiasValue): string {
+  if (value === "bullish") return "Long bias";
+  if (value === "bearish") return "Short bias";
+  return "Neutral bias";
+}
+
+function setupSourceLabel(context: AgricultureContextData): string {
+  const setup = context.setup_label.toLowerCase();
+  if (setup.includes("aligned")) return "Technical + fundamental aligned";
+  if (setup.includes("fundamental-only")) return "Fundamentals only";
+  if (setup.includes("technical-only")) return "Technicals only";
+  if (setup.includes("conflict")) return "Technical / fundamental conflict";
+  return "Mixed evidence";
+}
+
+function actionStateLabel(context: AgricultureContextData): string {
+  if (context.session.status !== "open") return "Market closed";
+  const setup = context.setup_label.toLowerCase();
+  if (setup.includes("wait for report")) return "Wait for report";
+  if (setup.includes("avoid")) return "Avoid";
+  if (setup.includes("conflict")) return "Resolve conflict";
+  return "Watch setup";
 }
 
 function isHttpUrl(value?: string | null): value is string {
@@ -189,25 +265,25 @@ function buildPriceUrl(ticker?: string | null): string | null {
 function getNextReportSource(context: AgricultureContextData): { label: string; url: string } | null {
   const reportName = context.report_calendar.next_report?.report;
   if (reportName === "Crop Progress" && isHttpUrl(context.crop_progress.report_url)) {
-    return { label: "Crop Report", url: context.crop_progress.report_url };
+    return { label: "USDA Crop Progress report", url: context.crop_progress.report_url };
   }
   if (reportName === "WASDE" && isHttpUrl(context.wasde.report_link)) {
-    return { label: "WASDE Report", url: context.wasde.report_link };
+    return { label: "USDA WASDE report", url: context.wasde.report_link };
   }
   if (reportName === "Export Inspections" && isHttpUrl(context.export_demand.source_health?.source_url)) {
-    return { label: "Export Report", url: context.export_demand.source_health.source_url };
+    return { label: "USDA Export Inspections", url: context.export_demand.source_health.source_url };
   }
   if (reportName === "Export Sales" && isHttpUrl(context.report_calendar.source_health?.source_url)) {
-    return { label: "Export Sales", url: context.report_calendar.source_health.source_url };
+    return { label: "USDA Export Sales", url: context.report_calendar.source_health.source_url };
   }
   if (isHttpUrl(context.crop_progress.report_url)) {
-    return { label: "Crop Report", url: context.crop_progress.report_url };
+    return { label: "USDA crop report", url: context.crop_progress.report_url };
   }
   if (isHttpUrl(context.wasde.report_link)) {
-    return { label: "WASDE Report", url: context.wasde.report_link };
+    return { label: "USDA WASDE report", url: context.wasde.report_link };
   }
   if (isHttpUrl(context.report_calendar.source_health?.source_url)) {
-    return { label: "Report Calendar", url: context.report_calendar.source_health.source_url };
+    return { label: "Official report calendar", url: context.report_calendar.source_health.source_url };
   }
   return null;
 }
@@ -217,12 +293,15 @@ function getSourceLinks(context: AgricultureContextData): Array<{ label: string;
 
   const priceUrl = buildPriceUrl(context.technical.ticker);
   if (priceUrl) {
-    links.push({ label: "Current Price", url: priceUrl });
+    links.push({ label: "Futures price on Yahoo Finance", url: priceUrl });
   }
 
   const weatherUrl = context.weather.forecast_url ?? context.weather.source_health?.source_url;
   if (isHttpUrl(weatherUrl)) {
-    links.push({ label: "Weather Conditions", url: weatherUrl });
+    links.push({
+      label: "National Weather Service",
+      url: weatherUrl.includes("api.weather.gov") ? "https://www.weather.gov/" : weatherUrl,
+    });
   }
 
   const nextReport = getNextReportSource(context);
@@ -230,7 +309,7 @@ function getSourceLinks(context: AgricultureContextData): Array<{ label: string;
     links.push(nextReport);
   }
 
-  return links;
+  return links.filter((link, index) => links.findIndex((candidate) => candidate.url === link.url) === index);
 }
 
 function SourceLinks({
@@ -243,18 +322,21 @@ function SourceLinks({
   if (!links.length) return null;
 
   return (
-    <div className={dense ? "mt-4 flex flex-wrap gap-2" : "mt-5 flex flex-wrap gap-2"}>
-      {links.map((link) => (
-        <a
-          key={`${link.label}-${link.url}`}
-          href={link.url}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center rounded-full border border-sky-400/30 bg-sky-500/10 px-3 py-1 text-xs font-semibold text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-400/15"
-        >
-          {link.label}
-        </a>
-      ))}
+    <div className={dense ? "mt-5 border-t border-stealth-700/80 pt-4" : "mt-5 border-t border-stealth-700/80 pt-4"}>
+      <p className="text-xs font-semibold text-stealth-300">Supporting sources</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {links.map((link) => (
+          <a
+            key={`${link.label}-${link.url}`}
+            href={link.url}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="inline-flex min-h-11 items-center rounded-lg border border-stealth-600 bg-stealth-900/70 px-3 text-xs font-semibold text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-400/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+          >
+            {link.label}<span aria-hidden="true"> ↗</span><span className="sr-only">, opens in a new tab</span>
+          </a>
+        ))}
+      </div>
     </div>
   );
 }
@@ -303,66 +385,70 @@ export function CompactContextDigest({
   context: AgricultureContextData;
   variant?: "panel" | "indicator";
 }) {
+  const [activeDriver, setActiveDriver] = useState<string | null>(null);
   const dense = variant === "indicator";
   const modules = getModuleMeta(context);
   const warning = context.thesis_validation.warnings?.[0] ?? context.context_score.warnings?.[0] ?? context.session.warnings?.[0];
   const sourceLinks = getSourceLinks(context);
   const rankedDrivers = modules
     .map((entry) => ({
+      key: entry.key,
       label: entry.label,
       contribution: context.context_score.component_breakdown[entry.breakdownKey] ?? 0,
       bias: entry.module.bias,
+      explanation: "reasons" in entry.module && entry.module.reasons?.[0]
+        ? entry.module.reasons[0]
+        : `${entry.label} is ${properCase(String(entry.module.bias ?? "neutral")).toLowerCase()} in the current model.`,
+      freshness: "source_health" in entry.module ? entry.module.source_health?.freshness_status : entry.module.confidence,
     }))
     .sort((left, right) => Math.abs(right.contribution) - Math.abs(left.contribution));
   const leadingDrivers = rankedDrivers.filter((entry) => entry.contribution !== 0).slice(0, dense ? 2 : 3);
+  const catalyst = getCatalystPresentation(context);
+  const selectedDriver = rankedDrivers.find((entry) => entry.key === activeDriver);
 
   if (dense) {
     return (
-      <div className="rounded-2xl border border-white/8 bg-stealth-950/60 p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <p className="max-w-3xl text-sm leading-6 text-stealth-200">{compactSummary(context)}</p>
+        {context.as_of ? <p className="mt-1 text-xs text-stealth-400">Contract evidence checked {formatDateTime(context.as_of)}</p> : null}
+
+        <dl className="mt-5 grid border-y border-stealth-700/80 sm:grid-cols-2 xl:grid-cols-4 xl:divide-x xl:divide-stealth-700/80">
+          <div className="py-3 xl:pr-4"><dt className="text-xs font-semibold text-stealth-400">Directional bias</dt><dd className={`mt-1 text-sm font-semibold ${biasTextTone(context.context_score.net_bias)}`}>{biasLabel(context.context_score.net_bias)}</dd></div>
+          <div className="border-t border-stealth-700/80 py-3 sm:border-t-0 xl:px-4"><dt className="text-xs font-semibold text-stealth-400">Setup source</dt><dd className="mt-1 text-sm font-semibold text-white">{setupSourceLabel(context)}</dd></div>
+          <div className="border-t border-stealth-700/80 py-3 sm:border-t-0 xl:px-4"><dt className="text-xs font-semibold text-stealth-400">Confidence · 0–100</dt><dd className="mt-1 text-sm font-semibold text-white">{properCase(context.context_score.confidence)} · <span className="tabular-nums">{context.context_score.confidence_score.toFixed(1)}</span></dd></div>
+          <div className="border-t border-stealth-700/80 py-3 sm:border-t-0 xl:pl-4"><dt className="text-xs font-semibold text-stealth-400">Action state</dt><dd className="mt-1 text-sm font-semibold text-white">{actionStateLabel(context)}</dd></div>
+        </dl>
+
+        <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1.25fr)_minmax(220px,.75fr)]">
           <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-lg font-semibold text-white">{properCase(context.setup_label)}</p>
-              <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${biasTone(context.context_score.net_bias)}`}>
-                {properCase(String(context.context_score.net_bias))}
-              </span>
+            <p className="text-xs font-semibold text-stealth-300">What is carrying the read</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {leadingDrivers.length ? leadingDrivers.map((entry) => (
+                <button
+                  key={entry.key}
+                  type="button"
+                  aria-expanded={activeDriver === entry.key}
+                  aria-controls="agriculture-driver-explanation"
+                  onClick={() => setActiveDriver((current) => current === entry.key ? null : entry.key)}
+                  className={`inline-flex min-h-11 items-center rounded-lg border px-3 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${contributionTone(entry.contribution)}`}
+                >
+                  {entry.label} · {entry.contribution > 0 ? "supportive" : "restrictive"}
+                </button>
+              )) : <p className="text-sm text-stealth-300">No driver has a material directional contribution.</p>}
             </div>
-            <p className="mt-3 text-xs leading-5 text-stealth-200">{compactSummary(context)}</p>
+            {selectedDriver ? (
+              <div id="agriculture-driver-explanation" className="mt-3 border-l border-sky-300/50 pl-3 text-sm leading-6 text-stealth-200">
+                <p>{selectedDriver.explanation}</p>
+                <p className={`mt-1 text-xs ${freshnessTone(selectedDriver.freshness)}`}>Source state: {properCase(selectedDriver.freshness ?? "unknown")}</p>
+              </div>
+            ) : null}
           </div>
-          <div className="rounded-2xl border border-white/8 bg-stealth-950/40 p-3">
-            <p className="text-xs uppercase tracking-[0.12em] text-stealth-500">Next Catalyst</p>
-            <p className="mt-1 text-sm font-semibold text-white">{context.report_calendar.next_report?.report ?? "No near-term report"}</p>
-            <p className="mt-1 text-xs text-stealth-400">{formatDateTime(context.report_calendar.next_report?.release_at)}</p>
-          </div>
-        </div>
-
-        <div className="mt-4 grid gap-2 sm:grid-cols-3">
-          <div className="rounded-2xl bg-stealth-900/65 px-4 py-3">
-            <p className="text-xs uppercase tracking-[0.12em] text-stealth-500">Why Now</p>
-            <p className="mt-1 text-sm font-semibold text-white">{leadingDrivers.map((entry) => entry.label).join(" + ") || "Balanced inputs"}</p>
-            <p className="mt-1 text-xs text-stealth-400">{properCase(context.context_score.confidence)} conviction</p>
-          </div>
-          <div className="rounded-2xl bg-stealth-900/65 px-4 py-3">
-            <p className="text-xs uppercase tracking-[0.12em] text-stealth-500">Validation</p>
-            <p className="mt-1 text-sm font-semibold text-white">{properCase(context.thesis_validation.validation_status)}</p>
-            <p className="mt-1 text-xs text-stealth-400">{context.thesis_validation.confirmations?.[0] ?? "No strong confirmation yet."}</p>
-          </div>
-          <div className="rounded-2xl bg-stealth-900/65 px-4 py-3">
-            <p className="text-xs uppercase tracking-[0.12em] text-stealth-500">Market State</p>
-            <p className="mt-1 text-sm font-semibold text-white">{properCase(context.crop_stage.stage)}</p>
-            <p className="mt-1 text-xs text-stealth-400">Session {properCase(context.session.status).toLowerCase()}</p>
+          <div className="border-t border-stealth-700/80 pt-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
+            <p className="text-xs font-semibold text-stealth-400">{catalyst.heading}</p>
+            <p className="mt-1 text-sm font-semibold text-white">{catalyst.name}</p>
+            <p className={`mt-1 text-xs ${catalyst.isPast ? "text-amber-200" : "text-stealth-300"}`}>{catalyst.timing}</p>
           </div>
         </div>
-
-        {leadingDrivers.length ? (
-          <div className="mt-4 flex flex-wrap gap-2">
-            {leadingDrivers.map((entry) => (
-              <span key={entry.label} className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${contributionTone(entry.contribution)}`}>
-                {entry.label} {entry.contribution > 0 ? "+1" : "-1"}
-              </span>
-            ))}
-          </div>
-        ) : null}
 
         <SourceLinks links={sourceLinks} dense />
 
@@ -392,9 +478,9 @@ export function CompactContextDigest({
             <p className="mt-1 text-xs text-stealth-400">{properCase(context.context_score.confidence)} conviction</p>
           </div>
           <div className="rounded-2xl border border-white/8 bg-stealth-950/40 p-3">
-            <p className="text-xs uppercase tracking-[0.12em] text-stealth-500">Next Catalyst</p>
-            <p className="mt-1 text-sm font-semibold text-white">{context.report_calendar.next_report?.report ?? "No near-term report"}</p>
-            <p className="mt-1 text-xs text-stealth-400">{formatDateTime(context.report_calendar.next_report?.release_at)}</p>
+            <p className="text-xs font-semibold text-stealth-400">{catalyst.heading}</p>
+            <p className="mt-1 text-sm font-semibold text-white">{catalyst.name}</p>
+            <p className={`mt-1 text-xs ${catalyst.isPast ? "text-amber-200" : "text-stealth-400"}`}>{catalyst.timing}</p>
           </div>
         </div>
       </div>

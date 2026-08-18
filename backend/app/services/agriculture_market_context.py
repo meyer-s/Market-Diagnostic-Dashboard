@@ -233,6 +233,7 @@ def build_agriculture_market_context(symbol: str, as_of: datetime | None = None)
     )
 
     payload = {
+        "as_of": reference.astimezone(timezone.utc).isoformat(),
         "symbol": symbol_code,
         "commodity": commodity.display_name,
         "metadata": {

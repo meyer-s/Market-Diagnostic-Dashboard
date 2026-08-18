@@ -142,10 +142,16 @@ def _with_daily_source_cache(
     builder: callable,
 ):
     use_cache = _should_use_daily_source_cache(as_of)
+    reference_date = (as_of or _utcnow()).astimezone(EASTERN_TZ).date()
     if use_cache and not force_refresh:
         with _DAILY_SOURCE_CACHE_LOCK:
             cached = _DAILY_SOURCE_CACHE.get(cache_key)
-            if cached and (_utcnow() - cached["timestamp"]) <= _DAILY_SOURCE_CACHE_TTL:
+            cached_date = cached["timestamp"].astimezone(EASTERN_TZ).date() if cached else None
+            if (
+                cached
+                and cached_date == reference_date
+                and (_utcnow() - cached["timestamp"]) <= _DAILY_SOURCE_CACHE_TTL
+            ):
                 return cached["payload"]
 
     payload = builder()

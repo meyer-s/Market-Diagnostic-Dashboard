@@ -7,6 +7,8 @@ import pytest
 
 from app.services.market_context.agriculture_metadata import resolve_agriculture_commodity
 from app.services.market_context.agriculture_adapters import (
+    _DAILY_SOURCE_CACHE,
+    _DAILY_SOURCE_CACHE_LOCK,
     _WASDE_LOOKUP_CACHE,
     _WASDE_LOOKUP_CACHE_LOCK,
     _WASDE_LOOKUP_TIMEOUT_SECONDS,
@@ -216,6 +218,44 @@ def test_daily_source_cache_reuses_builder_for_current_day() -> None:
 
     assert calls["count"] == 1
     assert first == second == {"value": 1}
+
+
+def test_daily_source_cache_does_not_reuse_prior_market_day(monkeypatch: pytest.MonkeyPatch) -> None:
+    eastern = ZoneInfo("America/New_York")
+    current = {"value": datetime(2026, 8, 17, 14, 0, tzinfo=UTC)}
+    calls = {"count": 0}
+
+    def fake_now() -> datetime:
+        return current["value"]
+
+    def builder() -> dict[str, int]:
+        calls["count"] += 1
+        return {"value": calls["count"]}
+
+    monkeypatch.setattr("app.services.market_context.agriculture_adapters._utcnow", fake_now)
+    with _DAILY_SOURCE_CACHE_LOCK:
+        _DAILY_SOURCE_CACHE.pop("test-market-day-cache", None)
+
+    first = _with_daily_source_cache(
+        "test-market-day-cache",
+        as_of=current["value"].astimezone(eastern),
+        force_refresh=False,
+        builder=builder,
+    )
+    current["value"] = datetime(2026, 8, 18, 15, 0, tzinfo=UTC)
+    second = _with_daily_source_cache(
+        "test-market-day-cache",
+        as_of=current["value"].astimezone(eastern),
+        force_refresh=False,
+        builder=builder,
+    )
+
+    assert first == {"value": 1}
+    assert second == {"value": 2}
+    assert calls["count"] == 2
+
+    with _DAILY_SOURCE_CACHE_LOCK:
+        _DAILY_SOURCE_CACHE.pop("test-market-day-cache", None)
 
 
 def test_wasde_lookup_caches_failures(monkeypatch: pytest.MonkeyPatch) -> None:

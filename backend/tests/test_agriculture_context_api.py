@@ -13,6 +13,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
         if symbol == "BAD":
             raise KeyError("Unsupported agriculture symbol: BAD")
         return {
+            "as_of": "2026-05-11T16:00:00+00:00",
             "symbol": symbol,
             "commodity": "Corn",
             "session": {"status": "open", "warnings": []},
@@ -54,9 +55,44 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
             "source_health": [],
         }
 
+    def fake_calculate_composite_index(days: int) -> dict[str, object]:
+        assert days == 365
+        return {
+            "as_of": "2026-08-18T15:00:00+00:00",
+            "regime_label": "Stable Expansion",
+            "stability_score": 68.0,
+            "stability_components": {},
+            "component_history": [],
+            "summary": "Agriculture internals are stable.",
+            "composite": {"group_weights": {}, "changes": {}, "history": [], "volatility": None},
+            "groups": [],
+            "strongest_markets": [],
+            "weakest_markets": [],
+            "correlations": {"group_matrix": {"60": []}, "pair_insights": {"60": {}}},
+            "macro_pressure": {"interest_rates": {"name": "10Y Yield", "status": "supportive", "change_20d": -1.0}},
+            "special_signals": {
+                "soybean_oil_vs_grains": {"spread_20d": 1.0, "interpretation": "supportive"},
+                "livestock_feed_margin_pressure": {"spread_20d": -1.0, "interpretation": "easing"},
+            },
+            "availability": {
+                "symbols": [],
+                "missing_symbols": [],
+                "missing_macro_series": [],
+                "available_group_count": 6,
+                "total_configured_symbols": 25,
+                "available_symbol_count": 25,
+            },
+            "warnings": [],
+        }
+
     monkeypatch.setattr(
         "app.api.agriculture.build_agriculture_market_context",
         fake_build_agriculture_market_context,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        "app.api.agriculture.calculate_composite_index",
+        fake_calculate_composite_index,
         raising=True,
     )
 
@@ -70,10 +106,23 @@ def test_context_endpoint_returns_aggregate_payload(client: TestClient) -> None:
 
     assert response.status_code == 200
     body = response.json()
+    assert body["as_of"] == "2026-05-11T16:00:00+00:00"
     assert body["symbol"] == "ZC"
     assert body["context_score"]["net_bias"] == "bullish"
     assert body["report_calendar"]["next_report"]["report"] == "WASDE"
     assert body["setup_label"] == "wait for report"
+
+
+def test_overview_endpoint_returns_one_shared_deep_dive_snapshot(client: TestClient) -> None:
+    response = client.get("/agriculture/overview", params={"days": 365})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["as_of"] == "2026-08-18T15:00:00+00:00"
+    assert body["correlations"]["group_matrix"]["60"] == []
+    assert body["macro_pressure"]["interest_rates"]["name"] == "10Y Yield"
+    assert body["special_signals"]["soybean_oil_vs_grains"]["spread_20d"] == 1.0
+    assert body["availability"]["missing_macro_series"] == []
 
 
 def test_context_endpoint_supports_non_grain_symbol(client: TestClient) -> None:
