@@ -297,7 +297,7 @@ export default function AgricultureDeepDive({ data }: { data: AgricultureDeepDiv
       <section aria-labelledby="sector-ranking-heading">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <h2 id="sector-ranking-heading" className="text-xl font-semibold text-white">Sector mix</h2>
-          <p className="text-xs text-stealth-400">Weight order · score 0–100</p>
+          <p className="text-xs text-stealth-400">By weight · score / 20d</p>
         </div>
 
         <div className="mt-3 overflow-hidden rounded-2xl border border-stealth-700 bg-stealth-700/80">
@@ -311,17 +311,14 @@ export default function AgricultureDeepDive({ data }: { data: AgricultureDeepDiv
                   <button
                     type="button"
                     aria-pressed={active}
+                    aria-current={active ? "true" : undefined}
                     onClick={() => setSelectedGroupKey(group.group)}
-                    className={`min-h-16 w-full px-3 py-2.5 text-left transition focus-visible:relative focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 ${active ? "bg-sky-400/12" : "hover:bg-stealth-800/60"}`}
+                    className={`min-h-16 w-full px-3 py-2.5 text-left transition focus-visible:relative focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 ${active ? "relative z-10 bg-sky-400/20 ring-2 ring-inset ring-sky-300" : "hover:bg-stealth-800/60"}`}
                   >
-                    <span className="flex min-w-0 items-start gap-2">
-                      <span className="w-4 shrink-0 pt-0.5 text-xs tabular-nums text-stealth-500">{index + 1}</span>
-                      <span className="min-w-0"><span className="block truncate text-sm font-semibold text-white">{group.label}</span><span className={`mt-0.5 block text-xs ${read.tone}`}>{read.label} · <span className="tabular-nums">{group.group_composite.toFixed(1)}</span></span></span>
-                    </span>
-                    <span className="mt-2 grid grid-cols-3 gap-1 text-xs tabular-nums text-stealth-300">
-                      <span><span className="sr-only">Weight </span>Wt {group.effective_weight.toFixed(0)}%</span>
-                      <span><span className="sr-only">20-day change </span>20d {formatSignedPercent(change20, 1)}</span>
-                      <span><span className="sr-only">Breadth </span>Br {group.breadth_score === null ? "—" : `${group.breadth_score.toFixed(0)}%`}</span>
+                    <span className="flex min-w-0 items-center gap-2"><span className="w-4 shrink-0 text-xs tabular-nums text-stealth-500">{index + 1}</span><span className="truncate text-sm font-semibold text-white">{group.label}</span></span>
+                    <span className="mt-2 flex items-center justify-between gap-2 text-xs tabular-nums">
+                      <span className={read.tone}>{read.label.replace(" momentum", "")} · {group.group_composite.toFixed(1)}</span>
+                      {active ? <span className="shrink-0 font-semibold text-sky-100">✓ Selected</span> : <span className="text-stealth-300">{formatSignedPercent(change20, 1)}</span>}
                     </span>
                   </button>
                 </div>
@@ -351,10 +348,11 @@ export default function AgricultureDeepDive({ data }: { data: AgricultureDeepDiv
                       key={component.code}
                       type="button"
                       aria-pressed={active}
+                      aria-current={active ? "true" : undefined}
                       onClick={() => setSelectedIndicatorsByGroup((current) => ({ ...current, [selectedGroup.group]: component.code }))}
-                      className={`min-h-11 shrink-0 rounded-lg px-3 py-1.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${active ? "bg-sky-400/12 text-white" : "text-stealth-300 hover:bg-stealth-800/70 hover:text-white"}`}
+                      className={`min-h-11 shrink-0 rounded-lg px-3 py-1.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${active ? "bg-sky-300 font-semibold text-stealth-950 ring-2 ring-inset ring-white/50" : "text-stealth-300 hover:bg-stealth-800/70 hover:text-white"}`}
                     >
-                      <span className="text-sm font-semibold">{component.name}</span><span className="ml-2 text-xs tabular-nums text-stealth-400">{component.score.toFixed(0)} · {formatSignedPercent(component.changes["20d"], 1)}</span>
+                      {active ? <span className="mr-1.5" aria-hidden="true">✓</span> : null}<span className="text-sm font-semibold">{component.name}</span>
                     </button>
                   );
                 })}
@@ -363,7 +361,7 @@ export default function AgricultureDeepDive({ data }: { data: AgricultureDeepDiv
             <div className="min-w-0 px-4 py-3 md:px-5">
               <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
                 <div className="flex flex-wrap items-baseline gap-2"><h3 className="text-base font-semibold text-white">{selectedComponent.name}</h3><p className="text-xs text-stealth-400">{selectedComponent.code}{selectedComponent.ticker ? ` · ${selectedComponent.ticker}` : ""}</p></div>
-                <p className="text-xs text-stealth-400">{formatSnapshot(data.as_of)}</p>
+                <p className="text-xs tabular-nums text-stealth-400">Score {selectedComponent.score.toFixed(0)} · 20d {formatSignedPercent(selectedComponent.changes["20d"], 1)} · {formatSnapshot(data.as_of)}</p>
               </div>
               {selectedContext?.data ? (
                 <CompactContextDigest context={selectedContext.data} variant="indicator" />

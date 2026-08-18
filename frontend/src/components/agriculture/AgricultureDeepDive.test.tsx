@@ -115,10 +115,15 @@ describe("AgricultureDeepDive", () => {
     render(<AgricultureDeepDive data={deepDiveData} />);
 
     expect(screen.getByRole("heading", { name: "Sector mix" })).toBeTruthy();
-    expect(screen.getByText("Weight order · score 0–100")).toBeTruthy();
-    expect(screen.getAllByText("Strong momentum", { exact: false }).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("20d", { exact: false }).length).toBeGreaterThan(0);
+    expect(screen.getByText("By weight · score / 20d")).toBeTruthy();
+    expect(screen.getAllByText("Strong", { exact: false }).length).toBeGreaterThan(0);
+    const selectedSector = screen.getByRole("button", { name: /Grains \/ Oilseeds/i });
+    expect(selectedSector.getAttribute("aria-pressed")).toBe("true");
+    expect(within(selectedSector).getByText("✓ Selected")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Grains / Oilseeds" })).toBeTruthy();
+    const selectedContract = screen.getByRole("button", { name: /Corn/i });
+    expect(selectedContract.getAttribute("aria-pressed")).toBe("true");
+    expect(selectedContract.textContent).toContain("✓");
 
     await waitFor(() => expect(apiFetchMock).toHaveBeenCalledTimes(1));
     expect(apiFetchMock).toHaveBeenCalledWith("/agriculture/context?symbol=ZC");
@@ -135,6 +140,7 @@ describe("AgricultureDeepDive", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Livestock/i }));
     expect(screen.getByRole("heading", { name: "Livestock" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Livestock/i }).getAttribute("aria-pressed")).toBe("true");
     await waitFor(() => expect(apiFetchMock).toHaveBeenCalledWith("/agriculture/context?symbol=LE"));
     expect(apiFetchMock).toHaveBeenCalledTimes(2);
   });
