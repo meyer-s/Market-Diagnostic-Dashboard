@@ -71,7 +71,12 @@ const deepDiveData: AgricultureDeepDiveData = {
   warnings: ["This is a macro diagnostic and not a trading signal."],
 };
 
-function context(symbol = "ZC"): AgricultureContextData {
+function context(
+  symbol = "ZC",
+  setupLabel = "conflicting signals",
+  netBias: AgricultureContextData["context_score"]["net_bias"] = "bullish",
+  technicalBias: AgricultureContextData["technical"]["bias"] = "bearish"
+): AgricultureContextData {
   return {
     as_of: "2026-08-18T15:00:00Z",
     symbol,
@@ -88,16 +93,16 @@ function context(symbol = "ZC"): AgricultureContextData {
     export_demand: { bias: "bearish", reasons: ["Shipments are below the recent pace."], source_health: { freshness_status: "fresh" } },
     wasde: { bias: "bullish", reasons: ["Ending stocks tightened."], report_link: "https://www.usda.gov/oce/commodity/wasde", source_health: { freshness_status: "fresh" } },
     global_supply: { bias: "neutral", reasons: ["Global supply is balanced."], source_health: { freshness_status: "fresh" } },
-    technical: { bias: "bearish", confidence: "medium", ticker: symbol === "LE" ? "LE=F" : "ZC=F" },
+    technical: { bias: technicalBias, confidence: "medium", ticker: symbol === "LE" ? "LE=F" : "ZC=F" },
     context_score: {
-      net_bias: "bullish",
+      net_bias: netBias,
       confidence: "medium",
       confidence_score: 61.2,
       numerical_score: 2,
       component_breakdown: { weather: 1, crop_progress: 1, export_demand: -1, wasde: 1, global_supply: 0, technical: -1 },
       warnings: [],
     },
-    setup_label: "conflicting signals",
+    setup_label: setupLabel,
     market_read: "Evidence is mixed.",
     thesis_validation: { validation_status: "warning", confirmations: ["WASDE confirms the supply read."], warnings: [] },
   };
@@ -108,7 +113,11 @@ describe("AgricultureDeepDive", () => {
 
   beforeEach(() => {
     apiFetchMock.mockReset();
-    apiFetchMock.mockImplementation((endpoint: string) => Promise.resolve(context(endpoint.includes("LE") ? "LE" : "ZC")));
+    apiFetchMock.mockImplementation((endpoint: string) => {
+      if (endpoint.includes("LE")) return Promise.resolve(context("LE", "technical-only setup", "neutral", "bearish"));
+      if (endpoint.includes("ZS")) return Promise.resolve(context("ZS", "fundamental-only setup", "bearish", "neutral"));
+      return Promise.resolve(context("ZC", "aligned long setup", "bullish", "bullish"));
+    });
   });
 
   it("prioritizes one ranked sector and one contract thesis", async () => {
@@ -119,14 +128,16 @@ describe("AgricultureDeepDive", () => {
     expect(screen.getAllByText("Strong", { exact: false }).length).toBeGreaterThan(0);
     const selectedSector = screen.getByRole("button", { name: /Grains \/ Oilseeds/i });
     expect(selectedSector.getAttribute("aria-pressed")).toBe("true");
-    expect(within(selectedSector).getByText("✓ Selected")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Grains / Oilseeds" })).toBeTruthy();
     const selectedContract = screen.getByRole("button", { name: /Corn/i });
     expect(selectedContract.getAttribute("aria-pressed")).toBe("true");
     expect(selectedContract.textContent).toContain("✓");
 
-    await waitFor(() => expect(apiFetchMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(apiFetchMock).toHaveBeenCalledTimes(2));
     expect(apiFetchMock).toHaveBeenCalledWith("/agriculture/context?symbol=ZC");
+    expect(apiFetchMock).toHaveBeenCalledWith("/agriculture/context?symbol=ZS");
+    expect(within(selectedContract).getByText("A↑")).toBeTruthy();
+    expect(within(screen.getByRole("button", { name: /Soybeans/i })).getByText("F↓")).toBeTruthy();
     expect(await screen.findByText("Bias")).toBeTruthy();
     expect(screen.getByText("Source")).toBeTruthy();
     expect(screen.getByText("Confidence")).toBeTruthy();
@@ -136,13 +147,14 @@ describe("AgricultureDeepDive", () => {
 
   it("loads a different thesis only when the user selects it", async () => {
     render(<AgricultureDeepDive data={deepDiveData} />);
-    await waitFor(() => expect(apiFetchMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(apiFetchMock).toHaveBeenCalledTimes(2));
 
     fireEvent.click(screen.getByRole("button", { name: /Livestock/i }));
     expect(screen.getByRole("heading", { name: "Livestock" })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Livestock/i }).getAttribute("aria-pressed")).toBe("true");
     await waitFor(() => expect(apiFetchMock).toHaveBeenCalledWith("/agriculture/context?symbol=LE"));
-    expect(apiFetchMock).toHaveBeenCalledTimes(2);
+    expect(apiFetchMock).toHaveBeenCalledTimes(3);
+    expect(within(screen.getByRole("button", { name: /Live Cattle/i })).getByText("T↓")).toBeTruthy();
   });
 
   it("keeps secondary evidence collapsed and explains correlations before the matrix", () => {

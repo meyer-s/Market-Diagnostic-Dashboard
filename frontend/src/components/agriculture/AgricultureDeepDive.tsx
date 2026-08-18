@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import DataScroller from "../ui/DataScroller";
 import { apiFetch } from "../../utils/apiUtils";
 import { CompactContextDigest, type AgricultureContextData } from "./AgricultureContextPanel";
+import { ContractSignalBadge } from "./ContractSignalBadge";
 
 export type AgricultureGroupRow = {
   group: string;
@@ -221,6 +222,20 @@ export default function AgricultureDeepDive({ data }: { data: AgricultureDeepDiv
   const [selectedGroupKey, setSelectedGroupKey] = useState(rankedGroups[0]?.group ?? "");
   const [selectedIndicatorsByGroup, setSelectedIndicatorsByGroup] = useState<Record<string, string>>({});
   const [contexts, setContexts] = useState<Record<string, ContextEntry>>({});
+  const contextsRef = useRef<Record<string, ContextEntry>>({});
+  const inFlightSymbolsRef = useRef<Set<string>>(new Set());
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    contextsRef.current = contexts;
+  }, [contexts]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!rankedGroups.some((group) => group.group === selectedGroupKey)) {
@@ -229,7 +244,14 @@ export default function AgricultureDeepDive({ data }: { data: AgricultureDeepDiv
   }, [rankedGroups, selectedGroupKey]);
 
   const selectedGroup = rankedGroups.find((group) => group.group === selectedGroupKey) ?? rankedGroups[0];
-  const selectedComponents = selectedGroup ? sortGroupComponents(selectedGroup) : [];
+  const selectedComponents = useMemo(
+    () => selectedGroup ? sortGroupComponents(selectedGroup) : [],
+    [selectedGroup]
+  );
+  const selectedComponentCodes = useMemo(
+    () => selectedComponents.map((component) => component.code),
+    [selectedComponents]
+  );
   const selectedCode = selectedGroup
     ? selectedIndicatorsByGroup[selectedGroup.group] ?? selectedComponents[0]?.code
     : undefined;
@@ -237,17 +259,29 @@ export default function AgricultureDeepDive({ data }: { data: AgricultureDeepDiv
   const selectedContext = selectedComponent ? contexts[selectedComponent.code] : undefined;
 
   useEffect(() => {
-    const symbol = selectedComponent?.code;
-    if (!symbol || contexts[symbol]) return;
+    const missingSymbols = selectedComponentCodes.filter(
+      (symbol) => !contextsRef.current[symbol] && !inFlightSymbolsRef.current.has(symbol)
+    );
+    if (!missingSymbols.length) return;
 
-    let cancelled = false;
-    setContexts((current) => ({ ...current, [symbol]: { data: null, error: null, loading: true } }));
-    void apiFetch<AgricultureContextData>(`/agriculture/context?symbol=${encodeURIComponent(symbol)}`)
-      .then((payload) => {
-        if (!cancelled) setContexts((current) => ({ ...current, [symbol]: { data: payload, error: null, loading: false } }));
-      })
-      .catch((requestError) => {
-        if (!cancelled) {
+    for (const symbol of missingSymbols) inFlightSymbolsRef.current.add(symbol);
+    setContexts((current) => {
+      const next = { ...current };
+      for (const symbol of missingSymbols) {
+        next[symbol] = { data: null, error: null, loading: true };
+      }
+      return next;
+    });
+
+    let nextIndex = 0;
+    const fetchSymbol = async (symbol: string) => {
+      try {
+        const payload = await apiFetch<AgricultureContextData>(`/agriculture/context?symbol=${encodeURIComponent(symbol)}`);
+        if (isMountedRef.current) {
+          setContexts((current) => ({ ...current, [symbol]: { data: payload, error: null, loading: false } }));
+        }
+      } catch (requestError) {
+        if (isMountedRef.current) {
           setContexts((current) => ({
             ...current,
             [symbol]: {
@@ -257,10 +291,19 @@ export default function AgricultureDeepDive({ data }: { data: AgricultureDeepDiv
             },
           }));
         }
-      });
-
-    return () => { cancelled = true; };
-  }, [selectedComponent?.code]);
+      } finally {
+        inFlightSymbolsRef.current.delete(symbol);
+      }
+    };
+    const workerCount = Math.min(3, missingSymbols.length);
+    void Promise.all(Array.from({ length: workerCount }, async () => {
+      while (nextIndex < missingSymbols.length) {
+        const symbol = missingSymbols[nextIndex];
+        nextIndex += 1;
+        await fetchSymbol(symbol);
+      }
+    }));
+  }, [selectedComponentCodes]);
 
   const matrix60 = data.correlations?.group_matrix?.["60"] ?? [];
   const groupLabels = useMemo(() => new Map(data.groups.map((group) => [group.group, group.label])), [data.groups]);
@@ -293,32 +336,37 @@ export default function AgricultureDeepDive({ data }: { data: AgricultureDeepDiv
     : "All displayed price and macro inputs are available in this snapshot.";
 
   return (
-    <div className="space-y-5 md:space-y-6">
+    <div className="w-[calc(100vw-2rem)] min-w-0 max-w-full overflow-hidden space-y-5 md:w-auto md:space-y-6">
       <section aria-labelledby="sector-ranking-heading">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <h2 id="sector-ranking-heading" className="text-xl font-semibold text-white">Sector mix</h2>
           <p className="text-xs text-stealth-400">By weight · score / 20d</p>
         </div>
 
-        <div className="mt-3 overflow-hidden rounded-2xl border border-stealth-700 bg-stealth-700/80">
-          <div role="list" aria-label="Agriculture sector mix" className="grid grid-cols-2 gap-px sm:grid-cols-3 xl:grid-cols-6">
+        <div
+          className="mt-3 max-w-full overflow-hidden border-b border-stealth-700 md:overflow-x-auto"
+          role="region"
+          aria-label="Agriculture sector bookmarks"
+          tabIndex={0}
+        >
+          <div role="list" aria-label="Agriculture sector mix" className="grid grid-cols-2 gap-px md:flex md:min-w-max md:gap-1 md:px-1">
             {rankedGroups.map((group, index) => {
               const active = selectedGroup?.group === group.group;
               const read = sectorRead(group.group_composite);
               const change20 = group.changes["20d"];
               return (
-                <div key={group.group} role="listitem" className="bg-stealth-950/80">
+                <div key={group.group} role="listitem">
                   <button
                     type="button"
                     aria-pressed={active}
                     aria-current={active ? "true" : undefined}
                     onClick={() => setSelectedGroupKey(group.group)}
-                    className={`min-h-16 w-full px-3 py-2.5 text-left transition focus-visible:relative focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 ${active ? "relative z-10 bg-sky-400/20 ring-2 ring-inset ring-sky-300" : "hover:bg-stealth-800/60"}`}
+                    className={`relative min-h-16 w-full min-w-0 rounded-t-xl px-3 py-2.5 text-left transition focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 md:min-w-48 ${active ? "bg-stealth-900/90 after:absolute after:inset-x-0 after:bottom-0 after:h-1 after:bg-sky-300" : "hover:bg-stealth-900/55"}`}
                   >
-                    <span className="flex min-w-0 items-center gap-2"><span className="w-4 shrink-0 text-xs tabular-nums text-stealth-500">{index + 1}</span><span className="truncate text-sm font-semibold text-white">{group.label}</span></span>
+                    <span className="flex min-w-0 items-center gap-2"><span className="w-4 shrink-0 text-xs tabular-nums text-stealth-500">{index + 1}</span><span className="truncate text-sm font-semibold text-white">{group.label}</span>{active ? <span className="ml-auto shrink-0 font-semibold text-sky-200" aria-hidden="true">✓</span> : null}</span>
                     <span className="mt-2 flex items-center justify-between gap-2 text-xs tabular-nums">
                       <span className={read.tone}>{read.label.replace(" momentum", "")} · {group.group_composite.toFixed(1)}</span>
-                      {active ? <span className="shrink-0 font-semibold text-sky-100">✓ Selected</span> : <span className="text-stealth-300">{formatSignedPercent(change20, 1)}</span>}
+                      <span className={change20 !== null && change20 < 0 ? "text-rose-200" : "text-emerald-200"}>{formatSignedPercent(change20, 1)}</span>
                     </span>
                   </button>
                 </div>
@@ -330,19 +378,21 @@ export default function AgricultureDeepDive({ data }: { data: AgricultureDeepDiv
 
       {selectedGroup && selectedComponent ? (
         <section aria-labelledby="contract-workspace-heading" className="overflow-hidden rounded-2xl border border-stealth-700 bg-stealth-900/35">
-          <div className="min-w-0">
-            <div className="flex min-w-0 items-center gap-3 overflow-hidden border-b border-stealth-700 px-3 py-2">
-              <h2 id="contract-workspace-heading" className="shrink-0 text-base font-semibold text-white">{selectedGroup.label}</h2>
-              <p id="agriculture-contract-scroll-hint" className="sr-only">Scroll horizontally to inspect more contracts.</p>
-              <div
-                className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto pb-1"
-                role="region"
-                aria-label={`${selectedGroup.label} contract selector`}
+          <div className="min-w-0 md:grid md:grid-cols-[15rem_minmax(0,1fr)]">
+            <div className="min-w-0 border-b border-stealth-700 bg-stealth-950/25 md:border-b-0 md:border-r">
+              <div className="flex items-baseline justify-between gap-3 px-3 py-3">
+                <h2 id="contract-workspace-heading" className="truncate text-base font-semibold text-white">{selectedGroup.label}</h2>
+                <span className="shrink-0 text-xs text-stealth-500">A / F / T</span>
+              </div>
+              <p id="agriculture-contract-scroll-hint" className="sr-only">Contracts appear as vertical tabs on larger screens and a compact grid on smaller screens.</p>
+              <nav
+                className="grid min-w-0 grid-cols-2 gap-px border-t border-stealth-700 md:block"
+                aria-label={`${selectedGroup.label} contracts`}
                 aria-describedby="agriculture-contract-scroll-hint"
-                tabIndex={0}
               >
                 {selectedComponents.map((component) => {
                   const active = component.code === selectedComponent.code;
+                  const contextEntry = contexts[component.code];
                   return (
                     <button
                       key={component.code}
@@ -350,131 +400,148 @@ export default function AgricultureDeepDive({ data }: { data: AgricultureDeepDiv
                       aria-pressed={active}
                       aria-current={active ? "true" : undefined}
                       onClick={() => setSelectedIndicatorsByGroup((current) => ({ ...current, [selectedGroup.group]: component.code }))}
-                      className={`min-h-11 shrink-0 rounded-lg px-3 py-1.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${active ? "bg-sky-300 font-semibold text-stealth-950 ring-2 ring-inset ring-white/50" : "text-stealth-300 hover:bg-stealth-800/70 hover:text-white"}`}
+                      className={`min-h-16 w-full min-w-0 border-b border-stealth-700/80 px-3 py-2 text-left transition focus-visible:relative focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 ${active ? "bg-sky-400/20 text-white ring-2 ring-inset ring-sky-300" : "bg-stealth-950/20 text-stealth-300 hover:bg-stealth-800/70 hover:text-white"}`}
                     >
-                      {active ? <span className="mr-1.5" aria-hidden="true">✓</span> : null}<span className="text-sm font-semibold">{component.name}</span>
+                      <span className="flex min-w-0 items-center justify-between gap-2">
+                        <span aria-hidden="true" className="truncate text-sm font-semibold">{component.name}</span>
+                        {active ? <span className="shrink-0 text-sky-200" aria-hidden="true">✓</span> : null}
+                      </span>
+                      <span className="mt-1 flex items-center justify-between gap-2">
+                        <ContractSignalBadge
+                          contractName={component.name}
+                          context={contextEntry?.data}
+                          loading={!contextEntry || contextEntry.loading}
+                          error={contextEntry?.error}
+                        />
+                        <span aria-hidden="true" className={`text-xs tabular-nums ${component.changes["20d"] !== null && component.changes["20d"] < 0 ? "text-rose-200" : "text-emerald-200"}`}>
+                          {formatSignedPercent(component.changes["20d"], 1)}
+                        </span>
+                      </span>
                     </button>
                   );
                 })}
-              </div>
+              </nav>
             </div>
-            <div className="min-w-0 px-4 py-3 md:px-5">
-              <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-                <div className="flex flex-wrap items-baseline gap-2"><h3 className="text-base font-semibold text-white">{selectedComponent.name}</h3><p className="text-xs text-stealth-400">{selectedComponent.code}{selectedComponent.ticker ? ` · ${selectedComponent.ticker}` : ""}</p></div>
-                <p className="text-xs tabular-nums text-stealth-400">Score {selectedComponent.score.toFixed(0)} · 20d {formatSignedPercent(selectedComponent.changes["20d"], 1)} · {formatSnapshot(data.as_of)}</p>
+            <div className="min-w-0">
+              <div className="px-4 py-3 md:px-5">
+                <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+                  <div className="flex flex-wrap items-baseline gap-2"><h3 className="text-base font-semibold text-white">{selectedComponent.name}</h3><p className="text-xs text-stealth-400">{selectedComponent.code}{selectedComponent.ticker ? ` · ${selectedComponent.ticker}` : ""}</p></div>
+                  <p className="text-xs tabular-nums text-stealth-400">Score {selectedComponent.score.toFixed(0)} · 20d {formatSignedPercent(selectedComponent.changes["20d"], 1)} · {formatSnapshot(data.as_of)}</p>
+                </div>
+                {selectedContext?.data ? (
+                  <CompactContextDigest context={selectedContext.data} variant="indicator" />
+                ) : selectedContext?.loading || !selectedContext ? (
+                  <div className="min-h-40 py-8 text-sm text-stealth-300" role="status">Loading the current {selectedComponent.name} thesis…</div>
+                ) : (
+                  <FallbackContractRead group={selectedGroup} component={selectedComponent} error={selectedContext.error} />
+                )}
               </div>
-              {selectedContext?.data ? (
-                <CompactContextDigest context={selectedContext.data} variant="indicator" />
-              ) : selectedContext?.loading || !selectedContext ? (
-                <div className="min-h-40 py-8 text-sm text-stealth-300" role="status">Loading the current {selectedComponent.name} thesis…</div>
-              ) : (
-                <FallbackContractRead group={selectedGroup} component={selectedComponent} error={selectedContext.error} />
-              )}
+
+              <section aria-labelledby="secondary-evidence-heading" className="space-y-3 border-t border-stealth-700 px-4 py-4 md:px-5">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <h2 id="secondary-evidence-heading" className="text-base font-semibold text-white">Supporting evidence</h2>
+                  <p className="text-xs text-stealth-400">{formatSnapshot(data.as_of)}</p>
+                </div>
+
+                <Disclosure title="Relationships" interpretation={correlationSummary}>
+                  <div className="space-y-5">
+                    <div>
+                      <h3 className="text-sm font-semibold text-white">Strongest relationships</h3>
+                      <p className="mt-1 text-xs leading-5 text-stealth-300">Positive values mean sectors moved together; negative values mean they diverged. Neither direction is inherently good or bad.</p>
+                      {strongestRelationships.length ? <div className="mt-3 divide-y divide-stealth-700/70 rounded-xl border border-stealth-700">
+                        {strongestRelationships.map((pair) => (
+                          <div key={`${pair.left}-${pair.right}`} className="grid gap-1 px-3 py-3 sm:grid-cols-[1fr_auto] sm:items-center">
+                            <p className="text-sm text-stealth-100">{groupLabels.get(pair.left) ?? formatGroupCode(pair.left)} and {groupLabels.get(pair.right) ?? formatGroupCode(pair.right)}</p>
+                            <p className="text-xs text-stealth-300"><span className="font-semibold tabular-nums text-white">r {pair.value.toFixed(2)}</span> · {correlationMeaning(pair.value)}</p>
+                          </div>
+                        ))}
+                      </div> : <p className="mt-3 text-sm text-stealth-300">No pairwise relationship history is available.</p>}
+                    </div>
+
+                    {matrix60.length ? <div>
+                      <h3 className="text-sm font-semibold text-white">Full 60-day matrix</h3>
+                      <div className="mt-3">
+                        <DataScroller label="60-day agriculture sector correlation matrix" hint="Scroll horizontally. Row and column headers remain visible while you inspect values.">
+                          <table className="w-max min-w-[640px] border-separate border-spacing-0 text-xs text-stealth-300">
+                            <caption className="sr-only">Pairwise 60-day correlations between agriculture sectors</caption>
+                            <thead>
+                              <tr>
+                                <th scope="col" className="sticky left-0 top-0 z-30 border-b border-r border-stealth-700 bg-stealth-900 px-3 py-2 text-left text-stealth-200">Sector</th>
+                                {matrix60[0] ? Object.keys(matrix60[0].values).map((column) => (
+                                  <th scope="col" key={column} className="sticky top-0 z-20 border-b border-r border-stealth-700 bg-stealth-900 px-3 py-2 text-left text-stealth-200">{groupLabels.get(column) ?? formatGroupCode(column)}</th>
+                                )) : null}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {matrix60.map((row) => (
+                                <tr key={row.row}>
+                                  <th scope="row" className="sticky left-0 z-10 border-b border-r border-stealth-700 bg-stealth-900 px-3 py-2 text-left font-medium text-stealth-100">{groupLabels.get(row.row) ?? formatGroupCode(row.row)}</th>
+                                  {Object.entries(row.values).map(([column, value]) => (
+                                    <td key={column} className={`border-b border-r border-stealth-700 px-3 py-2 text-center tabular-nums ${correlationCellTone(value)}`}>
+                                      {value === null ? "—" : value.toFixed(2)}
+                                      {value !== null ? <span className="sr-only">, {correlationMeaning(value)}</span> : <span className="sr-only">, unavailable</span>}
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </DataScroller>
+                      </div>
+                    </div> : null}
+                  </div>
+                </Disclosure>
+
+                <Disclosure title="Macro pressure" interpretation={macroSummary}>
+                  <div className="divide-y divide-stealth-700/70 rounded-xl border border-stealth-700">
+                    {macroEntries.map(([key, item]) => {
+                      const value = item.change_20d ?? item.spread_20d;
+                      return (
+                        <div key={key} className="grid gap-1 px-3 py-3 sm:grid-cols-[minmax(170px,.7fr)_1fr_auto] sm:items-center sm:gap-4">
+                          <p className="text-sm font-semibold text-white">{item.name}</p>
+                          <p className="text-sm text-stealth-300">{item.status}</p>
+                          <p className="text-xs tabular-nums text-stealth-400">20-day change {formatSignedPercent(value, 2)}</p>
+                        </div>
+                      );
+                    })}
+                    {data.special_signals ? (
+                      <>
+                        <div className="grid gap-1 px-3 py-3 sm:grid-cols-[minmax(170px,.7fr)_1fr_auto] sm:items-center sm:gap-4">
+                          <p className="text-sm font-semibold text-white">Soybean oil vs grains</p>
+                          <p className="text-sm text-stealth-300">{data.special_signals.soybean_oil_vs_grains.interpretation}</p>
+                          <p className="text-xs tabular-nums text-stealth-400">20-day spread {formatSignedPercent(data.special_signals.soybean_oil_vs_grains.spread_20d, 2)}</p>
+                        </div>
+                        <div className="grid gap-1 px-3 py-3 sm:grid-cols-[minmax(170px,.7fr)_1fr_auto] sm:items-center sm:gap-4">
+                          <p className="text-sm font-semibold text-white">Livestock feed margin</p>
+                          <p className="text-sm text-stealth-300">{data.special_signals.livestock_feed_margin_pressure.interpretation}</p>
+                          <p className="text-xs tabular-nums text-stealth-400">20-day spread {formatSignedPercent(data.special_signals.livestock_feed_margin_pressure.spread_20d, 2)}</p>
+                        </div>
+                      </>
+                    ) : null}
+                    {!macroEntries.length && !data.special_signals ? <p className="px-3 py-3 text-sm text-stealth-300">Macro evidence is unavailable in this snapshot.</p> : null}
+                  </div>
+                </Disclosure>
+
+                <Disclosure title="Data quality" interpretation={dataQualitySummary}>
+                  <dl className="grid gap-4 sm:grid-cols-3">
+                    <div><dt className="text-xs font-semibold text-stealth-400">Contracts available</dt><dd className="mt-1 text-lg font-semibold tabular-nums text-white">{data.availability.available_symbol_count}/{data.availability.total_configured_symbols}</dd></div>
+                    <div><dt className="text-xs font-semibold text-stealth-400">Sectors available</dt><dd className="mt-1 text-lg font-semibold tabular-nums text-white">{data.availability.available_group_count}/6</dd></div>
+                    <div><dt className="text-xs font-semibold text-stealth-400">Coverage gaps</dt><dd className="mt-1 text-lg font-semibold tabular-nums text-white">{data.availability.missing_symbols.length + data.availability.missing_macro_series.length}</dd></div>
+                  </dl>
+                  {data.availability.missing_symbols.length ? (
+                    <div className="mt-5"><h3 className="text-sm font-semibold text-white">Missing contracts</h3><ul className="mt-2 space-y-1 text-sm text-stealth-300">{data.availability.missing_symbols.map((item) => <li key={item.code}>{item.name} ({item.code}) · attempted {item.attempted_tickers.join(", ")}</li>)}</ul></div>
+                  ) : null}
+                  {data.availability.missing_macro_series.length ? (
+                    <div className="mt-5"><h3 className="text-sm font-semibold text-white">Missing macro inputs</h3><ul className="mt-2 space-y-1 text-sm text-stealth-300">{data.availability.missing_macro_series.map((item) => <li key={item}>{formatGroupCode(item)}</li>)}</ul></div>
+                  ) : null}
+                  {data.warnings.length ? <div className="mt-5 border-t border-stealth-700/80 pt-4 text-sm text-stealth-300">{data.warnings.map((warning) => <p key={warning}>{warning}</p>)}</div> : null}
+                </Disclosure>
+              </section>
             </div>
           </div>
         </section>
       ) : null}
 
-      <section aria-labelledby="secondary-evidence-heading" className="space-y-3">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 id="secondary-evidence-heading" className="text-xl font-semibold text-white">Supporting evidence</h2>
-          <p className="text-xs text-stealth-400">{formatSnapshot(data.as_of)}</p>
-        </div>
-
-        <Disclosure title="Relationships" interpretation={correlationSummary}>
-          <div className="space-y-5">
-            <div>
-              <h3 className="text-sm font-semibold text-white">Strongest relationships</h3>
-              <p className="mt-1 text-xs leading-5 text-stealth-300">Positive values mean sectors moved together; negative values mean they diverged. Neither direction is inherently good or bad.</p>
-              {strongestRelationships.length ? <div className="mt-3 divide-y divide-stealth-700/70 rounded-xl border border-stealth-700">
-                {strongestRelationships.map((pair) => (
-                  <div key={`${pair.left}-${pair.right}`} className="grid gap-1 px-3 py-3 sm:grid-cols-[1fr_auto] sm:items-center">
-                    <p className="text-sm text-stealth-100">{groupLabels.get(pair.left) ?? formatGroupCode(pair.left)} and {groupLabels.get(pair.right) ?? formatGroupCode(pair.right)}</p>
-                    <p className="text-xs text-stealth-300"><span className="font-semibold tabular-nums text-white">r {pair.value.toFixed(2)}</span> · {correlationMeaning(pair.value)}</p>
-                  </div>
-                ))}
-              </div> : <p className="mt-3 text-sm text-stealth-300">No pairwise relationship history is available.</p>}
-            </div>
-
-            {matrix60.length ? <div>
-              <h3 className="text-sm font-semibold text-white">Full 60-day matrix</h3>
-              <div className="mt-3">
-                <DataScroller label="60-day agriculture sector correlation matrix" hint="Scroll horizontally. Row and column headers remain visible while you inspect values.">
-                  <table className="w-max min-w-[640px] border-separate border-spacing-0 text-xs text-stealth-300">
-                    <caption className="sr-only">Pairwise 60-day correlations between agriculture sectors</caption>
-                    <thead>
-                      <tr>
-                        <th scope="col" className="sticky left-0 top-0 z-30 border-b border-r border-stealth-700 bg-stealth-900 px-3 py-2 text-left text-stealth-200">Sector</th>
-                        {matrix60[0] ? Object.keys(matrix60[0].values).map((column) => (
-                          <th scope="col" key={column} className="sticky top-0 z-20 border-b border-r border-stealth-700 bg-stealth-900 px-3 py-2 text-left text-stealth-200">{groupLabels.get(column) ?? formatGroupCode(column)}</th>
-                        )) : null}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {matrix60.map((row) => (
-                        <tr key={row.row}>
-                          <th scope="row" className="sticky left-0 z-10 border-b border-r border-stealth-700 bg-stealth-900 px-3 py-2 text-left font-medium text-stealth-100">{groupLabels.get(row.row) ?? formatGroupCode(row.row)}</th>
-                          {Object.entries(row.values).map(([column, value]) => (
-                            <td key={column} className={`border-b border-r border-stealth-700 px-3 py-2 text-center tabular-nums ${correlationCellTone(value)}`}>
-                              {value === null ? "—" : value.toFixed(2)}
-                              {value !== null ? <span className="sr-only">, {correlationMeaning(value)}</span> : <span className="sr-only">, unavailable</span>}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </DataScroller>
-              </div>
-            </div> : null}
-          </div>
-        </Disclosure>
-
-        <Disclosure title="Macro pressure" interpretation={macroSummary}>
-            <div className="divide-y divide-stealth-700/70 rounded-xl border border-stealth-700">
-            {macroEntries.map(([key, item]) => {
-              const value = item.change_20d ?? item.spread_20d;
-              return (
-                <div key={key} className="grid gap-1 px-3 py-3 sm:grid-cols-[minmax(170px,.7fr)_1fr_auto] sm:items-center sm:gap-4">
-                  <p className="text-sm font-semibold text-white">{item.name}</p>
-                  <p className="text-sm text-stealth-300">{item.status}</p>
-                  <p className="text-xs tabular-nums text-stealth-400">20-day change {formatSignedPercent(value, 2)}</p>
-                </div>
-              );
-            })}
-            {data.special_signals ? (
-              <>
-                <div className="grid gap-1 px-3 py-3 sm:grid-cols-[minmax(170px,.7fr)_1fr_auto] sm:items-center sm:gap-4">
-                  <p className="text-sm font-semibold text-white">Soybean oil vs grains</p>
-                  <p className="text-sm text-stealth-300">{data.special_signals.soybean_oil_vs_grains.interpretation}</p>
-                  <p className="text-xs tabular-nums text-stealth-400">20-day spread {formatSignedPercent(data.special_signals.soybean_oil_vs_grains.spread_20d, 2)}</p>
-                </div>
-                <div className="grid gap-1 px-3 py-3 sm:grid-cols-[minmax(170px,.7fr)_1fr_auto] sm:items-center sm:gap-4">
-                  <p className="text-sm font-semibold text-white">Livestock feed margin</p>
-                  <p className="text-sm text-stealth-300">{data.special_signals.livestock_feed_margin_pressure.interpretation}</p>
-                  <p className="text-xs tabular-nums text-stealth-400">20-day spread {formatSignedPercent(data.special_signals.livestock_feed_margin_pressure.spread_20d, 2)}</p>
-                </div>
-              </>
-            ) : null}
-            {!macroEntries.length && !data.special_signals ? <p className="px-3 py-3 text-sm text-stealth-300">Macro evidence is unavailable in this snapshot.</p> : null}
-          </div>
-        </Disclosure>
-
-        <Disclosure title="Data quality" interpretation={dataQualitySummary}>
-          <dl className="grid gap-4 sm:grid-cols-3">
-            <div><dt className="text-xs font-semibold text-stealth-400">Contracts available</dt><dd className="mt-1 text-lg font-semibold tabular-nums text-white">{data.availability.available_symbol_count}/{data.availability.total_configured_symbols}</dd></div>
-            <div><dt className="text-xs font-semibold text-stealth-400">Sectors available</dt><dd className="mt-1 text-lg font-semibold tabular-nums text-white">{data.availability.available_group_count}/6</dd></div>
-            <div><dt className="text-xs font-semibold text-stealth-400">Coverage gaps</dt><dd className="mt-1 text-lg font-semibold tabular-nums text-white">{data.availability.missing_symbols.length + data.availability.missing_macro_series.length}</dd></div>
-          </dl>
-          {data.availability.missing_symbols.length ? (
-            <div className="mt-5"><h3 className="text-sm font-semibold text-white">Missing contracts</h3><ul className="mt-2 space-y-1 text-sm text-stealth-300">{data.availability.missing_symbols.map((item) => <li key={item.code}>{item.name} ({item.code}) · attempted {item.attempted_tickers.join(", ")}</li>)}</ul></div>
-          ) : null}
-          {data.availability.missing_macro_series.length ? (
-            <div className="mt-5"><h3 className="text-sm font-semibold text-white">Missing macro inputs</h3><ul className="mt-2 space-y-1 text-sm text-stealth-300">{data.availability.missing_macro_series.map((item) => <li key={item}>{formatGroupCode(item)}</li>)}</ul></div>
-          ) : null}
-          {data.warnings.length ? <div className="mt-5 border-t border-stealth-700/80 pt-4 text-sm text-stealth-300">{data.warnings.map((warning) => <p key={warning}>{warning}</p>)}</div> : null}
-        </Disclosure>
-      </section>
     </div>
   );
 }
