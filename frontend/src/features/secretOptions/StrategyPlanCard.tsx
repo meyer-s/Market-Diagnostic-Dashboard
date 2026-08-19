@@ -47,12 +47,15 @@ export function StrategyPlanCard({ plan, riskBudget, disabled = false, onUse }: 
       : 1;
   const exceedsBudget = Boolean(riskBudget && recommendedUnits < 1);
   const quotesNeedReview = candidate.status !== "actionable";
-  const useDisabled = disabled || exceedsBudget || quotesNeedReview;
-  const useLabel = quotesNeedReview
-    ? "Review leg quotes first"
-    : exceedsBudget
-      ? "Above risk budget"
+  const useDisabled = disabled || exceedsBudget;
+  const useLabel = exceedsBudget
+    ? "Above risk budget"
+    : quotesNeedReview
+      ? "Review quotes & continue"
       : "Use this plan";
+  const useButtonClass = quotesNeedReview
+    ? "border border-amber-500/55 bg-amber-950/55 text-amber-100 hover:bg-amber-900/65 focus-visible:ring-amber-300"
+    : "bg-emerald-700 text-white hover:bg-emerald-600 focus-visible:ring-emerald-300";
 
   return (
     <section
@@ -78,7 +81,7 @@ export function StrategyPlanCard({ plan, riskBudget, disabled = false, onUse }: 
           type="button"
           onClick={() => onUse(candidate)}
           disabled={useDisabled}
-          className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-emerald-700 px-4 text-sm font-semibold text-white transition hover:bg-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 disabled:cursor-not-allowed disabled:bg-stealth-700 disabled:text-stealth-400"
+          className={`inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:border-transparent disabled:bg-stealth-700 disabled:text-stealth-400 ${useButtonClass}`}
         >
           {quotesNeedReview || exceedsBudget ? (
             <AlertTriangle className="h-4 w-4" aria-hidden="true" />
@@ -125,25 +128,33 @@ export function StrategyPlanCard({ plan, riskBudget, disabled = false, onUse }: 
             {plan.alternatives.length} more structure{plan.alternatives.length === 1 ? "" : "s"} if you want a different payoff
           </summary>
           <div className="mt-2 divide-y divide-stealth-800 border-y border-stealth-800">
-            {plan.alternatives.map((alternative) => (
-              <div key={alternative.strategy_type} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <div className="font-semibold text-stealth-200">{alternative.label}</div>
-                  <div className="mt-0.5 text-xs text-stealth-400">
-                    Max loss {formatCurrency(alternative.max_loss)} · max profit {formatMaxProfit(alternative)} · {words(alternative.volatility_exposure)}
+            {plan.alternatives.map((alternative) => {
+              const alternativeNeedsReview = alternative.status !== "actionable";
+              const alternativeExceedsBudget = Boolean(riskBudget && riskBudget < alternative.max_loss);
+              return (
+                <div key={alternative.strategy_type} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="font-semibold text-stealth-200">{alternative.label}</div>
+                    <div className="mt-0.5 text-xs text-stealth-400">
+                      Max loss {formatCurrency(alternative.max_loss)} · max profit {formatMaxProfit(alternative)} · {words(alternative.volatility_exposure)}
+                    </div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => onUse(alternative)}
+                    disabled={disabled || alternativeExceedsBudget}
+                    className="min-h-9 shrink-0 rounded-md border border-stealth-600 px-3 text-xs font-semibold text-stealth-200 hover:border-stealth-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+                    aria-label={`${alternativeNeedsReview ? "Review quotes and use" : "Use"} ${alternative.label}`}
+                  >
+                    {alternativeExceedsBudget
+                      ? "Above risk budget"
+                      : alternativeNeedsReview
+                        ? "Review & use"
+                        : "Use alternative"}
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => onUse(alternative)}
-                  disabled={disabled || alternative.status !== "actionable" || Boolean(riskBudget && riskBudget < alternative.max_loss)}
-                  className="min-h-9 shrink-0 rounded-md border border-stealth-600 px-3 text-xs font-semibold text-stealth-200 hover:border-stealth-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
-                  aria-label={`Use ${alternative.label}`}
-                >
-                  Use alternative
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </details>
       ) : null}

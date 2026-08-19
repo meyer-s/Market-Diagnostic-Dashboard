@@ -70,4 +70,23 @@ describe("StrategyPlanCard", () => {
 
     expect(screen.getByRole("button", { name: "Above risk budget" })).toHaveProperty("disabled", true);
   });
+
+  it("turns a manual-price-discovery warning into a review path", () => {
+    const onUse = vi.fn();
+    const reviewPlan: OptionStrategyPlan = {
+      ...plan,
+      primary: {
+        ...plan.primary,
+        status: "manual_price_discovery",
+        quote_issues: ["call 85 spread is 34.4%"],
+      },
+    };
+
+    render(<StrategyPlanCard plan={reviewPlan} onUse={onUse} />);
+
+    const reviewButton = screen.getByRole("button", { name: "Review quotes & continue" });
+    expect(reviewButton).toHaveProperty("disabled", false);
+    fireEvent.click(reviewButton);
+    expect(onUse).toHaveBeenCalledWith(reviewPlan.primary);
+  });
 });

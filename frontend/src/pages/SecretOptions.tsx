@@ -1222,6 +1222,8 @@ interface ScannerTradePrefillContext {
   missingFields: string[];
   strategyLabel?: string;
   maxLossPerUnit?: number;
+  quoteReviewRequired?: boolean;
+  quoteIssues?: string[];
 }
 
 interface PositionFormStrategyContext {
@@ -1563,6 +1565,7 @@ export default function SecretOptions() {
   const [formSourceEventId, setFormSourceEventId] = useState<number | null>(null);
   const [scannerTradePrefill, setScannerTradePrefill] = useState<ScannerTradePrefillContext | null>(null);
   const [formStrategy, setFormStrategy] = useState<PositionFormStrategyContext | null>(null);
+  const [quoteReviewAcknowledged, setQuoteReviewAcknowledged] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingPositionId, setEditingPositionId] = useState<number | null>(null);
   const [showCloseModal, setShowCloseModal] = useState(false);
@@ -2267,6 +2270,7 @@ export default function SecretOptions() {
     setFormSourceEventId(null);
     setScannerTradePrefill(null);
     setFormStrategy(null);
+    setQuoteReviewAcknowledged(false);
     resetForm();
     setFormError(null);
   };
@@ -2290,6 +2294,19 @@ export default function SecretOptions() {
 
     if (!contracts || !strike || !fillPrice || !totalCost) {
       setFormError("Contracts, strike, fill price, and total cost are required.");
+      return null;
+    }
+
+    if (scannerTradePrefill?.quoteReviewRequired && !quoteReviewAcknowledged) {
+      setFormError("Confirm that you reviewed the current quotes before recording this trade.");
+      return null;
+    }
+
+    const riskBudget = scannerRiskPolicy?.default_trade_risk_budget ?? null;
+    if (formStrategy && scannerTradePrefill && riskBudget && totalCost > riskBudget + 0.01) {
+      setFormError(
+        `The entered maximum loss (${formatCurrency(totalCost)}) exceeds the approved risk budget (${formatCurrency(riskBudget)}). Lower the quantity or net debit.`,
+      );
       return null;
     }
 
@@ -2473,6 +2490,7 @@ export default function SecretOptions() {
     if (strategyCandidate && strategyPlan) {
       const anchorLeg = strategyCandidate.legs.find((leg) => leg.action === "buy") ?? strategyCandidate.legs[0];
       const riskBudget = scannerRiskPolicy?.default_trade_risk_budget ?? null;
+      const quoteReviewRequired = strategyCandidate.status !== "actionable";
       const budgetUnits = riskBudget && strategyCandidate.max_loss > 0
         ? Math.floor(riskBudget / strategyCandidate.max_loss)
         : 1;
@@ -2486,6 +2504,7 @@ export default function SecretOptions() {
 
       setEditingPositionId(null);
       setFormError(null);
+      setQuoteReviewAcknowledged(false);
       setFormSourceEventId(opportunity.event_id);
       setFormStrategy({
         strategyType: strategyCandidate.strategy_type,
@@ -2505,6 +2524,8 @@ export default function SecretOptions() {
         missingFields,
         strategyLabel: strategyCandidate.label,
         maxLossPerUnit: strategyCandidate.max_loss,
+        quoteReviewRequired,
+        quoteIssues: strategyCandidate.quote_issues,
       });
       setFormData({
         ...initialFormState,
@@ -2515,8 +2536,8 @@ export default function SecretOptions() {
         expiration: anchorLeg?.expiration || strategyCandidate.expiration,
         strike: anchorLeg?.strike !== null && anchorLeg?.strike !== undefined ? String(anchorLeg.strike) : "",
         option_type: anchorLeg?.option_type || "call",
-        fill_price: strategyCandidate.net_debit.toFixed(2),
-        total_cost: (strategyCandidate.max_loss * contracts).toFixed(2),
+        fill_price: quoteReviewRequired ? "" : strategyCandidate.net_debit.toFixed(2),
+        total_cost: quoteReviewRequired ? "" : (strategyCandidate.max_loss * contracts).toFixed(2),
         underlying_at_entry: String(strategyPlan.underlying_price),
         estimated_delta: String(strategyCandidate.greeks.delta),
         shares_equivalent: String(Math.round(strategyCandidate.greeks.delta * 100 * contracts)),
@@ -2557,6 +2578,7 @@ export default function SecretOptions() {
 
     setEditingPositionId(null);
     setFormError(null);
+    setQuoteReviewAcknowledged(false);
     setFormSourceEventId(opportunity.event_id);
     setScannerTradePrefill({
       eventId: opportunity.event_id,
@@ -4243,6 +4265,7 @@ export default function SecretOptions() {
     setFormSourceEventId(null);
     setScannerTradePrefill(null);
     setFormStrategy(null);
+    setQuoteReviewAcknowledged(false);
     resetForm();
     setFormError(null);
     setShowAddModal(true);
@@ -7074,19 +7097,41 @@ export default function SecretOptions() {
             )}
 
             {scannerTradePrefill ? (
-              <div className="mb-4 rounded-lg border border-emerald-600/35 bg-emerald-950/25 p-3 text-xs leading-relaxed text-emerald-100">
-                <div className="font-semibold">
-                  Prefilled from {scannerTradePrefill.symbol} scanner event #{scannerTradePrefill.eventId}
+              <section
+                aria-labelledby="scanner-trade-review-heading"
+                className={`mb-4 rounded-lg border p-3 text-xs leading-relaxed ${scannerTradePrefill.quoteReviewRequired ? "border-amber-500/45 bg-amber-950/25 text-amber-100" : "border-emerald-600/35 bg-emerald-950/25 text-emerald-100"}`}
+              >
+                <div id="scanner-trade-review-heading" className="font-semibold">
+                  {scannerTradePrefill.quoteReviewRequired ? "Review live quotes" : "Scanner trade prefill"} · {scannerTradePrefill.symbol} event #{scannerTradePrefill.eventId}
                 </div>
                 <div className="mt-1 text-stealth-300">
-                  Price basis: {scannerTradePrefill.priceBasis}. Confirm the quantity, net debit, account, and actual execution before adding. This logs a tracked position for learning; it does not submit a broker order.
+                  {scannerTradePrefill.quoteReviewRequired
+                    ? "The scanner quote is not execution-grade. Check every leg in your broker, then enter the current combined net debit below. The structure and risk checks remain enforced."
+                    : `Price basis: ${scannerTradePrefill.priceBasis}. Confirm the quantity, net debit, account, and actual execution before adding.`}
+                  {" "}This records a tracked trade for learning; it does not submit a broker order.
                 </div>
+                {scannerTradePrefill.quoteReviewRequired && scannerTradePrefill.quoteIssues?.length ? (
+                  <ul className="mt-2 list-disc space-y-0.5 ps-4 text-amber-200">
+                    {scannerTradePrefill.quoteIssues.map((issue) => <li key={issue}>{issue}</li>)}
+                  </ul>
+                ) : null}
                 {scannerTradePrefill.missingFields.length > 0 ? (
                   <div className="mt-1 font-medium text-amber-200">
                     Still required: {scannerTradePrefill.missingFields.join(", ")}.
                   </div>
                 ) : null}
-              </div>
+                {scannerTradePrefill.quoteReviewRequired ? (
+                  <label className="mt-3 flex min-h-11 cursor-pointer items-center gap-2 rounded-md border border-amber-500/35 bg-stealth-950/35 px-3 text-stealth-100">
+                    <input
+                      type="checkbox"
+                      checked={quoteReviewAcknowledged}
+                      onChange={(event) => setQuoteReviewAcknowledged(event.target.checked)}
+                      className="h-4 w-4 rounded border-stealth-500 bg-stealth-900 text-amber-500 focus:ring-2 focus:ring-amber-300"
+                    />
+                    <span>I reviewed the current leg quotes and will enter the executable net debit.</span>
+                  </label>
+                ) : null}
+              </section>
             ) : null}
 
             {formStrategy ? (
@@ -7205,9 +7250,10 @@ export default function SecretOptions() {
                   <input
                     type="number"
                     step="0.01"
+                    min="0.01"
                     value={formData.fill_price}
                     onChange={handleFieldChange("fill_price")}
-                    placeholder="5.00"
+                    placeholder={scannerTradePrefill?.quoteReviewRequired ? "Enter current combined debit" : "5.00"}
                     className="mt-1 w-full bg-stealth-900 border border-stealth-700 rounded px-3 py-2 text-sm text-stealth-200"
                     required
                   />
@@ -7261,7 +7307,7 @@ export default function SecretOptions() {
                 </button>
                 <button
                   type="submit"
-                  disabled={submitting}
+                  disabled={submitting || Boolean(scannerTradePrefill?.quoteReviewRequired && !quoteReviewAcknowledged)}
                   className="min-h-11 rounded-md bg-emerald-700 px-4 text-sm font-medium text-white hover:bg-emerald-600 disabled:bg-stealth-700"
                 >
                   {submitting
