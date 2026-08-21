@@ -13,6 +13,16 @@ from app.models.precious_metals import MetalPrice
 from app.utils.db_helpers import get_db_session
 
 
+METAL_INSTRUMENTS: dict[str, dict[str, str | None]] = {
+    "AU": {"symbol": "GC=F", "venue": "COMEX", "market_type": "continuous futures series", "quote_unit": "USD/troy oz", "price_type": "stored daily close", "source": "Yahoo Finance"},
+    "AG": {"symbol": "SI=F", "venue": "COMEX", "market_type": "continuous futures series", "quote_unit": "USD/troy oz", "price_type": "stored daily close", "source": "Yahoo Finance"},
+    "PT": {"symbol": "PL=F", "venue": "NYMEX", "market_type": "continuous futures series", "quote_unit": "USD/troy oz", "price_type": "stored daily close", "source": "Yahoo Finance"},
+    "PD": {"symbol": "PA=F", "venue": "NYMEX", "market_type": "continuous futures series", "quote_unit": "USD/troy oz", "price_type": "stored daily close", "source": "Yahoo Finance"},
+    "CU": {"symbol": "HG=F", "venue": "COMEX", "market_type": "continuous futures series", "quote_unit": "USD/lb", "price_type": "stored daily close", "source": "Yahoo Finance"},
+    "AL": {"symbol": "ALI=F", "venue": "CME", "market_type": "continuous futures series", "quote_unit": "USD/metric tonne", "price_type": "stored daily close", "source": "Yahoo Finance"},
+}
+
+
 def fetch_metal_price_history(metal: str, days: int = 365) -> pd.DataFrame:
     """Fetch historical price data for a metal"""
     with get_db_session() as db:
@@ -46,16 +56,19 @@ def compute_metal_projection(metal: str, metal_name: str, etf_symbol: str) -> Di
     - Price targets
     """
     df = fetch_metal_price_history(metal, days=365)
+    instrument = METAL_INSTRUMENTS[metal]
     
     if df.empty or len(df) < 30:
         return {
             "metal": metal,
             "metal_name": metal_name,
             "etf_symbol": etf_symbol,
+            "instrument": instrument,
             "error": "Insufficient historical data"
         }
     
     current_price = float(df['price'].iloc[-1])
+    price_as_of = df.index[-1].to_pydatetime().isoformat() if hasattr(df.index[-1], "to_pydatetime") else str(df.index[-1])
     
     # Calculate technical indicators
     df['sma_20'] = df['price'].rolling(window=20).mean()
@@ -191,6 +204,7 @@ def compute_metal_projection(metal: str, metal_name: str, etf_symbol: str) -> Di
         "metal": metal,
         "metal_name": metal_name,
         "etf_symbol": etf_symbol,
+        "instrument": instrument,
         "current_price": current_price,
         "score_total": round(score_total, 1),
         "score_trend": score_trend,
@@ -212,7 +226,7 @@ def compute_metal_projection(metal: str, metal_name: str, etf_symbol: str) -> Di
             "take_profit": round(take_profit, 2),
             "stop_loss": round(stop_loss, 2),
         },
-        "as_of": datetime.utcnow().isoformat()
+        "as_of": price_as_of,
     }
 
 
@@ -386,8 +400,10 @@ def compute_all_metal_projections() -> Dict[str, Any]:
         else:
             proj['relative_classification'] = "Neutral"
     
+    projection_timestamps = [proj["as_of"] for proj in projections if proj.get("as_of")]
     return {
         "projections": projections,
-        "as_of": datetime.utcnow().isoformat(),
+        "as_of": max(projection_timestamps) if projection_timestamps else None,
+        "generated_at": datetime.utcnow().isoformat(),
         "model_version": "1.1"
     }

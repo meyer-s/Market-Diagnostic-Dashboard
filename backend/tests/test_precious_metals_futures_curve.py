@@ -50,6 +50,8 @@ def test_futures_curve_endpoint_returns_nearby_contracts(client: TestClient) -> 
     body = response.json()
     assert body["contracts_requested"] == 4
     assert body["source"] == "Yahoo Finance month-specific futures history"
+    assert body["as_of"] == "2026-05-15T14:30:00"
+    assert body["generated_at"] == "2026-05-15T00:00:00"
 
     gold = next(item for item in body["metals"] if item["metal"] == "AU")
     assert [contract["symbol"] for contract in gold["contracts"]] == [
@@ -65,3 +67,26 @@ def test_futures_curve_endpoint_returns_nearby_contracts(client: TestClient) -> 
     silver = next(item for item in body["metals"] if item["metal"] == "AG")
     assert len(silver["contracts"]) == 4
     assert silver["contracts"][0]["symbol"] == "SIN26.CMX"
+
+
+def test_global_dispersion_exposes_verified_reference_and_registry_coverage(client: TestClient) -> None:
+    response = client.get("/precious-metals/global-price-dispersion", params={"metal": "AG"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["metal"] == "AG"
+    assert body["canonical_unit"] == "troy oz"
+    assert body["comparison_ready"] is False
+    assert body["summary"]["observed_venues"] == 1
+    assert body["summary"]["registered_venues"] >= 6
+
+    comex = next(row for row in body["venues"] if row["registry_id"] == "comex_silver")
+    assert comex["symbol"] == "SIN26.CMX"
+    assert comex["contract_month"] == "Jul 2026"
+    assert comex["comparability_status"] == "reference"
+    assert comex["price_type"] == "provider daily bar close"
+    assert comex["normalized_price"] == 34.5
+
+    shfe = next(row for row in body["venues"] if row["registry_id"] == "shfe_silver")
+    assert shfe["availability_status"] == "unavailable"
+    assert shfe["redistribution_status"] == "Official/licensed feed required"

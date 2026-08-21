@@ -13,6 +13,11 @@ from app.models.precious_metals import (
     RegimeType, GoldBiasType, SilverBiasType, PGMBiasType, RiskLevel
 )
 from app.utils.db_helpers import get_db_session
+from app.services.metal_price_dispersion import (
+    DEFAULT_REFERENCE_IDS,
+    METAL_DEFINITIONS,
+    build_global_price_dispersion,
+)
 
 router = APIRouter(prefix="/precious-metals", tags=["precious-metals"])
 
@@ -368,50 +373,57 @@ def _fetch_futures_contract_snapshot(symbol: str) -> Optional[dict]:
 def get_precious_metals_futures_curve(contracts: int = 4) -> dict:
     as_of = datetime.utcnow()
     metals = []
-    latest_timestamp = as_of.isoformat()
+    quote_timestamps = []
 
-    for metal, config in PRECIOUS_METALS_FUTURES.items():
-        contract_rows = []
-        for candidate in _build_nearby_contract_candidates(config, contracts, as_of):
-            snapshot = _fetch_futures_contract_snapshot(candidate["symbol"])
-            if not snapshot:
-                continue
-
-            contract_rows.append({
-                **candidate,
-                **snapshot,
-            })
-            latest_timestamp = max(latest_timestamp, snapshot["as_of"])
-            if len(contract_rows) >= contracts:
-                break
-
-        if not contract_rows:
+    for metal in PRECIOUS_METALS_FUTURES:
+        curve = _get_metal_futures_curve(metal, contracts=contracts, as_of=as_of)
+        if not curve:
             continue
-
-        front_price = contract_rows[0]["price"]
-        deferred_price = contract_rows[-1]["price"] if len(contract_rows) > 1 else front_price
-        curve_bps = None
-        curve_state = "FLAT"
-        if front_price and deferred_price:
-            curve_bps = ((front_price / deferred_price) - 1) * 10000
-            if curve_bps > 0:
-                curve_state = "BACKWARDATION"
-            elif curve_bps < 0:
-                curve_state = "CONTANGO"
-
-        metals.append({
-            "metal": metal,
-            "label": config["label"],
-            "curve_state": curve_state,
-            "curve_bps": curve_bps,
-            "contracts": contract_rows,
-        })
+        metals.append(curve)
+        quote_timestamps.extend(row["as_of"] for row in curve["contracts"])
 
     return {
-        "as_of": latest_timestamp,
+        "as_of": max(quote_timestamps) if quote_timestamps else None,
+        "generated_at": as_of.isoformat(),
         "source": "Yahoo Finance month-specific futures history",
         "contracts_requested": contracts,
         "metals": metals,
+    }
+
+
+def _get_metal_futures_curve(metal: str, contracts: int, as_of: Optional[datetime] = None) -> Optional[dict]:
+    """Fetch one venue-specific nearby curve without querying unrelated metals."""
+    config = PRECIOUS_METALS_FUTURES.get(metal)
+    if not config:
+        return None
+    as_of = as_of or datetime.utcnow()
+    contract_rows = []
+    for candidate in _build_nearby_contract_candidates(config, contracts, as_of):
+        snapshot = _fetch_futures_contract_snapshot(candidate["symbol"])
+        if not snapshot:
+            continue
+        contract_rows.append({**candidate, **snapshot})
+        if len(contract_rows) >= contracts:
+            break
+    if not contract_rows:
+        return None
+
+    front_price = contract_rows[0]["price"]
+    deferred_price = contract_rows[-1]["price"] if len(contract_rows) > 1 else front_price
+    curve_bps = None
+    curve_state = "FLAT"
+    if front_price and deferred_price:
+        curve_bps = ((front_price / deferred_price) - 1) * 10000
+        if curve_bps > 0:
+            curve_state = "BACKWARDATION"
+        elif curve_bps < 0:
+            curve_state = "CONTANGO"
+    return {
+        "metal": metal,
+        "label": config["label"],
+        "curve_state": curve_state,
+        "curve_bps": curve_bps,
+        "contracts": contract_rows,
     }
 
 
@@ -773,11 +785,77 @@ def get_cb_holdings():
 
 @router.get("/futures-curve")
 def get_futures_curve(contracts: int = Query(4, ge=3, le=6)):
-    """Get nearby month-specific precious-metals futures curves."""
+    """Get COMEX/NYMEX nearby month-specific precious-metals futures curves."""
     try:
         return get_precious_metals_futures_curve(contracts=contracts)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/global-price-dispersion")
+def get_global_price_dispersion(
+    metal: str = Query("AG", min_length=2, max_length=2),
+    comparison_time: str = Query("latest_available"),
+    reference: str = Query("auto"),
+    basis: str = Query("raw_converted"),
+):
+    """Return registry coverage plus only those venue quotes that can be verified."""
+    metal = metal.upper()
+    if metal not in METAL_DEFINITIONS:
+        raise HTTPException(status_code=422, detail=f"Unsupported metal: {metal}")
+
+    observations = []
+    reference_id = DEFAULT_REFERENCE_IDS[metal]
+    if metal in PRECIOUS_METALS_FUTURES:
+        curve = _get_metal_futures_curve(metal, contracts=1)
+        if curve and curve["contracts"]:
+            front = curve["contracts"][0]
+            observations.append({
+                "registry_id": reference_id,
+                "symbol": front["symbol"],
+                "contract_month": front["contract_label"],
+                "local_price": front["price"],
+                "currency": "USD",
+                "native_unit": METAL_DEFINITIONS[metal]["canonical_unit"],
+                "fx_rate_local_per_usd": 1.0,
+                "fx_timestamp": front["as_of"],
+                "price_type": "provider daily bar close",
+                "quote_timestamp": front["as_of"],
+                "session_status": "unverified",
+                "data_delay": "Daily provider observation; real-time status is not asserted",
+                "volume": front.get("volume"),
+                "open_interest": None,
+            })
+    else:
+        with get_db_session() as db:
+            latest = db.query(MetalPrice).filter(MetalPrice.metal == metal).order_by(desc(MetalPrice.date)).first()
+            if latest and latest.price_usd_per_oz is not None:
+                observations.append({
+                    "registry_id": reference_id,
+                    "contract_month": None,
+                    "local_price": latest.price_usd_per_oz,
+                    "currency": "USD",
+                    "native_unit": METAL_DEFINITIONS[metal]["canonical_unit"],
+                    "fx_rate_local_per_usd": 1.0,
+                    "fx_timestamp": latest.date.isoformat(),
+                    "price_type": "stored daily close",
+                    "quote_timestamp": latest.date.isoformat(),
+                    "session_status": "unverified",
+                    "data_delay": "Stored daily provider series; listed contract month is unavailable",
+                    "volume": None,
+                    "open_interest": None,
+                })
+
+    try:
+        return build_global_price_dispersion(
+            metal,
+            observations,
+            reference=reference,
+            comparison_time=comparison_time,
+            basis=basis,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/supply")
@@ -1073,4 +1151,3 @@ async def get_market_caps_history(years: int = 25):
                 'metals_to_m2_pct': 'Tracked using GLD holdings and CB gold holdings (carried forward).'
             }
         }
-

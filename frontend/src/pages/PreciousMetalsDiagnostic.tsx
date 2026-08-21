@@ -6,6 +6,7 @@ import { CHART_NEUTRAL } from "../utils/chartUtils";
 import { getFamilyColor, getMetricColor } from "../theme/metricColors";
 import { apiFetch } from "../utils/apiUtils";
 import { OptionsStructureMap } from "../components/widgets/OptionsStructureMap";
+import GlobalPriceDispersion from "../components/metals/GlobalPriceDispersion";
 
 interface RegimeStatus {
   gold_bias: "MONETARY_HEDGE" | "NEUTRAL" | "FINANCIAL_ASSET" | null;
@@ -19,6 +20,14 @@ interface MetalProjection {
   metal: string;
   metal_name: string;
   etf_symbol: string;
+  instrument: {
+    symbol: string;
+    venue: string;
+    market_type: string;
+    quote_unit: string;
+    price_type: string;
+    source: string;
+  };
   current_price: number;
   score_total: number;
   score_trend: number;
@@ -177,7 +186,8 @@ interface FuturesCurveMetal {
 }
 
 interface FuturesCurveResponse {
-  as_of: string;
+  as_of: string | null;
+  generated_at?: string;
   source: string;
   contracts_requested: number;
   metals: FuturesCurveMetal[];
@@ -225,6 +235,16 @@ const getMetalTextColor = (metal: string) => {
   };
   return textColors[metal] ?? "#e2e8f0";
 };
+
+function projectionUnit(proj: MetalProjection): string {
+  return proj.instrument.quote_unit.replace(/^USD\//, "");
+}
+
+function formatProjectionPrice(proj: MetalProjection, value: number | null): string {
+  if (value == null) return "n/a";
+  const decimals = proj.metal === "CU" ? 4 : proj.metal === "AL" ? 0 : 2;
+  return `$${value.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals })} / ${projectionUnit(proj)}`;
+}
 
 const getMetalName = (metal: string): string => {
   return METAL_LABELS[metal] || metal;
@@ -383,8 +403,8 @@ function ProjectionCard({ proj }: { proj: MetalProjection }) {
           <div className="text-xs uppercase tracking-[0.2em] text-stealth-500">{proj.metal}</div>
           <h3 className="mt-1 text-base font-semibold text-stealth-100">
             <span style={{ color: getMetalTextColor(proj.metal) }}>{proj.metal_name}</span>
-            <span className="ml-1 text-stealth-500">({proj.etf_symbol})</span>
           </h3>
+          <div className="mt-1 text-xs text-stealth-400">{proj.instrument.symbol} · {proj.instrument.venue} {proj.instrument.market_type} · {proj.instrument.quote_unit}</div>
           <div className={`mt-1 text-xs font-semibold ${getClassificationColor(proj.classification)}`}>
             {proj.classification} setup
           </div>
@@ -395,22 +415,22 @@ function ProjectionCard({ proj }: { proj: MetalProjection }) {
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <ProjectionMetric label="Current" value={`$${proj.current_price.toFixed(2)}`} />
+        <ProjectionMetric label="Futures series" value={formatProjectionPrice(proj, proj.current_price)} detail={`${proj.instrument.price_type} · ${formatTimestamp(proj.as_of)}`} />
         <ProjectionMetric label="RSI" value={proj.technicals.rsi?.toFixed(1) || "n/a"} />
         <ProjectionMetric label="Total Score" value={`${proj.score_total.toFixed(1)}/100`} />
-        <ProjectionMetric label="SMA 50" value={proj.technicals.sma_50 ? `$${proj.technicals.sma_50.toFixed(2)}` : "n/a"} />
+        <ProjectionMetric label="SMA 50" value={formatProjectionPrice(proj, proj.technicals.sma_50)} />
       </div>
 
       <div className="mt-3">
         <OptionsStructureMap
           currentPrice={proj.current_price}
-          priceLabel="Spot price"
+          priceLabel="Stored futures-series price"
           movingAverageType="SMA"
           supportLevels={proj.levels.support}
           resistanceLevels={proj.levels.resistance}
           sma50={proj.technicals.sma_50}
           sma200={proj.technicals.sma_200}
-          label={proj.etf_symbol}
+          label={proj.instrument.symbol}
         />
       </div>
 
@@ -433,8 +453,8 @@ function ProjectionCard({ proj }: { proj: MetalProjection }) {
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2 xl:grid-cols-4">
-        <ProjectionMetric label="Upper" value={`$${proj.levels.take_profit.toFixed(2)}`} tone="buy" />
-        <ProjectionMetric label="Lower" value={`$${proj.levels.stop_loss.toFixed(2)}`} tone="sell" />
+        <ProjectionMetric label="Upper" value={formatProjectionPrice(proj, proj.levels.take_profit)} tone="buy" />
+        <ProjectionMetric label="Lower" value={formatProjectionPrice(proj, proj.levels.stop_loss)} tone="sell" />
         <ProjectionMetric label="Trend" value={`${proj.score_trend.toFixed(1)}/100`} />
         <ProjectionMetric label="Momentum" value={`${proj.score_momentum.toFixed(1)}/100`} />
       </div>
@@ -663,6 +683,8 @@ export default function PreciousMetalsDiagnostic({ embedded = false }: { embedde
           Latest supporting timestamp: {formatTimestamp(freshestTimestamp)} · Spot and futures can update intraday; central-bank data can lag by a quarter.
         </div>
       </section>
+
+      <GlobalPriceDispersion />
 
       {/* TAB NAVIGATION */}
       <div id="metals-views" className="section-anchor control-strip self-start" role="tablist" aria-label="Metals diagnostic view">
@@ -982,7 +1004,7 @@ function MethodologyPanel() {
                 <p className="font-semibold text-blue-300">Price Data:</p>
                 <ul className="list-disc list-inside ml-2 text-xs space-y-1">
                   <li><strong>Source:</strong> Yahoo Finance futures contracts (GC=F, SI=F, PL=F, PA=F)</li>
-                  <li><strong>Update:</strong> Daily spot prices ingested at market close</li>
+                  <li><strong>Update:</strong> Daily continuous-futures observations ingested from Yahoo Finance</li>
                   <li><strong>Historical:</strong> 365-day lookback for technical analysis and moving averages</li>
                 </ul>
               </div>
@@ -1506,8 +1528,8 @@ function FuturesCurvePanel({ futuresCurve }: { futuresCurve: FuturesCurveRespons
     <div className="primary-card p-4 md:p-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between mb-4">
         <div>
-          <h3 className="text-lg font-bold text-white">Nearby Futures Curve</h3>
-          <p className="text-xs text-stealth-400 mt-1">Uses the next few listed contracts to show whether the metals complex is paying up for nearby delivery or for time.</p>
+          <h3 className="text-lg font-bold text-white">COMEX / NYMEX Nearby Futures Curve</h3>
+          <p className="text-xs text-stealth-400 mt-1">One-venue term structure only: COMEX gold and silver, plus NYMEX platinum and palladium. This is not a cross-exchange comparison.</p>
         </div>
         <div className="text-xs text-stealth-500">
           {futuresCurve?.as_of ? `As of ${futuresCurve.as_of.slice(0, 16).replace("T", " ")}` : "Live quote timing unavailable"}
@@ -1569,7 +1591,7 @@ function FuturesCurvePanel({ futuresCurve }: { futuresCurve: FuturesCurveRespons
                   <div className="text-right">
                     <div className="text-xs uppercase tracking-[0.18em] text-stealth-500">Curve Shape</div>
                     <div className="text-base font-bold" style={{ color: activeColor }}>
-                      {curveLabel}{isNumber(curveBps) ? ` ${curveBps > 0 ? "+" : ""}${curveBps.toFixed(0)} bps` : ""}
+                      {isNumber(curveBps) ? `${Math.abs(curveBps).toFixed(0)} bps ${curveLabel.toLowerCase()}` : curveLabel}
                     </div>
                   </div>
                 </div>
@@ -1625,7 +1647,7 @@ function FuturesCurvePanel({ futuresCurve }: { futuresCurve: FuturesCurveRespons
                         <div className="text-xs text-stealth-500 mt-1">{contract.symbol}</div>
                       </div>
                       <div className="text-right">
-                        <div className="text-sm font-bold" style={{ color: activeColor }}>${contract.price.toFixed(2)}</div>
+                        <div className="text-sm font-bold" style={{ color: activeColor }}>${contract.price.toFixed(2)} / troy oz</div>
                         <div className={`text-xs ${contract.change_pct >= 0 ? "text-green-400" : "text-red-400"}`}>
                           {contract.change_pct >= 0 ? "+" : ""}{contract.change_pct.toFixed(2)}%
                         </div>
@@ -1635,6 +1657,7 @@ function FuturesCurvePanel({ futuresCurve }: { futuresCurve: FuturesCurveRespons
                       <span>Prev close ${contract.previous_close.toFixed(2)}</span>
                       <span>{contract.volume != null ? `${contract.volume.toLocaleString()} vol` : "Volume n/a"}</span>
                     </div>
+                    <div className="mt-2 text-xs text-stealth-500">Provider daily bar · {formatTimestamp(contract.as_of)}</div>
                   </div>
                 ))}
               </div>
@@ -2124,7 +2147,7 @@ function ProjectionsPanel({ projections }: { projections: MetalProjection[] }) {
               <div key={proj.metal} className={`rounded-xl border px-3 py-2 ${getRelativeClassColor(proj.relative_classification)}`}>
                 <div className="text-xs uppercase tracking-[0.16em] opacity-80">#{proj.rank}</div>
                 <div className="mt-1 text-sm font-semibold" style={{ color: getMetalTextColor(proj.metal) }}>{proj.metal_name}</div>
-                <div className="mt-1 text-sm font-bold text-stealth-100">${proj.current_price.toFixed(2)}</div>
+                <div className="mt-1 text-sm font-bold text-stealth-100">{formatProjectionPrice(proj, proj.current_price)}</div>
                 <div className="mt-1 text-xs text-stealth-400">Score {proj.score_total.toFixed(1)}/100</div>
               </div>
             ))}
@@ -2153,7 +2176,7 @@ function ProjectionsPanel({ projections }: { projections: MetalProjection[] }) {
       </div>
 
       <div className="mt-4 rounded-xl border border-blue-500/30 bg-blue-500/10 p-3 text-xs text-stealth-300">
-        <strong>How to read this:</strong> Scores blend trend structure, momentum, and nearby support/resistance. A high score means leadership is broadening; a low score means the metal is lagging even if the spot price still looks elevated. Strong = {'>'} 75 total score.
+        <strong>How to read this:</strong> Scores blend trend structure, momentum, and nearby support/resistance. A high score means leadership is broadening; a low score means the metal is lagging even if its stored futures-series price still looks elevated. Strong = {'>'} 75 total score.
       </div>
     </div>
   );
