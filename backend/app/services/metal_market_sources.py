@@ -90,8 +90,8 @@ OSE_PRODUCTS = {
 }
 
 LME_PAGES = {
-    "CU": ("lme_copper", "copper", "Copper"),
-    "AL": ("lme_aluminum", "aluminium", "Aluminium"),
+    "CU": ("lme_copper", "copper", "Copper", "LME_Cu_cash"),
+    "AL": ("lme_aluminum", "aluminium", "Aluminium", "LME_Al_cash"),
 }
 
 ECB_FX_URL = "https://data-api.ecb.europa.eu/service/data/EXR/D.CNY+INR+JPY+USD.EUR.SP00.A"
@@ -119,7 +119,7 @@ def _trade_date(value: Any) -> Optional[date]:
     if isinstance(value, date):
         return value
     text = str(value or "").strip()
-    for pattern in ("%Y-%m-%d", "%m/%d/%Y", "%d %b %Y", "%Y%m%d"):
+    for pattern in ("%Y-%m-%d", "%m/%d/%Y", "%d %b %Y", "%d. %B %Y", "%Y%m%d"):
         try:
             return datetime.strptime(text, pattern).date()
         except ValueError:
@@ -469,7 +469,7 @@ def _fetch_ose(_metal: str) -> dict[str, Any]:
 
 
 def _parse_lme_payload(metal: str, payload: dict[str, Any]) -> list[dict[str, Any]]:
-    registry_id, _slug, metal_name = LME_PAGES[metal]
+    registry_id, _slug, metal_name, _fallback_field = LME_PAGES[metal]
     cash_row = next((row for row in payload.get("Rows") or [] if str(row.get("RowTitle")).lower() == "cash"), None)
     values = cash_row.get("Values") if cash_row else None
     offer = _float(values[1] if isinstance(values, list) and len(values) > 1 else None)
@@ -481,7 +481,7 @@ def _parse_lme_payload(metal: str, payload: dict[str, Any]) -> list[dict[str, An
         metal=metal,
         registry_id=registry_id,
         symbol=str(cash_row.get("Ric") or f"LME {metal_name} Cash"),
-        contract_month=f"Cash · {_expiry_label(expiry)}" if _expiry_label(expiry) else "Cash",
+        contract_month=f"Cash - {_expiry_label(expiry)}" if _expiry_label(expiry) else "Cash",
         local_price=offer,
         currency="USD",
         native_unit="metric tonne",
@@ -493,27 +493,90 @@ def _parse_lme_payload(metal: str, payload: dict[str, Any]) -> list[dict[str, An
     return [observation]
 
 
+def _parse_westmetall_lme_html(metal: str, document: str) -> list[dict[str, Any]]:
+    registry_id, _slug, metal_name, _fallback_field = LME_PAGES[metal]
+    root = lxml_html.fromstring(document)
+    for table in root.xpath("//table"):
+        rows = table.xpath(".//tr")
+        if not rows:
+            continue
+        headers = [" ".join("".join(cell.itertext()).split()) for cell in rows[0].xpath("./th|./td")]
+        cash_index = next(
+            (index for index, header in enumerate(headers) if f"LME {metal_name} Cash-Settlement" in header),
+            None,
+        )
+        if cash_index is None:
+            continue
+        for tr in rows[1:]:
+            values = [" ".join("".join(cell.itertext()).split()) for cell in tr.xpath("./th|./td")]
+            if len(values) <= cash_index:
+                continue
+            quote_date = _trade_date(values[0])
+            settlement = _float(values[cash_index])
+            if quote_date is None or settlement is None:
+                continue
+            observation = _base_observation(
+                metal=metal,
+                registry_id=registry_id,
+                symbol=f"LME {metal_name} Cash Settlement",
+                contract_month=f"Cash - {_month_label(quote_date.year, quote_date.month)}",
+                local_price=settlement,
+                currency="USD",
+                native_unit="metric tonne",
+                quote_date=quote_date,
+                price_type="secondary publication of LME cash settlement",
+                data_delay="Westmetall daily table reproducing the LME cash settlement; used when LME.com is unavailable",
+            )
+            observation["market_type"] = "physical cash benchmark"
+            observation["source_name"] = "Westmetall published LME cash-settlement table"
+            return [observation]
+    raise SourceUnavailable(f"Westmetall LME {metal_name} table contained no usable cash settlement")
+
+
 def _fetch_lme(metal: str) -> dict[str, Any]:
-    _registry_id, slug, metal_name = LME_PAGES[metal]
+    _registry_id, slug, metal_name, fallback_field = LME_PAGES[metal]
     page_url = f"https://www.lme.com/en/metals/non-ferrous/lme-{slug}"
-    session = _browser_session()
-    page_response = session.get(page_url, timeout=SOURCE_TIMEOUT_SECONDS)
-    page_response.raise_for_status()
-    root = lxml_html.fromstring(page_response.text)
-    components = root.xpath(
-        f'//*[@datasource-id and contains(@header, "LME {metal_name} Official Prices")]'
-    )
-    if not components:
-        raise SourceUnavailable(f"LME {metal_name} page did not expose its official-price source")
-    datasource_id = components[0].get("datasource-id")
-    data_url = f"https://www.lme.com/api/trading-data/day-delayed?datasourceId={datasource_id}"
-    response = session.get(
-        data_url,
-        headers={"Referer": page_url, "Accept": "application/json, text/plain, */*"},
-        timeout=SOURCE_TIMEOUT_SECONDS,
-    )
-    response.raise_for_status()
-    return {"observations": _parse_lme_payload(metal, response.json()), "source_url": page_url}
+    try:
+        session = _browser_session()
+        page_response = session.get(page_url, timeout=SOURCE_TIMEOUT_SECONDS)
+        page_response.raise_for_status()
+        root = lxml_html.fromstring(page_response.text)
+        components = root.xpath(
+            f'//*[@datasource-id and contains(@header, "LME {metal_name} Official Prices")]'
+        )
+        if not components:
+            raise SourceUnavailable(f"LME {metal_name} page did not expose its official-price source")
+        datasource_id = components[0].get("datasource-id")
+        data_url = f"https://www.lme.com/api/trading-data/day-delayed?datasourceId={datasource_id}"
+        response = session.get(
+            data_url,
+            headers={"Referer": page_url, "Accept": "application/json, text/plain, */*"},
+            timeout=SOURCE_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        return {
+            "observations": _parse_lme_payload(metal, response.json()),
+            "source_url": page_url,
+            "source_tier": "official_primary",
+        }
+    except Exception as exc:
+        upstream_error = _safe_error(exc)
+        fallback_url = (
+            "https://www.westmetall.com/en/markdaten.php"
+            f"?action=table&field={fallback_field}"
+        )
+        response = requests.get(
+            fallback_url,
+            headers={"User-Agent": "Market-Diagnostic-Dashboard/1.0"},
+            timeout=SOURCE_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        return {
+            "observations": _parse_westmetall_lme_html(metal, response.text),
+            "source_url": fallback_url,
+            "source_tier": "secondary_fallback",
+            "upstream_error": upstream_error,
+        }
 
 
 def _parse_ecb_fx_csv(payload: str) -> dict[str, dict[date, float]]:
@@ -576,6 +639,8 @@ def _load_cached(provider_id: str, metal: str) -> tuple[dict[str, Any], dict[str
                 "status": "cached",
                 "fetched_at": cached["fetched_at"],
                 "source_url": snapshot.get("source_url"),
+                "source_tier": snapshot.get("source_tier", "official_primary"),
+                "upstream_error": snapshot.get("upstream_error"),
                 "error": None,
             }
 
@@ -594,6 +659,8 @@ def _load_cached(provider_id: str, metal: str) -> tuple[dict[str, Any], dict[str
             "status": "live",
             "fetched_at": fetched_at,
             "source_url": snapshot.get("source_url"),
+            "source_tier": snapshot.get("source_tier", "official_primary"),
+            "upstream_error": snapshot.get("upstream_error"),
             "error": None,
         }
     except Exception as exc:
@@ -609,6 +676,8 @@ def _load_cached(provider_id: str, metal: str) -> tuple[dict[str, Any], dict[str
                     "status": "stale_cache",
                     "fetched_at": cached["fetched_at"],
                     "source_url": snapshot.get("source_url"),
+                    "source_tier": snapshot.get("source_tier", "official_primary"),
+                    "upstream_error": snapshot.get("upstream_error"),
                     "error": error,
                 }
         return {}, {

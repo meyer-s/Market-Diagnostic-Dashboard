@@ -78,6 +78,54 @@ def test_parses_lme_cash_offer_not_bid() -> None:
     assert observations[0]["market_type"] == "physical cash benchmark"
 
 
+def test_parses_secondary_lme_cash_settlement_fallback() -> None:
+    document = """
+    <table>
+      <tr><th>date</th><th>LME Copper Cash-Settlement</th><th>LME Copper 3-month</th></tr>
+      <tr><td>21. August 2026</td><td>14,291.00</td><td>14,235.00</td></tr>
+    </table>
+    """
+
+    observations = sources._parse_westmetall_lme_html("CU", document)
+
+    assert observations[0]["registry_id"] == "lme_copper"
+    assert observations[0]["local_price"] == 14291
+    assert observations[0]["quote_timestamp"].startswith("2026-08-21")
+    assert observations[0]["source_name"].startswith("Westmetall")
+
+
+def test_lme_uses_labeled_secondary_fallback_when_primary_is_blocked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class BlockedResponse:
+        def raise_for_status(self) -> None:
+            raise RuntimeError("primary blocked")
+
+    class BlockedSession:
+        def get(self, *_args, **_kwargs) -> BlockedResponse:
+            return BlockedResponse()
+
+    class FallbackResponse:
+        text = """
+        <table>
+          <tr><th>date</th><th>LME Aluminium Cash-Settlement</th></tr>
+          <tr><td>21. August 2026</td><td>3,227.00</td></tr>
+        </table>
+        """
+
+        def raise_for_status(self) -> None:
+            return None
+
+    monkeypatch.setattr(sources, "_browser_session", lambda: BlockedSession())
+    monkeypatch.setattr(sources.requests, "get", lambda *_args, **_kwargs: FallbackResponse())
+
+    snapshot = sources._fetch_lme("AL")
+
+    assert snapshot["source_tier"] == "secondary_fallback"
+    assert snapshot["upstream_error"] == "primary blocked"
+    assert snapshot["observations"][0]["local_price"] == 3227
+
+
 def test_uses_ecb_eur_cross_for_quote_date_fx() -> None:
     series = sources._parse_ecb_fx_csv(
         "CURRENCY,TIME_PERIOD,OBS_VALUE\n"
@@ -116,4 +164,3 @@ def test_provider_failure_uses_bounded_stale_cache(monkeypatch: pytest.MonkeyPat
     assert stale_snapshot == snapshot
     assert stale_status["status"] == "stale_cache"
     assert stale_status["error"] == "temporary provider outage"
-

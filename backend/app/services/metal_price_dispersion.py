@@ -132,7 +132,7 @@ PROVIDER_ACCESS_STATUS = {
     "lbma": "Public delayed benchmark; commercial, valuation, or derived use may require an IBA or LME licence",
     "mcx": "Official public bhavcopy; usage and redistribution are governed by MCX terms",
     "ose": "Official public settlement CSV; JPX usage terms apply",
-    "lme": "Public day-delayed display; distribution or derived use may require an LME licence",
+    "lme": "Public day-delayed display or labeled secondary cash-settlement fallback; distribution or derived use may require an LME licence",
 }
 
 
