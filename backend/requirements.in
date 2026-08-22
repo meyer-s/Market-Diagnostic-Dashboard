@@ -10,6 +10,7 @@ feedparser
 python-dateutil
 httpx
 yfinance
+curl-cffi
 ibkr-cli==0.7.1
 numpy
 pandas

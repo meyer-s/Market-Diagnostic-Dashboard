@@ -1,5 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query
-from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
+import logging
 from typing import List, Optional, Tuple
 from sqlalchemy import func, desc
 import statistics
@@ -18,8 +20,10 @@ from app.services.metal_price_dispersion import (
     METAL_DEFINITIONS,
     build_global_price_dispersion,
 )
+from app.services.metal_market_sources import fetch_international_metal_observations
 
 router = APIRouter(prefix="/precious-metals", tags=["precious-metals"])
+logger = logging.getLogger(__name__)
 
 TONNES_TO_OZ = 32150.7466
 COMEX_PLACEHOLDER_SOURCES = ["SEED", "ESTIMATED_FROM_PRICES"]
@@ -806,45 +810,79 @@ def get_global_price_dispersion(
 
     observations = []
     reference_id = DEFAULT_REFERENCE_IDS[metal]
-    if metal in PRECIOUS_METALS_FUTURES:
-        curve = _get_metal_futures_curve(metal, contracts=1)
-        if curve and curve["contracts"]:
-            front = curve["contracts"][0]
-            observations.append({
-                "registry_id": reference_id,
-                "symbol": front["symbol"],
-                "contract_month": front["contract_label"],
-                "local_price": front["price"],
-                "currency": "USD",
-                "native_unit": METAL_DEFINITIONS[metal]["canonical_unit"],
-                "fx_rate_local_per_usd": 1.0,
-                "fx_timestamp": front["as_of"],
-                "price_type": "provider daily bar close",
-                "quote_timestamp": front["as_of"],
-                "session_status": "unverified",
-                "data_delay": "Daily provider observation; real-time status is not asserted",
-                "volume": front.get("volume"),
-                "open_interest": None,
-            })
-    else:
-        with get_db_session() as db:
-            latest = db.query(MetalPrice).filter(MetalPrice.metal == metal).order_by(desc(MetalPrice.date)).first()
-            if latest and latest.price_usd_per_oz is not None:
-                observations.append({
+
+    def fetch_reference() -> list[dict]:
+        rows = []
+        if metal in PRECIOUS_METALS_FUTURES:
+            curve = _get_metal_futures_curve(metal, contracts=1)
+            if curve and curve["contracts"]:
+                front = curve["contracts"][0]
+                rows.append({
                     "registry_id": reference_id,
-                    "contract_month": None,
-                    "local_price": latest.price_usd_per_oz,
+                    "provider_id": "us_reference",
+                    "symbol": front["symbol"],
+                    "contract_month": front["contract_label"],
+                    "local_price": front["price"],
                     "currency": "USD",
                     "native_unit": METAL_DEFINITIONS[metal]["canonical_unit"],
                     "fx_rate_local_per_usd": 1.0,
-                    "fx_timestamp": latest.date.isoformat(),
-                    "price_type": "stored daily close",
-                    "quote_timestamp": latest.date.isoformat(),
+                    "fx_timestamp": front["as_of"],
+                    "fx_source": "Identity conversion for USD quote",
+                    "price_type": "provider daily bar close",
+                    "quote_timestamp": front["as_of"],
+                    "timestamp_precision": "provider_daily_bar",
                     "session_status": "unverified",
-                    "data_delay": "Stored daily provider series; listed contract month is unavailable",
-                    "volume": None,
+                    "data_delay": "Daily provider observation; real-time status is not asserted",
+                    "volume": front.get("volume"),
                     "open_interest": None,
                 })
+        else:
+            with get_db_session() as db:
+                latest = db.query(MetalPrice).filter(MetalPrice.metal == metal).order_by(desc(MetalPrice.date)).first()
+                if latest and latest.price_usd_per_oz is not None:
+                    rows.append({
+                        "registry_id": reference_id,
+                        "provider_id": "us_reference",
+                        "contract_month": None,
+                        "local_price": latest.price_usd_per_oz,
+                        "currency": "USD",
+                        "native_unit": METAL_DEFINITIONS[metal]["canonical_unit"],
+                        "fx_rate_local_per_usd": 1.0,
+                        "fx_timestamp": latest.date.isoformat(),
+                        "fx_source": "Identity conversion for USD quote",
+                        "price_type": "stored daily close",
+                        "quote_timestamp": latest.date.isoformat(),
+                        "timestamp_precision": "trading_date",
+                        "session_status": "unverified",
+                        "data_delay": "Stored daily provider series; listed contract month is unavailable",
+                        "volume": None,
+                        "open_interest": None,
+                    })
+        return rows
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        reference_future = executor.submit(fetch_reference)
+        international_future = executor.submit(fetch_international_metal_observations, metal)
+        international = international_future.result()
+        reference_error = None
+        try:
+            reference_observations = reference_future.result()
+        except Exception as exc:
+            reference_observations = []
+            reference_error = str(exc)[:240] or exc.__class__.__name__
+            logger.warning("U.S. metal reference source failed for %s: %s", metal, reference_error)
+
+    observations.extend(reference_observations)
+    observations.extend(international["observations"])
+    source_statuses = [{
+        "provider_id": "us_reference",
+        "provider_name": "U.S. reference series",
+        "status": "unavailable" if reference_error else "live",
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
+        "source_url": None,
+        "error": reference_error,
+        "observation_count": len(reference_observations),
+    }, *international["sources"]]
 
     try:
         return build_global_price_dispersion(
@@ -853,6 +891,7 @@ def get_global_price_dispersion(
             reference=reference,
             comparison_time=comparison_time,
             basis=basis,
+            source_statuses=source_statuses,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

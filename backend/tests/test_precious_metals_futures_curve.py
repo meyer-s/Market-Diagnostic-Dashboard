@@ -37,6 +37,12 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
 
     monkeypatch.setattr(pm, "datetime", FixedDatetime, raising=True)
     monkeypatch.setattr(pm, "_fetch_futures_contract_snapshot", lambda symbol: snapshots.get(symbol), raising=True)
+    monkeypatch.setattr(
+        pm,
+        "fetch_international_metal_observations",
+        lambda _metal: {"observations": [], "sources": []},
+        raising=True,
+    )
 
     app = FastAPI()
     app.include_router(pm.router)
@@ -89,4 +95,4 @@ def test_global_dispersion_exposes_verified_reference_and_registry_coverage(clie
 
     shfe = next(row for row in body["venues"] if row["registry_id"] == "shfe_silver")
     assert shfe["availability_status"] == "unavailable"
-    assert shfe["redistribution_status"] == "Official/licensed feed required"
+    assert shfe["redistribution_status"].startswith("Official public Daily Express")

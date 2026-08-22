@@ -48,6 +48,8 @@ def _venue(
     redistribution_status: str,
     liquidity_tier: str,
 ) -> dict[str, Any]:
+    provider_prefix = registry_id.split("_", 1)[0]
+    provider_id = "us_reference" if provider_prefix in {"comex", "nymex", "cme"} else provider_prefix
     return {
         "registry_id": registry_id,
         "venue": venue,
@@ -64,6 +66,7 @@ def _venue(
         "source_name": source_name,
         "redistribution_status": redistribution_status,
         "liquidity_tier": liquidity_tier,
+        "provider_id": provider_id,
     }
 
 
@@ -97,6 +100,7 @@ EXCHANGE_REGISTRY: dict[str, tuple[dict[str, Any], ...]] = {
         _venue("nymex_palladium", "NYMEX", "United States", "futures", "NYMEX Palladium futures", "PA", "USD", "troy oz", contract_size="100 troy oz", purity="Exchange specification", delivery_location="NYMEX approved depositories", tax_basis="Exchange futures; local tax not embedded", source_name="Yahoo Finance month-specific futures history", redistribution_status="Third-party provider terms", liquidity_tier="Core"),
         _venue("lbma_palladium", "LBMA", "United Kingdom", "benchmark", "LBMA Palladium Price", "LBMA Palladium Price", "USD", "troy oz", contract_size=None, purity="Benchmark specification", delivery_location="London loco", tax_basis="Benchmark basis", source_name="LBMA Palladium Price", redistribution_status="Usage licence review required", liquidity_tier="Benchmark"),
         _venue("sge_pd9995", "SGE", "China", "physical spot", "Pd99.95", "Pd99.95", "CNY", "gram", contract_size=None, purity="99.95%", delivery_location="Shanghai Gold Exchange network", tax_basis="Physical-market tax basis; verify before comparison", source_name="Shanghai Gold Exchange", redistribution_status="Official/licensed feed required", liquidity_tier="Regional"),
+        _venue("ose_palladium", "OSE", "Japan", "futures", "Palladium futures", "FUT_PALD", "JPY", "gram", contract_size="500 gram", purity="Exchange specification", delivery_location="OSE designated warehouses", tax_basis="Local contract basis; delivery can be subject to consumption tax", source_name="Japan Exchange Group settlement CSV", redistribution_status="Official public settlement file; JPX terms apply", liquidity_tier="Regional"),
     ),
     "CU": (
         _venue("comex_copper", "COMEX", "United States", "continuous futures proxy", "Copper continuous futures series", "HG=F", "USD", "lb", contract_size=None, purity="Provider series; contract identity unavailable", delivery_location="Provider series; verify listed contract", tax_basis="Futures proxy; tax not embedded", source_name="Stored Yahoo Finance daily history", redistribution_status="Third-party provider terms", liquidity_tier="Core"),
@@ -120,6 +124,15 @@ DEFAULT_REFERENCE_IDS = {
     "PD": "nymex_palladium",
     "CU": "comex_copper",
     "AL": "cme_aluminum",
+}
+
+PROVIDER_ACCESS_STATUS = {
+    "shfe": "Official public Daily Express; venue usage and redistribution terms apply",
+    "sge": "Official public daily quotation; venue usage and redistribution terms apply",
+    "lbma": "Public delayed benchmark; commercial, valuation, or derived use may require an IBA or LME licence",
+    "mcx": "Official public bhavcopy; usage and redistribution are governed by MCX terms",
+    "ose": "Official public settlement CSV; JPX usage terms apply",
+    "lme": "Public day-delayed display; distribution or derived use may require an LME licence",
 }
 
 
@@ -279,6 +292,7 @@ def build_global_price_dispersion(
     comparison_time: str = "latest_available",
     basis: str = "raw_converted",
     now: Optional[datetime] = None,
+    source_statuses: Optional[Iterable[dict[str, Any]]] = None,
 ) -> dict[str, Any]:
     """Build an inspectable comparison response from provider observations."""
     metal = metal.upper()
@@ -295,13 +309,28 @@ def build_global_price_dispersion(
     registry = [deepcopy(row) for row in EXCHANGE_REGISTRY[metal]]
     registry_by_id = {row["registry_id"]: row for row in registry}
     observation_by_id = {row["registry_id"]: row for row in observations if row.get("registry_id") in registry_by_id}
+    source_status_list = [dict(row) for row in (source_statuses or [])]
+    source_status_by_id = {row.get("provider_id"): row for row in source_status_list}
 
     rows: list[dict[str, Any]] = []
     for registry_row in registry:
+        access_status = PROVIDER_ACCESS_STATUS.get(registry_row.get("provider_id"))
+        if access_status:
+            registry_row["redistribution_status"] = access_status
         observation = observation_by_id.get(registry_row["registry_id"])
         if observation:
             rows.append(_normalize_observation(metal, registry_row, observation, now))
         else:
+            provider_status = source_status_by_id.get(registry_row.get("provider_id"))
+            if provider_status and provider_status.get("status") in {"live", "cached", "stale_cache"}:
+                data_delay = "Latest official publication contained no qualifying quote for this product"
+                unavailable_reason = "No qualifying quote was published in the latest official source response"
+            elif provider_status and provider_status.get("status") == "unavailable":
+                data_delay = "Official source request failed and no cached observation was available"
+                unavailable_reason = "Official source unavailable; no cached observation is available"
+            else:
+                data_delay = "Feed not connected"
+                unavailable_reason = "Official or licensed quote feed is not connected"
             rows.append({
                 **registry_row,
                 "contract_month": None,
@@ -317,12 +346,12 @@ def build_global_price_dispersion(
                 "session_status": "unavailable",
                 "freshness_status": "unavailable",
                 "quote_age_hours": None,
-                "data_delay": "Feed not connected",
+                "data_delay": data_delay,
                 "volume": None,
                 "open_interest": None,
                 "availability_status": "unavailable",
                 "comparability_status": "unavailable",
-                "comparability_reasons": ["Official or licensed quote feed is not connected"],
+                "comparability_reasons": [unavailable_reason],
                 "normalization_error": None,
                 "decomposition": None,
             })
@@ -455,6 +484,7 @@ def build_global_price_dispersion(
             "status_counts": status_counts,
         },
         "venues": rows,
+        "sources": source_status_list,
         "limitations": limitations,
         "method": {
             "normalization": "Local quote divided by local-currency-per-USD FX, then converted into the declared canonical unit.",

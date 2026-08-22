@@ -194,3 +194,22 @@ def test_continuous_futures_proxy_is_reference_only() -> None:
     assert copper["comparability_status"] == "reference_only"
     assert copper["premium_type"] == "headline_gap"
     assert body["summary"]["comparable_venues"] == 0
+
+
+def test_live_source_without_product_is_reported_as_no_qualifying_quote() -> None:
+    body = build_global_price_dispersion(
+        "PD",
+        [],
+        source_statuses=[{
+            "provider_id": "sge",
+            "provider_name": "Shanghai Gold Exchange",
+            "status": "live",
+            "observation_count": 0,
+        }],
+        now=datetime(2026, 8, 21, 15, 0, tzinfo=timezone.utc),
+    )
+
+    palladium = next(row for row in body["venues"] if row["registry_id"] == "sge_pd9995")
+    assert palladium["availability_status"] == "unavailable"
+    assert palladium["data_delay"] == "Latest official publication contained no qualifying quote for this product"
+    assert body["sources"][0]["status"] == "live"
