@@ -135,7 +135,7 @@ def test_global_dispersion_exposes_verified_reference_and_registry_coverage(clie
     assert shfe["redistribution_status"].startswith("Official public Daily Express")
 
 
-def test_global_dispersion_history_exposes_indexed_source_backed_series(client: TestClient) -> None:
+def test_global_dispersion_history_exposes_composite_source_backed_series(client: TestClient) -> None:
     response = client.get(
         "/precious-metals/global-price-dispersion/history",
         params={"metal": "AG", "days": 30},
@@ -143,7 +143,10 @@ def test_global_dispersion_history_exposes_indexed_source_backed_series(client: 
 
     assert response.status_code == 200
     body = response.json()
-    assert body["mode"] == "indexed_change"
+    assert body["mode"] == "composite_direction"
+    assert body["composite"]["label"] == "Silver global trend"
+    assert body["composite"]["change_pct"] == 10
+    assert body["composite"]["points"][-1]["source_quality"] == "official_primary"
     lbma = next(row for row in body["series"] if row["registry_id"] == "lbma_silver")
     assert lbma["history_scope"] == "Full published delayed benchmark history"
     assert lbma["points"][0]["index_value"] == 100

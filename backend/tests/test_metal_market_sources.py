@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 import pytest
 
@@ -21,6 +21,32 @@ def test_parses_shfe_daily_express_and_selects_most_active_contract() -> None:
     assert observations[0]["registry_id"] == "shfe_gold"
     assert observations[0]["contract_month"] == "Oct 2026"
     assert observations[0]["local_price"] == 980.5
+
+
+def test_shfe_history_reuses_all_supported_metals_and_reports_bounded_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 8, 24, tzinfo=tz)
+
+    def fake_day(quote_date: date) -> list[dict]:
+        return [
+            {"_metal": "CU", "registry_id": "shfe_copper", "quote_timestamp": f"{quote_date.isoformat()}T00:00:00+00:00"},
+            {"_metal": "AL", "registry_id": "shfe_aluminum", "quote_timestamp": f"{quote_date.isoformat()}T00:00:00+00:00"},
+        ]
+
+    monkeypatch.setattr(sources, "datetime", FixedDatetime)
+    monkeypatch.setattr(sources, "SHFE_HISTORY_DAYS", 4)
+    monkeypatch.setattr(sources, "_fetch_shfe_history_day", fake_day)
+
+    snapshot = sources._fetch_shfe_history_snapshot("CU")
+
+    assert len(snapshot["observations"]) == 6
+    assert {row["registry_id"] for row in snapshot["observations"]} == {"shfe_copper", "shfe_aluminum"}
+    assert snapshot["source_tier"] == "official_primary"
+    assert "Latest 4 calendar days" in snapshot["history_scope"]
 
 
 def test_parses_sge_daily_table_products_and_units() -> None:

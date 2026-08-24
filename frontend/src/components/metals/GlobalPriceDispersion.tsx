@@ -12,12 +12,13 @@ import {
 } from "recharts";
 
 import { useApi } from "../../hooks/useApi";
+import { getMetricColor } from "../../theme/metricColors";
 import { CHART_NEUTRAL } from "../../utils/chartUtils";
 
 /*
 THESIS: Exchange direction should be visible before the evidence receipt, while unmatched venue prices remain explicitly non-comparable.
-OWN-WORLD: One indexed evidence field, direct metal and range controls, named line toggles, and a compact latest-quote rail.
-STORY: Choose a metal, scan exchange direction, select a venue, then open the source receipt only when needed.
+OWN-WORLD: One continuous metal-colored trend, direct metal and range controls, optional venue paths, and a compact latest-quote rail.
+STORY: Choose a metal, read the global path, reveal venue evidence when useful, then open the source receipt only when needed.
 FIRST VIEWPORT: The trend chart is the primary surface; current venue evidence sits beside it and source detail stays one disclosure away.
 FORM: Operate-first exchange trend field. No synthetic history and no color-only state.
 */
@@ -127,12 +128,46 @@ interface HistoryPoint {
   quote_timestamp: string;
   normalized_price: number;
   index_value: number;
+  aligned_index_value: number;
   change_pct: number;
+  daily_return_pct: number | null;
   local_price: number;
   currency: string;
   native_unit: string;
   fx_rate_local_per_usd: number | null;
   fx_timestamp: string | null;
+}
+
+interface CompositeContributor {
+  venue: string;
+  registry_ids: string[];
+  return_pct: number;
+  source_tier: "official_primary" | "fallback";
+}
+
+interface CompositePoint {
+  date: string;
+  index_value: number;
+  change_pct: number;
+  daily_return_pct: number | null;
+  contributor_count: number;
+  contributors: CompositeContributor[];
+  source_quality: "baseline" | "official_primary" | "fallback";
+}
+
+interface HistoryComposite {
+  registry_id: "global_direction";
+  label: string;
+  coverage_start: string;
+  coverage_end: string;
+  observation_count: number;
+  latest_index_value: number;
+  change_pct: number;
+  min_contributors: number;
+  max_contributors: number;
+  official_primary_days: number;
+  fallback_days: number;
+  points: CompositePoint[];
 }
 
 interface HistorySeries {
@@ -156,6 +191,8 @@ interface HistorySeries {
   baseline_price: number;
   latest_price: number;
   change_pct: number;
+  alignment_date: string;
+  alignment_index_value: number;
   points: HistoryPoint[];
 }
 
@@ -164,15 +201,19 @@ interface HistoryResponse {
   metal: string;
   metal_name: string;
   days_requested: number;
-  mode: "indexed_change";
+  mode: "composite_direction";
   baseline: number;
   canonical_currency: string;
   canonical_unit: string;
+  composite: HistoryComposite | null;
   series: HistorySeries[];
   summary: {
     historical_venues: number;
     registered_venues: number;
     latest_history_date: string | null;
+    official_primary_venues: number;
+    composite_min_contributors: number;
+    composite_max_contributors: number;
   };
   sources: SourceStatus[];
   venues_without_history: Array<{ registry_id: string; venue: string; product_name: string }>;
@@ -194,14 +235,7 @@ const RANGES = [
   { days: 365, label: "1Y" },
 ];
 
-const LINE_STYLES = [
-  { color: "#60a5fa", dash: undefined },
-  { color: "#fbbf24", dash: "8 4" },
-  { color: "#34d399", dash: "3 4" },
-  { color: "#f472b6", dash: "11 4 2 4" },
-  { color: "#a78bfa", dash: "6 3 2 3" },
-  { color: "#22d3ee", dash: "2 5" },
-];
+const VENUE_DASHES = ["7 5", "2 5", "11 4 2 4", "5 3 1 3", "3 7", "9 3"];
 
 const STATUS_LABELS: Record<ComparabilityStatus, { mark: string; label: string; className: string }> = {
   reference: { mark: "●", label: "Reference", className: "text-amber-200" },
@@ -278,16 +312,61 @@ function DetailValue({ label, children }: { label: string; children: ReactNode }
   );
 }
 
+function TrendTooltip({
+  active,
+  label,
+  payload,
+  seriesNames,
+}: {
+  active?: boolean;
+  label?: string;
+  payload?: Array<{
+    dataKey?: string | number;
+    value?: string | number;
+    color?: string;
+    payload?: Record<string, unknown>;
+  }>;
+  seriesNames: Map<string, string>;
+}) {
+  if (!active || !payload?.length) return null;
+  const row = payload[0]?.payload ?? {};
+  const contributorCount = Number(row.composite_contributor_count ?? 0);
+  const contributors = String(row.composite_contributors ?? "");
+  const sourceQuality = String(row.composite_source_quality ?? "");
+  return (
+    <div className="max-w-[260px] rounded-xl border border-stealth-600 bg-stealth-950/95 px-3 py-2.5 shadow-lg shadow-black/30">
+      <div className="text-xs font-semibold text-white">{formatDate(label ?? null)}</div>
+      <div className="mt-2 space-y-1.5">
+        {payload.map((item) => {
+          const key = String(item.dataKey ?? "");
+          if (typeof item.value !== "number") return null;
+          return (
+            <div key={key} className="flex items-center justify-between gap-4 text-xs">
+              <span className="min-w-0 truncate text-stealth-300">{seriesNames.get(key) ?? key}</span>
+              <span className="font-semibold tabular-nums text-white">{item.value.toFixed(2)}</span>
+            </div>
+          );
+        })}
+      </div>
+      {contributorCount > 0 ? (
+        <div className="mt-2 border-t border-stealth-700 pt-2 text-[11px] leading-relaxed text-stealth-400">
+          {sourceQuality === "official_primary" ? "Official" : "Fallback"} · {contributorCount} {contributorCount === 1 ? "market" : "markets"}: {contributors}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function GlobalPriceDispersion() {
   const [metal, setMetal] = useState("AG");
   const [days, setDays] = useState(90);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
+  const [showVenuePaths, setShowVenuePaths] = useState(false);
 
   const latestEndpoint = `/precious-metals/global-price-dispersion?metal=${metal}&comparison_time=latest_available&reference=auto&basis=raw_converted`;
   const historyEndpoint = `/precious-metals/global-price-dispersion/history?metal=${metal}&days=${days}`;
   const latest = useApi<DispersionResponse>(latestEndpoint, { retainPreviousData: false });
-  const history = useApi<HistoryResponse>(historyEndpoint, { retainPreviousData: false });
+  const history = useApi<HistoryResponse>(historyEndpoint, { retainPreviousData: false, timeoutMs: 40_000 });
 
   useEffect(() => {
     const availableIds = new Set([
@@ -303,9 +382,7 @@ export default function GlobalPriceDispersion() {
     );
   }, [history.data, latest.data, selectedId]);
 
-  useEffect(() => {
-    setHiddenSeries(new Set());
-  }, [history.data?.as_of, history.data?.metal, days]);
+  useEffect(() => setShowVenuePaths(false), [metal, days]);
 
   const observedVenues = (latest.data?.venues.filter((row) => row.availability_status === "observed") ?? []).sort((left, right) => (
     Number(right.registry_id === latest.data?.reference.registry_id)
@@ -314,45 +391,48 @@ export default function GlobalPriceDispersion() {
   const unavailableVenues = latest.data?.venues.filter((row) => row.availability_status === "unavailable") ?? [];
   const selected = latest.data?.venues.find((row) => row.registry_id === selectedId) ?? null;
   const selectedHistory = history.data?.series.find((row) => row.registry_id === selectedId) ?? null;
-  const visibleSeries = history.data?.series.filter((row) => !hiddenSeries.has(row.registry_id)) ?? [];
-
-  const lineStyleById = useMemo(() => new Map(
-    (history.data?.series ?? []).map((series, index) => [series.registry_id, LINE_STYLES[index % LINE_STYLES.length]]),
-  ), [history.data?.series]);
-
-  const seriesNameById = useMemo(() => new Map(
-    (history.data?.series ?? []).map((series) => [series.registry_id, `${series.venue} · ${series.product_name}`]),
-  ), [history.data?.series]);
+  const seriesNameById = useMemo(() => new Map<string, string>(
+    [
+      ["global_direction", history.data?.composite?.label ?? "Global trend"] as [string, string],
+      ...(history.data?.series ?? []).map((series): [string, string] => [series.registry_id, `${series.venue} · ${series.product_name}`]),
+    ],
+  ), [history.data?.composite?.label, history.data?.series]);
 
   const chartData = useMemo(() => {
     const rowByDate = new Map<string, Record<string, string | number>>();
+    history.data?.composite?.points.forEach((point) => {
+      const row = rowByDate.get(point.date) ?? { date: point.date };
+      row.global_direction = point.index_value;
+      row.composite_contributor_count = point.contributor_count;
+      row.composite_contributors = point.contributors.map((item) => item.venue).join(", ");
+      row.composite_source_quality = point.source_quality;
+      rowByDate.set(point.date, row);
+    });
     (history.data?.series ?? []).forEach((series) => {
       series.points.forEach((point) => {
-        const row = rowByDate.get(point.date) ?? { date: point.date };
-        row[series.registry_id] = point.index_value;
-        rowByDate.set(point.date, row);
+        const row = rowByDate.get(point.date);
+        if (!row) return;
+        row[series.registry_id] = point.aligned_index_value;
       });
     });
     return Array.from(rowByDate.values()).sort((a, b) => String(a.date).localeCompare(String(b.date)));
-  }, [history.data?.series]);
+  }, [history.data?.composite, history.data?.series]);
 
   const refreshAll = () => {
     latest.refetch();
     history.refetch();
   };
 
-  const toggleSeries = (registryId: string) => {
-    setSelectedId(registryId);
-    setHiddenSeries((current) => {
-      const next = new Set(current);
-      if (next.has(registryId)) next.delete(registryId);
-      else next.add(registryId);
-      return next;
-    });
-  };
-
   const currentMetal = METALS.find((item) => item.metal === metal)?.name ?? metal;
   const currentRange = RANGES.find((item) => item.days === days)?.label ?? `${days}D`;
+  const metalColor = getMetricColor(metal);
+  const venueColor = getMetricColor(metal, "muted");
+  const composite = history.data?.composite ?? null;
+  const contributorRange = composite
+    ? composite.min_contributors === composite.max_contributors
+      ? `${composite.min_contributors} ${composite.min_contributors === 1 ? "market" : "markets"}/day`
+      : `${composite.min_contributors}–${composite.max_contributors} markets/day`
+    : null;
   const hasAnyData = Boolean(latest.data || history.data);
   const bothFailed = Boolean(latest.error && history.error && !hasAnyData);
 
@@ -376,19 +456,24 @@ export default function GlobalPriceDispersion() {
         </div>
 
         <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex max-w-full flex-nowrap gap-1 overflow-x-auto rounded-xl bg-stealth-950/65 p-1 lg:flex-wrap lg:overflow-visible" role="group" aria-label="Metal">
+          <div className="grid w-full grid-cols-3 gap-1 rounded-xl bg-stealth-950/65 p-1 lg:w-auto lg:flex lg:flex-wrap" role="group" aria-label="Metal">
             {METALS.map((item) => (
               <button
                 key={item.metal}
                 type="button"
                 onClick={() => setMetal(item.metal)}
                 aria-pressed={metal === item.metal}
-                className={`min-h-11 shrink-0 rounded-lg px-3 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 ${
+                style={metal === item.metal ? {
+                  color: getMetricColor(item.metal),
+                  boxShadow: `inset 0 0 0 1px ${getMetricColor(item.metal)}80`,
+                } : undefined}
+                className={`inline-flex min-h-11 min-w-0 items-center gap-2 rounded-lg px-2 text-xs font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 sm:px-3 sm:text-sm ${
                   metal === item.metal
-                    ? "bg-stealth-100 text-stealth-950"
+                    ? "bg-stealth-800"
                     : "text-stealth-300 hover:bg-stealth-800 hover:text-white"
                 }`}
               >
+                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: getMetricColor(item.metal) }} aria-hidden="true" />
                 {item.name}
               </button>
             ))}
@@ -434,50 +519,39 @@ export default function GlobalPriceDispersion() {
           )}
 
           <div className="min-w-0 p-4 md:p-6">
-            <div className="flex flex-wrap items-end justify-between gap-2">
+            <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h3 className="text-lg font-semibold text-white">{currentMetal} · {currentRange}</h3>
-                <p className="mt-1 text-xs text-stealth-400">Indexed performance · each market starts at 100</p>
+                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  <h3 className="text-lg font-semibold text-white">{currentMetal} global trend</h3>
+                  {composite ? (
+                    <span className={`text-sm font-semibold tabular-nums ${composite.change_pct >= 0 ? "text-emerald-200" : "text-rose-200"}`}>
+                      {currentRange} {formatMove(composite.change_pct)}
+                    </span>
+                  ) : null}
+                </div>
+                <p className="mt-1 text-xs text-stealth-400">Daily venue-return composite · base 100</p>
               </div>
-              {history.data ? (
-                <p className="text-xs text-stealth-400">
-                  {history.data.summary.historical_venues} markets · through {formatDate(history.data.summary.latest_history_date)}
-                </p>
-              ) : null}
+              <div className="flex flex-wrap items-center justify-end gap-3">
+                {composite ? (
+                  <p className="text-right text-xs text-stealth-400">
+                    {contributorRange} · through {formatDate(composite.coverage_end)}
+                  </p>
+                ) : null}
+                {history.data?.series.length ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowVenuePaths((current) => !current)}
+                    aria-pressed={showVenuePaths}
+                    className="inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-xs font-semibold text-stealth-200 transition hover:bg-stealth-800 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
+                  >
+                    <span className="h-0.5 w-5" style={{ backgroundColor: venueColor }} aria-hidden="true" />
+                    {showVenuePaths ? "Hide venue paths" : `Show ${history.data.series.length} venue paths`}
+                  </button>
+                ) : null}
+              </div>
             </div>
 
-            {history.data?.series.length ? (
-              <div className="mt-3 flex flex-nowrap gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible" role="group" aria-label={`${currentMetal} histories shown on chart`}>
-                {history.data.series.map((series) => {
-                  const style = lineStyleById.get(series.registry_id) ?? LINE_STYLES[0];
-                  const shown = !hiddenSeries.has(series.registry_id);
-                  const hasVenuePeer = history.data!.series.some((candidate) => (
-                    candidate.registry_id !== series.registry_id && candidate.venue === series.venue
-                  ));
-                  const displayName = hasVenuePeer
-                    ? `${series.venue} ${series.symbol ?? series.product_name}`
-                    : series.venue;
-                  return (
-                    <button
-                      key={series.registry_id}
-                      type="button"
-                      onClick={() => toggleSeries(series.registry_id)}
-                      aria-pressed={shown}
-                      aria-label={`${shown ? "Hide" : "Show"} ${series.venue} ${series.product_name}`}
-                      className={`inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-2.5 text-left text-xs font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 ${
-                        shown ? "text-white" : "text-stealth-500 line-through"
-                      }`}
-                    >
-                      <span className="h-0.5 w-5" style={{ backgroundColor: shown ? style.color : "#64748b" }} aria-hidden="true" />
-                      <span>{displayName}</span>
-                      <span className={series.change_pct >= 0 ? "tabular-nums text-emerald-200" : "tabular-nums text-rose-200"}>{formatMove(series.change_pct)}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            ) : null}
-
-            <div className="mt-2 h-[290px] sm:h-[350px] lg:h-[430px]">
+            <div className="mt-3 h-[290px] sm:h-[350px] lg:h-[430px]">
                 {history.loading && !history.data ? (
                   <div className="flex h-full items-center justify-center" role="status">
                     <div className="w-full max-w-lg">
@@ -485,19 +559,15 @@ export default function GlobalPriceDispersion() {
                       <p className="mt-3 text-center text-sm text-stealth-300">Loading exchange history…</p>
                     </div>
                   </div>
-                ) : !history.data?.series.length ? (
+                ) : !history.data?.composite ? (
                   <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-stealth-700 px-6 text-center text-sm text-stealth-300">
                     No source-backed {currentMetal.toLowerCase()} history is available for this window.
-                  </div>
-                ) : visibleSeries.length === 0 ? (
-                  <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-stealth-700 px-6 text-center text-sm text-stealth-300">
-                    Turn on a venue above to draw its history.
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart
                       accessibilityLayer
-                      aria-label={`${currentMetal} exchange histories indexed to 100 over ${days} days`}
+                      aria-label={`${currentMetal} global exchange trend over ${days} days`}
                       data={chartData}
                       margin={{ top: 12, right: 18, left: -6, bottom: 0 }}
                     >
@@ -519,42 +589,42 @@ export default function GlobalPriceDispersion() {
                         tickFormatter={(value) => Number(value).toFixed(0)}
                         width={44}
                       />
-                      <ReferenceLine y={100} stroke="#94a3b8" strokeDasharray="4 5" label={{ value: "Start 100", fill: CHART_NEUTRAL.label, fontSize: 12, position: "insideTopLeft" }} />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: CHART_NEUTRAL.tooltipBg,
-                          border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`,
-                          borderRadius: "0.75rem",
-                          color: CHART_NEUTRAL.text,
-                        }}
-                        labelFormatter={(value) => formatDate(String(value))}
-                        formatter={(value, name) => [Number(value).toFixed(2), seriesNameById.get(String(name)) ?? String(name)]}
-                      />
-                      {visibleSeries.map((series) => {
-                        const style = lineStyleById.get(series.registry_id) ?? LINE_STYLES[0];
-                        return (
+                      <ReferenceLine y={100} stroke="#64748b" strokeDasharray="4 5" label={{ value: "100", fill: CHART_NEUTRAL.label, fontSize: 12, position: "insideTopLeft" }} />
+                      <Tooltip content={<TrendTooltip seriesNames={seriesNameById} />} />
+                      {showVenuePaths ? history.data.series.map((series, index) => (
                           <Line
                             key={series.registry_id}
-                            type="monotone"
+                            type="linear"
                             dataKey={series.registry_id}
                             name={series.registry_id}
-                            stroke={style.color}
-                            strokeDasharray={style.dash}
-                            strokeWidth={selectedId === series.registry_id ? 3 : 2}
+                            stroke={venueColor}
+                            strokeOpacity={selectedId === series.registry_id ? 0.75 : 0.4}
+                            strokeDasharray={VENUE_DASHES[index % VENUE_DASHES.length]}
+                            strokeWidth={selectedId === series.registry_id ? 2 : 1.4}
                             dot={false}
-                            activeDot={{ r: 4 }}
+                            activeDot={{ r: 3 }}
                             connectNulls={false}
                             isAnimationActive={false}
                           />
-                        );
-                      })}
+                      )) : null}
+                      <Line
+                        type="linear"
+                        dataKey="global_direction"
+                        name="global_direction"
+                        stroke={metalColor}
+                        strokeWidth={3.5}
+                        dot={false}
+                        activeDot={{ r: 4, strokeWidth: 2 }}
+                        connectNulls={false}
+                        isAnimationActive={false}
+                      />
                     </LineChart>
                   </ResponsiveContainer>
                 )}
             </div>
 
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-stealth-800 pt-3 text-xs text-stealth-400">
-              <span>Compare direction, not price. Products and market closes differ.</span>
+              <span>Official markets lead; verified fallbacks fill uncovered days.</span>
               {latest.data ? <span>{latest.data.summary.observed_venues} current quotes</span> : null}
             </div>
           </div>
@@ -639,7 +709,7 @@ export default function GlobalPriceDispersion() {
 
               <div className="mt-6 flex flex-col gap-3 border-t border-stealth-700 pt-5 lg:flex-row lg:items-start lg:justify-between">
                 <p className="max-w-[72ch] text-xs leading-relaxed text-stealth-400">
-                  Prices are normalized to {latest.data?.canonical_currency ?? "USD"}/{latest.data?.canonical_unit ?? "unit"}. Indexed lines compare direction only; contracts, closes, tax and delivery can differ.
+                  Prices are normalized to {latest.data?.canonical_currency ?? "USD"}/{latest.data?.canonical_unit ?? "unit"}. The global line chains daily venue returns; venue paths join it at first overlap and do not imply a price spread.
                   {unavailableVenues.length ? ` ${unavailableVenues.length} registered ${unavailableVenues.length === 1 ? "venue is" : "venues are"} currently unavailable.` : ""}
                 </p>
                 <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs" aria-label="Data source status">

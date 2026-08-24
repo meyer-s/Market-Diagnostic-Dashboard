@@ -507,7 +507,7 @@ def build_global_price_history(
     source_statuses: Optional[Iterable[dict[str, Any]]] = None,
     now: Optional[datetime] = None,
 ) -> dict[str, Any]:
-    """Normalize source-backed venue histories and index each series to 100."""
+    """Build a continuous daily-return composite plus source-backed venue paths."""
     metal = metal.upper()
     if metal not in METAL_DEFINITIONS:
         raise ValueError(f"Unsupported metal: {metal}")
@@ -549,6 +549,7 @@ def build_global_price_history(
         grouped.setdefault(registry_id, []).append(observation)
 
     series = []
+    return_candidates_by_date: dict[str, list[dict[str, Any]]] = {}
     for registry_id, rows in grouped.items():
         rows.sort(key=lambda row: row["quote_date"])
         if len(rows) < 2:
@@ -556,20 +557,45 @@ def build_global_price_history(
         baseline_price = rows[0]["normalized_price"]
         if baseline_price <= 0:
             continue
-        points = [{
-            "date": row["quote_date"],
-            "quote_timestamp": row.get("quote_timestamp"),
-            "normalized_price": row["normalized_price"],
-            "index_value": round((row["normalized_price"] / baseline_price) * 100.0, 4),
-            "change_pct": round(((row["normalized_price"] / baseline_price) - 1.0) * 100.0, 4),
-            "local_price": row.get("local_price"),
-            "currency": row.get("currency"),
-            "native_unit": row.get("native_unit"),
-            "fx_rate_local_per_usd": row.get("fx_rate_local_per_usd"),
-            "fx_timestamp": row.get("fx_timestamp"),
-        } for row in rows]
         sample = rows[-1]
         provider_status = status_by_provider.get(sample.get("provider_id"), {})
+        source_tier = provider_status.get("source_tier") or (
+            "reference_only" if sample.get("provider_id") == "us_reference" else "unclassified"
+        )
+        points = []
+        previous_row = None
+        for row in rows:
+            index_value = (row["normalized_price"] / baseline_price) * 100.0
+            daily_return_pct = None
+            if previous_row is not None:
+                previous_date = datetime.fromisoformat(previous_row["quote_date"]).date()
+                current_date = datetime.fromisoformat(row["quote_date"]).date()
+                gap_days = (current_date - previous_date).days
+                if 0 < gap_days <= 4 and previous_row["normalized_price"] > 0:
+                    daily_return = (row["normalized_price"] / previous_row["normalized_price"]) - 1.0
+                    daily_return_pct = round(daily_return * 100.0, 4)
+                    return_candidates_by_date.setdefault(row["quote_date"], []).append({
+                        "registry_id": registry_id,
+                        "venue": sample["venue"],
+                        "product_name": sample["product_name"],
+                        "source_tier": source_tier,
+                        "return": daily_return,
+                    })
+            points.append({
+                "date": row["quote_date"],
+                "quote_timestamp": row.get("quote_timestamp"),
+                "normalized_price": row["normalized_price"],
+                "index_value": round(index_value, 4),
+                "aligned_index_value": round(index_value, 4),
+                "change_pct": round(index_value - 100.0, 4),
+                "daily_return_pct": daily_return_pct,
+                "local_price": row.get("local_price"),
+                "currency": row.get("currency"),
+                "native_unit": row.get("native_unit"),
+                "fx_rate_local_per_usd": row.get("fx_rate_local_per_usd"),
+                "fx_timestamp": row.get("fx_timestamp"),
+            })
+            previous_row = row
         series.append({
             "registry_id": registry_id,
             "provider_id": sample.get("provider_id"),
@@ -580,7 +606,7 @@ def build_global_price_history(
             "symbol": sample.get("symbol"),
             "source_name": sample.get("source_name") or registry[registry_id]["source_name"],
             "source_status": provider_status.get("status", "live"),
-            "source_tier": provider_status.get("source_tier"),
+            "source_tier": source_tier,
             "source_url": provider_status.get("source_url"),
             "history_scope": provider_status.get("history_scope") or "Stored daily provider series",
             "canonical_currency": METAL_DEFINITIONS[metal]["canonical_currency"],
@@ -599,21 +625,119 @@ def build_global_price_history(
         row["venue"],
         row["product_name"],
     ))
+
+    composite_points = []
+    if series:
+        baseline_date = min(row["coverage_start"] for row in series)
+        composite_index = 100.0
+        composite_points.append({
+            "date": baseline_date,
+            "index_value": 100.0,
+            "change_pct": 0.0,
+            "daily_return_pct": None,
+            "contributor_count": 0,
+            "contributors": [],
+            "source_quality": "baseline",
+        })
+
+        for quote_date in sorted(return_candidates_by_date):
+            if quote_date <= baseline_date:
+                continue
+            candidates = return_candidates_by_date[quote_date]
+            official_candidates = [
+                row for row in candidates if row["source_tier"] == "official_primary"
+            ]
+            selected_candidates = official_candidates or candidates
+            candidate_by_venue: dict[str, list[dict[str, Any]]] = {}
+            for candidate in selected_candidates:
+                candidate_by_venue.setdefault(candidate["venue"], []).append(candidate)
+
+            contributors = []
+            venue_returns = []
+            for venue, venue_candidates in sorted(candidate_by_venue.items()):
+                venue_return = statistics.median(row["return"] for row in venue_candidates)
+                venue_returns.append(venue_return)
+                contributors.append({
+                    "venue": venue,
+                    "registry_ids": [row["registry_id"] for row in venue_candidates],
+                    "return_pct": round(venue_return * 100.0, 4),
+                    "source_tier": (
+                        "official_primary"
+                        if all(row["source_tier"] == "official_primary" for row in venue_candidates)
+                        else "fallback"
+                    ),
+                })
+
+            if not venue_returns:
+                continue
+            composite_return = statistics.median(venue_returns)
+            next_index = composite_index * (1.0 + composite_return)
+            if next_index <= 0:
+                continue
+            composite_index = next_index
+            composite_points.append({
+                "date": quote_date,
+                "index_value": round(composite_index, 4),
+                "change_pct": round(composite_index - 100.0, 4),
+                "daily_return_pct": round(composite_return * 100.0, 4),
+                "contributor_count": len(contributors),
+                "contributors": contributors,
+                "source_quality": "official_primary" if official_candidates else "fallback",
+            })
+
+    composite = None
+    if len(composite_points) >= 2:
+        contributor_counts = [row["contributor_count"] for row in composite_points[1:]]
+        official_days = sum(row["source_quality"] == "official_primary" for row in composite_points[1:])
+        composite = {
+            "registry_id": "global_direction",
+            "label": f"{METAL_DEFINITIONS[metal]['name']} global trend",
+            "coverage_start": composite_points[0]["date"],
+            "coverage_end": composite_points[-1]["date"],
+            "observation_count": len(composite_points),
+            "latest_index_value": composite_points[-1]["index_value"],
+            "change_pct": composite_points[-1]["change_pct"],
+            "min_contributors": min(contributor_counts),
+            "max_contributors": max(contributor_counts),
+            "official_primary_days": official_days,
+            "fallback_days": len(contributor_counts) - official_days,
+            "points": composite_points,
+        }
+
+        for venue_series in series:
+            first_date = venue_series["coverage_start"]
+            anchor_index = 100.0
+            for composite_point in composite_points:
+                if composite_point["date"] > first_date:
+                    break
+                anchor_index = composite_point["index_value"]
+            for point in venue_series["points"]:
+                point["aligned_index_value"] = round(
+                    (point["index_value"] / 100.0) * anchor_index,
+                    4,
+                )
+            venue_series["alignment_date"] = first_date
+            venue_series["alignment_index_value"] = round(anchor_index, 4)
+
     series_ids = {row["registry_id"] for row in series}
     return {
         "as_of": generated_at.isoformat(),
         "metal": metal,
         "metal_name": METAL_DEFINITIONS[metal]["name"],
         "days_requested": days,
-        "mode": "indexed_change",
+        "mode": "composite_direction",
         "baseline": 100.0,
         "canonical_currency": METAL_DEFINITIONS[metal]["canonical_currency"],
         "canonical_unit": METAL_DEFINITIONS[metal]["canonical_unit"],
+        "composite": composite,
         "series": series,
         "summary": {
             "historical_venues": len(series),
             "registered_venues": len(registry),
             "latest_history_date": max((row["coverage_end"] for row in series), default=None),
+            "official_primary_venues": sum(row["source_tier"] == "official_primary" for row in series),
+            "composite_min_contributors": composite["min_contributors"] if composite else 0,
+            "composite_max_contributors": composite["max_contributors"] if composite else 0,
         },
         "sources": status_list,
         "venues_without_history": [
@@ -626,8 +750,10 @@ def build_global_price_history(
             if row["registry_id"] not in series_ids
         ],
         "limitations": [
-            "Each line is rebased to 100 at its own first available observation; it shows direction, not an absolute venue-price comparison.",
-            "Venue calendars, session closes, products, and available history windows differ.",
+            "The global trend chains median daily returns from official-primary venues when available and uses labeled fallback series only when no official return is available.",
+            "Multiple products from one venue are collapsed to one venue return so a single market cannot receive extra weight.",
+            "Venue paths join the global trend at their first observation; they show direction from entry, not an absolute venue-price spread.",
+            "Returns across gaps longer than four calendar days are not joined; venue calendars, sessions, products, and history windows differ.",
             "Only source-backed observations are drawn; venues without defensible history remain latest-quote evidence only.",
         ],
     }

@@ -160,14 +160,15 @@ describe("asset and flow route polish", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Metals Diagnostic" })).not.toBeNull();
     const overview = screen.getByRole("tab", { name: "Overview" });
     const deepDive = screen.getByRole("tab", { name: "Deep Dive" });
-    expect(deepDive.getAttribute("aria-selected")).toBe("true");
-    expect(overview.getAttribute("tabindex")).toBe("-1");
-    expect(screen.getByRole("heading", { name: "Global exchange trends" })).not.toBeNull();
-
-    fireEvent.click(overview);
     expect(overview.getAttribute("aria-selected")).toBe("true");
+    expect(deepDive.getAttribute("tabindex")).toBe("-1");
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Overview", "Deep Dive"]);
     expect(screen.getByText(/3\/8 datasets/)).not.toBeNull();
     expect(screen.getByRole("heading", { name: "Regime snapshot" })).not.toBeNull();
+
+    fireEvent.click(deepDive);
+    expect(deepDive.getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("heading", { name: "Global exchange trends" })).not.toBeNull();
   });
 
   it("makes crypto view and range controls explicit and keyboard-readable", () => {

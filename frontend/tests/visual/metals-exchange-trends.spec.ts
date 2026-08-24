@@ -127,10 +127,12 @@ const historySeries = (registryId: string, venueName: string, productName: strin
   baseline_price: 32 + offset,
   latest_price: 35 + offset,
   change_pct: 9.38,
+  alignment_date: "2026-06-01",
+  alignment_index_value: 100,
   points: [
-    { date: "2026-06-01", quote_timestamp: "2026-06-01T00:00:00Z", normalized_price: 32 + offset, index_value: 100, change_pct: 0, local_price: 32 + offset, currency: "USD", native_unit: "troy oz", fx_rate_local_per_usd: 1, fx_timestamp: "2026-06-01T00:00:00Z" },
-    { date: "2026-07-15", quote_timestamp: "2026-07-15T00:00:00Z", normalized_price: 33 + offset, index_value: 103.13, change_pct: 3.13, local_price: 33 + offset, currency: "USD", native_unit: "troy oz", fx_rate_local_per_usd: 1, fx_timestamp: "2026-07-15T00:00:00Z" },
-    { date: "2026-08-21", quote_timestamp: "2026-08-21T00:00:00Z", normalized_price: 35 + offset, index_value: 109.38, change_pct: 9.38, local_price: 35 + offset, currency: "USD", native_unit: "troy oz", fx_rate_local_per_usd: 1, fx_timestamp: "2026-08-21T00:00:00Z" },
+    { date: "2026-06-01", quote_timestamp: "2026-06-01T00:00:00Z", normalized_price: 32 + offset, index_value: 100, aligned_index_value: 100, change_pct: 0, daily_return_pct: null, local_price: 32 + offset, currency: "USD", native_unit: "troy oz", fx_rate_local_per_usd: 1, fx_timestamp: "2026-06-01T00:00:00Z" },
+    { date: "2026-07-15", quote_timestamp: "2026-07-15T00:00:00Z", normalized_price: 33 + offset, index_value: 103.13, aligned_index_value: 103.13, change_pct: 3.13, daily_return_pct: 3.13, local_price: 33 + offset, currency: "USD", native_unit: "troy oz", fx_rate_local_per_usd: 1, fx_timestamp: "2026-07-15T00:00:00Z" },
+    { date: "2026-08-21", quote_timestamp: "2026-08-21T00:00:00Z", normalized_price: 35 + offset, index_value: 109.38, aligned_index_value: 109.38, change_pct: 9.38, daily_return_pct: 6.06, local_price: 35 + offset, currency: "USD", native_unit: "troy oz", fx_rate_local_per_usd: 1, fx_timestamp: "2026-08-21T00:00:00Z" },
   ],
 });
 
@@ -139,15 +141,33 @@ const history = {
   metal: "AG",
   metal_name: "Silver",
   days_requested: 90,
-  mode: "indexed_change",
+  mode: "composite_direction",
   baseline: 100,
   canonical_currency: "USD",
   canonical_unit: "troy oz",
+  composite: {
+    registry_id: "global_direction",
+    label: "Silver global trend",
+    coverage_start: "2026-06-01",
+    coverage_end: "2026-08-21",
+    observation_count: 3,
+    latest_index_value: 109.38,
+    change_pct: 9.38,
+    min_contributors: 1,
+    max_contributors: 2,
+    official_primary_days: 2,
+    fallback_days: 0,
+    points: [
+      { date: "2026-06-01", index_value: 100, change_pct: 0, daily_return_pct: null, contributor_count: 0, contributors: [], source_quality: "baseline" },
+      { date: "2026-07-15", index_value: 103.13, change_pct: 3.13, daily_return_pct: 3.13, contributor_count: 1, contributors: [{ venue: "LBMA", registry_ids: ["lbma_silver"], return_pct: 3.13, source_tier: "official_primary" }], source_quality: "official_primary" },
+      { date: "2026-08-21", index_value: 109.38, change_pct: 9.38, daily_return_pct: 6.06, contributor_count: 2, contributors: [{ venue: "COMEX", registry_ids: ["comex_silver"], return_pct: 6.06, source_tier: "fallback" }, { venue: "LBMA", registry_ids: ["lbma_silver"], return_pct: 6.06, source_tier: "official_primary" }], source_quality: "official_primary" },
+    ],
+  },
   series: [
     historySeries("comex_silver", "COMEX", "COMEX Silver futures", 0),
     historySeries("lbma_silver", "LBMA", "LBMA Silver Price", 0.5),
   ],
-  summary: { historical_venues: 2, registered_venues: 2, latest_history_date: "2026-08-21" },
+  summary: { historical_venues: 2, registered_venues: 2, latest_history_date: "2026-08-21", official_primary_venues: 1, composite_min_contributors: 1, composite_max_contributors: 2 },
   sources: [{ provider_id: "lbma", provider_name: "London Bullion Market Association", status: "live", fetched_at: "2026-08-24T12:00:00Z", source_url: null, history_scope: "Full published delayed benchmark history" }],
   venues_without_history: [],
   limitations: [
@@ -156,7 +176,7 @@ const history = {
   ],
 };
 
-test("exchange trends open first with direct controls and responsive, accessible evidence", async ({ page }, testInfo) => {
+test("overview opens first and the second-page exchange trend stays responsive and accessible", async ({ page }, testInfo) => {
   await page.route("**/api/precious-metals/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     let body: unknown = null;
@@ -173,11 +193,15 @@ test("exchange trends open first with direct controls and responsive, accessible
     await page.setViewportSize(viewport);
     await page.goto("/precious-metals", { waitUntil: "networkidle" });
 
+    await expect(page.getByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("tab").allTextContents()).resolves.toEqual(["Overview", "Deep Dive"]);
+    await page.getByRole("tab", { name: "Deep Dive" }).click();
     await expect(page.getByRole("tab", { name: "Deep Dive" })).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("heading", { name: "Global exchange trends" })).toBeVisible();
     await expect(page.getByRole("button", { name: "3M" })).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator("#global-price-dispersion select")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /Hide COMEX COMEX Silver futures/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Show 2 venue paths" })).toBeVisible();
+    await page.getByRole("button", { name: "Show 2 venue paths" }).click();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
     const viewportGeometry = await page.evaluate(() => {
       const card = document.querySelector<HTMLElement>("#global-price-dispersion");

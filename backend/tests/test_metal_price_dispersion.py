@@ -216,7 +216,7 @@ def test_live_source_without_product_is_reported_as_no_qualifying_quote() -> Non
     assert body["sources"][0]["status"] == "live"
 
 
-def test_builds_indexed_exchange_history_without_fabricating_missing_series() -> None:
+def test_builds_continuous_exchange_history_without_fabricating_missing_series() -> None:
     body = build_global_price_history(
         "AG",
         [
@@ -262,6 +262,58 @@ def test_builds_indexed_exchange_history_without_fabricating_missing_series() ->
     assert series["registry_id"] == "comex_silver"
     assert series["points"][0]["index_value"] == 100
     assert series["points"][1]["index_value"] == 105
+    assert series["points"][1]["aligned_index_value"] == 105
     assert series["change_pct"] == 5
+    assert body["composite"]["change_pct"] == 5
+    assert body["composite"]["points"][-1]["contributor_count"] == 1
     assert "sge_ag9999" in {row["registry_id"] for row in body["venues_without_history"]}
-    assert body["mode"] == "indexed_change"
+    assert body["mode"] == "composite_direction"
+
+
+def test_global_history_prefers_official_venue_returns_and_collapses_products_by_venue() -> None:
+    observations = []
+    for registry_id, provider_id, start, end in [
+        ("comex_silver", "us_reference", 100.0, 120.0),
+        ("lbma_silver", "lbma", 100.0, 102.0),
+        ("sge_ag9999", "sge", 100.0, 104.0),
+        ("sge_ag_td", "sge", 100.0, 106.0),
+    ]:
+        observations.extend([
+            {
+                "registry_id": registry_id,
+                "provider_id": provider_id,
+                "local_price": start,
+                "currency": "USD",
+                "native_unit": "troy oz",
+                "fx_rate_local_per_usd": 1.0,
+                "quote_timestamp": "2026-08-20T00:00:00+00:00",
+            },
+            {
+                "registry_id": registry_id,
+                "provider_id": provider_id,
+                "local_price": end,
+                "currency": "USD",
+                "native_unit": "troy oz",
+                "fx_rate_local_per_usd": 1.0,
+                "quote_timestamp": "2026-08-21T00:00:00+00:00",
+            },
+        ])
+
+    body = build_global_price_history(
+        "AG",
+        observations,
+        days=30,
+        source_statuses=[
+            {"provider_id": "us_reference", "source_tier": "reference_only", "status": "live"},
+            {"provider_id": "lbma", "source_tier": "official_primary", "status": "live"},
+            {"provider_id": "sge", "source_tier": "official_primary", "status": "live"},
+        ],
+        now=datetime(2026, 8, 22, tzinfo=timezone.utc),
+    )
+
+    point = body["composite"]["points"][-1]
+    assert point["source_quality"] == "official_primary"
+    assert point["contributor_count"] == 2
+    assert {row["venue"] for row in point["contributors"]} == {"LBMA", "SGE"}
+    assert point["daily_return_pct"] == 3.5
+    assert body["composite"]["change_pct"] == 3.5

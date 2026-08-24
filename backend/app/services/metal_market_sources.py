@@ -29,8 +29,10 @@ logger = logging.getLogger(__name__)
 
 SOURCE_CACHE_TTL_SECONDS = 15 * 60
 SOURCE_CACHE_MAX_STALE_SECONDS = 7 * 24 * 60 * 60
+HISTORY_CACHE_TTL_SECONDS = 6 * 60 * 60
 SOURCE_TIMEOUT_SECONDS = 20
 HISTORY_TIMEOUT_SECONDS = 35
+SHFE_HISTORY_DAYS = 90
 
 _CACHE_LOCK = RLock()
 _SOURCE_CACHE: dict[str, dict[str, Any]] = {}
@@ -629,9 +631,9 @@ def _parse_ecb_fx_csv(payload: str) -> dict[str, dict[date, float]]:
     return series
 
 
-def _fetch_ecb_fx(_metal: str) -> dict[str, Any]:
+def _fetch_ecb_fx_range(days: int) -> dict[str, Any]:
     end = datetime.now(timezone.utc).date()
-    start = end - timedelta(days=45)
+    start = end - timedelta(days=days)
     response = requests.get(
         ECB_FX_URL,
         params={"startPeriod": start.isoformat(), "endPeriod": end.isoformat(), "format": "csvdata"},
@@ -643,6 +645,10 @@ def _fetch_ecb_fx(_metal: str) -> dict[str, Any]:
     if "USD" not in series:
         raise SourceUnavailable("ECB FX response did not include the USD reference series")
     return {"fx_series": series, "source_url": ECB_FX_URL}
+
+
+def _fetch_ecb_fx(_metal: str) -> dict[str, Any]:
+    return _fetch_ecb_fx_range(45)
 
 
 PROVIDER_LOADERS: dict[str, Callable[[str], dict[str, Any]]] = {
@@ -813,12 +819,12 @@ def fetch_international_metal_observations(metal: str) -> dict[str, Any]:
 
 
 HISTORY_PROVIDERS = {
-    "AU": ("lbma", "sge"),
-    "AG": ("lbma", "sge"),
+    "AU": ("lbma", "sge", "shfe"),
+    "AG": ("lbma", "sge", "shfe"),
     "PT": ("lbma", "sge"),
     "PD": ("lbma", "sge"),
-    "CU": ("lme",),
-    "AL": ("lme",),
+    "CU": ("lme", "shfe"),
+    "AL": ("lme", "shfe"),
 }
 
 
@@ -899,6 +905,67 @@ def _fetch_sge_history_snapshot(metal: str) -> dict[str, Any]:
     }
 
 
+def _fetch_shfe_history_day(quote_date: date) -> list[dict[str, Any]]:
+    data_url = f"https://www.shfe.cn/data/tradedata/future/dailydata/kx{quote_date:%Y%m%d}.dat"
+    try:
+        response = requests.get(
+            data_url,
+            headers={
+                "User-Agent": "Market-Diagnostic-Dashboard/1.0",
+                "Accept": "application/json",
+            },
+            timeout=SOURCE_TIMEOUT_SECONDS,
+        )
+        if response.status_code == 404:
+            return []
+        response.raise_for_status()
+        return _parse_shfe_payload(response.json(), quote_date)
+    except (requests.RequestException, ValueError):
+        return []
+
+
+def _fetch_shfe_history_snapshot(_metal: str) -> dict[str, Any]:
+    """Fetch a reusable bounded window of official SHFE end-of-day settlements."""
+    end = datetime.now(timezone.utc).date()
+    start = end - timedelta(days=SHFE_HISTORY_DAYS)
+    trading_date_candidates = [
+        start + timedelta(days=offset)
+        for offset in range((end - start).days + 1)
+        if (start + timedelta(days=offset)).weekday() < 5
+    ]
+
+    observations = []
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        future_by_date = {
+            executor.submit(_fetch_shfe_history_day, quote_date): quote_date
+            for quote_date in trading_date_candidates
+        }
+        for future in as_completed(future_by_date):
+            observations.extend(future.result())
+
+    observations.sort(key=lambda row: row["quote_timestamp"])
+    if not observations:
+        raise SourceUnavailable("SHFE official Daily Express history contained no usable settlements")
+    return {
+        "observations": observations,
+        "source_url": "https://www.shfe.com.cn/eng/reports/StatisticalData/DailyData/",
+        "source_tier": "official_primary",
+        "history_scope": (
+            f"Latest {SHFE_HISTORY_DAYS} calendar days of official Daily Express settlements; "
+            "highest-volume contract per trading day"
+        ),
+    }
+
+
+def _fetch_ecb_fx_history_snapshot(_metal: str) -> dict[str, Any]:
+    snapshot = _fetch_ecb_fx_range(370)
+    snapshot.update({
+        "source_tier": "official_primary",
+        "history_scope": "ECB daily reference rates covering the full supported chart window",
+    })
+    return snapshot
+
+
 def _fetch_lme_history_snapshot(metal: str) -> dict[str, Any]:
     _registry_id, _slug, _metal_name, fallback_field = LME_PAGES[metal]
     end = datetime.now(timezone.utc).date()
@@ -943,16 +1010,22 @@ def _fetch_lme_history_snapshot(metal: str) -> dict[str, Any]:
 HISTORY_LOADERS: dict[str, Callable[[str], dict[str, Any]]] = {
     "lbma": _fetch_lbma_history_snapshot,
     "sge": _fetch_sge_history_snapshot,
+    "shfe": _fetch_shfe_history_snapshot,
     "lme": _fetch_lme_history_snapshot,
+    "ecb_fx": _fetch_ecb_fx_history_snapshot,
 }
 
 
 def _load_history_cached(provider_id: str, metal: str) -> tuple[dict[str, Any], dict[str, Any]]:
-    key = f"history:{provider_id}:{metal}"
+    key = (
+        f"history:{provider_id}"
+        if provider_id in {"shfe", "ecb_fx"}
+        else f"history:{provider_id}:{metal}"
+    )
     now_monotonic = time.monotonic()
     with _CACHE_LOCK:
         cached = _HISTORY_CACHE.get(key)
-        if cached and now_monotonic - cached["stored_monotonic"] <= SOURCE_CACHE_TTL_SECONDS:
+        if cached and now_monotonic - cached["stored_monotonic"] <= HISTORY_CACHE_TTL_SECONDS:
             snapshot = cached["snapshot"]
             return snapshot, {
                 "provider_id": provider_id,
@@ -1022,16 +1095,13 @@ def fetch_international_metal_history(metal: str, days: int) -> dict[str, Any]:
         raise ValueError("History range must be between 7 and 365 days")
 
     provider_ids = HISTORY_PROVIDERS[metal]
-    requested_provider_ids = (*provider_ids, "ecb_fx") if "sge" in provider_ids else provider_ids
+    needs_fx = any(provider_id in {"sge", "shfe"} for provider_id in provider_ids)
+    requested_provider_ids = (*provider_ids, "ecb_fx") if needs_fx else provider_ids
     snapshots: dict[str, dict[str, Any]] = {}
     status_by_provider: dict[str, dict[str, Any]] = {}
     with ThreadPoolExecutor(max_workers=len(requested_provider_ids)) as executor:
         future_by_provider = {
-            executor.submit(
-                _load_cached if provider_id == "ecb_fx" else _load_history_cached,
-                provider_id,
-                metal,
-            ): provider_id
+            executor.submit(_load_history_cached, provider_id, metal): provider_id
             for provider_id in requested_provider_ids
         }
         for future in as_completed(future_by_provider):
@@ -1057,7 +1127,7 @@ def fetch_international_metal_history(metal: str, days: int) -> dict[str, Any]:
             status_by_provider[provider_id]["coverage_start"] = matches[0]["quote_timestamp"]
             status_by_provider[provider_id]["coverage_end"] = matches[-1]["quote_timestamp"]
 
-    if "sge" in provider_ids:
+    if needs_fx:
         fx_snapshot = snapshots.get("ecb_fx", {})
         _attach_fx(observations, fx_snapshot)
         fx_status = status_by_provider["ecb_fx"]

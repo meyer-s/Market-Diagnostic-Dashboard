@@ -502,7 +502,7 @@ export default function PreciousMetalsDiagnostic({ embedded = false }: { embedde
   const { data: projectionsData, loading: projectionsLoading, error: projectionsError } = useApi<{ projections: MetalProjection[] }>("/precious-metals/projections/latest");
   const { data: futuresCurve, loading: futuresLoading, error: futuresError } = useApi<FuturesCurveResponse>("/precious-metals/futures-curve?contracts=4");
 
-  const [selectedTab, setSelectedTab] = useState<"overview" | "deep-dive">("deep-dive");
+  const [selectedTab, setSelectedTab] = useState<"overview" | "deep-dive">("overview");
   const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     event.preventDefault();
@@ -610,23 +610,6 @@ export default function PreciousMetalsDiagnostic({ embedded = false }: { embedde
       <div id="metals-views" className="section-anchor control-strip self-start" role="tablist" aria-label="Metals diagnostic view">
         <button
           type="button"
-          id="metals-deep-dive-tab"
-          role="tab"
-          aria-selected={selectedTab === "deep-dive"}
-          aria-controls="metals-deep-dive-panel"
-          tabIndex={selectedTab === "deep-dive" ? 0 : -1}
-          onClick={() => setSelectedTab("deep-dive")}
-          onKeyDown={handleTabKeyDown}
-          className={`min-h-11 rounded-xl px-4 py-2 text-sm font-semibold transition ${
-            selectedTab === "deep-dive"
-              ? "bg-blue-500/15 text-blue-200 shadow-[inset_0_0_0_1px_rgba(96,165,250,0.28)]"
-              : "text-stealth-400 hover:bg-stealth-800/70 hover:text-stealth-200"
-          }`}
-        >
-          Deep Dive
-        </button>
-        <button
-          type="button"
           id="metals-overview-tab"
           role="tab"
           aria-selected={selectedTab === "overview"}
@@ -641,6 +624,23 @@ export default function PreciousMetalsDiagnostic({ embedded = false }: { embedde
           }`}
         >
           Overview
+        </button>
+        <button
+          type="button"
+          id="metals-deep-dive-tab"
+          role="tab"
+          aria-selected={selectedTab === "deep-dive"}
+          aria-controls="metals-deep-dive-panel"
+          tabIndex={selectedTab === "deep-dive" ? 0 : -1}
+          onClick={() => setSelectedTab("deep-dive")}
+          onKeyDown={handleTabKeyDown}
+          className={`min-h-11 rounded-xl px-4 py-2 text-sm font-semibold transition ${
+            selectedTab === "deep-dive"
+              ? "bg-blue-500/15 text-blue-200 shadow-[inset_0_0_0_1px_rgba(96,165,250,0.28)]"
+              : "text-stealth-400 hover:bg-stealth-800/70 hover:text-stealth-200"
+          }`}
+        >
+          Deep Dive
         </button>
       </div>
 

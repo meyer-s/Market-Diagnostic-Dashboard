@@ -906,7 +906,7 @@ def get_global_price_dispersion_history(
     metal: str = Query("AG", min_length=2, max_length=2),
     days: int = Query(90, ge=30, le=365),
 ):
-    """Return source-backed venue histories rebased to 100 for trend inspection."""
+    """Return a source-backed global direction composite and aligned venue histories."""
     metal = metal.upper()
     if metal not in METAL_DEFINITIONS:
         raise HTTPException(status_code=422, detail=f"Unsupported metal: {metal}")

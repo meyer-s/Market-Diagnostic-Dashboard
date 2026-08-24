@@ -149,10 +149,37 @@ const historyResponse = {
   metal: "AG",
   metal_name: "Silver",
   days_requested: 90,
-  mode: "indexed_change",
+  mode: "composite_direction",
   baseline: 100,
   canonical_currency: "USD",
   canonical_unit: "troy oz",
+  composite: {
+    registry_id: "global_direction",
+    label: "Silver global trend",
+    coverage_start: "2026-08-20",
+    coverage_end: "2026-08-21",
+    observation_count: 2,
+    latest_index_value: 103.0303,
+    change_pct: 3.0303,
+    min_contributors: 1,
+    max_contributors: 1,
+    official_primary_days: 1,
+    fallback_days: 0,
+    points: [
+      { date: "2026-08-20", index_value: 100, change_pct: 0, daily_return_pct: null, contributor_count: 0, contributors: [], source_quality: "baseline" },
+      {
+        date: "2026-08-21",
+        index_value: 103.0303,
+        change_pct: 3.0303,
+        daily_return_pct: 3.0303,
+        contributor_count: 1,
+        contributors: [
+          { venue: "LBMA", registry_ids: ["lbma_silver"], return_pct: 3.0303, source_tier: "official_primary" },
+        ],
+        source_quality: "official_primary",
+      },
+    ],
+  },
   series: [
     {
       registry_id: "comex_silver",
@@ -175,9 +202,11 @@ const historyResponse = {
       baseline_price: 34,
       latest_price: 35,
       change_pct: 2.9412,
+      alignment_date: "2026-08-20",
+      alignment_index_value: 100,
       points: [
-        { date: "2026-08-20", quote_timestamp: "2026-08-20T00:00:00Z", normalized_price: 34, index_value: 100, change_pct: 0, local_price: 34, currency: "USD", native_unit: "troy oz", fx_rate_local_per_usd: 1, fx_timestamp: "2026-08-20T00:00:00Z" },
-        { date: "2026-08-21", quote_timestamp: "2026-08-21T00:00:00Z", normalized_price: 35, index_value: 102.9412, change_pct: 2.9412, local_price: 35, currency: "USD", native_unit: "troy oz", fx_rate_local_per_usd: 1, fx_timestamp: "2026-08-21T00:00:00Z" },
+        { date: "2026-08-20", quote_timestamp: "2026-08-20T00:00:00Z", normalized_price: 34, index_value: 100, aligned_index_value: 100, change_pct: 0, daily_return_pct: null, local_price: 34, currency: "USD", native_unit: "troy oz", fx_rate_local_per_usd: 1, fx_timestamp: "2026-08-20T00:00:00Z" },
+        { date: "2026-08-21", quote_timestamp: "2026-08-21T00:00:00Z", normalized_price: 35, index_value: 102.9412, aligned_index_value: 102.9412, change_pct: 2.9412, daily_return_pct: 2.9412, local_price: 35, currency: "USD", native_unit: "troy oz", fx_rate_local_per_usd: 1, fx_timestamp: "2026-08-21T00:00:00Z" },
       ],
     },
     {
@@ -201,16 +230,18 @@ const historyResponse = {
       baseline_price: 33,
       latest_price: 34,
       change_pct: 3.0303,
+      alignment_date: "2026-08-20",
+      alignment_index_value: 100,
       points: [
-        { date: "2026-08-20", quote_timestamp: "2026-08-20T00:00:00Z", normalized_price: 33, index_value: 100, change_pct: 0, local_price: 33, currency: "USD", native_unit: "troy oz", fx_rate_local_per_usd: 1, fx_timestamp: "2026-08-20T00:00:00Z" },
-        { date: "2026-08-21", quote_timestamp: "2026-08-21T00:00:00Z", normalized_price: 34, index_value: 103.0303, change_pct: 3.0303, local_price: 34, currency: "USD", native_unit: "troy oz", fx_rate_local_per_usd: 1, fx_timestamp: "2026-08-21T00:00:00Z" },
+        { date: "2026-08-20", quote_timestamp: "2026-08-20T00:00:00Z", normalized_price: 33, index_value: 100, aligned_index_value: 100, change_pct: 0, daily_return_pct: null, local_price: 33, currency: "USD", native_unit: "troy oz", fx_rate_local_per_usd: 1, fx_timestamp: "2026-08-20T00:00:00Z" },
+        { date: "2026-08-21", quote_timestamp: "2026-08-21T00:00:00Z", normalized_price: 34, index_value: 103.0303, aligned_index_value: 103.0303, change_pct: 3.0303, daily_return_pct: 3.0303, local_price: 34, currency: "USD", native_unit: "troy oz", fx_rate_local_per_usd: 1, fx_timestamp: "2026-08-21T00:00:00Z" },
       ],
     },
   ],
-  summary: { historical_venues: 2, registered_venues: 6, latest_history_date: "2026-08-21" },
+  summary: { historical_venues: 2, registered_venues: 6, latest_history_date: "2026-08-21", official_primary_venues: 1, composite_min_contributors: 1, composite_max_contributors: 1 },
   sources: [{ provider_id: "lbma", provider_name: "London Bullion Market Association", status: "live", fetched_at: "2026-08-21T15:00:00Z", source_url: "https://prices.lbma.org.uk/json/silver.json", source_tier: "official_primary", history_scope: "Full published delayed benchmark history", observation_count: 2 }],
   venues_without_history: [],
-  limitations: ["Each line starts at 100.", "Products and closes differ."],
+  limitations: ["Official markets lead.", "Products and closes differ."],
 };
 
 describe("GlobalPriceDispersion", () => {
@@ -229,16 +260,17 @@ describe("GlobalPriceDispersion", () => {
     render(<GlobalPriceDispersion />);
 
     expect(screen.getByRole("heading", { name: "Global exchange trends" })).not.toBeNull();
-    expect(screen.getByText(/2 markets · through/)).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Silver global trend" })).not.toBeNull();
+    expect(screen.getByText(/1 market\/day · through/)).not.toBeNull();
     expect(screen.getByRole("button", { name: "Silver" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByRole("button", { name: "3M" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.queryByRole("combobox")).toBeNull();
-    expect(screen.getByRole("button", { name: /Hide COMEX COMEX Silver futures/ }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Show 2 venue paths" }).getAttribute("aria-pressed")).toBe("false");
     expect(screen.getByText("Venue prices & sources").closest("details")?.hasAttribute("open")).toBe(false);
     fireEvent.click(screen.getByText("Venue prices & sources"));
     expect(screen.getByRole("button", { name: /COMEX, COMEX Silver futures/ }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getAllByText("USD 35.00 / troy oz").length).toBeGreaterThan(0);
-    expect(screen.getByText(/Compare direction, not price/)).not.toBeNull();
+    expect(screen.getByText(/Official markets lead/)).not.toBeNull();
     expect(screen.getByRole("button", { name: /SHFE.*Silver futures.*Unavailable/ })).not.toBeNull();
   });
 
@@ -251,9 +283,9 @@ describe("GlobalPriceDispersion", () => {
     }));
     render(<GlobalPriceDispersion />);
 
-    const lbmaToggle = screen.getByRole("button", { name: /Hide LBMA LBMA Silver Price/ });
-    fireEvent.click(lbmaToggle);
-    expect(lbmaToggle.getAttribute("aria-pressed")).toBe("false");
+    const venueToggle = screen.getByRole("button", { name: "Show 2 venue paths" });
+    fireEvent.click(venueToggle);
+    expect(screen.getByRole("button", { name: "Hide venue paths" }).getAttribute("aria-pressed")).toBe("true");
 
     fireEvent.click(screen.getByText("Venue prices & sources"));
     fireEvent.click(screen.getByRole("button", { name: /COMEX, COMEX Silver futures/ }));
