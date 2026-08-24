@@ -303,6 +303,7 @@ export default function GlobalPriceDispersion() {
     if (selectedId && availableIds.has(selectedId)) return;
     setSelectedId(
       history.data?.series[0]?.registry_id
+      ?? latest.data?.reference.registry_id
       ?? latest.data?.venues.find((row) => row.availability_status === "observed")?.registry_id
       ?? null,
     );
@@ -312,7 +313,10 @@ export default function GlobalPriceDispersion() {
     setHiddenSeries(new Set());
   }, [history.data?.as_of, history.data?.metal, days]);
 
-  const observedVenues = latest.data?.venues.filter((row) => row.availability_status === "observed") ?? [];
+  const observedVenues = (latest.data?.venues.filter((row) => row.availability_status === "observed") ?? []).sort((left, right) => (
+    Number(right.registry_id === latest.data?.reference.registry_id)
+    - Number(left.registry_id === latest.data?.reference.registry_id)
+  ));
   const unavailableVenues = latest.data?.venues.filter((row) => row.availability_status === "unavailable") ?? [];
   const selected = latest.data?.venues.find((row) => row.registry_id === selectedId) ?? null;
   const selectedHistory = history.data?.series.find((row) => row.registry_id === selectedId) ?? null;

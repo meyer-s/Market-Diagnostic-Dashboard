@@ -234,6 +234,7 @@ describe("GlobalPriceDispersion", () => {
     expect(screen.getByRole("button", { name: "3M" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.queryByRole("combobox")).toBeNull();
     expect(screen.getByRole("button", { name: /Hide COMEX COMEX Silver futures/ }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: /COMEX, COMEX Silver futures/ }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getAllByText("USD 35.00 / troy oz").length).toBeGreaterThan(0);
     expect(screen.getByText(/Compare direction, not absolute prices/)).not.toBeNull();
     expect(screen.queryByRole("button", { name: /SHFE.*Silver futures/ })).toBeNull();
