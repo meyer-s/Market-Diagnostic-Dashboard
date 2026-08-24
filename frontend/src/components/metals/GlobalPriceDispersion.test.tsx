@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import GlobalPriceDispersion from "./GlobalPriceDispersion";
+import GlobalPriceDispersion, { buildTrendChartData } from "./GlobalPriceDispersion";
 
 const { useApiMock } = vi.hoisted(() => ({ useApiMock: vi.fn() }));
 vi.mock("../../hooks/useApi", () => ({ useApi: useApiMock }));
@@ -9,9 +9,10 @@ vi.mock("recharts", () => {
   const Shell = ({ children }: { children?: React.ReactNode }) => <div>{children}</div>;
   const Empty = () => null;
   return {
+    Area: Empty,
     CartesianGrid: Empty,
+    ComposedChart: Shell,
     Line: Empty,
-    LineChart: Shell,
     ReferenceLine: Empty,
     ResponsiveContainer: Shell,
     Tooltip: Empty,
@@ -261,6 +262,7 @@ describe("GlobalPriceDispersion", () => {
 
     expect(screen.getByRole("heading", { name: "Global exchange trends" })).not.toBeNull();
     expect(screen.getByRole("heading", { name: "Silver global trend" })).not.toBeNull();
+    expect(screen.getByText("Global direction · min–max path envelope · base 100")).not.toBeNull();
     expect(screen.getByText(/1 market\/day · through/)).not.toBeNull();
     expect(screen.getByRole("button", { name: "Silver" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByRole("button", { name: "3M" }).getAttribute("aria-pressed")).toBe("true");
@@ -270,8 +272,16 @@ describe("GlobalPriceDispersion", () => {
     fireEvent.click(screen.getByText("Venue prices & sources"));
     expect(screen.getByRole("button", { name: /COMEX, COMEX Silver futures/ }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getAllByText("USD 35.00 / troy oz").length).toBeGreaterThan(0);
-    expect(screen.getByText(/Official markets lead/)).not.toBeNull();
+    expect(screen.getByText(/Official markets drive the line/)).not.toBeNull();
     expect(screen.getByRole("button", { name: /SHFE.*Silver futures.*Unavailable/ })).not.toBeNull();
+  });
+
+  it("builds a min-max envelope from aligned venue paths around the global line", () => {
+    const rows = buildTrendChartData(historyResponse as Parameters<typeof buildTrendChartData>[0]);
+
+    expect(rows[0].venue_envelope).toEqual([100, 100]);
+    expect(rows[1].venue_envelope).toEqual([102.9412, 103.0303]);
+    expect(rows[1].envelope_path_count).toBe(2);
   });
 
   it("toggles venue lines and keeps detailed evidence in one disclosure", () => {

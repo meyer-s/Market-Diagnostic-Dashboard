@@ -106,7 +106,7 @@ const latest = {
   },
 };
 
-const historySeries = (registryId: string, venueName: string, productName: string, offset: number) => ({
+const historySeries = (registryId: string, venueName: string, productName: string, offset: number, pathOffset: number) => ({
   registry_id: registryId,
   provider_id: registryId.startsWith("lbma") ? "lbma" : "us_reference",
   venue: venueName,
@@ -131,8 +131,8 @@ const historySeries = (registryId: string, venueName: string, productName: strin
   alignment_index_value: 100,
   points: [
     { date: "2026-06-01", quote_timestamp: "2026-06-01T00:00:00Z", normalized_price: 32 + offset, index_value: 100, aligned_index_value: 100, change_pct: 0, daily_return_pct: null, local_price: 32 + offset, currency: "USD", native_unit: "troy oz", fx_rate_local_per_usd: 1, fx_timestamp: "2026-06-01T00:00:00Z" },
-    { date: "2026-07-15", quote_timestamp: "2026-07-15T00:00:00Z", normalized_price: 33 + offset, index_value: 103.13, aligned_index_value: 103.13, change_pct: 3.13, daily_return_pct: 3.13, local_price: 33 + offset, currency: "USD", native_unit: "troy oz", fx_rate_local_per_usd: 1, fx_timestamp: "2026-07-15T00:00:00Z" },
-    { date: "2026-08-21", quote_timestamp: "2026-08-21T00:00:00Z", normalized_price: 35 + offset, index_value: 109.38, aligned_index_value: 109.38, change_pct: 9.38, daily_return_pct: 6.06, local_price: 35 + offset, currency: "USD", native_unit: "troy oz", fx_rate_local_per_usd: 1, fx_timestamp: "2026-08-21T00:00:00Z" },
+    { date: "2026-07-15", quote_timestamp: "2026-07-15T00:00:00Z", normalized_price: 33 + offset, index_value: 103.13, aligned_index_value: 103.13 + pathOffset, change_pct: 3.13, daily_return_pct: 3.13, local_price: 33 + offset, currency: "USD", native_unit: "troy oz", fx_rate_local_per_usd: 1, fx_timestamp: "2026-07-15T00:00:00Z" },
+    { date: "2026-08-21", quote_timestamp: "2026-08-21T00:00:00Z", normalized_price: 35 + offset, index_value: 109.38, aligned_index_value: 109.38 + pathOffset * 1.5, change_pct: 9.38, daily_return_pct: 6.06, local_price: 35 + offset, currency: "USD", native_unit: "troy oz", fx_rate_local_per_usd: 1, fx_timestamp: "2026-08-21T00:00:00Z" },
   ],
 });
 
@@ -164,8 +164,8 @@ const history = {
     ],
   },
   series: [
-    historySeries("comex_silver", "COMEX", "COMEX Silver futures", 0),
-    historySeries("lbma_silver", "LBMA", "LBMA Silver Price", 0.5),
+    historySeries("comex_silver", "COMEX", "COMEX Silver futures", 0, -0.8),
+    historySeries("lbma_silver", "LBMA", "LBMA Silver Price", 0.5, 0.9),
   ],
   summary: { historical_venues: 2, registered_venues: 2, latest_history_date: "2026-08-21", official_primary_venues: 1, composite_min_contributors: 1, composite_max_contributors: 2 },
   sources: [{ provider_id: "lbma", provider_name: "London Bullion Market Association", status: "live", fetched_at: "2026-08-24T12:00:00Z", source_url: null, history_scope: "Full published delayed benchmark history" }],
@@ -200,6 +200,8 @@ test("overview opens first and the second-page exchange trend stays responsive a
     await expect(page.getByRole("heading", { name: "Global exchange trends" })).toBeVisible();
     await expect(page.getByRole("button", { name: "3M" })).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator("#global-price-dispersion select")).toHaveCount(0);
+    await expect(page.locator("#global-price-dispersion .recharts-area-area")).toHaveCount(1);
+    await expect(page.getByText("Global direction · min–max path envelope · base 100")).toBeVisible();
     await expect(page.getByRole("button", { name: "Show 2 venue paths" })).toBeVisible();
     await page.getByRole("button", { name: "Show 2 venue paths" }).click();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { AlertTriangle, ChevronDown, RefreshCw } from "lucide-react";
 import {
+  Area,
   CartesianGrid,
+  ComposedChart,
   Line,
-  LineChart,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -333,13 +334,16 @@ function TrendTooltip({
   const contributorCount = Number(row.composite_contributor_count ?? 0);
   const contributors = String(row.composite_contributors ?? "");
   const sourceQuality = String(row.composite_source_quality ?? "");
+  const envelopeMin = typeof row.envelope_min === "number" ? row.envelope_min : null;
+  const envelopeMax = typeof row.envelope_max === "number" ? row.envelope_max : null;
+  const envelopePathCount = Number(row.envelope_path_count ?? 0);
   return (
     <div className="max-w-[260px] rounded-xl border border-stealth-600 bg-stealth-950/95 px-3 py-2.5 shadow-lg shadow-black/30">
       <div className="text-xs font-semibold text-white">{formatDate(label ?? null)}</div>
       <div className="mt-2 space-y-1.5">
         {payload.map((item) => {
           const key = String(item.dataKey ?? "");
-          if (typeof item.value !== "number") return null;
+          if (key === "venue_envelope" || typeof item.value !== "number") return null;
           return (
             <div key={key} className="flex items-center justify-between gap-4 text-xs">
               <span className="min-w-0 truncate text-stealth-300">{seriesNames.get(key) ?? key}</span>
@@ -348,13 +352,63 @@ function TrendTooltip({
           );
         })}
       </div>
+      {envelopeMin != null && envelopeMax != null ? (
+        <div className="mt-2 flex items-center justify-between gap-4 border-t border-stealth-700 pt-2 text-xs">
+          <span className="text-stealth-400">Range envelope · {envelopePathCount} {envelopePathCount === 1 ? "path" : "paths"}</span>
+          <span className="font-semibold tabular-nums text-stealth-200">{envelopeMin.toFixed(2)}–{envelopeMax.toFixed(2)}</span>
+        </div>
+      ) : null}
       {contributorCount > 0 ? (
-        <div className="mt-2 border-t border-stealth-700 pt-2 text-[11px] leading-relaxed text-stealth-400">
+        <div className="mt-2 border-t border-stealth-700 pt-2 text-xs leading-relaxed text-stealth-400">
           {sourceQuality === "official_primary" ? "Official" : "Fallback"} · {contributorCount} {contributorCount === 1 ? "market" : "markets"}: {contributors}
         </div>
       ) : null}
     </div>
   );
+}
+
+type TrendChartValue = string | number | [number, number];
+type TrendChartRow = Record<string, TrendChartValue> & { date: string };
+
+export function buildTrendChartData(data: HistoryResponse | null | undefined): TrendChartRow[] {
+  const rowByDate = new Map<string, TrendChartRow>();
+  data?.composite?.points.forEach((point) => {
+    const row = rowByDate.get(point.date) ?? { date: point.date };
+    row.global_direction = point.index_value;
+    row.composite_contributor_count = point.contributor_count;
+    row.composite_contributors = point.contributors.map((item) => item.venue).join(", ");
+    row.composite_source_quality = point.source_quality;
+    rowByDate.set(point.date, row);
+  });
+  (data?.series ?? []).forEach((series) => {
+    series.points.forEach((point) => {
+      const row = rowByDate.get(point.date);
+      if (!row) return;
+      row[series.registry_id] = point.aligned_index_value;
+    });
+  });
+
+  const seriesIds = (data?.series ?? []).map((series) => series.registry_id);
+  return Array.from(rowByDate.values())
+    .map((row) => {
+      const globalValue = typeof row.global_direction === "number" ? row.global_direction : null;
+      const venueValues = seriesIds
+        .map((registryId) => row[registryId])
+        .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+      if (globalValue == null || venueValues.length === 0) return row;
+
+      // Keep the focal path inside the displayed band when independently chained venue paths
+      // all land on one side of it. The envelope remains a directional range, not a price spread.
+      const envelopeValues = [globalValue, ...venueValues];
+      const envelopeMin = Math.min(...envelopeValues);
+      const envelopeMax = Math.max(...envelopeValues);
+      row.venue_envelope = [envelopeMin, envelopeMax];
+      row.envelope_min = envelopeMin;
+      row.envelope_max = envelopeMax;
+      row.envelope_path_count = venueValues.length;
+      return row;
+    })
+    .sort((left, right) => left.date.localeCompare(right.date));
 }
 
 export default function GlobalPriceDispersion() {
@@ -398,25 +452,7 @@ export default function GlobalPriceDispersion() {
     ],
   ), [history.data?.composite?.label, history.data?.series]);
 
-  const chartData = useMemo(() => {
-    const rowByDate = new Map<string, Record<string, string | number>>();
-    history.data?.composite?.points.forEach((point) => {
-      const row = rowByDate.get(point.date) ?? { date: point.date };
-      row.global_direction = point.index_value;
-      row.composite_contributor_count = point.contributor_count;
-      row.composite_contributors = point.contributors.map((item) => item.venue).join(", ");
-      row.composite_source_quality = point.source_quality;
-      rowByDate.set(point.date, row);
-    });
-    (history.data?.series ?? []).forEach((series) => {
-      series.points.forEach((point) => {
-        const row = rowByDate.get(point.date);
-        if (!row) return;
-        row[series.registry_id] = point.aligned_index_value;
-      });
-    });
-    return Array.from(rowByDate.values()).sort((a, b) => String(a.date).localeCompare(String(b.date)));
-  }, [history.data?.composite, history.data?.series]);
+  const chartData = useMemo(() => buildTrendChartData(history.data), [history.data]);
 
   const refreshAll = () => {
     latest.refetch();
@@ -529,7 +565,7 @@ export default function GlobalPriceDispersion() {
                     </span>
                   ) : null}
                 </div>
-                <p className="mt-1 text-xs text-stealth-400">Daily venue-return composite · base 100</p>
+                <p className="mt-1 text-xs text-stealth-400">Global direction · min–max path envelope · base 100</p>
               </div>
               <div className="flex flex-wrap items-center justify-end gap-3">
                 {composite ? (
@@ -565,9 +601,9 @@ export default function GlobalPriceDispersion() {
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart
+                    <ComposedChart
                       accessibilityLayer
-                      aria-label={`${currentMetal} global exchange trend over ${days} days`}
+                      aria-label={`${currentMetal} global exchange trend with source-backed min-max path envelope over ${days} days`}
                       data={chartData}
                       margin={{ top: 12, right: 18, left: -6, bottom: 0 }}
                     >
@@ -591,6 +627,18 @@ export default function GlobalPriceDispersion() {
                       />
                       <ReferenceLine y={100} stroke="#64748b" strokeDasharray="4 5" label={{ value: "100", fill: CHART_NEUTRAL.label, fontSize: 12, position: "insideTopLeft" }} />
                       <Tooltip content={<TrendTooltip seriesNames={seriesNameById} />} />
+                      <Area
+                        type="linear"
+                        dataKey="venue_envelope"
+                        name="venue_envelope"
+                        stroke={venueColor}
+                        strokeOpacity={0.28}
+                        strokeWidth={1}
+                        fill={metalColor}
+                        fillOpacity={0.1}
+                        connectNulls={false}
+                        isAnimationActive={false}
+                      />
                       {showVenuePaths ? history.data.series.map((series, index) => (
                           <Line
                             key={series.registry_id}
@@ -618,13 +666,13 @@ export default function GlobalPriceDispersion() {
                         connectNulls={false}
                         isAnimationActive={false}
                       />
-                    </LineChart>
+                    </ComposedChart>
                   </ResponsiveContainer>
                 )}
             </div>
 
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-stealth-800 pt-3 text-xs text-stealth-400">
-              <span>Official markets lead; verified fallbacks fill uncovered days.</span>
+              <span>Official markets drive the line; the envelope spans aligned source-backed paths.</span>
               {latest.data ? <span>{latest.data.summary.observed_venues} current quotes</span> : null}
             </div>
           </div>
