@@ -41,6 +41,27 @@ def test_parses_sge_daily_table_products_and_units() -> None:
     assert observations[1]["native_unit"] == "kg"
 
 
+def test_sge_history_requests_only_the_selected_metals_products(monkeypatch: pytest.MonkeyPatch) -> None:
+    requested_products = []
+
+    def fake_page(_start: date, _end: date, product: str, page: int) -> str:
+        requested_products.append((product, page))
+        return f"""
+        <script>var totalPage=1;</script>
+        <table>
+          <tr><th>日期</th><th>合约</th><th>收盘价</th><th>成交量（kg）</th><th>市场持仓（手）</th></tr>
+          <tr><td>2026-08-21</td><td>{product}</td><td>9000</td><td>10</td><td>5</td></tr>
+        </table>
+        """
+
+    monkeypatch.setattr(sources, "_fetch_sge_history_page", fake_page)
+
+    snapshot = sources._fetch_sge_history_snapshot("AG")
+
+    assert set(requested_products) == {("Ag99.99", 1), ("Ag(T+D)", 1)}
+    assert {row["registry_id"] for row in snapshot["observations"]} == {"sge_ag9999", "sge_ag_td"}
+
+
 def test_parses_mcx_bhavcopy_and_selects_highest_volume_expiry() -> None:
     observations = sources._parse_mcx_rows([
         {"Symbol": "SILVER", "InstrumentName": "FUTCOM", "Date": "08/21/2026", "ExpiryDate": "04Sep2026", "Close": "246000", "Volume": "120", "OpenInterest": "90"},
@@ -92,6 +113,32 @@ def test_parses_secondary_lme_cash_settlement_fallback() -> None:
     assert observations[0]["local_price"] == 14291
     assert observations[0]["quote_timestamp"].startswith("2026-08-21")
     assert observations[0]["source_name"].startswith("Westmetall")
+
+
+def test_parses_full_secondary_lme_history_oldest_first() -> None:
+    document = """
+    <table>
+      <tr><th>date</th><th>LME Copper Cash-Settlement</th></tr>
+      <tr><td>21. August 2026</td><td>14,291.00</td></tr>
+      <tr><td>20. August 2026</td><td>14,100.00</td></tr>
+    </table>
+    """
+
+    observations = sources._parse_westmetall_lme_history("CU", document)
+
+    assert [row["local_price"] for row in observations] == [14100, 14291]
+    assert observations[0]["quote_timestamp"].startswith("2026-08-20")
+
+
+def test_parses_full_lbma_history_oldest_first() -> None:
+    observations = sources._parse_lbma_history("AG", [
+        {"d": "2026-08-20", "v": [37.5, 0]},
+        {"d": "2026-08-21", "v": [38.25, 0]},
+    ])
+
+    assert len(observations) == 2
+    assert observations[0]["registry_id"] == "lbma_silver"
+    assert observations[-1]["local_price"] == 38.25
 
 
 def test_lme_uses_labeled_secondary_fallback_when_primary_is_blocked(

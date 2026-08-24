@@ -30,9 +30,11 @@ logger = logging.getLogger(__name__)
 SOURCE_CACHE_TTL_SECONDS = 15 * 60
 SOURCE_CACHE_MAX_STALE_SECONDS = 7 * 24 * 60 * 60
 SOURCE_TIMEOUT_SECONDS = 20
+HISTORY_TIMEOUT_SECONDS = 35
 
 _CACHE_LOCK = RLock()
 _SOURCE_CACHE: dict[str, dict[str, Any]] = {}
+_HISTORY_CACHE: dict[str, dict[str, Any]] = {}
 
 PROVIDER_NAMES = {
     "shfe": "Shanghai Futures Exchange",
@@ -335,6 +337,32 @@ def _parse_lbma_payload(metal: str, payload: list[dict[str, Any]]) -> list[dict[
     raise SourceUnavailable(f"LBMA {endpoint_name} response had no usable USD benchmark")
 
 
+def _parse_lbma_history(metal: str, payload: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Parse every usable published USD benchmark, oldest first."""
+    registry_id, _endpoint_name, product_name = LBMA_PRODUCTS[metal]
+    observations = []
+    for row in payload:
+        quote_date = _trade_date(row.get("d"))
+        values = row.get("v") or []
+        usd_price = _float(values[0] if values else None)
+        if quote_date is None or usd_price is None:
+            continue
+        observations.append(_base_observation(
+            metal=metal,
+            registry_id=registry_id,
+            symbol=product_name,
+            contract_month=None,
+            local_price=usd_price,
+            currency="USD",
+            native_unit="troy oz",
+            quote_date=quote_date,
+            price_type="delayed official benchmark",
+            data_delay="LBMA public benchmark JSON; published after the daily delay",
+        ))
+    observations.sort(key=lambda row: row["quote_timestamp"])
+    return observations
+
+
 def _fetch_lbma(metal: str) -> dict[str, Any]:
     _registry_id, endpoint_name, _product_name = LBMA_PRODUCTS[metal]
     source_url = f"https://prices.lbma.org.uk/json/{endpoint_name}.json"
@@ -494,8 +522,18 @@ def _parse_lme_payload(metal: str, payload: dict[str, Any]) -> list[dict[str, An
 
 
 def _parse_westmetall_lme_html(metal: str, document: str) -> list[dict[str, Any]]:
+    observations = _parse_westmetall_lme_history(metal, document)
+    if observations:
+        return [observations[-1]]
+    _registry_id, _slug, metal_name, _fallback_field = LME_PAGES[metal]
+    raise SourceUnavailable(f"Westmetall LME {metal_name} table contained no usable cash settlement")
+
+
+def _parse_westmetall_lme_history(metal: str, document: str) -> list[dict[str, Any]]:
+    """Parse a Westmetall yearly LME cash-settlement table, oldest first."""
     registry_id, _slug, metal_name, _fallback_field = LME_PAGES[metal]
     root = lxml_html.fromstring(document)
+    observations = []
     for table in root.xpath("//table"):
         rows = table.xpath(".//tr")
         if not rows:
@@ -529,8 +567,9 @@ def _parse_westmetall_lme_html(metal: str, document: str) -> list[dict[str, Any]
             )
             observation["market_type"] = "physical cash benchmark"
             observation["source_name"] = "Westmetall published LME cash-settlement table"
-            return [observation]
-    raise SourceUnavailable(f"Westmetall LME {metal_name} table contained no usable cash settlement")
+            observations.append(observation)
+    observations.sort(key=lambda row: row["quote_timestamp"])
+    return observations
 
 
 def _fetch_lme(metal: str) -> dict[str, Any]:
@@ -773,7 +812,269 @@ def fetch_international_metal_observations(metal: str) -> dict[str, Any]:
     return {"observations": observations, "sources": source_statuses}
 
 
+HISTORY_PROVIDERS = {
+    "AU": ("lbma", "sge"),
+    "AG": ("lbma", "sge"),
+    "PT": ("lbma", "sge"),
+    "PD": ("lbma", "sge"),
+    "CU": ("lme",),
+    "AL": ("lme",),
+}
+
+
+def _fetch_lbma_history_snapshot(metal: str) -> dict[str, Any]:
+    _registry_id, endpoint_name, _product_name = LBMA_PRODUCTS[metal]
+    source_url = f"https://prices.lbma.org.uk/json/{endpoint_name}.json"
+    session = _browser_session()
+    response = session.get(source_url, timeout=SOURCE_TIMEOUT_SECONDS)
+    response.raise_for_status()
+    observations = _parse_lbma_history(metal, response.json())
+    if not observations:
+        raise SourceUnavailable(f"LBMA {endpoint_name} history contained no usable USD benchmarks")
+    return {
+        "observations": observations,
+        "source_url": source_url,
+        "source_tier": "official_primary",
+        "history_scope": "Full published delayed benchmark history",
+    }
+
+
+def _fetch_sge_history_page(start: date, end: date, product: str, page: int) -> str:
+    response = requests.get(
+        "https://www.sge.com.cn/sjzx/quotation_daily_new",
+        params={
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+            "inst_ids": product,
+            "p": page,
+        },
+        headers={"User-Agent": "Mozilla/5.0 Market-Diagnostic-Dashboard/1.0"},
+        timeout=HISTORY_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    return response.text
+
+
+def _fetch_sge_history_snapshot(metal: str) -> dict[str, Any]:
+    """Fetch SGE's supported one-month daily window, including every result page."""
+    end = datetime.now(timezone.utc).date()
+    start = end - timedelta(days=30)
+    products = [product for product, (product_metal, _registry_id, _unit) in SGE_PRODUCTS.items() if product_metal == metal]
+
+    def fetch_product(product: str) -> list[str]:
+        first_page = _fetch_sge_history_page(start, end, product, 1)
+        total_page_match = re.search(r"(?:var\s+)?totalPage\s*=\s*(\d+)", first_page)
+        total_pages = min(10, max(1, int(total_page_match.group(1)) if total_page_match else 1))
+        documents = [first_page]
+        if total_pages > 1:
+            with ThreadPoolExecutor(max_workers=min(4, total_pages - 1)) as executor:
+                documents.extend(executor.map(
+                    lambda page: _fetch_sge_history_page(start, end, product, page),
+                    range(2, total_pages + 1),
+                ))
+        return documents
+
+    documents = []
+    with ThreadPoolExecutor(max_workers=max(1, len(products))) as executor:
+        for product_documents in executor.map(fetch_product, products):
+            documents.extend(product_documents)
+
+    observation_by_key: dict[tuple[str, str], dict[str, Any]] = {}
+    for document in documents:
+        for observation in _parse_sge_html(document):
+            key = (str(observation["registry_id"]), str(observation["quote_timestamp"]))
+            observation_by_key[key] = observation
+    observations = sorted(observation_by_key.values(), key=lambda row: row["quote_timestamp"])
+    if not observations:
+        raise SourceUnavailable("SGE one-month history contained no supported products")
+    source_url = (
+        "https://www.sge.com.cn/sjzx/quotation_daily_new"
+        f"?start_date={start.isoformat()}&end_date={end.isoformat()}&inst_ids={products[0]}&p=1"
+    )
+    return {
+        "observations": observations,
+        "source_url": source_url,
+        "source_tier": "official_primary",
+        "history_scope": "Latest 30 calendar days; SGE limits this query to one month",
+    }
+
+
+def _fetch_lme_history_snapshot(metal: str) -> dict[str, Any]:
+    _registry_id, _slug, _metal_name, fallback_field = LME_PAGES[metal]
+    end = datetime.now(timezone.utc).date()
+    start = end - timedelta(days=365)
+    years = list(range(start.year, end.year + 1))
+    source_urls = [
+        "https://www.westmetall.com/en/markdaten.php"
+        f"?action=table&field={fallback_field}&year={year}"
+        for year in years
+    ]
+    documents = []
+    with ThreadPoolExecutor(max_workers=len(source_urls)) as executor:
+        future_by_url = {
+            executor.submit(
+                requests.get,
+                source_url,
+                headers={"User-Agent": "Market-Diagnostic-Dashboard/1.0"},
+                timeout=SOURCE_TIMEOUT_SECONDS,
+            ): source_url
+            for source_url in source_urls
+        }
+        for future in as_completed(future_by_url):
+            response = future.result()
+            response.raise_for_status()
+            documents.append(response.text)
+
+    observation_by_date: dict[str, dict[str, Any]] = {}
+    for document in documents:
+        for observation in _parse_westmetall_lme_history(metal, document):
+            observation_by_date[str(observation["quote_timestamp"])] = observation
+    observations = sorted(observation_by_date.values(), key=lambda row: row["quote_timestamp"])
+    if not observations:
+        raise SourceUnavailable("Westmetall LME cash-settlement history contained no usable observations")
+    return {
+        "observations": observations,
+        "source_url": source_urls[-1],
+        "source_tier": "secondary_fallback",
+        "history_scope": "One year of published LME cash settlements; secondary publication",
+    }
+
+
+HISTORY_LOADERS: dict[str, Callable[[str], dict[str, Any]]] = {
+    "lbma": _fetch_lbma_history_snapshot,
+    "sge": _fetch_sge_history_snapshot,
+    "lme": _fetch_lme_history_snapshot,
+}
+
+
+def _load_history_cached(provider_id: str, metal: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    key = f"history:{provider_id}:{metal}"
+    now_monotonic = time.monotonic()
+    with _CACHE_LOCK:
+        cached = _HISTORY_CACHE.get(key)
+        if cached and now_monotonic - cached["stored_monotonic"] <= SOURCE_CACHE_TTL_SECONDS:
+            snapshot = cached["snapshot"]
+            return snapshot, {
+                "provider_id": provider_id,
+                "provider_name": PROVIDER_NAMES[provider_id],
+                "status": "cached",
+                "fetched_at": cached["fetched_at"],
+                "source_url": snapshot.get("source_url"),
+                "source_tier": snapshot.get("source_tier", "official_primary"),
+                "history_scope": snapshot.get("history_scope"),
+                "error": None,
+            }
+
+    try:
+        snapshot = HISTORY_LOADERS[provider_id](metal)
+        fetched_at = datetime.now(timezone.utc).isoformat()
+        with _CACHE_LOCK:
+            _HISTORY_CACHE[key] = {
+                "snapshot": snapshot,
+                "stored_monotonic": time.monotonic(),
+                "fetched_at": fetched_at,
+            }
+        return snapshot, {
+            "provider_id": provider_id,
+            "provider_name": PROVIDER_NAMES[provider_id],
+            "status": "live",
+            "fetched_at": fetched_at,
+            "source_url": snapshot.get("source_url"),
+            "source_tier": snapshot.get("source_tier", "official_primary"),
+            "history_scope": snapshot.get("history_scope"),
+            "error": None,
+        }
+    except Exception as exc:
+        error = _safe_error(exc)
+        logger.warning("Metal history source %s failed: %s", provider_id, error)
+        with _CACHE_LOCK:
+            cached = _HISTORY_CACHE.get(key)
+            if cached and now_monotonic - cached["stored_monotonic"] <= SOURCE_CACHE_MAX_STALE_SECONDS:
+                snapshot = cached["snapshot"]
+                return snapshot, {
+                    "provider_id": provider_id,
+                    "provider_name": PROVIDER_NAMES[provider_id],
+                    "status": "stale_cache",
+                    "fetched_at": cached["fetched_at"],
+                    "source_url": snapshot.get("source_url"),
+                    "source_tier": snapshot.get("source_tier", "official_primary"),
+                    "history_scope": snapshot.get("history_scope"),
+                    "error": error,
+                }
+        return {}, {
+            "provider_id": provider_id,
+            "provider_name": PROVIDER_NAMES[provider_id],
+            "status": "unavailable",
+            "fetched_at": None,
+            "source_url": None,
+            "source_tier": None,
+            "history_scope": None,
+            "error": error,
+        }
+
+
+def fetch_international_metal_history(metal: str, days: int) -> dict[str, Any]:
+    """Fetch source-backed historical observations for connected international venues."""
+    metal = metal.upper()
+    if metal not in HISTORY_PROVIDERS:
+        raise ValueError(f"Unsupported metal: {metal}")
+    if days < 7 or days > 365:
+        raise ValueError("History range must be between 7 and 365 days")
+
+    provider_ids = HISTORY_PROVIDERS[metal]
+    requested_provider_ids = (*provider_ids, "ecb_fx") if "sge" in provider_ids else provider_ids
+    snapshots: dict[str, dict[str, Any]] = {}
+    status_by_provider: dict[str, dict[str, Any]] = {}
+    with ThreadPoolExecutor(max_workers=len(requested_provider_ids)) as executor:
+        future_by_provider = {
+            executor.submit(
+                _load_cached if provider_id == "ecb_fx" else _load_history_cached,
+                provider_id,
+                metal,
+            ): provider_id
+            for provider_id in requested_provider_ids
+        }
+        for future in as_completed(future_by_provider):
+            provider_id = future_by_provider[future]
+            snapshot, status = future.result()
+            snapshots[provider_id] = snapshot
+            status_by_provider[provider_id] = status
+
+    cutoff = datetime.now(timezone.utc).date() - timedelta(days=days)
+    observations = []
+    for provider_id in provider_ids:
+        matches = []
+        for row in snapshots.get(provider_id, {}).get("observations", []):
+            quote_date = _trade_date(str(row.get("quote_timestamp") or "")[:10])
+            if row.get("_metal") == metal and quote_date is not None and quote_date >= cutoff:
+                item = dict(row)
+                item.pop("_metal", None)
+                item["provider_id"] = provider_id
+                matches.append(item)
+        observations.extend(matches)
+        status_by_provider[provider_id]["observation_count"] = len(matches)
+        if matches:
+            status_by_provider[provider_id]["coverage_start"] = matches[0]["quote_timestamp"]
+            status_by_provider[provider_id]["coverage_end"] = matches[-1]["quote_timestamp"]
+
+    if "sge" in provider_ids:
+        fx_snapshot = snapshots.get("ecb_fx", {})
+        _attach_fx(observations, fx_snapshot)
+        fx_status = status_by_provider["ecb_fx"]
+        fx_status["observation_count"] = sum(row.get("currency") != "USD" for row in observations)
+        fx_status["missing_conversions"] = sum(
+            row.get("currency") != "USD" and not row.get("fx_rate_local_per_usd")
+            for row in observations
+        )
+
+    return {
+        "observations": observations,
+        "sources": [status_by_provider[provider_id] for provider_id in requested_provider_ids],
+    }
+
+
 def clear_metal_source_cache() -> None:
     """Clear adapter cache for deterministic tests and operator diagnostics."""
     with _CACHE_LOCK:
         _SOURCE_CACHE.clear()
+        _HISTORY_CACHE.clear()

@@ -5,6 +5,7 @@ import pytest
 
 from app.services.metal_price_dispersion import (
     build_global_price_dispersion,
+    build_global_price_history,
     normalize_metal_price,
 )
 from app.services import metal_projections
@@ -213,3 +214,54 @@ def test_live_source_without_product_is_reported_as_no_qualifying_quote() -> Non
     assert palladium["availability_status"] == "unavailable"
     assert palladium["data_delay"] == "Latest official publication contained no qualifying quote for this product"
     assert body["sources"][0]["status"] == "live"
+
+
+def test_builds_indexed_exchange_history_without_fabricating_missing_series() -> None:
+    body = build_global_price_history(
+        "AG",
+        [
+            {
+                "registry_id": "comex_silver",
+                "provider_id": "us_reference",
+                "local_price": 40.0,
+                "currency": "USD",
+                "native_unit": "troy oz",
+                "fx_rate_local_per_usd": 1.0,
+                "quote_timestamp": "2026-08-20T00:00:00+00:00",
+            },
+            {
+                "registry_id": "comex_silver",
+                "provider_id": "us_reference",
+                "local_price": 42.0,
+                "currency": "USD",
+                "native_unit": "troy oz",
+                "fx_rate_local_per_usd": 1.0,
+                "quote_timestamp": "2026-08-21T00:00:00+00:00",
+            },
+            {
+                "registry_id": "sge_ag9999",
+                "provider_id": "sge",
+                "local_price": 9000.0,
+                "currency": "CNY",
+                "native_unit": "kg",
+                "fx_rate_local_per_usd": None,
+                "quote_timestamp": "2026-08-21T00:00:00+00:00",
+            },
+        ],
+        days=30,
+        source_statuses=[{
+            "provider_id": "us_reference",
+            "status": "live",
+            "history_scope": "Stored daily history",
+        }],
+        now=datetime(2026, 8, 22, tzinfo=timezone.utc),
+    )
+
+    assert len(body["series"]) == 1
+    series = body["series"][0]
+    assert series["registry_id"] == "comex_silver"
+    assert series["points"][0]["index_value"] == 100
+    assert series["points"][1]["index_value"] == 105
+    assert series["change_pct"] == 5
+    assert "sge_ag9999" in {row["registry_id"] for row in body["venues_without_history"]}
+    assert body["mode"] == "indexed_change"

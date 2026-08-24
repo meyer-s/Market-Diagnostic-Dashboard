@@ -43,6 +43,43 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
         lambda _metal: {"observations": [], "sources": []},
         raising=True,
     )
+    monkeypatch.setattr(
+        pm,
+        "fetch_international_metal_history",
+        lambda _metal, _days: {
+            "observations": [
+                {
+                    "registry_id": "lbma_silver",
+                    "provider_id": "lbma",
+                    "local_price": 30.0,
+                    "currency": "USD",
+                    "native_unit": "troy oz",
+                    "fx_rate_local_per_usd": 1.0,
+                    "quote_timestamp": "2026-05-14T00:00:00+00:00",
+                },
+                {
+                    "registry_id": "lbma_silver",
+                    "provider_id": "lbma",
+                    "local_price": 33.0,
+                    "currency": "USD",
+                    "native_unit": "troy oz",
+                    "fx_rate_local_per_usd": 1.0,
+                    "quote_timestamp": "2026-05-15T00:00:00+00:00",
+                },
+            ],
+            "sources": [{
+                "provider_id": "lbma",
+                "provider_name": "London Bullion Market Association",
+                "status": "live",
+                "fetched_at": "2026-05-15T00:00:00+00:00",
+                "source_url": "https://prices.lbma.org.uk/json/silver.json",
+                "source_tier": "official_primary",
+                "history_scope": "Full published delayed benchmark history",
+                "observation_count": 2,
+            }],
+        },
+        raising=True,
+    )
 
     app = FastAPI()
     app.include_router(pm.router)
@@ -96,3 +133,20 @@ def test_global_dispersion_exposes_verified_reference_and_registry_coverage(clie
     shfe = next(row for row in body["venues"] if row["registry_id"] == "shfe_silver")
     assert shfe["availability_status"] == "unavailable"
     assert shfe["redistribution_status"].startswith("Official public Daily Express")
+
+
+def test_global_dispersion_history_exposes_indexed_source_backed_series(client: TestClient) -> None:
+    response = client.get(
+        "/precious-metals/global-price-dispersion/history",
+        params={"metal": "AG", "days": 30},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["mode"] == "indexed_change"
+    lbma = next(row for row in body["series"] if row["registry_id"] == "lbma_silver")
+    assert lbma["history_scope"] == "Full published delayed benchmark history"
+    assert lbma["points"][0]["index_value"] == 100
+    assert lbma["points"][-1]["index_value"] == 110
+    assert lbma["change_pct"] == 10
+    assert "shfe_silver" in {row["registry_id"] for row in body["venues_without_history"]}

@@ -140,7 +140,6 @@ describe("asset and flow route polish", () => {
   });
 
   it("exposes one metals H1, complete tab semantics, and honest support coverage", () => {
-    apiFetchMock.mockResolvedValue([{ date: "2026-07-29", price: 100 }]);
     useApiMock.mockImplementation((endpoint: string) => {
       if (endpoint === "/precious-metals/regime") return { ...idle, data: metalsRegime };
       if (endpoint === "/precious-metals/correlations") {
@@ -159,11 +158,16 @@ describe("asset and flow route polish", () => {
 
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     expect(screen.getByRole("heading", { level: 1, name: "Metals Diagnostic" })).not.toBeNull();
-    expect(screen.getByText(/3\/8 supporting datasets available/)).not.toBeNull();
     const overview = screen.getByRole("tab", { name: "Overview" });
     const deepDive = screen.getByRole("tab", { name: "Deep Dive" });
+    expect(deepDive.getAttribute("aria-selected")).toBe("true");
+    expect(overview.getAttribute("tabindex")).toBe("-1");
+    expect(screen.getByRole("heading", { name: "Global exchange trends" })).not.toBeNull();
+
+    fireEvent.click(overview);
     expect(overview.getAttribute("aria-selected")).toBe("true");
-    expect(deepDive.getAttribute("tabindex")).toBe("-1");
+    expect(screen.getByText(/3\/8 datasets/)).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Regime snapshot" })).not.toBeNull();
   });
 
   it("makes crypto view and range controls explicit and keyboard-readable", () => {

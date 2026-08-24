@@ -1,10 +1,9 @@
-import { useState, useEffect, type KeyboardEvent, type ReactNode } from "react";
+import { useState, type KeyboardEvent, type ReactNode } from "react";
 import { useApi } from "../hooks/useApi";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend, ReferenceLine } from "recharts";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
 import MarketLoading from "../components/ui/MarketLoading";
 import { CHART_NEUTRAL } from "../utils/chartUtils";
 import { getFamilyColor, getMetricColor } from "../theme/metricColors";
-import { apiFetch } from "../utils/apiUtils";
 import { OptionsStructureMap } from "../components/widgets/OptionsStructureMap";
 import GlobalPriceDispersion from "../components/metals/GlobalPriceDispersion";
 
@@ -136,11 +135,6 @@ interface DemandData {
   total_tonnes: number | null;
 }
 
-interface PriceHistory {
-  date: string;
-  price: number;
-}
-
 interface MetalMarketCap {
   market_cap_usd: number | null;
   price_usd_per_oz: number | null;
@@ -193,16 +187,6 @@ interface FuturesCurveResponse {
   metals: FuturesCurveMetal[];
 }
 
-interface PriceHistoryDataPoint {
-  date: string;
-  AU?: number;
-  AG?: number;
-  PT?: number;
-  PD?: number;
-  CU?: number;
-  AL?: number;
-}
-
 const METAL_LABELS: Record<string, string> = {
   AU: "Gold",
   AG: "Silver",
@@ -239,7 +223,6 @@ const getMetalTextColor = (metal: string) => {
 function projectionUnit(proj: MetalProjection): string {
   return proj.instrument.quote_unit.replace(/^USD\//, "");
 }
-
 function formatProjectionPrice(proj: MetalProjection, value: number | null): string {
   if (value == null) return "n/a";
   const decimals = proj.metal === "CU" ? 4 : proj.metal === "AL" ? 0 : 2;
@@ -503,7 +486,6 @@ function ProjectionCard({ proj }: { proj: MetalProjection }) {
     </div>
   );
 }
-
 export default function PreciousMetalsDiagnostic({ embedded = false }: { embedded?: boolean }) {
   const {
     data: indicators,
@@ -520,7 +502,7 @@ export default function PreciousMetalsDiagnostic({ embedded = false }: { embedde
   const { data: projectionsData, loading: projectionsLoading, error: projectionsError } = useApi<{ projections: MetalProjection[] }>("/precious-metals/projections/latest");
   const { data: futuresCurve, loading: futuresLoading, error: futuresError } = useApi<FuturesCurveResponse>("/precious-metals/futures-curve?contracts=4");
 
-  const [selectedTab, setSelectedTab] = useState<"overview" | "deep-dive">("overview");
+  const [selectedTab, setSelectedTab] = useState<"overview" | "deep-dive">("deep-dive");
   const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     event.preventDefault();
@@ -619,92 +601,17 @@ export default function PreciousMetalsDiagnostic({ embedded = false }: { embedde
           <p className="page-kicker">Tools</p>
           <h1 className="page-title">Metals Diagnostic</h1>
           <p className="page-subtitle">
-            Macro-structural analysis of monetary metals and industrial metals, combining regime context with technical leadership across the broader complex.
+            Exchange, regime, and structural evidence across precious and industrial metals.
           </p>
           <div className="page-meta">
-            <span className="page-badge">Precious + industrial sleeve</span>
-            <span className="page-badge">Macro regime + technical structure</span>
+            <span className="page-badge">Precious + industrial metals</span>
             <span className="page-badge">As of {formatTimestamp(freshestTimestamp)}</span>
           </div>
         </section>
       )}
 
-      {/* SECTION 1: REGIME CLASSIFICATION PANEL (PINNED TOP) */}
-      <section id="metals-now" className="section-anchor surface-card-strong p-4 md:p-5" aria-labelledby="metals-now-heading">
-        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="page-kicker">Now</p>
-            <h2 id="metals-now-heading" className="mt-1 text-lg font-bold text-white md:text-xl">Regime Classification</h2>
-          </div>
-          <div className="text-xs text-stealth-300" role="status" aria-live="polite">
-            {supportingAvailable}/8 supporting datasets available
-            {supportingLoading > 0 ? ` · ${supportingLoading} updating` : ""}
-            {supportingErrors > 0 ? ` · ${supportingErrors} unavailable` : ""}
-          </div>
-        </div>
-        
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4">
-          {/* Gold Bias Card */}
-          <div className={`border rounded-lg p-3 md:p-4 ${getRegimeBadgeClass(indicators.regime.gold_bias)}`}>
-            <div className="text-xs md:text-sm font-semibold text-stealth-300 mb-1">GOLD BIAS</div>
-            <div className="text-sm md:text-base font-bold">{getBiasText(indicators.regime.gold_bias)}</div>
-          </div>
-
-          {/* Silver Bias Card */}
-          <div className={`border rounded-lg p-3 md:p-4 ${getRegimeBadgeClass(indicators.regime.silver_bias)}`}>
-            <div className="text-xs md:text-sm font-semibold text-stealth-300 mb-1">SILVER BIAS</div>
-            <div className="text-sm md:text-base font-bold">{getBiasText(indicators.regime.silver_bias)}</div>
-          </div>
-
-          {/* PGM Bias Card */}
-          <div className={`border rounded-lg p-3 md:p-4 ${getRegimeBadgeClass(indicators.regime.pgm_bias)}`}>
-            <div className="text-xs md:text-sm font-semibold text-stealth-300 mb-1">PGM BIAS</div>
-            <div className="text-sm md:text-base font-bold">{getBiasText(indicators.regime.pgm_bias)}</div>
-          </div>
-
-          {/* Paper/Physical Risk Card */}
-          <div className={`border rounded-lg p-3 md:p-4 ${getRiskBadgeClass(indicators.regime.paper_physical_risk)}`}>
-            <div className="text-xs md:text-sm font-semibold text-stealth-300 mb-1">P/P RISK</div>
-            <div className="text-sm md:text-base font-bold">{indicators.regime.paper_physical_risk || "Unknown"}</div>
-          </div>
-
-          {/* Overall Regime Card */}
-          <div className={`border rounded-lg p-3 md:p-4 ${getRegimeBadgeClass(indicators.regime.overall_regime)}`}>
-            <div className="text-xs md:text-sm font-semibold text-stealth-300 mb-1">REGIME</div>
-            <div className="text-sm md:text-base font-bold">
-              {indicators.regime.overall_regime
-                ? indicators.regime.overall_regime.replace(/_/g, " ")
-                : "Unknown"}
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-4 text-xs text-stealth-300">
-          Latest supporting timestamp: {formatTimestamp(freshestTimestamp)} · Spot and futures can update intraday; central-bank data can lag by a quarter.
-        </div>
-      </section>
-
-      <GlobalPriceDispersion />
-
       {/* TAB NAVIGATION */}
       <div id="metals-views" className="section-anchor control-strip self-start" role="tablist" aria-label="Metals diagnostic view">
-        <button
-          type="button"
-          id="metals-overview-tab"
-          role="tab"
-          aria-selected={selectedTab === "overview"}
-          aria-controls="metals-overview-panel"
-          tabIndex={selectedTab === "overview" ? 0 : -1}
-          onClick={() => setSelectedTab("overview")}
-          onKeyDown={handleTabKeyDown}
-          className={`min-h-11 rounded-xl px-4 py-2 text-sm font-semibold transition ${
-            selectedTab === "overview"
-              ? "bg-blue-500/15 text-blue-200 shadow-[inset_0_0_0_1px_rgba(96,165,250,0.28)]"
-              : "text-stealth-400 hover:bg-stealth-800/70 hover:text-stealth-200"
-          }`}
-        >
-          Overview
-        </button>
         <button
           type="button"
           id="metals-deep-dive-tab"
@@ -722,6 +629,23 @@ export default function PreciousMetalsDiagnostic({ embedded = false }: { embedde
         >
           Deep Dive
         </button>
+        <button
+          type="button"
+          id="metals-overview-tab"
+          role="tab"
+          aria-selected={selectedTab === "overview"}
+          aria-controls="metals-overview-panel"
+          tabIndex={selectedTab === "overview" ? 0 : -1}
+          onClick={() => setSelectedTab("overview")}
+          onKeyDown={handleTabKeyDown}
+          className={`min-h-11 rounded-xl px-4 py-2 text-sm font-semibold transition ${
+            selectedTab === "overview"
+              ? "bg-blue-500/15 text-blue-200 shadow-[inset_0_0_0_1px_rgba(96,165,250,0.28)]"
+              : "text-stealth-400 hover:bg-stealth-800/70 hover:text-stealth-200"
+          }`}
+        >
+          Overview
+        </button>
       </div>
 
       {selectedTab === "overview" && (
@@ -732,10 +656,13 @@ export default function PreciousMetalsDiagnostic({ embedded = false }: { embedde
           className="page-stack"
           tabIndex={0}
         >
-          {/* PRICE HISTORY CHART */}
-          <div id="metals-price-history" className="section-anchor">
-            <PriceHistoryChart />
-          </div>
+          <RegimeClassificationPanel
+            indicators={indicators}
+            supportingAvailable={supportingAvailable}
+            supportingLoading={supportingLoading}
+            supportingErrors={supportingErrors}
+            freshestTimestamp={freshestTimestamp}
+          />
 
           {/* PROJECTIONS & TECHNICAL ANALYSIS */}
           {projections.length > 0 && (
@@ -754,6 +681,8 @@ export default function PreciousMetalsDiagnostic({ embedded = false }: { embedde
           className="page-stack"
           tabIndex={0}
         >
+          <GlobalPriceDispersion />
+
           {/* SECTION 2 & 3: CB CONTEXT & PRICE ANCHORS (2-COLUMN) */}
           <section id="metals-drivers" className="section-anchor" aria-labelledby="metals-drivers-heading">
             <h2 id="metals-drivers-heading" className="mb-4 text-xl font-semibold text-white">Drivers</h2>
@@ -804,6 +733,62 @@ export default function PreciousMetalsDiagnostic({ embedded = false }: { embedde
 }
 
 // ==================== SECTION COMPONENTS ====================
+
+function RegimeClassificationPanel({
+  indicators,
+  supportingAvailable,
+  supportingLoading,
+  supportingErrors,
+  freshestTimestamp,
+}: {
+  indicators: MetalIndicators;
+  supportingAvailable: number;
+  supportingLoading: number;
+  supportingErrors: number;
+  freshestTimestamp: string | null;
+}) {
+  return (
+    <section id="metals-now" className="section-anchor surface-card-strong p-4 md:p-5" aria-labelledby="metals-now-heading">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <h2 id="metals-now-heading" className="text-lg font-bold text-white md:text-xl">Regime snapshot</h2>
+        <div className="text-xs text-stealth-300" role="status" aria-live="polite">
+          {supportingAvailable}/8 datasets
+          {supportingLoading > 0 ? ` · ${supportingLoading} updating` : ""}
+          {supportingErrors > 0 ? ` · ${supportingErrors} unavailable` : ""}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5 md:gap-4">
+        <div className={`rounded-lg border p-3 md:p-4 ${getRegimeBadgeClass(indicators.regime.gold_bias)}`}>
+          <div className="mb-1 text-xs font-semibold text-stealth-300 md:text-sm">Gold</div>
+          <div className="text-sm font-bold md:text-base">{getBiasText(indicators.regime.gold_bias)}</div>
+        </div>
+        <div className={`rounded-lg border p-3 md:p-4 ${getRegimeBadgeClass(indicators.regime.silver_bias)}`}>
+          <div className="mb-1 text-xs font-semibold text-stealth-300 md:text-sm">Silver</div>
+          <div className="text-sm font-bold md:text-base">{getBiasText(indicators.regime.silver_bias)}</div>
+        </div>
+        <div className={`rounded-lg border p-3 md:p-4 ${getRegimeBadgeClass(indicators.regime.pgm_bias)}`}>
+          <div className="mb-1 text-xs font-semibold text-stealth-300 md:text-sm">PGMs</div>
+          <div className="text-sm font-bold md:text-base">{getBiasText(indicators.regime.pgm_bias)}</div>
+        </div>
+        <div className={`rounded-lg border p-3 md:p-4 ${getRiskBadgeClass(indicators.regime.paper_physical_risk)}`}>
+          <div className="mb-1 text-xs font-semibold text-stealth-300 md:text-sm">Paper / physical</div>
+          <div className="text-sm font-bold md:text-base">{indicators.regime.paper_physical_risk || "Unknown"}</div>
+        </div>
+        <div className={`rounded-lg border p-3 md:p-4 ${getRegimeBadgeClass(indicators.regime.overall_regime)}`}>
+          <div className="mb-1 text-xs font-semibold text-stealth-300 md:text-sm">Overall</div>
+          <div className="text-sm font-bold md:text-base">
+            {indicators.regime.overall_regime?.replace(/_/g, " ") || "Unknown"}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 text-xs text-stealth-300">
+        Through {formatTimestamp(freshestTimestamp)} · Central-bank data can lag by a quarter.
+      </div>
+    </section>
+  );
+}
 
 function MethodologyPanel() {
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
@@ -2179,276 +2164,5 @@ function ProjectionsPanel({ projections }: { projections: MetalProjection[] }) {
         <strong>How to read this:</strong> Scores blend trend structure, momentum, and nearby support/resistance. A high score means leadership is broadening; a low score means the metal is lagging even if its stored futures-series price still looks elevated. Strong = {'>'} 75 total score.
       </div>
     </div>
-  );
-}
-
-function PriceHistoryChart() {
-  const [historyData, setHistoryData] = useState<PriceHistoryDataPoint[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [availableSeries, setAvailableSeries] = useState(0);
-  const [retryKey, setRetryKey] = useState(0);
-
-  useEffect(() => {
-    let active = true;
-
-    const fetchHistory = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const metals = ['AU', 'AG', 'PT', 'PD'];
-        const results = await Promise.allSettled(
-          metals.map(metal => 
-            apiFetch<PriceHistory[]>(`/precious-metals/history/${metal}?days=365`)
-          )
-        );
-        if (!active) return;
-
-        const responses = results.map((result) => result.status === "fulfilled" ? result.value : []);
-        const usableSeries = responses.filter((series) => series.length > 0).length;
-        setAvailableSeries(usableSeries);
-        if (usableSeries === 0) {
-          throw new Error("No metal price histories were returned.");
-        }
-
-        // Combine all metal histories into a single dataset
-        const auData = responses[0] || [];
-        const agData = responses[1] || [];
-        const ptData = responses[2] || [];
-        const pdData = responses[3] || [];
-
-        // Create a map of dates to prices
-        const dateMap = new Map();
-
-        auData.forEach((item: PriceHistory) => {
-          const date = item.date.split('T')[0];
-          if (!dateMap.has(date)) {
-            dateMap.set(date, { date });
-          }
-          dateMap.get(date).AU = item.price;
-        });
-
-        agData.forEach((item: PriceHistory) => {
-          const date = item.date.split('T')[0];
-          if (!dateMap.has(date)) {
-            dateMap.set(date, { date });
-          }
-          dateMap.get(date).AG = item.price;
-        });
-
-        ptData.forEach((item: PriceHistory) => {
-          const date = item.date.split('T')[0];
-          if (!dateMap.has(date)) {
-            dateMap.set(date, { date });
-          }
-          dateMap.get(date).PT = item.price;
-        });
-
-        pdData.forEach((item: PriceHistory) => {
-          const date = item.date.split('T')[0];
-          if (!dateMap.has(date)) {
-            dateMap.set(date, { date });
-          }
-          dateMap.get(date).PD = item.price;
-        });
-
-        const combined = Array.from(dateMap.values()).sort((a, b) => 
-          new Date(a.date).getTime() - new Date(b.date).getTime()
-        );
-
-        if (active) {
-          setHistoryData(combined);
-        }
-      } catch (historyError) {
-        if (!active) return;
-        console.error('Error fetching price history:', historyError);
-        setError(historyError instanceof Error ? historyError.message : "Price history could not be loaded.");
-      } finally {
-        if (active) {
-          setLoading(false);
-        }
-      }
-    };
-
-    void fetchHistory();
-    return () => {
-      active = false;
-    };
-  }, [retryKey]);
-
-  if (loading) {
-    return (
-      <div className="primary-card p-4 md:p-6">
-        <h3 className="text-lg font-bold mb-4 text-white">Price History (1 Year)</h3>
-        <div className="text-stealth-400">Loading price history...</div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <section className="primary-card p-4 md:p-6" aria-labelledby="metals-price-history-heading">
-        <h3 id="metals-price-history-heading" className="mb-2 text-lg font-bold text-white">Price History (1 Year)</h3>
-        <div className="rounded-xl border border-red-700/70 bg-red-950/30 p-4 text-sm text-red-100" role="alert">
-          <p>{error}</p>
-          <button
-            type="button"
-            onClick={() => setRetryKey((key) => key + 1)}
-            className="mt-3 min-h-11 rounded-xl border border-red-400/60 px-4 py-2 font-semibold hover:bg-red-900/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-200"
-          >
-            Retry price history
-          </button>
-        </div>
-      </section>
-    );
-  }
-
-  const firstHistoryPoint = historyData[0];
-  const latestHistoryPoint = historyData[historyData.length - 1];
-  const historySeries = [
-    ["Gold", "AU"],
-    ["Silver", "AG"],
-    ["Platinum", "PT"],
-    ["Palladium", "PD"],
-  ] as const;
-
-  return (
-    <section className="primary-card p-4 md:p-6" aria-labelledby="metals-price-history-heading">
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
-        <h3 id="metals-price-history-heading" className="text-lg font-bold text-white">Price History (1 Year)</h3>
-        <span className="text-xs text-stealth-300">
-          {availableSeries}/4 series available · through {latestHistoryPoint?.date ?? "date unavailable"}
-        </span>
-      </div>
-      
-      <ResponsiveContainer width="100%" height={350}>
-        <LineChart
-          accessibilityLayer
-          aria-label="One-year gold, silver, platinum, and palladium price history"
-          data={historyData}
-        >
-          <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
-          <XAxis 
-            dataKey="date" 
-            stroke={CHART_NEUTRAL.axis}
-            tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
-            tickFormatter={(date) => {
-              const d = new Date(date);
-              return `${d.getMonth() + 1}/${d.getDate()}`;
-            }}
-          />
-          <YAxis 
-            yAxisId="left"
-            stroke={CHART_NEUTRAL.axis}
-            tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
-            label={{ value: 'Gold/Platinum/Palladium ($/oz)', angle: -90, position: 'insideLeft', fill: CHART_NEUTRAL.label }}
-          />
-          <YAxis 
-            yAxisId="right"
-            orientation="right"
-            stroke={CHART_NEUTRAL.axis}
-            tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
-            label={{ value: 'Silver ($/oz)', angle: 90, position: 'insideRight', fill: CHART_NEUTRAL.label }}
-          />
-          <Tooltip 
-            contentStyle={{ 
-              backgroundColor: CHART_NEUTRAL.tooltipBg, 
-              border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`,
-              borderRadius: '0.5rem',
-              color: CHART_NEUTRAL.text
-            }}
-            formatter={(value: number) => [`$${value.toFixed(2)}`, '']}
-            labelFormatter={(label) => new Date(label).toLocaleDateString()}
-          />
-          <Legend 
-            wrapperStyle={{ color: CHART_NEUTRAL.tick }}
-            iconType="line"
-          />
-          <Line 
-            yAxisId="left"
-            type="monotone" 
-            dataKey="AU" 
-            stroke={getMetalColor("AU")} 
-            strokeWidth={2}
-            dot={false}
-              name="Gold"
-          />
-          <Line 
-              yAxisId="right"
-              type="monotone" 
-              dataKey="AG" 
-              stroke={getMetalColor("AG")} 
-              strokeWidth={2}
-              dot={false}
-              name="Silver"
-            />
-            <Line 
-              yAxisId="left"
-              type="monotone" 
-              dataKey="PT" 
-              stroke={getMetalColor("PT")} 
-              strokeWidth={2}
-              dot={false}
-              name="Platinum"
-            />
-            <Line 
-            yAxisId="left"
-              type="monotone" 
-            dataKey="PD" 
-            stroke={getMetalColor("PD")} 
-            strokeWidth={2}
-            dot={false}
-            name="Palladium"
-          />
-        </LineChart>
-      </ResponsiveContainer>
-
-      <div className="mt-4 text-xs text-stealth-400">
-          <p>Precious-metals history is shown in raw USD per troy ounce. Copper and aluminum are tracked in the ranking cards below because their contract units differ from the precious-metal sleeve.</p>
-      </div>
-      <details className="mt-4 rounded-xl border border-stealth-700 bg-stealth-950/40">
-        <summary className="min-h-11 cursor-pointer px-3 py-3 text-sm font-semibold text-stealth-200">
-          Read chart values
-        </summary>
-        <div
-          className="overflow-x-auto border-t border-stealth-700 p-3"
-          role="region"
-          aria-label="Metals price history summary table"
-          tabIndex={0}
-        >
-          <table className="w-full min-w-[560px] text-left text-xs">
-            <caption className="pb-2 text-left text-stealth-300">
-              First and latest available observations for the displayed one-year series.
-            </caption>
-            <thead className="text-stealth-400">
-              <tr>
-                <th className="px-2 py-2 font-semibold" scope="col">Observation</th>
-                <th className="px-2 py-2 font-semibold" scope="col">Date</th>
-                {historySeries.map(([label]) => (
-                  <th key={label} className="px-2 py-2 font-semibold" scope="col">{label}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="text-stealth-100">
-              {[
-                ["First", firstHistoryPoint],
-                ["Latest", latestHistoryPoint],
-              ].map(([label, point]) => {
-                const row = point as PriceHistoryDataPoint | undefined;
-                return (
-                  <tr key={String(label)} className="border-t border-stealth-800">
-                    <th className="px-2 py-2 font-semibold" scope="row">{String(label)}</th>
-                    <td className="px-2 py-2">{row?.date ?? "n/a"}</td>
-                    {historySeries.map(([, key]) => (
-                      <td key={key} className="px-2 py-2">{isNumber(row?.[key]) ? `$${row?.[key]?.toFixed(2)}` : "n/a"}</td>
-                    ))}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </details>
-    </section>
   );
 }

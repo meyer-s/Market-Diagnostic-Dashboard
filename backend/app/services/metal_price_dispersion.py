@@ -497,3 +497,137 @@ def build_global_price_dispersion(
             for code, definition in METAL_DEFINITIONS.items()
         ],
     }
+
+
+def build_global_price_history(
+    metal: str,
+    observations: Iterable[dict[str, Any]],
+    *,
+    days: int,
+    source_statuses: Optional[Iterable[dict[str, Any]]] = None,
+    now: Optional[datetime] = None,
+) -> dict[str, Any]:
+    """Normalize source-backed venue histories and index each series to 100."""
+    metal = metal.upper()
+    if metal not in METAL_DEFINITIONS:
+        raise ValueError(f"Unsupported metal: {metal}")
+    if days < 7 or days > 365:
+        raise ValueError("History range must be between 7 and 365 days")
+
+    generated_at = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    registry = {row["registry_id"]: deepcopy(row) for row in EXCHANGE_REGISTRY[metal]}
+    status_list = [dict(row) for row in (source_statuses or [])]
+    status_by_provider = {row.get("provider_id"): row for row in status_list}
+    observation_by_series_date: dict[tuple[str, str], dict[str, Any]] = {}
+
+    for observation in observations:
+        registry_id = observation.get("registry_id")
+        registry_row = registry.get(registry_id)
+        quote_timestamp = str(observation.get("quote_timestamp") or "")
+        quote_date = quote_timestamp[:10]
+        if registry_row is None or len(quote_date) != 10:
+            continue
+        try:
+            normalized_price = normalize_metal_price(
+                metal,
+                float(observation["local_price"]),
+                str(observation["currency"]),
+                str(observation["native_unit"]),
+                observation.get("fx_rate_local_per_usd"),
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+        observation_by_series_date[(str(registry_id), quote_date)] = {
+            **registry_row,
+            **observation,
+            "quote_date": quote_date,
+            "normalized_price": normalized_price,
+        }
+
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for (registry_id, _quote_date), observation in observation_by_series_date.items():
+        grouped.setdefault(registry_id, []).append(observation)
+
+    series = []
+    for registry_id, rows in grouped.items():
+        rows.sort(key=lambda row: row["quote_date"])
+        if len(rows) < 2:
+            continue
+        baseline_price = rows[0]["normalized_price"]
+        if baseline_price <= 0:
+            continue
+        points = [{
+            "date": row["quote_date"],
+            "quote_timestamp": row.get("quote_timestamp"),
+            "normalized_price": row["normalized_price"],
+            "index_value": round((row["normalized_price"] / baseline_price) * 100.0, 4),
+            "change_pct": round(((row["normalized_price"] / baseline_price) - 1.0) * 100.0, 4),
+            "local_price": row.get("local_price"),
+            "currency": row.get("currency"),
+            "native_unit": row.get("native_unit"),
+            "fx_rate_local_per_usd": row.get("fx_rate_local_per_usd"),
+            "fx_timestamp": row.get("fx_timestamp"),
+        } for row in rows]
+        sample = rows[-1]
+        provider_status = status_by_provider.get(sample.get("provider_id"), {})
+        series.append({
+            "registry_id": registry_id,
+            "provider_id": sample.get("provider_id"),
+            "venue": sample["venue"],
+            "country": sample["country"],
+            "market_type": sample["market_type"],
+            "product_name": sample["product_name"],
+            "symbol": sample.get("symbol"),
+            "source_name": sample.get("source_name") or registry[registry_id]["source_name"],
+            "source_status": provider_status.get("status", "live"),
+            "source_tier": provider_status.get("source_tier"),
+            "source_url": provider_status.get("source_url"),
+            "history_scope": provider_status.get("history_scope") or "Stored daily provider series",
+            "canonical_currency": METAL_DEFINITIONS[metal]["canonical_currency"],
+            "canonical_unit": METAL_DEFINITIONS[metal]["canonical_unit"],
+            "coverage_start": points[0]["date"],
+            "coverage_end": points[-1]["date"],
+            "observation_count": len(points),
+            "baseline_price": baseline_price,
+            "latest_price": points[-1]["normalized_price"],
+            "change_pct": points[-1]["change_pct"],
+            "points": points,
+        })
+
+    series.sort(key=lambda row: (
+        row["registry_id"] != DEFAULT_REFERENCE_IDS[metal],
+        row["venue"],
+        row["product_name"],
+    ))
+    series_ids = {row["registry_id"] for row in series}
+    return {
+        "as_of": generated_at.isoformat(),
+        "metal": metal,
+        "metal_name": METAL_DEFINITIONS[metal]["name"],
+        "days_requested": days,
+        "mode": "indexed_change",
+        "baseline": 100.0,
+        "canonical_currency": METAL_DEFINITIONS[metal]["canonical_currency"],
+        "canonical_unit": METAL_DEFINITIONS[metal]["canonical_unit"],
+        "series": series,
+        "summary": {
+            "historical_venues": len(series),
+            "registered_venues": len(registry),
+            "latest_history_date": max((row["coverage_end"] for row in series), default=None),
+        },
+        "sources": status_list,
+        "venues_without_history": [
+            {
+                "registry_id": row["registry_id"],
+                "venue": row["venue"],
+                "product_name": row["product_name"],
+            }
+            for row in registry.values()
+            if row["registry_id"] not in series_ids
+        ],
+        "limitations": [
+            "Each line is rebased to 100 at its own first available observation; it shows direction, not an absolute venue-price comparison.",
+            "Venue calendars, session closes, products, and available history windows differ.",
+            "Only source-backed observations are drawn; venues without defensible history remain latest-quote evidence only.",
+        ],
+    }

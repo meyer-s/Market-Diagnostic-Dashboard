@@ -5,6 +5,20 @@ import GlobalPriceDispersion from "./GlobalPriceDispersion";
 
 const { useApiMock } = vi.hoisted(() => ({ useApiMock: vi.fn() }));
 vi.mock("../../hooks/useApi", () => ({ useApi: useApiMock }));
+vi.mock("recharts", () => {
+  const Shell = ({ children }: { children?: React.ReactNode }) => <div>{children}</div>;
+  const Empty = () => null;
+  return {
+    CartesianGrid: Empty,
+    Line: Empty,
+    LineChart: Shell,
+    ReferenceLine: Empty,
+    ResponsiveContainer: Shell,
+    Tooltip: Empty,
+    XAxis: Empty,
+    YAxis: Empty,
+  };
+});
 
 const observed = {
   registry_id: "comex_silver",
@@ -116,6 +130,7 @@ const response = {
     unavailable("sge_silver", "SGE"),
     unavailable("shfe_silver", "SHFE"),
   ],
+  sources: [{ provider_id: "us_reference", provider_name: "U.S. reference series", status: "live", fetched_at: "2026-08-21T15:00:00Z", source_url: null }],
   limitations: ["At least two matched observations are required"],
   method: {
     normalization: "Convert currency, then unit.",
@@ -129,37 +144,119 @@ const response = {
   ],
 };
 
+const historyResponse = {
+  as_of: "2026-08-21T15:00:00Z",
+  metal: "AG",
+  metal_name: "Silver",
+  days_requested: 90,
+  mode: "indexed_change",
+  baseline: 100,
+  canonical_currency: "USD",
+  canonical_unit: "troy oz",
+  series: [
+    {
+      registry_id: "comex_silver",
+      provider_id: "us_reference",
+      venue: "COMEX",
+      country: "United States",
+      market_type: "continuous futures proxy",
+      product_name: "COMEX Silver futures",
+      symbol: null,
+      source_name: "Stored Yahoo daily history",
+      source_status: "live",
+      source_tier: "reference_only",
+      source_url: null,
+      history_scope: "Stored daily continuous reference history",
+      canonical_currency: "USD",
+      canonical_unit: "troy oz",
+      coverage_start: "2026-08-20",
+      coverage_end: "2026-08-21",
+      observation_count: 2,
+      baseline_price: 34,
+      latest_price: 35,
+      change_pct: 2.9412,
+      points: [
+        { date: "2026-08-20", quote_timestamp: "2026-08-20T00:00:00Z", normalized_price: 34, index_value: 100, change_pct: 0, local_price: 34, currency: "USD", native_unit: "troy oz", fx_rate_local_per_usd: 1, fx_timestamp: "2026-08-20T00:00:00Z" },
+        { date: "2026-08-21", quote_timestamp: "2026-08-21T00:00:00Z", normalized_price: 35, index_value: 102.9412, change_pct: 2.9412, local_price: 35, currency: "USD", native_unit: "troy oz", fx_rate_local_per_usd: 1, fx_timestamp: "2026-08-21T00:00:00Z" },
+      ],
+    },
+    {
+      registry_id: "lbma_silver",
+      provider_id: "lbma",
+      venue: "LBMA",
+      country: "United Kingdom",
+      market_type: "benchmark",
+      product_name: "LBMA Silver Price",
+      symbol: "LBMA Silver Price",
+      source_name: "London Bullion Market Association",
+      source_status: "live",
+      source_tier: "official_primary",
+      source_url: "https://prices.lbma.org.uk/json/silver.json",
+      history_scope: "Full published delayed benchmark history",
+      canonical_currency: "USD",
+      canonical_unit: "troy oz",
+      coverage_start: "2026-08-20",
+      coverage_end: "2026-08-21",
+      observation_count: 2,
+      baseline_price: 33,
+      latest_price: 34,
+      change_pct: 3.0303,
+      points: [
+        { date: "2026-08-20", quote_timestamp: "2026-08-20T00:00:00Z", normalized_price: 33, index_value: 100, change_pct: 0, local_price: 33, currency: "USD", native_unit: "troy oz", fx_rate_local_per_usd: 1, fx_timestamp: "2026-08-20T00:00:00Z" },
+        { date: "2026-08-21", quote_timestamp: "2026-08-21T00:00:00Z", normalized_price: 34, index_value: 103.0303, change_pct: 3.0303, local_price: 34, currency: "USD", native_unit: "troy oz", fx_rate_local_per_usd: 1, fx_timestamp: "2026-08-21T00:00:00Z" },
+      ],
+    },
+  ],
+  summary: { historical_venues: 2, registered_venues: 6, latest_history_date: "2026-08-21" },
+  sources: [{ provider_id: "lbma", provider_name: "London Bullion Market Association", status: "live", fetched_at: "2026-08-21T15:00:00Z", source_url: "https://prices.lbma.org.uk/json/silver.json", source_tier: "official_primary", history_scope: "Full published delayed benchmark history", observation_count: 2 }],
+  venues_without_history: [],
+  limitations: ["Each line starts at 100.", "Products and closes differ."],
+};
+
 describe("GlobalPriceDispersion", () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
   });
 
-  it("leads with explicit coverage, units, reference, and comparison readiness", () => {
-    useApiMock.mockReturnValue({ data: response, loading: false, error: null, refetch: vi.fn() });
+  it("leads with exchange history and replaces dropdowns with direct controls", () => {
+    useApiMock.mockImplementation((endpoint: string) => ({
+      data: endpoint.includes("/history?") ? historyResponse : response,
+      loading: false,
+      error: null,
+      refetch: vi.fn(),
+    }));
     render(<GlobalPriceDispersion />);
 
-    expect(screen.getByRole("heading", { name: "Global Price Dispersion" })).not.toBeNull();
-    expect(screen.getByText("1 connected observation · comparison not ready")).not.toBeNull();
-    expect(screen.getByText("1 observed / 6 registered")).not.toBeNull();
-    expect(screen.getAllByText("USD 35.00 per troy oz").length).toBeGreaterThan(0);
-    expect(screen.getByText(/Coverage is not comparison-ready/)).not.toBeNull();
-    expect(screen.getAllByText("Reference 0.00%").length).toBeGreaterThan(0);
+    expect(screen.getByRole("heading", { name: "Global exchange trends" })).not.toBeNull();
+    expect(screen.getByText("2 histories · 1 latest")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Silver AG" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "3M" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(screen.getByRole("button", { name: /Hide COMEX COMEX Silver futures/ }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getAllByText("USD 35.00 / troy oz").length).toBeGreaterThan(0);
+    expect(screen.getByText(/Compare direction, not absolute prices/)).not.toBeNull();
     expect(screen.queryByRole("button", { name: /SHFE.*Silver futures/ })).toBeNull();
   });
 
-  it("progressively reveals registered venues and their licensing receipt", () => {
-    useApiMock.mockReturnValue({ data: response, loading: false, error: null, refetch: vi.fn() });
+  it("toggles venue lines and keeps detailed evidence in one disclosure", () => {
+    useApiMock.mockImplementation((endpoint: string) => ({
+      data: endpoint.includes("/history?") ? historyResponse : response,
+      loading: false,
+      error: null,
+      refetch: vi.fn(),
+    }));
     render(<GlobalPriceDispersion />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Show all 6 registered venues" }));
-    fireEvent.click(screen.getByRole("button", { name: /SHFE.*Silver futures/ }));
+    const lbmaToggle = screen.getByRole("button", { name: /Hide LBMA LBMA Silver Price/ });
+    fireEvent.click(lbmaToggle);
+    expect(lbmaToggle.getAttribute("aria-pressed")).toBe("false");
 
-    expect(screen.getByRole("heading", { name: "SHFE · SHFE Silver futures" })).not.toBeNull();
-    expect(screen.getByRole("button", { name: "Close" })).not.toBeNull();
-    expect(screen.getByText("Official or licensed quote feed is not connected")).not.toBeNull();
-    expect(screen.getAllByText(/Official\/licensed feed required/).length).toBeGreaterThan(0);
-    expect(screen.getByText("Table reading mode and methodology")).not.toBeNull();
-    expect(screen.getByRole("region", { name: "Scrollable Silver venue comparison table" }).getAttribute("tabindex")).toBe("0");
+    fireEvent.click(screen.getByRole("button", { name: /COMEX, COMEX Silver futures/ }));
+    fireEvent.click(screen.getByText("Full receipt"));
+    expect(screen.getByText(/Yahoo Finance month-specific futures history/)).not.toBeNull();
+    fireEvent.click(screen.getByText("Data, sources & method"));
+    expect(screen.getByRole("region", { name: "Silver exchange trend summary table" }).getAttribute("tabindex")).toBe("0");
+    expect(screen.getAllByText("Full published delayed benchmark history").length).toBeGreaterThan(0);
   });
 });

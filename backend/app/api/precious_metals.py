@@ -19,8 +19,12 @@ from app.services.metal_price_dispersion import (
     DEFAULT_REFERENCE_IDS,
     METAL_DEFINITIONS,
     build_global_price_dispersion,
+    build_global_price_history,
 )
-from app.services.metal_market_sources import fetch_international_metal_observations
+from app.services.metal_market_sources import (
+    fetch_international_metal_history,
+    fetch_international_metal_observations,
+)
 
 router = APIRouter(prefix="/precious-metals", tags=["precious-metals"])
 logger = logging.getLogger(__name__)
@@ -892,6 +896,109 @@ def get_global_price_dispersion(
             comparison_time=comparison_time,
             basis=basis,
             source_statuses=source_statuses,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/global-price-dispersion/history")
+def get_global_price_dispersion_history(
+    metal: str = Query("AG", min_length=2, max_length=2),
+    days: int = Query(90, ge=30, le=365),
+):
+    """Return source-backed venue histories rebased to 100 for trend inspection."""
+    metal = metal.upper()
+    if metal not in METAL_DEFINITIONS:
+        raise HTTPException(status_code=422, detail=f"Unsupported metal: {metal}")
+
+    reference_id = DEFAULT_REFERENCE_IDS[metal]
+
+    def fetch_reference_history() -> tuple[list[dict], dict]:
+        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
+        with get_db_session() as db:
+            rows = db.query(MetalPrice).filter(
+                MetalPrice.metal == metal,
+                MetalPrice.price_usd_per_oz.isnot(None),
+                MetalPrice.date >= cutoff,
+            ).order_by(MetalPrice.date).all()
+        yahoo_rows = [row for row in rows if str(row.source or "").upper() == "YAHOO"]
+        selected_rows = yahoo_rows if len(yahoo_rows) >= 2 else rows
+        row_by_date = {row.date.date().isoformat(): row for row in selected_rows}
+        observations = [{
+            "registry_id": reference_id,
+            "provider_id": "us_reference",
+            "symbol": None,
+            "contract_month": None,
+            "local_price": row.price_usd_per_oz,
+            "currency": "USD",
+            "native_unit": METAL_DEFINITIONS[metal]["canonical_unit"],
+            "fx_rate_local_per_usd": 1.0,
+            "fx_timestamp": row.date.isoformat(),
+            "fx_source": "Identity conversion for USD quote",
+            "price_type": "stored daily close",
+            "quote_timestamp": row.date.isoformat(),
+            "timestamp_precision": "trading_date",
+            "session_status": "closed",
+            "data_delay": "Stored daily continuous reference series; listed contract identity is unavailable",
+            "volume": row.volume,
+            "open_interest": None,
+            "source_name": f"Stored {str(row.source or 'provider')} daily history",
+        } for row in row_by_date.values()]
+        observations.sort(key=lambda row: row["quote_timestamp"])
+        status = {
+            "provider_id": "us_reference",
+            "provider_name": "U.S. reference series",
+            "status": "live" if len(observations) >= 2 else "unavailable",
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
+            "source_url": None,
+            "source_tier": "reference_only",
+            "history_scope": "Stored daily continuous reference history; contract month is not asserted",
+            "observation_count": len(observations),
+            "error": None if len(observations) >= 2 else "Fewer than two stored observations were available",
+        }
+        return observations, status
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        reference_future = executor.submit(fetch_reference_history)
+        international_future = executor.submit(fetch_international_metal_history, metal, days)
+        try:
+            reference_observations, reference_status = reference_future.result()
+        except Exception as exc:
+            reference_observations = []
+            reference_status = {
+                "provider_id": "us_reference",
+                "provider_name": "U.S. reference series",
+                "status": "unavailable",
+                "fetched_at": None,
+                "source_url": None,
+                "source_tier": "reference_only",
+                "history_scope": "Stored daily continuous reference history",
+                "observation_count": 0,
+                "error": str(exc)[:240] or exc.__class__.__name__,
+            }
+            logger.warning("U.S. metal history failed for %s: %s", metal, reference_status["error"])
+        try:
+            international = international_future.result()
+        except Exception as exc:
+            international = {"observations": [], "sources": [{
+                "provider_id": "international_history",
+                "provider_name": "International history sources",
+                "status": "unavailable",
+                "fetched_at": None,
+                "source_url": None,
+                "source_tier": None,
+                "history_scope": None,
+                "observation_count": 0,
+                "error": str(exc)[:240] or exc.__class__.__name__,
+            }]}
+            logger.warning("International metal history failed for %s: %s", metal, international["sources"][0]["error"])
+
+    try:
+        return build_global_price_history(
+            metal,
+            [*reference_observations, *international["observations"]],
+            days=days,
+            source_statuses=[reference_status, *international["sources"]],
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
