@@ -626,9 +626,20 @@ def build_global_price_history(
         row["product_name"],
     ))
 
+    has_official_returns = any(
+        candidate["source_tier"] == "official_primary"
+        for candidates in return_candidates_by_date.values()
+        for candidate in candidates
+    )
+    composite_series = [
+        row
+        for row in series
+        if not has_official_returns or row["source_tier"] == "official_primary"
+    ]
+
     composite_points = []
-    if series:
-        baseline_date = min(row["coverage_start"] for row in series)
+    if composite_series:
+        baseline_date = min(row["coverage_start"] for row in composite_series)
         composite_index = 100.0
         composite_points.append({
             "date": baseline_date,
@@ -644,10 +655,9 @@ def build_global_price_history(
             if quote_date <= baseline_date:
                 continue
             candidates = return_candidates_by_date[quote_date]
-            official_candidates = [
+            selected_candidates = [
                 row for row in candidates if row["source_tier"] == "official_primary"
-            ]
-            selected_candidates = official_candidates or candidates
+            ] if has_official_returns else candidates
             candidate_by_venue: dict[str, list[dict[str, Any]]] = {}
             for candidate in selected_candidates:
                 candidate_by_venue.setdefault(candidate["venue"], []).append(candidate)
@@ -682,7 +692,7 @@ def build_global_price_history(
                 "daily_return_pct": round(composite_return * 100.0, 4),
                 "contributor_count": len(contributors),
                 "contributors": contributors,
-                "source_quality": "official_primary" if official_candidates else "fallback",
+                "source_quality": "official_primary" if has_official_returns else "fallback",
             })
 
     composite = None
@@ -750,7 +760,7 @@ def build_global_price_history(
             if row["registry_id"] not in series_ids
         ],
         "limitations": [
-            "The global trend chains median daily returns from official-primary venues when available and uses labeled fallback series only when no official return is available.",
+            "The global trend uses the official-primary venue calendar whenever usable official history exists; labeled fallback series drive it only when the metal has no usable official history.",
             "Multiple products from one venue are collapsed to one venue return so a single market cannot receive extra weight.",
             "Venue paths join the global trend at their first observation; they show direction from entry, not an absolute venue-price spread.",
             "Returns across gaps longer than four calendar days are not joined; venue calendars, sessions, products, and history windows differ.",

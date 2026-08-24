@@ -317,3 +317,54 @@ def test_global_history_prefers_official_venue_returns_and_collapses_products_by
     assert {row["venue"] for row in point["contributors"]} == {"LBMA", "SGE"}
     assert point["daily_return_pct"] == 3.5
     assert body["composite"]["change_pct"] == 3.5
+
+
+def test_global_history_does_not_interleave_fallback_dates_with_official_calendar() -> None:
+    observations = [
+        {
+            "registry_id": "comex_silver",
+            "provider_id": "us_reference",
+            "local_price": price,
+            "currency": "USD",
+            "native_unit": "troy oz",
+            "fx_rate_local_per_usd": 1.0,
+            "quote_timestamp": timestamp,
+        }
+        for price, timestamp in [
+            (100.0, "2026-08-20T00:00:00+00:00"),
+            (120.0, "2026-08-21T00:00:00+00:00"),
+        ]
+    ] + [
+        {
+            "registry_id": "lbma_silver",
+            "provider_id": "lbma",
+            "local_price": price,
+            "currency": "USD",
+            "native_unit": "troy oz",
+            "fx_rate_local_per_usd": 1.0,
+            "quote_timestamp": timestamp,
+        }
+        for price, timestamp in [
+            (100.0, "2026-08-20T00:00:00+00:00"),
+            (102.0, "2026-08-22T00:00:00+00:00"),
+        ]
+    ]
+
+    body = build_global_price_history(
+        "AG",
+        observations,
+        days=30,
+        source_statuses=[
+            {"provider_id": "us_reference", "source_tier": "reference_only", "status": "live"},
+            {"provider_id": "lbma", "source_tier": "official_primary", "status": "live"},
+        ],
+        now=datetime(2026, 8, 23, tzinfo=timezone.utc),
+    )
+
+    assert [point["date"] for point in body["composite"]["points"]] == [
+        "2026-08-20",
+        "2026-08-22",
+    ]
+    assert body["composite"]["change_pct"] == 2
+    assert body["composite"]["official_primary_days"] == 1
+    assert body["composite"]["fallback_days"] == 0
