@@ -516,6 +516,70 @@ describe("Secret Options desktop distillation", () => {
     expect((await screen.findAllByText(/\d+d (?:review overdue|past decision)/)).length).toBeGreaterThan(0);
   });
 
+  it("records a roll as linked close and replacement fills", async () => {
+    const user = userEvent.setup();
+    const source = positions[0];
+    apiFetchMock.mockImplementation((endpoint: string, init?: RequestInit) => {
+      if (endpoint === `/secret/options/positions/${source.id}/roll` && init?.method === "POST") {
+        return Promise.resolve({
+          message: "ALPHA rolled into position #33.",
+          source_position_id: source.id,
+          closed_position_id: 44,
+          position: {
+            ...source,
+            id: 33,
+            trade_date: "2026-08-24",
+            expiration: "2026-12-18",
+            fill_price: 4.1,
+            total_cost: 820,
+            rolled_from_position_id: source.id,
+            roll_source_closed_position_id: 44,
+            roll_entry_net_cash_flow: -170,
+          },
+          roll: {
+            roll_date: "2026-08-24",
+            close_price: 3.25,
+            open_price: 4.1,
+            close_proceeds: 650,
+            open_cost: 820,
+            net_cash_flow: -170,
+            cash_flow_type: "debit",
+            cash_flow_amount: 170,
+          },
+        });
+      }
+      return workspaceResponse(endpoint);
+    });
+    renderDesktopWorkspace();
+
+    await user.click(await screen.findByRole("button", { name: "Roll position" }));
+    expect(screen.getByRole("dialog", { name: "Roll ALPHA position" })).not.toBeNull();
+    expect(screen.getByText(/does not submit an order/i)).not.toBeNull();
+
+    await user.type(screen.getByLabelText(/Old contract close fill/i), "3.25");
+    await user.clear(screen.getByLabelText(/^Expiration/i));
+    await user.type(screen.getByLabelText(/^Expiration/i), "2026-12-18");
+    await user.type(screen.getByLabelText(/Replacement open fill/i), "4.10");
+    expect(screen.getByText("Net debit $170")).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: "Record roll" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Roll ALPHA position" })).toBeNull();
+    });
+    const rollCall = apiFetchMock.mock.calls.find(
+      ([endpoint, init]) => endpoint === `/secret/options/positions/${source.id}/roll` && init?.method === "POST",
+    );
+    expect(rollCall).toBeDefined();
+    expect(JSON.parse(String(rollCall?.[1]?.body))).toMatchObject({
+      close_price: 3.25,
+      open_price: 4.1,
+      expiration: "2026-12-18",
+      strike: source.strike,
+      option_type: source.option_type,
+      contracts: source.contracts,
+    });
+  });
+
   it("applies a recorded review response without refetching the position workspace", async () => {
     const user = userEvent.setup();
     const position = positions[0];

@@ -25,6 +25,7 @@ import {
   Play,
   Plus,
   RefreshCw,
+  Repeat2,
   SlidersHorizontal,
   Square,
   Trash2,
@@ -102,6 +103,7 @@ import type {
   ClosedPositionRow,
   ClosedRestoreTarget,
   ClosePositionResponse,
+  RollPositionResponse,
   RestoreClosedPositionResponse,
   TrainingOutcomeRow,
   TrainingOutcomeSummary,
@@ -755,6 +757,13 @@ const positionContractSummary = (position: OptionPosition) =>
     ? `${formatStrategyName(position.strategy_type)} · ${position.strategy_legs?.length ?? 0} legs`
     : `${position.option_type.toUpperCase()} $${formatNumber(position.strike, 2)}`;
 
+const formatRollCashFlow = (value: number | null | undefined) => {
+  if (value === null || value === undefined) return "Net cash flow unavailable";
+  if (value > 0) return `Net credit ${formatCurrency(value, 0)}`;
+  if (value < 0) return `Net debit ${formatCurrency(Math.abs(value), 0)}`;
+  return "Even roll";
+};
+
 function PositionIndexBadges({ context }: { context: PositionRowContext | null | undefined }) {
   if (!context?.index_memberships.length) return null;
   return (
@@ -1140,6 +1149,18 @@ const initialClosedFormState = {
   total_cost: "",
   underlying_at_entry: "",
   underlying_at_exit: "",
+  notes: "",
+};
+
+const initialRollFormState = {
+  roll_date: "",
+  close_price: "",
+  expiration: "",
+  strike: "",
+  option_type: "call",
+  contracts: "",
+  open_price: "",
+  underlying_at_roll: "",
   notes: "",
 };
 
@@ -1574,6 +1595,12 @@ export default function SecretOptions() {
   const [closeNotes, setCloseNotes] = useState("");
   const [closePositionError, setClosePositionError] = useState<string | null>(null);
   const closePositionErrorRef = useRef<HTMLDivElement>(null);
+  const [showRollModal, setShowRollModal] = useState(false);
+  const [rollingPositionId, setRollingPositionId] = useState<number | null>(null);
+  const [rollFormData, setRollFormData] = useState(initialRollFormState);
+  const [rollSubmitting, setRollSubmitting] = useState(false);
+  const [rollPositionError, setRollPositionError] = useState<string | null>(null);
+  const rollPositionErrorRef = useRef<HTMLDivElement>(null);
   const [closedPositions, setClosedPositions] = useState<ClosedPositionRow[]>([]);
   const [showClosedLog, setShowClosedLog] = useState(false);
   const [showClosedEditModal, setShowClosedEditModal] = useState(false);
@@ -1742,6 +1769,7 @@ export default function SecretOptions() {
     setFormSourceEventId(null);
     setShowAddModal(false);
     setShowCloseModal(false);
+    setShowRollModal(false);
     setShowClosedLog(false);
     setShowClosedEditModal(false);
     setPendingClosedDeletion(null);
@@ -1752,8 +1780,10 @@ export default function SecretOptions() {
     setExpandedScannerHitId(null);
     setEditingPositionId(null);
     setClosingPositionId(null);
+    setRollingPositionId(null);
     setEditingClosedPositionId(null);
     setClosePositionError(null);
+    setRollPositionError(null);
     setClosedDeleteError(null);
     setMobileActionsOpen(false);
     setMobileMonitoringOpen(false);
@@ -1805,6 +1835,8 @@ export default function SecretOptions() {
       ? tradeFormErrorRef.current
       : closePositionError
         ? closePositionErrorRef.current
+      : rollPositionError
+        ? rollPositionErrorRef.current
       : closedFormError
         ? closedFormErrorRef.current
         : closedDeleteError
@@ -1817,7 +1849,7 @@ export default function SecretOptions() {
     if (!target) return;
     const frame = window.requestAnimationFrame(() => target.focus());
     return () => window.cancelAnimationFrame(frame);
-  }, [closedDeleteError, closedFormError, closedRestoreError, closePositionError, decisionReviewError, formError]);
+  }, [closedDeleteError, closedFormError, closedRestoreError, closePositionError, decisionReviewError, formError, rollPositionError]);
 
   const mobilePositionParam = searchParams.get("position")?.trim().toUpperCase() ?? null;
 
@@ -3111,6 +3143,123 @@ export default function SecretOptions() {
     }
   };
 
+  const handleRollPosition = async () => {
+    const source = positions.find((item) => item.position.id === rollingPositionId)?.position ?? null;
+    const closePrice = Number(rollFormData.close_price);
+    const openPrice = Number(rollFormData.open_price);
+    const strike = Number(rollFormData.strike);
+    const contracts = Number(rollFormData.contracts);
+    const underlyingAtRoll = rollFormData.underlying_at_roll.trim()
+      ? Number(rollFormData.underlying_at_roll)
+      : null;
+    if (!source) {
+      setRollPositionError("No open position is selected.");
+      return;
+    }
+    if (!rollFormData.roll_date) {
+      setRollPositionError("Choose the date both fills executed.");
+      return;
+    }
+    if (rollFormData.close_price.trim() === "" || !Number.isFinite(closePrice) || closePrice < 0) {
+      setRollPositionError("Enter the old contract's close fill. Use 0 only for a worthless close.");
+      return;
+    }
+    if (!rollFormData.expiration) {
+      setRollPositionError("Choose the replacement expiration.");
+      return;
+    }
+    if (!Number.isFinite(strike) || strike <= 0) {
+      setRollPositionError("Enter a replacement strike greater than zero.");
+      return;
+    }
+    if (!Number.isInteger(contracts) || contracts <= 0) {
+      setRollPositionError("Enter a whole replacement contract count greater than zero.");
+      return;
+    }
+    if (!Number.isFinite(openPrice) || openPrice <= 0) {
+      setRollPositionError("Enter the replacement contract's open fill greater than zero.");
+      return;
+    }
+    if (underlyingAtRoll !== null && (!Number.isFinite(underlyingAtRoll) || underlyingAtRoll <= 0)) {
+      setRollPositionError("Enter an underlying price greater than zero, or leave it blank.");
+      return;
+    }
+    if (
+      rollFormData.expiration === source.expiration
+      && strike === source.strike
+      && rollFormData.option_type === source.option_type
+    ) {
+      setRollPositionError("Change the expiration, strike, or option type for the replacement contract.");
+      return;
+    }
+    if (rollSubmitting) return;
+
+    setRollSubmitting(true);
+    setRollPositionError(null);
+    try {
+      const result = await apiFetch<RollPositionResponse>(
+        `/secret/options/positions/${source.id}/roll`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            close_price: closePrice,
+            open_price: openPrice,
+            roll_date: rollFormData.roll_date,
+            expiration: rollFormData.expiration,
+            strike,
+            option_type: rollFormData.option_type,
+            contracts,
+            underlying_at_roll: underlyingAtRoll,
+            notes: rollFormData.notes.trim() || null,
+          }),
+        },
+      );
+      setShowRollModal(false);
+      setRollingPositionId(null);
+      setRollFormData(initialRollFormState);
+      setLastClosedPosition(null);
+      await Promise.all([
+        loadPositions({ quiet: true }),
+        loadPositionRowContexts(),
+        loadClosedPositions(),
+        loadLearningSummary(),
+      ]);
+      setSelectedId(result.position.id);
+    } catch (err: unknown) {
+      setRollPositionError(
+        `Failed to record roll: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      setRollSubmitting(false);
+    }
+  };
+
+  const closeRollPositionModal = () => {
+    if (rollSubmitting) return;
+    setShowRollModal(false);
+    setRollingPositionId(null);
+    setRollFormData(initialRollFormState);
+    setRollPositionError(null);
+  };
+
+  const openRollModal = (position: OptionPosition) => {
+    if ((position.strategy_type || "single_leg") !== "single_leg") {
+      return;
+    }
+    setRollingPositionId(position.id);
+    setRollFormData({
+      ...initialRollFormState,
+      roll_date: todayInputValue(),
+      expiration: position.expiration,
+      strike: String(position.strike),
+      option_type: position.option_type,
+      contracts: String(position.contracts),
+    });
+    setRollPositionError(null);
+    setShowRollModal(true);
+  };
+
   const closeClosePositionModal = () => {
     setShowCloseModal(false);
     setExitPrice("");
@@ -3276,6 +3425,29 @@ export default function SecretOptions() {
     () => positions.find((item) => item.position.id === selectedId) || null,
     [positions, selectedId]
   );
+  const rollingPosition = useMemo(
+    () => positions.find((item) => item.position.id === rollingPositionId)?.position ?? null,
+    [positions, rollingPositionId]
+  );
+  const rollCashFlowPreview = useMemo(() => {
+    if (!rollingPosition || !rollFormData.close_price.trim() || !rollFormData.open_price.trim()) {
+      return null;
+    }
+    const closePrice = Number(rollFormData.close_price);
+    const openPrice = Number(rollFormData.open_price);
+    const contracts = Number(rollFormData.contracts);
+    if (
+      !Number.isFinite(closePrice)
+      || closePrice < 0
+      || !Number.isFinite(openPrice)
+      || openPrice <= 0
+      || !Number.isInteger(contracts)
+      || contracts <= 0
+    ) {
+      return null;
+    }
+    return (closePrice * rollingPosition.contracts * 100) - (openPrice * contracts * 100);
+  }, [rollFormData.close_price, rollFormData.contracts, rollFormData.open_price, rollingPosition]);
   const selectedSymbol = selected?.position.symbol?.trim().toUpperCase() ?? null;
   const selectedStockAnalysisPath = selectedSymbol
     ? `/stock-analysis/${encodeURIComponent(selectedSymbol)}?symbol=${encodeURIComponent(selectedSymbol)}`
@@ -4370,6 +4542,13 @@ export default function SecretOptions() {
             </button>
           </div>
 
+          {position.rolled_from_position_id ? (
+            <div className="mt-2 inline-flex min-h-8 items-center gap-1.5 rounded-md border border-violet-500/35 bg-violet-500/10 px-2 text-xs font-semibold text-violet-100">
+              <Repeat2 className="h-3.5 w-3.5" aria-hidden="true" />
+              Rolled from #{position.rolled_from_position_id} · {formatRollCashFlow(position.roll_entry_net_cash_flow)}
+            </div>
+          ) : null}
+
           {marketField && selectedMarketFieldHistory.length > 1 ? (
             <div className="mt-2 grid grid-cols-3 overflow-hidden rounded-lg border border-stealth-800 bg-stealth-950/40">
               {selectedMarketFieldHistory.map(({ assessment: historyAssessment, field }, index) => (
@@ -4435,8 +4614,9 @@ export default function SecretOptions() {
           <div className="mt-3 border-t border-stealth-800 pt-3">
             <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-stealth-500">Position record</div>
             <div className="grid grid-cols-2 gap-2">
-              <button type="button" onClick={() => openEditModal(position)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-sky-500/35 bg-sky-500/10 px-3 text-sm font-semibold text-sky-100"><Pencil className="h-4 w-4" aria-hidden="true" />Edit position</button>
-              <button type="button" onClick={() => openCloseModal(position.id)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-rose-500/35 bg-rose-500/10 px-3 text-sm font-semibold text-rose-100"><Trash2 className="h-4 w-4" aria-hidden="true" />Close position</button>
+              <button type="button" disabled={secretMutationDisabled || (position.strategy_type || "single_leg") !== "single_leg"} onClick={() => openRollModal(position)} title={(position.strategy_type || "single_leg") !== "single_leg" ? "Rolling a risk-defined structure is not yet supported" : secretOptionsReadOnly ? "Write access is required to roll a position" : undefined} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-violet-500/35 bg-violet-500/10 px-3 text-sm font-semibold text-violet-100 disabled:cursor-not-allowed disabled:opacity-45"><Repeat2 className="h-4 w-4" aria-hidden="true" />Roll position</button>
+              <button type="button" disabled={secretMutationDisabled} onClick={() => openEditModal(position)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-sky-500/35 bg-sky-500/10 px-3 text-sm font-semibold text-sky-100 disabled:cursor-not-allowed disabled:opacity-45"><Pencil className="h-4 w-4" aria-hidden="true" />Edit position</button>
+              <button type="button" disabled={secretMutationDisabled} onClick={() => openCloseModal(position.id)} className="col-span-2 inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-rose-500/35 bg-rose-500/10 px-3 text-sm font-semibold text-rose-100 disabled:cursor-not-allowed disabled:opacity-45"><Trash2 className="h-4 w-4" aria-hidden="true" />Close position</button>
             </div>
             <div className="mt-2 grid gap-2 sm:grid-cols-2">
               {selectedStockAnalysisPath ? <Link to={selectedStockAnalysisPath} className="inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-stealth-700 text-sm font-semibold text-stealth-200">Open {position.symbol} analysis</Link> : null}
@@ -5678,6 +5858,12 @@ export default function SecretOptions() {
                 <p className="mt-0.5 text-xs font-medium text-stealth-400">
                   {formatDate(selected.position.expiration)} · {selected.metrics.dte ?? "n/a"} DTE · {selected.position.contracts} held
                 </p>
+                {selected.position.rolled_from_position_id ? (
+                  <div className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-violet-200">
+                    <Repeat2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    Rolled from #{selected.position.rolled_from_position_id} · {formatRollCashFlow(selected.position.roll_entry_net_cash_flow)}
+                  </div>
+                ) : null}
               </>
             ) : <h2 className="text-sm font-semibold text-stealth-100">Position details</h2>}
           </div>
@@ -5903,7 +6089,16 @@ export default function SecretOptions() {
               >
                 <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" /> Override
               </button>
-              <details className="relative col-span-2">
+              <button
+                type="button"
+                onClick={() => openRollModal(selected.position)}
+                disabled={secretMutationDisabled || (selected.position.strategy_type || "single_leg") !== "single_leg"}
+                title={(selected.position.strategy_type || "single_leg") !== "single_leg" ? "Rolling a risk-defined structure is not yet supported" : secretOptionsReadOnly ? "Write access is required to roll a position" : "Record both fills and link the replacement contract. No order is submitted."}
+                className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-md border border-violet-600/55 bg-violet-900/30 px-2 text-xs font-semibold text-violet-100 hover:bg-violet-800/45 disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                <Repeat2 className="h-3.5 w-3.5" aria-hidden="true" /> Roll position
+              </button>
+              <details className="relative">
                 <summary className="inline-flex min-h-10 w-full cursor-pointer list-none items-center justify-center gap-1.5 rounded-md border border-stealth-700 bg-stealth-900/60 px-2 text-xs font-semibold text-stealth-200 hover:border-stealth-500">
                   <MoreVertical className="h-3.5 w-3.5" aria-hidden="true" /> More actions
                 </summary>
@@ -7328,6 +7523,237 @@ export default function SecretOptions() {
         </div>
       )}
 
+      {/* Roll Position Modal */}
+      {showRollModal && rollingPosition && renderModal(
+        `Roll ${rollingPosition.symbol} position`,
+        closeRollPositionModal,
+        <div
+          role="presentation"
+          className="fixed inset-0 z-50 flex min-h-[100dvh] items-center justify-center overflow-y-auto bg-stealth-950/90 p-4 backdrop-blur-sm"
+          onClick={(event) => {
+            if (event.currentTarget === event.target) closeRollPositionModal();
+          }}
+        >
+          <div className="max-h-[90dvh] w-full max-w-2xl overflow-y-auto rounded-xl border border-stealth-700 bg-stealth-800 p-4 sm:p-6">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <h2 className="text-xl font-semibold text-stealth-100">Roll {rollingPosition.symbol}</h2>
+                <p className="mt-1 text-sm text-stealth-400">
+                  Close {rollingPosition.contracts} {positionContractSummary(rollingPosition)} and open one linked replacement.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeRollPositionModal}
+                disabled={rollSubmitting}
+                aria-label="Close roll position form"
+                className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-stealth-400 hover:bg-white/5 hover:text-stealth-200 disabled:opacity-45"
+              >
+                ✕
+              </button>
+            </div>
+
+            {rollPositionError ? (
+              <div
+                ref={rollPositionErrorRef}
+                id="roll-position-error"
+                role="alert"
+                tabIndex={-1}
+                className="mb-4 rounded-md border border-rose-600/60 bg-rose-950/40 px-3 py-2 text-sm text-rose-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
+              >
+                {rollPositionError}
+              </div>
+            ) : null}
+
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleRollPosition();
+              }}
+              aria-describedby={rollPositionError ? "roll-position-error" : "roll-position-help"}
+              className="space-y-4"
+            >
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <label className="text-sm text-stealth-400">
+                  Roll date *
+                  <input
+                    type="date"
+                    value={rollFormData.roll_date}
+                    min={rollingPosition.trade_date}
+                    onChange={(event) => {
+                      setRollFormData((current) => ({ ...current, roll_date: event.target.value }));
+                      if (rollPositionError) setRollPositionError(null);
+                    }}
+                    className="mt-1 min-h-11 w-full rounded border border-stealth-700 bg-stealth-900 px-3 py-2 text-sm text-stealth-200"
+                    required
+                  />
+                </label>
+                <label className="text-sm text-stealth-400">
+                  Old contract close fill *
+                  <input
+                    data-dialog-initial-focus
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    inputMode="decimal"
+                    value={rollFormData.close_price}
+                    onChange={(event) => {
+                      setRollFormData((current) => ({ ...current, close_price: event.target.value }));
+                      if (rollPositionError) setRollPositionError(null);
+                    }}
+                    placeholder="3.25"
+                    className="mt-1 min-h-11 w-full rounded border border-stealth-700 bg-stealth-900 px-3 py-2 text-sm text-stealth-200"
+                    required
+                  />
+                </label>
+              </div>
+
+              <fieldset className="border-t border-stealth-700 pt-4">
+                <legend className="pr-2 text-sm font-semibold text-stealth-200">Replacement contract</legend>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <label className="text-sm text-stealth-400">
+                    Expiration *
+                    <input
+                      type="date"
+                      value={rollFormData.expiration}
+                      min={rollFormData.roll_date || todayInputValue()}
+                      onChange={(event) => {
+                        setRollFormData((current) => ({ ...current, expiration: event.target.value }));
+                        if (rollPositionError) setRollPositionError(null);
+                      }}
+                      className="mt-1 min-h-11 w-full rounded border border-stealth-700 bg-stealth-900 px-3 py-2 text-sm text-stealth-200"
+                      required
+                    />
+                  </label>
+                  <label className="text-sm text-stealth-400">
+                    Strike *
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      inputMode="decimal"
+                      value={rollFormData.strike}
+                      onChange={(event) => {
+                        setRollFormData((current) => ({ ...current, strike: event.target.value }));
+                        if (rollPositionError) setRollPositionError(null);
+                      }}
+                      className="mt-1 min-h-11 w-full rounded border border-stealth-700 bg-stealth-900 px-3 py-2 text-sm text-stealth-200"
+                      required
+                    />
+                  </label>
+                  <label className="text-sm text-stealth-400">
+                    Type *
+                    <select
+                      value={rollFormData.option_type}
+                      onChange={(event) => {
+                        setRollFormData((current) => ({ ...current, option_type: event.target.value }));
+                        if (rollPositionError) setRollPositionError(null);
+                      }}
+                      className="mt-1 min-h-11 w-full rounded border border-stealth-700 bg-stealth-900 px-3 py-2 text-sm text-stealth-200"
+                    >
+                      <option value="call">Call</option>
+                      <option value="put">Put</option>
+                    </select>
+                  </label>
+                  <label className="text-sm text-stealth-400">
+                    Contracts *
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      inputMode="numeric"
+                      value={rollFormData.contracts}
+                      onChange={(event) => {
+                        setRollFormData((current) => ({ ...current, contracts: event.target.value }));
+                        if (rollPositionError) setRollPositionError(null);
+                      }}
+                      className="mt-1 min-h-11 w-full rounded border border-stealth-700 bg-stealth-900 px-3 py-2 text-sm text-stealth-200"
+                      required
+                    />
+                  </label>
+                  <label className="text-sm text-stealth-400">
+                    Replacement open fill *
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      inputMode="decimal"
+                      value={rollFormData.open_price}
+                      onChange={(event) => {
+                        setRollFormData((current) => ({ ...current, open_price: event.target.value }));
+                        if (rollPositionError) setRollPositionError(null);
+                      }}
+                      placeholder="4.10"
+                      className="mt-1 min-h-11 w-full rounded border border-stealth-700 bg-stealth-900 px-3 py-2 text-sm text-stealth-200"
+                      required
+                    />
+                  </label>
+                  <label className="text-sm text-stealth-400">
+                    Underlying at roll
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      inputMode="decimal"
+                      value={rollFormData.underlying_at_roll}
+                      onChange={(event) => {
+                        setRollFormData((current) => ({ ...current, underlying_at_roll: event.target.value }));
+                        if (rollPositionError) setRollPositionError(null);
+                      }}
+                      placeholder="Optional"
+                      className="mt-1 min-h-11 w-full rounded border border-stealth-700 bg-stealth-900 px-3 py-2 text-sm text-stealth-200"
+                    />
+                  </label>
+                </div>
+              </fieldset>
+
+              <label className="block text-sm text-stealth-400">
+                Notes
+                <textarea
+                  value={rollFormData.notes}
+                  maxLength={2000}
+                  onChange={(event) => setRollFormData((current) => ({ ...current, notes: event.target.value }))}
+                  placeholder="Why this replacement better fits the remaining thesis"
+                  rows={2}
+                  className="mt-1 w-full rounded border border-stealth-700 bg-stealth-900 px-3 py-2 text-sm text-stealth-200"
+                />
+              </label>
+
+              <div className="rounded-lg border border-violet-500/30 bg-violet-500/10 px-3 py-2.5">
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="font-semibold text-violet-100">Execution cash flow</span>
+                  <span className="font-semibold tabular-nums text-violet-100">
+                    {rollCashFlowPreview === null ? "Enter both fills" : formatRollCashFlow(rollCashFlowPreview)}
+                  </span>
+                </div>
+                <p id="roll-position-help" className="mt-1 text-xs leading-relaxed text-violet-100/75">
+                  Positive proceeds are a credit; added premium is a debit. This records the fills and lineage—it does not submit an order.
+                </p>
+              </div>
+
+              <div className="sticky -bottom-4 -mx-4 flex justify-end gap-2 border-t border-stealth-700 bg-stealth-800/95 px-4 py-3 backdrop-blur sm:-bottom-6 sm:-mx-6 sm:px-6">
+                <button
+                  type="button"
+                  onClick={closeRollPositionModal}
+                  disabled={rollSubmitting}
+                  className="min-h-11 rounded-md px-4 text-sm text-stealth-300 hover:bg-white/5 hover:text-white disabled:opacity-45"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={rollSubmitting}
+                  className="inline-flex min-h-11 items-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-medium text-white hover:bg-violet-600 disabled:bg-stealth-700"
+                >
+                  <Repeat2 className="h-4 w-4" aria-hidden="true" />
+                  {rollSubmitting ? "Recording…" : "Record roll"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>,
+      )}
+
       {/* Close Position Modal */}
       {showCloseModal && renderModal(
         "Close position",
@@ -8005,6 +8431,16 @@ export default function SecretOptions() {
                         </td>
                         <td className="px-3 py-2 text-xs text-stealth-400">
                           <div>{pos.notes || "—"}</div>
+                          {pos.rolled_from_position_id ? (
+                            <div className="mt-1 font-semibold text-violet-300">
+                              Rolled from #{pos.rolled_from_position_id} · {formatRollCashFlow(pos.roll_entry_net_cash_flow)}
+                            </div>
+                          ) : null}
+                          {pos.rolled_to_position_id ? (
+                            <div className="mt-1 font-semibold text-violet-300">
+                              Rolled to #{pos.rolled_to_position_id} · {formatRollCashFlow(pos.roll_exit_net_cash_flow)}
+                            </div>
+                          ) : null}
                           {pos.learning_outcome && (
                             <div
                               className="mt-1 text-xs text-violet-300"
@@ -8016,7 +8452,7 @@ export default function SecretOptions() {
                         </td>
                         <td className="px-3 py-2">
                           <div className="flex justify-end gap-1.5">
-                            {pos.source_position_id !== null && pos.source_position_id !== undefined ? (
+                            {pos.source_position_id !== null && pos.source_position_id !== undefined && !pos.rolled_to_position_id ? (
                               <button
                                 type="button"
                                 disabled={secretMutationDisabled || closedRestoreSubmittingId !== null}
@@ -8043,13 +8479,14 @@ export default function SecretOptions() {
                             </button>
                             <button
                               type="button"
+                              disabled={Boolean(pos.rolled_from_position_id || pos.rolled_to_position_id)}
                               onClick={() => {
                                 setClosedDeleteError(null);
                                 setPendingClosedDeletion(pos);
                               }}
                               aria-label={`Delete closed ${pos.symbol} trade`}
-                              title={`Delete ${pos.symbol}`}
-                              className="inline-flex h-11 w-11 items-center justify-center rounded-md border border-rose-500/35 bg-rose-500/12 text-rose-200 transition hover:border-rose-300/70 hover:bg-rose-500/25 hover:text-white focus:outline-none focus:ring-2 focus:ring-rose-400/50"
+                              title={pos.rolled_from_position_id || pos.rolled_to_position_id ? "Roll-chain history cannot be deleted" : `Delete ${pos.symbol}`}
+                              className="inline-flex h-11 w-11 items-center justify-center rounded-md border border-rose-500/35 bg-rose-500/12 text-rose-200 transition hover:border-rose-300/70 hover:bg-rose-500/25 hover:text-white focus:outline-none focus:ring-2 focus:ring-rose-400/50 disabled:cursor-not-allowed disabled:opacity-35"
                             >
                               <Trash2 className="h-4 w-4" aria-hidden="true" />
                             </button>

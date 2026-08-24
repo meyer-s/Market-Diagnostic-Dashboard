@@ -38,6 +38,9 @@ export interface OptionPosition {
   strategy_breakevens?: number[];
   strategy_direction?: string | null;
   strategy_volatility_exposure?: string | null;
+  rolled_from_position_id?: number | null;
+  roll_source_closed_position_id?: number | null;
+  roll_entry_net_cash_flow?: number | null;
   evaluation_min_hold_days: number | null;
   evaluation_hold_days: number | null;
   evaluation_start_date: string | null;
@@ -576,6 +579,11 @@ export interface ClosedPositionRow {
   strategy_breakevens?: number[];
   strategy_direction?: string | null;
   strategy_volatility_exposure?: string | null;
+  rolled_from_position_id?: number | null;
+  roll_source_closed_position_id?: number | null;
+  roll_entry_net_cash_flow?: number | null;
+  rolled_to_position_id?: number | null;
+  roll_exit_net_cash_flow?: number | null;
   learning_outcome?: OptionTradeLearningOutcome | null;
 }
 
@@ -584,6 +592,23 @@ export type ClosedRestoreTarget = Pick<ClosedPositionRow, "id" | "symbol" | "clo
 export interface ClosePositionResponse {
   closed_position_id: number;
   symbol: string;
+}
+
+export interface RollPositionResponse {
+  message: string;
+  source_position_id: number;
+  closed_position_id: number;
+  position: OptionPosition;
+  roll: {
+    roll_date: string;
+    close_price: number;
+    open_price: number;
+    close_proceeds: number;
+    open_cost: number;
+    net_cash_flow: number;
+    cash_flow_type: "credit" | "debit" | "even";
+    cash_flow_amount: number;
+  };
 }
 
 export interface RestoreClosedPositionResponse {

@@ -229,6 +229,20 @@ class ClosePositionRequest(BaseModel):
     notes: Optional[str] = None
 
 
+class RollPositionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    close_price: float = Field(ge=0.0)
+    open_price: float = Field(gt=0.0)
+    roll_date: Optional[str] = None
+    expiration: str
+    strike: float = Field(gt=0.0)
+    option_type: Literal["call", "put"]
+    contracts: int = Field(gt=0)
+    underlying_at_roll: Optional[float] = Field(default=None, gt=0.0)
+    notes: Optional[str] = Field(default=None, max_length=2000)
+
+
 class ClosedPositionUpdate(BaseModel):
     trade_date: str
     close_date: str
@@ -2139,6 +2153,9 @@ def _serialize_position(
         "strategy_breakevens": json_loads(getattr(position, "strategy_breakevens_json", None), []),
         "strategy_direction": getattr(position, "strategy_direction", None),
         "strategy_volatility_exposure": getattr(position, "strategy_volatility_exposure", None),
+        "rolled_from_position_id": getattr(position, "rolled_from_position_id", None),
+        "roll_source_closed_position_id": getattr(position, "roll_source_closed_position_id", None),
+        "roll_entry_net_cash_flow": getattr(position, "roll_entry_net_cash_flow", None),
         **(evaluation_window or {
             "evaluation_min_hold_days": None,
             "evaluation_hold_days": None,
@@ -2312,6 +2329,11 @@ def _serialize_closed_position(
         "strategy_breakevens": json_loads(getattr(position, "strategy_breakevens_json", None), []),
         "strategy_direction": getattr(position, "strategy_direction", None),
         "strategy_volatility_exposure": getattr(position, "strategy_volatility_exposure", None),
+        "rolled_from_position_id": getattr(position, "rolled_from_position_id", None),
+        "roll_source_closed_position_id": getattr(position, "roll_source_closed_position_id", None),
+        "roll_entry_net_cash_flow": getattr(position, "roll_entry_net_cash_flow", None),
+        "rolled_to_position_id": getattr(position, "rolled_to_position_id", None),
+        "roll_exit_net_cash_flow": getattr(position, "roll_exit_net_cash_flow", None),
         **_opportunity_rank_payload_for_event(source_event, prefix="source_opportunity"),
     }
 
@@ -4488,105 +4510,142 @@ def get_position_greeks(
         })
 
 
+def _archive_open_position(
+    db: Any,
+    position: OptionPosition,
+    *,
+    exit_price: float,
+    close_date: date,
+    notes: Optional[str],
+    event_type: str,
+    underlying_at_exit: Optional[float] = None,
+    rolled_to_position_id: Optional[int] = None,
+    roll_exit_net_cash_flow: Optional[float] = None,
+    event_details: Optional[Dict[str, object]] = None,
+) -> tuple[ClosedPosition, OptionTradeOutcome, Dict[str, float]]:
+    """Move one open record into history without committing the transaction."""
+    prior_position = _serialize_position(position)
+    total_proceeds = exit_price * position.contracts * 100
+    dollar_pnl = total_proceeds - position.total_cost
+    percent_pnl = (dollar_pnl / position.total_cost) * 100 if position.total_cost else 0.0
+    duplicate = _find_duplicate_closed_position(
+        db,
+        trade_date=position.trade_date,
+        close_date=close_date,
+        account=position.account,
+        contracts=position.contracts,
+        symbol=position.symbol,
+        expiration=position.expiration,
+        strike=position.strike,
+        option_type=position.option_type,
+        fill_price=position.fill_price,
+        exit_price=exit_price,
+        total_cost=position.total_cost,
+    )
+    if duplicate:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Duplicate closed position already exists as trade #{duplicate.id}.",
+        )
+
+    if underlying_at_exit is None:
+        market = _market_data_for_symbol(get_market_data_provider(), position.symbol)
+        underlying_at_exit = _finite_number(market.get("current_price"))
+
+    closed = ClosedPosition(
+        source_position_id=position.id,
+        source_position_snapshot_json=json_dumps(prior_position),
+        symbol=position.symbol,
+        option_type=position.option_type,
+        strike=position.strike,
+        expiration=position.expiration,
+        contracts=position.contracts,
+        trade_date=position.trade_date,
+        fill_price=position.fill_price,
+        total_cost=position.total_cost,
+        underlying_at_entry=position.underlying_at_entry,
+        close_date=close_date,
+        exit_price=exit_price,
+        total_proceeds=total_proceeds,
+        underlying_at_exit=underlying_at_exit,
+        dollar_pnl=dollar_pnl,
+        percent_pnl=percent_pnl,
+        account=position.account,
+        notes=notes,
+        source_event_id=position.source_event_id,
+        source_triggered_at=position.source_triggered_at,
+        source_match_method=position.source_match_method,
+        source_match_confidence=position.source_match_confidence,
+        source_match_notes=position.source_match_notes,
+        strategy_type=getattr(position, "strategy_type", None) or "single_leg",
+        strategy_model_version=getattr(position, "strategy_model_version", None),
+        strategy_legs_json=getattr(position, "strategy_legs_json", None),
+        strategy_net_premium=getattr(position, "strategy_net_premium", None),
+        strategy_max_loss=getattr(position, "strategy_max_loss", None),
+        strategy_max_profit=getattr(position, "strategy_max_profit", None),
+        strategy_breakevens_json=getattr(position, "strategy_breakevens_json", None),
+        strategy_direction=getattr(position, "strategy_direction", None),
+        strategy_volatility_exposure=getattr(position, "strategy_volatility_exposure", None),
+        rolled_from_position_id=getattr(position, "rolled_from_position_id", None),
+        roll_source_closed_position_id=getattr(position, "roll_source_closed_position_id", None),
+        roll_entry_net_cash_flow=getattr(position, "roll_entry_net_cash_flow", None),
+        rolled_to_position_id=rolled_to_position_id,
+        roll_exit_net_cash_flow=roll_exit_net_cash_flow,
+    )
+    db.add(closed)
+    db.flush()
+    record_position_event(
+        db,
+        position_id=position.id,
+        closed_position_id=closed.id,
+        event_type=event_type,
+        quantity_before=position.contracts,
+        quantity_after=0,
+        execution_price=exit_price,
+        total_cost_before=position.total_cost,
+        total_cost_after=0.0,
+        details={
+            "close_date": close_date.isoformat(),
+            "notes": notes,
+            **(event_details or {}),
+        },
+    )
+    trade_outcome = create_trade_outcome(db, closed)
+    skip_trade_sell_reminder(
+        db,
+        position.id,
+        "Position was rolled before the reminder fired."
+        if event_type == "rolled_out"
+        else "Position was closed before the reminder fired.",
+    )
+    return closed, trade_outcome, {
+        "dollar": dollar_pnl,
+        "percent": percent_pnl,
+        "total_proceeds": total_proceeds,
+    }
+
+
 @router.delete("/positions/{position_id}")
 def close_position(
     position_id: int,
     http_request: Request,
     payload: ClosePositionRequest,
 ):
-    """
-    Close a position by moving it to closed_position table and deleting from active positions.
-    Calculates P/L and tracks historical performance.
-    """
+    """Close a position and preserve its realized outcome in history."""
     with get_db_session() as db:
         position = db.query(OptionPosition).filter(OptionPosition.id == position_id).first()
         if not position:
             raise HTTPException(status_code=404, detail="Position not found")
         prior_position = _serialize_position(position)
-        
-        # Calculate P/L
-        total_proceeds = payload.exit_price * position.contracts * 100
-        dollar_pnl = total_proceeds - position.total_cost
-        percent_pnl = (dollar_pnl / position.total_cost) * 100 if position.total_cost else 0
         close_date = _parse_date(payload.close_date) if payload.close_date else date.today()
-        duplicate = _find_duplicate_closed_position(
+        closed, trade_outcome, pnl = _archive_open_position(
             db,
-            trade_date=position.trade_date,
-            close_date=close_date,
-            account=position.account,
-            contracts=position.contracts,
-            symbol=position.symbol,
-            expiration=position.expiration,
-            strike=position.strike,
-            option_type=position.option_type,
-            fill_price=position.fill_price,
+            position,
             exit_price=payload.exit_price,
-            total_cost=position.total_cost,
-        )
-        if duplicate:
-            raise HTTPException(
-                status_code=409,
-                detail=f"Duplicate closed position already exists as trade #{duplicate.id}.",
-            )
-        
-        # Get current underlying price
-        market = _market_data_for_symbol(get_market_data_provider(), position.symbol)
-        underlying_at_exit = market.get("current_price")
-        
-        # Create closed position record
-        closed = ClosedPosition(
-            source_position_id=position.id,
-            source_position_snapshot_json=json_dumps(prior_position),
-            symbol=position.symbol,
-            option_type=position.option_type,
-            strike=position.strike,
-            expiration=position.expiration,
-            contracts=position.contracts,
-            trade_date=position.trade_date,
-            fill_price=position.fill_price,
-            total_cost=position.total_cost,
-            underlying_at_entry=position.underlying_at_entry,
             close_date=close_date,
-            exit_price=payload.exit_price,
-            total_proceeds=total_proceeds,
-            underlying_at_exit=underlying_at_exit,
-            dollar_pnl=dollar_pnl,
-            percent_pnl=percent_pnl,
-            account=position.account,
             notes=payload.notes,
-            source_event_id=position.source_event_id,
-            source_triggered_at=position.source_triggered_at,
-            source_match_method=position.source_match_method,
-            source_match_confidence=position.source_match_confidence,
-            source_match_notes=position.source_match_notes,
-            strategy_type=getattr(position, "strategy_type", None) or "single_leg",
-            strategy_model_version=getattr(position, "strategy_model_version", None),
-            strategy_legs_json=getattr(position, "strategy_legs_json", None),
-            strategy_net_premium=getattr(position, "strategy_net_premium", None),
-            strategy_max_loss=getattr(position, "strategy_max_loss", None),
-            strategy_max_profit=getattr(position, "strategy_max_profit", None),
-            strategy_breakevens_json=getattr(position, "strategy_breakevens_json", None),
-            strategy_direction=getattr(position, "strategy_direction", None),
-            strategy_volatility_exposure=getattr(position, "strategy_volatility_exposure", None),
-        )
-        db.add(closed)
-        db.flush()
-        record_position_event(
-            db,
-            position_id=position.id,
-            closed_position_id=closed.id,
             event_type="closed",
-            quantity_before=position.contracts,
-            quantity_after=0,
-            execution_price=payload.exit_price,
-            total_cost_before=position.total_cost,
-            total_cost_after=0.0,
-            details={"close_date": close_date.isoformat(), "notes": payload.notes},
         )
-        trade_outcome = create_trade_outcome(db, closed)
-        skip_trade_sell_reminder(db, position.id, "Position was closed before the reminder fired.")
-        
-        # Delete active position
         db.delete(position)
         db.commit()
         set_secret_options_audit_change(
@@ -4600,17 +4659,211 @@ def close_position(
                 "status": "closed",
             },
         )
-        
         return _json_safe({
             "message": "Position closed successfully",
             "closed_position_id": closed.id,
             "symbol": closed.symbol,
             "learning_outcome": serialize_trade_outcome(trade_outcome),
-            "pnl": {
-                "dollar": dollar_pnl,
-                "percent": percent_pnl,
-                "total_proceeds": total_proceeds
-            }
+            "pnl": pnl,
+        })
+
+
+@router.post("/positions/{position_id}/roll")
+def roll_position(
+    position_id: int,
+    http_request: Request,
+    payload: RollPositionRequest,
+):
+    """Atomically close one single-leg contract and open its linked successor."""
+    with get_db_session() as db:
+        position = (
+            db.query(OptionPosition)
+            .filter(OptionPosition.id == position_id)
+            .with_for_update()
+            .first()
+        )
+        if not position:
+            raise HTTPException(status_code=404, detail="Position not found")
+        if (getattr(position, "strategy_type", None) or "single_leg") != "single_leg":
+            raise HTTPException(
+                status_code=409,
+                detail="Rolling currently supports tracked single-leg positions only.",
+            )
+
+        prior_position = _serialize_position(position)
+        roll_date = _parse_date(payload.roll_date) if payload.roll_date else date.today()
+        expiration = _parse_date(payload.expiration)
+        if roll_date < position.trade_date:
+            raise HTTPException(status_code=400, detail="Roll date cannot precede the original trade date.")
+        if roll_date > position.expiration:
+            raise HTTPException(status_code=400, detail="Roll date cannot be after the original expiration.")
+        if expiration <= roll_date:
+            raise HTTPException(status_code=400, detail="Replacement expiration must be after the roll date.")
+        if (
+            expiration == position.expiration
+            and float(payload.strike) == float(position.strike)
+            and payload.option_type == position.option_type
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="Replacement contract must change the expiration, strike, or option type.",
+            )
+
+        replacement_total_cost = payload.open_price * payload.contracts * 100
+        duplicate = _find_duplicate_open_position(
+            db,
+            trade_date=roll_date,
+            account=position.account,
+            action=position.action,
+            contracts=payload.contracts,
+            symbol=position.symbol,
+            expiration=expiration,
+            strike=payload.strike,
+            option_type=payload.option_type,
+            fill_price=payload.open_price,
+            total_cost=replacement_total_cost,
+            strategy_type="single_leg",
+            strategy_legs_json=None,
+            exclude_id=position.id,
+        )
+        if duplicate:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Matching replacement position already exists as trade #{duplicate.id}.",
+            )
+
+        underlying_at_roll = payload.underlying_at_roll
+        if underlying_at_roll is None:
+            market = _market_data_for_symbol(get_market_data_provider(), position.symbol)
+            underlying_at_roll = _finite_number(market.get("current_price"))
+        close_proceeds = payload.close_price * position.contracts * 100
+        net_cash_flow = close_proceeds - replacement_total_cost
+        source_notes = str(position.source_match_notes or "").strip()
+        roll_source_notes = f"Replacement contract rolled from position #{position.id}."
+        if source_notes:
+            roll_source_notes = f"{roll_source_notes} Original attribution: {source_notes}"
+
+        replacement = OptionPosition(
+            trade_date=roll_date,
+            account=position.account,
+            action=position.action or "Buy to Open",
+            contracts=payload.contracts,
+            symbol=position.symbol,
+            expiration=expiration,
+            strike=payload.strike,
+            option_type=payload.option_type,
+            fill_price=payload.open_price,
+            total_cost=replacement_total_cost,
+            underlying_at_entry=underlying_at_roll,
+            estimated_delta=None,
+            shares_equivalent=None,
+            dte_at_entry=(expiration - roll_date).days,
+            underlying_reference=underlying_at_roll,
+            source_event_id=position.source_event_id,
+            source_triggered_at=position.source_triggered_at,
+            source_match_method="roll_lineage" if position.source_event_id is not None else None,
+            source_match_confidence=position.source_match_confidence,
+            source_match_notes=roll_source_notes,
+            strategy_type="single_leg",
+            rolled_from_position_id=position.id,
+            roll_entry_net_cash_flow=net_cash_flow,
+        )
+        db.add(replacement)
+        db.flush()
+
+        closed, trade_outcome, pnl = _archive_open_position(
+            db,
+            position,
+            exit_price=payload.close_price,
+            close_date=roll_date,
+            notes=payload.notes,
+            event_type="rolled_out",
+            underlying_at_exit=underlying_at_roll,
+            rolled_to_position_id=replacement.id,
+            roll_exit_net_cash_flow=net_cash_flow,
+            event_details={
+                "replacement_position_id": replacement.id,
+                "replacement_expiration": expiration.isoformat(),
+                "replacement_strike": payload.strike,
+                "replacement_option_type": payload.option_type,
+                "replacement_contracts": payload.contracts,
+                "replacement_open_price": payload.open_price,
+                "replacement_total_cost": replacement_total_cost,
+                "net_cash_flow": net_cash_flow,
+            },
+        )
+        replacement.roll_source_closed_position_id = closed.id
+        source_event = (
+            db.query(OptionAlertEvent).filter(OptionAlertEvent.id == replacement.source_event_id).first()
+            if replacement.source_event_id is not None
+            else None
+        )
+        mandate = get_or_create_mandate(
+            db,
+            replacement,
+            source_event,
+            capture_kind="captured_at_roll",
+        )
+        record_position_event(
+            db,
+            position_id=replacement.id,
+            closed_position_id=closed.id,
+            event_type="rolled_in",
+            quantity_before=0,
+            quantity_after=replacement.contracts,
+            execution_price=replacement.fill_price,
+            total_cost_before=0.0,
+            total_cost_after=replacement.total_cost,
+            details={
+                "source_position_id": position.id,
+                "source_closed_position_id": closed.id,
+                "mandate_id": mandate.id,
+                "close_proceeds": close_proceeds,
+                "open_cost": replacement_total_cost,
+                "net_cash_flow": net_cash_flow,
+            },
+        )
+        sync_trade_sell_reminder(db, replacement)
+        db.delete(position)
+        db.commit()
+        db.refresh(replacement)
+
+        serialized = _serialize_position(
+            replacement,
+            _position_evaluation_window(db, replacement),
+        )
+        cash_flow_type = "credit" if net_cash_flow > 0 else "debit" if net_cash_flow < 0 else "even"
+        roll_receipt = {
+            "roll_date": roll_date.isoformat(),
+            "close_price": payload.close_price,
+            "open_price": payload.open_price,
+            "close_proceeds": close_proceeds,
+            "open_cost": replacement_total_cost,
+            "net_cash_flow": net_cash_flow,
+            "cash_flow_type": cash_flow_type,
+            "cash_flow_amount": abs(net_cash_flow),
+        }
+        set_secret_options_audit_change(
+            http_request,
+            object_type="position_roll",
+            object_id=replacement.id,
+            before=prior_position,
+            after={
+                "status": "rolled",
+                "source_position_id": position_id,
+                "source_closed_position_id": closed.id,
+                "replacement_position": serialized,
+                "roll": roll_receipt,
+            },
+        )
+        return _json_safe({
+            "message": f"{replacement.symbol} rolled into position #{replacement.id}.",
+            "source_position_id": position_id,
+            "closed_position_id": closed.id,
+            "position": serialized,
+            "roll": roll_receipt,
+            "source_leg_pnl": pnl,
+            "learning_outcome": serialize_trade_outcome(trade_outcome),
         })
 
 
@@ -4626,6 +4879,14 @@ def restore_closed_position(closed_position_id: int, http_request: Request):
         )
         if not closed:
             raise HTTPException(status_code=404, detail="Closed position not found")
+        if closed.rolled_to_position_id is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"This trade was rolled into position #{closed.rolled_to_position_id} and cannot "
+                    "be restored by itself. Manage the linked successor instead."
+                ),
+            )
         if closed.source_position_id is None:
             raise HTTPException(
                 status_code=409,
@@ -4789,6 +5050,18 @@ def restore_closed_position(closed_position_id: int, http_request: Request):
                 snapshot.get("strategy_volatility_exposure")
                 if "strategy_volatility_exposure" in snapshot
                 else getattr(closed, "strategy_volatility_exposure", None)
+            ),
+            rolled_from_position_id=snapshot_int(
+                "rolled_from_position_id",
+                getattr(closed, "rolled_from_position_id", None),
+            ),
+            roll_source_closed_position_id=snapshot_int(
+                "roll_source_closed_position_id",
+                getattr(closed, "roll_source_closed_position_id", None),
+            ),
+            roll_entry_net_cash_flow=snapshot_float(
+                "roll_entry_net_cash_flow",
+                getattr(closed, "roll_entry_net_cash_flow", None),
             ),
         )
         db.add(restored)
@@ -5127,6 +5400,18 @@ def delete_closed_position(closed_position_id: int, http_request: Request):
         position = db.query(ClosedPosition).filter(ClosedPosition.id == closed_position_id).first()
         if not position:
             raise HTTPException(status_code=404, detail="Closed position not found")
+        predecessor = (
+            db.query(ClosedPosition)
+            .filter(ClosedPosition.rolled_to_position_id == position.source_position_id)
+            .first()
+            if position.source_position_id is not None
+            else None
+        )
+        if position.rolled_to_position_id is not None or predecessor is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="Closed trades that belong to a roll chain cannot be deleted.",
+            )
         prior_position = _serialize_closed_position(position, None)
 
         db.delete(position)

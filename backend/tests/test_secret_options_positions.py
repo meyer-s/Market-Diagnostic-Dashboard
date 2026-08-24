@@ -2982,6 +2982,145 @@ def test_close_position_rejects_duplicate_closed_trade(secret_options_client) ->
     assert "Duplicate closed position" in response.json()["detail"]
 
 
+def test_roll_position_atomically_links_closed_source_and_open_successor(
+    secret_options_client,
+) -> None:
+    client, session_local = secret_options_client
+    with session_local() as db:
+        position = OptionPosition(
+            trade_date=date(2026, 7, 1),
+            account="Active Trading",
+            action="Buy to Open",
+            contracts=2,
+            symbol="SYY",
+            expiration=date(2026, 9, 18),
+            strike=80.0,
+            option_type="call",
+            fill_price=2.0,
+            total_cost=400.0,
+            underlying_at_entry=78.0,
+        )
+        db.add(position)
+        db.flush()
+        db.add(
+            OptionPositionReview(
+                position_id=position.id,
+                review_sequence=1,
+                review_date=date(2026, 8, 20),
+                symbol="SYY",
+                expiration=position.expiration,
+                strike=position.strike,
+                option_type=position.option_type,
+                contracts_snapshot=position.contracts,
+                target_contracts=position.contracts,
+                original_thesis="Food-service demand remains resilient.",
+            )
+        )
+        db.commit()
+        source_position_id = position.id
+
+    response = client.post(
+        f"/secret/options/positions/{source_position_id}/roll",
+        json={
+            "close_price": 3.0,
+            "open_price": 4.0,
+            "roll_date": "2026-08-24",
+            "expiration": "2026-12-18",
+            "strike": 85.0,
+            "option_type": "call",
+            "contracts": 1,
+            "underlying_at_roll": 82.5,
+            "notes": "Extend the thesis window with less premium at risk.",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    replacement_id = body["position"]["id"]
+    closed_id = body["closed_position_id"]
+    assert replacement_id != source_position_id
+    assert body["position"]["rolled_from_position_id"] == source_position_id
+    assert body["position"]["roll_source_closed_position_id"] == closed_id
+    assert body["position"]["roll_entry_net_cash_flow"] == 200.0
+    assert body["roll"] == {
+        "roll_date": "2026-08-24",
+        "close_price": 3.0,
+        "open_price": 4.0,
+        "close_proceeds": 600.0,
+        "open_cost": 400.0,
+        "net_cash_flow": 200.0,
+        "cash_flow_type": "credit",
+        "cash_flow_amount": 200.0,
+    }
+
+    with session_local() as db:
+        assert db.query(OptionPosition).filter(OptionPosition.id == source_position_id).first() is None
+        replacement = db.query(OptionPosition).filter(OptionPosition.id == replacement_id).one()
+        assert replacement.trade_date == date(2026, 8, 24)
+        assert replacement.expiration == date(2026, 12, 18)
+        assert replacement.total_cost == 400.0
+        assert replacement.underlying_at_entry == 82.5
+        closed = db.query(ClosedPosition).filter(ClosedPosition.id == closed_id).one()
+        assert closed.source_position_id == source_position_id
+        assert closed.rolled_to_position_id == replacement_id
+        assert closed.roll_exit_net_cash_flow == 200.0
+        assert closed.notes == "Extend the thesis window with less premium at risk."
+        assert db.query(OptionPositionReview).filter(
+            OptionPositionReview.position_id == source_position_id
+        ).count() == 1
+        event_types = {
+            (row.position_id, row.event_type)
+            for row in db.query(OptionPositionEvent).all()
+        }
+        assert (source_position_id, "rolled_out") in event_types
+        assert (replacement_id, "rolled_in") in event_types
+
+    restore_response = client.post(f"/secret/options/closed-positions/{closed_id}/restore")
+    assert restore_response.status_code == 409
+    assert "rolled into position" in restore_response.json()["detail"]
+
+    delete_response = client.delete(f"/secret/options/closed-positions/{closed_id}")
+    assert delete_response.status_code == 409
+    assert "roll chain" in delete_response.json()["detail"]
+
+
+def test_roll_position_validation_leaves_source_untouched(secret_options_client) -> None:
+    client, session_local = secret_options_client
+    with session_local() as db:
+        position = OptionPosition(
+            trade_date=date(2026, 8, 1),
+            contracts=1,
+            symbol="KVUE",
+            expiration=date(2026, 10, 16),
+            strike=20.0,
+            option_type="call",
+            fill_price=1.25,
+            total_cost=125.0,
+        )
+        db.add(position)
+        db.commit()
+        position_id = position.id
+
+    response = client.post(
+        f"/secret/options/positions/{position_id}/roll",
+        json={
+            "close_price": 1.0,
+            "open_price": 1.5,
+            "roll_date": "2026-08-24",
+            "expiration": "2026-10-16",
+            "strike": 20.0,
+            "option_type": "call",
+            "contracts": 1,
+        },
+    )
+
+    assert response.status_code == 400
+    assert "Replacement contract must change" in response.json()["detail"]
+    with session_local() as db:
+        assert db.query(OptionPosition).filter(OptionPosition.id == position_id).count() == 1
+        assert db.query(ClosedPosition).count() == 0
+
+
 def test_restore_closed_position_reconnects_history_and_reverses_learning(
     secret_options_client,
 ) -> None:
