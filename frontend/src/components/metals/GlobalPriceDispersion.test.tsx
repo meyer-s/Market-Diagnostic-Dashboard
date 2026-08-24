@@ -229,15 +229,17 @@ describe("GlobalPriceDispersion", () => {
     render(<GlobalPriceDispersion />);
 
     expect(screen.getByRole("heading", { name: "Global exchange trends" })).not.toBeNull();
-    expect(screen.getByText("2 histories · 1 latest")).not.toBeNull();
-    expect(screen.getByRole("button", { name: "Silver AG" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText(/2 markets · through/)).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Silver" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByRole("button", { name: "3M" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.queryByRole("combobox")).toBeNull();
     expect(screen.getByRole("button", { name: /Hide COMEX COMEX Silver futures/ }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText("Venue prices & sources").closest("details")?.hasAttribute("open")).toBe(false);
+    fireEvent.click(screen.getByText("Venue prices & sources"));
     expect(screen.getByRole("button", { name: /COMEX, COMEX Silver futures/ }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getAllByText("USD 35.00 / troy oz").length).toBeGreaterThan(0);
-    expect(screen.getByText(/Compare direction, not absolute prices/)).not.toBeNull();
-    expect(screen.queryByRole("button", { name: /SHFE.*Silver futures/ })).toBeNull();
+    expect(screen.getByText(/Compare direction, not price/)).not.toBeNull();
+    expect(screen.getByRole("button", { name: /SHFE.*Silver futures.*Unavailable/ })).not.toBeNull();
   });
 
   it("toggles venue lines and keeps detailed evidence in one disclosure", () => {
@@ -253,11 +255,10 @@ describe("GlobalPriceDispersion", () => {
     fireEvent.click(lbmaToggle);
     expect(lbmaToggle.getAttribute("aria-pressed")).toBe("false");
 
+    fireEvent.click(screen.getByText("Venue prices & sources"));
     fireEvent.click(screen.getByRole("button", { name: /COMEX, COMEX Silver futures/ }));
-    fireEvent.click(screen.getByText("Full receipt"));
     expect(screen.getByText(/Yahoo Finance month-specific futures history/)).not.toBeNull();
-    fireEvent.click(screen.getByText("Data, sources & method"));
     expect(screen.getByRole("region", { name: "Silver exchange trend summary table" }).getAttribute("tabindex")).toBe("0");
-    expect(screen.getAllByText("Full published delayed benchmark history").length).toBeGreaterThan(0);
+    expect(screen.getByText("London Bullion Market Association")).not.toBeNull();
   });
 });

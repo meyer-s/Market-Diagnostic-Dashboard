@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { AlertTriangle, ChevronDown, Database, RefreshCw } from "lucide-react";
+import { AlertTriangle, ChevronDown, RefreshCw } from "lucide-react";
 import {
   CartesianGrid,
   Line,
@@ -251,12 +251,6 @@ function formatLocal(row: VenueObservation): string {
   return `${row.currency} ${row.local_price.toLocaleString("en-US", { maximumFractionDigits: 4 })} / ${row.native_unit}`;
 }
 
-function formatGap(value: number | null): string {
-  if (value == null) return "—";
-  if (Math.abs(value) < 0.005) return "0.00%";
-  return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
-}
-
 function formatMove(value: number): string {
   return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
@@ -358,65 +352,58 @@ export default function GlobalPriceDispersion() {
   };
 
   const currentMetal = METALS.find((item) => item.metal === metal)?.name ?? metal;
+  const currentRange = RANGES.find((item) => item.days === days)?.label ?? `${days}D`;
   const hasAnyData = Boolean(latest.data || history.data);
   const bothFailed = Boolean(latest.error && history.error && !hasAnyData);
 
   return (
     <section id="global-price-dispersion" className="section-anchor surface-card-strong overflow-hidden" aria-labelledby="global-dispersion-heading">
-      <div className="border-b border-stealth-700 px-4 py-4 md:px-5 md:py-5">
+      <div className="border-b border-stealth-700 px-4 py-4 md:px-6 md:py-5">
         <div className="flex items-start justify-between gap-3">
-          <div className="max-w-2xl">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 id="global-dispersion-heading" className="text-xl font-bold text-white md:text-2xl">Global exchange trends</h2>
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-stealth-600 bg-stealth-900 px-2.5 py-1 text-xs font-semibold text-stealth-200">
-                <Database size={13} aria-hidden="true" />
-                {history.data?.summary.historical_venues ?? 0} histories · {latest.data?.summary.observed_venues ?? 0} latest
-              </span>
-            </div>
-            <p className="mt-1 max-w-[68ch] text-sm text-stealth-300">
-              Indexed exchange direction with the latest normalized quote beside it. Each line starts at 100; gaps are not arbitrage signals.
-            </p>
+          <div>
+            <h2 id="global-dispersion-heading" className="text-xl font-bold text-white md:text-2xl">Global exchange trends</h2>
+            <p className="mt-1 text-sm text-stealth-300">Track how the same metal is moving across markets.</p>
           </div>
 
           <button
             type="button"
             onClick={refreshAll}
-            className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl border border-stealth-600 bg-stealth-900 px-3 text-sm font-semibold text-stealth-100 transition hover:border-blue-400 hover:bg-stealth-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-stealth-600 bg-stealth-900 text-stealth-200 transition hover:border-blue-400 hover:bg-stealth-800 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
             aria-label="Refresh exchange trends and latest quotes"
           >
-            <RefreshCw size={15} aria-hidden="true" /> <span className="hidden sm:inline">Refresh</span>
+            <RefreshCw size={16} aria-hidden="true" />
           </button>
         </div>
 
         <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex max-w-full flex-nowrap gap-1.5 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible lg:pb-0" role="group" aria-label="Metal">
+          <div className="flex max-w-full flex-nowrap gap-1 overflow-x-auto rounded-xl bg-stealth-950/65 p-1 lg:flex-wrap lg:overflow-visible" role="group" aria-label="Metal">
             {METALS.map((item) => (
               <button
                 key={item.metal}
                 type="button"
                 onClick={() => setMetal(item.metal)}
                 aria-pressed={metal === item.metal}
-                className={`min-h-11 shrink-0 rounded-xl px-3 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 ${
+                className={`min-h-11 shrink-0 rounded-lg px-3 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 ${
                   metal === item.metal
-                    ? "bg-blue-500/15 text-blue-100 shadow-[inset_0_0_0_1px_rgba(96,165,250,0.42)]"
+                    ? "bg-stealth-100 text-stealth-950"
                     : "text-stealth-300 hover:bg-stealth-800 hover:text-white"
                 }`}
               >
-                {item.name} <span className="text-xs opacity-70">{item.metal}</span>
+                {item.name}
               </button>
             ))}
           </div>
-          <div className="flex gap-1.5" role="group" aria-label="Trend range">
+          <div className="flex w-fit gap-1 rounded-xl bg-stealth-950/65 p-1" role="group" aria-label="Trend range">
             {RANGES.map((range) => (
               <button
                 key={range.days}
                 type="button"
                 onClick={() => setDays(range.days)}
                 aria-pressed={days === range.days}
-                className={`min-h-11 min-w-12 rounded-xl px-3 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 ${
+                className={`min-h-11 min-w-12 rounded-lg px-3 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 ${
                   days === range.days
                     ? "bg-stealth-100 text-stealth-950"
-                    : "border border-stealth-700 text-stealth-300 hover:border-stealth-500 hover:text-white"
+                    : "text-stealth-300 hover:bg-stealth-800 hover:text-white"
                 }`}
               >
                 {range.label}
@@ -446,43 +433,51 @@ export default function GlobalPriceDispersion() {
             </div>
           )}
 
-          <div className="grid xl:grid-cols-[minmax(0,1fr)_320px]">
-            <div className="min-w-0 border-b border-stealth-700 p-4 md:p-5 xl:border-b-0 xl:border-r">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 className="font-semibold text-white">{currentMetal} · indexed move</h3>
-                  <p className="mt-1 text-xs text-stealth-400">100 = each venue’s first available close in this window</p>
-                </div>
-                <span className="text-xs text-stealth-400">Through {formatDate(history.data?.summary.latest_history_date ?? null)}</span>
+          <div className="min-w-0 p-4 md:p-6">
+            <div className="flex flex-wrap items-end justify-between gap-2">
+              <div>
+                <h3 className="text-lg font-semibold text-white">{currentMetal} · {currentRange}</h3>
+                <p className="mt-1 text-xs text-stealth-400">Indexed performance · each market starts at 100</p>
               </div>
-
-              {history.data?.series.length ? (
-                <div className="mt-4 flex flex-wrap gap-2" role="group" aria-label={`${currentMetal} histories shown on chart`}>
-                  {history.data.series.map((series) => {
-                    const style = lineStyleById.get(series.registry_id) ?? LINE_STYLES[0];
-                    const shown = !hiddenSeries.has(series.registry_id);
-                    return (
-                      <button
-                        key={series.registry_id}
-                        type="button"
-                        onClick={() => toggleSeries(series.registry_id)}
-                        aria-pressed={shown}
-                        aria-label={`${shown ? "Hide" : "Show"} ${series.venue} ${series.product_name}`}
-                        className={`inline-flex min-h-11 items-center gap-2 rounded-xl border px-3 text-left text-xs font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 ${
-                          shown ? "border-stealth-500 bg-stealth-900 text-white" : "border-stealth-800 text-stealth-400"
-                        }`}
-                      >
-                        <span className="h-0.5 w-5" style={{ backgroundColor: shown ? style.color : "#64748b" }} aria-hidden="true" />
-                        <span>{series.venue}</span>
-                        <span className="font-normal text-stealth-400">{series.observation_count} obs</span>
-                        <span className={series.change_pct >= 0 ? "text-emerald-200" : "text-rose-200"}>{formatMove(series.change_pct)}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+              {history.data ? (
+                <p className="text-xs text-stealth-400">
+                  {history.data.summary.historical_venues} markets · through {formatDate(history.data.summary.latest_history_date)}
+                </p>
               ) : null}
+            </div>
 
-              <div className="mt-4 h-[330px] md:h-[390px]">
+            {history.data?.series.length ? (
+              <div className="mt-3 flex flex-nowrap gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible" role="group" aria-label={`${currentMetal} histories shown on chart`}>
+                {history.data.series.map((series) => {
+                  const style = lineStyleById.get(series.registry_id) ?? LINE_STYLES[0];
+                  const shown = !hiddenSeries.has(series.registry_id);
+                  const hasVenuePeer = history.data!.series.some((candidate) => (
+                    candidate.registry_id !== series.registry_id && candidate.venue === series.venue
+                  ));
+                  const displayName = hasVenuePeer
+                    ? `${series.venue} ${series.symbol ?? series.product_name}`
+                    : series.venue;
+                  return (
+                    <button
+                      key={series.registry_id}
+                      type="button"
+                      onClick={() => toggleSeries(series.registry_id)}
+                      aria-pressed={shown}
+                      aria-label={`${shown ? "Hide" : "Show"} ${series.venue} ${series.product_name}`}
+                      className={`inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-2.5 text-left text-xs font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 ${
+                        shown ? "text-white" : "text-stealth-500 line-through"
+                      }`}
+                    >
+                      <span className="h-0.5 w-5" style={{ backgroundColor: shown ? style.color : "#64748b" }} aria-hidden="true" />
+                      <span>{displayName}</span>
+                      <span className={series.change_pct >= 0 ? "tabular-nums text-emerald-200" : "tabular-nums text-rose-200"}>{formatMove(series.change_pct)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+
+            <div className="mt-2 h-[290px] sm:h-[350px] lg:h-[430px]">
                 {history.loading && !history.data ? (
                   <div className="flex h-full items-center justify-center" role="status">
                     <div className="w-full max-w-lg">
@@ -492,7 +487,7 @@ export default function GlobalPriceDispersion() {
                   </div>
                 ) : !history.data?.series.length ? (
                   <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-stealth-700 px-6 text-center text-sm text-stealth-300">
-                    No source-backed {currentMetal.toLowerCase()} history is available for this window. Latest quotes still appear beside the chart.
+                    No source-backed {currentMetal.toLowerCase()} history is available for this window.
                   </div>
                 ) : visibleSeries.length === 0 ? (
                   <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-stealth-700 px-6 text-center text-sm text-stealth-300">
@@ -504,7 +499,7 @@ export default function GlobalPriceDispersion() {
                       accessibilityLayer
                       aria-label={`${currentMetal} exchange histories indexed to 100 over ${days} days`}
                       data={chartData}
-                      margin={{ top: 8, right: 12, left: -6, bottom: 0 }}
+                      margin={{ top: 12, right: 18, left: -6, bottom: 0 }}
                     >
                       <CartesianGrid strokeDasharray="3 5" stroke={CHART_NEUTRAL.grid} vertical={false} />
                       <XAxis
@@ -556,172 +551,106 @@ export default function GlobalPriceDispersion() {
                     </LineChart>
                   </ResponsiveContainer>
                 )}
-              </div>
-
-              <p className="mt-3 max-w-[72ch] text-xs leading-relaxed text-stealth-400">
-                Compare direction, not absolute prices. Products, closes, calendars, tax, delivery, and available windows can differ.
-              </p>
             </div>
 
-            <aside className="bg-stealth-950/30 p-4 md:p-5" aria-labelledby="latest-venue-heading">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h3 id="latest-venue-heading" className="font-semibold text-white">Latest quotes</h3>
-                  <p className="mt-1 text-xs text-stealth-400">Normalized to {latest.data?.canonical_currency ?? "USD"}/{latest.data?.canonical_unit ?? "unit"}</p>
-                </div>
-                {latest.data ? <span className="text-xs text-stealth-400">{observedVenues.length}/{latest.data.summary.registered_venues} live</span> : null}
-              </div>
-
-              {latest.loading && !latest.data ? (
-                <div className="mt-5 text-sm text-stealth-300" role="status">Loading latest venue quotes…</div>
-              ) : observedVenues.length ? (
-                <div className="mt-4 space-y-1" role="group" aria-label={`${currentMetal} latest venue quotes`}>
-                  {observedVenues.map((row) => {
-                    const status = STATUS_LABELS[row.comparability_status];
-                    const isSelected = row.registry_id === selectedId;
-                    return (
-                      <button
-                        key={row.registry_id}
-                        type="button"
-                        onClick={() => setSelectedId(row.registry_id)}
-                        aria-pressed={isSelected}
-                        aria-controls="selected-venue-receipt"
-                        className={`grid min-h-[64px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-3 py-2 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 ${
-                          isSelected ? "bg-blue-500/10 shadow-[inset_0_0_0_1px_rgba(96,165,250,0.4)]" : "hover:bg-stealth-800/65"
-                        }`}
-                        aria-label={`${row.venue}, ${row.product_name}, ${formatCanonical(row.normalized_price, latest.data!.canonical_currency, latest.data!.canonical_unit)}, ${status.label}`}
-                      >
-                        <span className="min-w-0">
-                          <span className="flex items-center gap-2 font-semibold text-white">
-                            {row.venue}
-                            <span className={`text-xs ${status.className}`}><span aria-hidden="true">{status.mark}</span> {status.label}</span>
-                          </span>
-                          <span className="mt-1 block truncate text-xs text-stealth-400">{row.product_name}</span>
-                        </span>
-                        <span className="text-right">
-                          <span className="block text-sm font-semibold text-stealth-100">{formatCanonical(row.normalized_price, latest.data!.canonical_currency, latest.data!.canonical_unit)}</span>
-                          <span className="mt-1 block text-xs text-stealth-400">{formatGap(row.premium_pct)} · {freshnessLabel(row)}</span>
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="mt-4 text-sm text-stealth-300">No current venue quote is available.</p>
-              )}
-
-              {(selected || selectedHistory) && (
-                <div id="selected-venue-receipt" className="mt-4 border-t border-stealth-700 pt-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-xs text-stealth-400">Selected venue</p>
-                      <h4 className="mt-1 font-semibold text-white">{selected?.venue ?? selectedHistory?.venue} · {selected?.product_name ?? selectedHistory?.product_name}</h4>
-                    </div>
-                    {selectedHistory ? (
-                      <span className={selectedHistory.change_pct >= 0 ? "text-sm font-semibold text-emerald-200" : "text-sm font-semibold text-rose-200"}>
-                        {formatMove(selectedHistory.change_pct)}
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-                    <div><span className="text-stealth-400">Latest</span><div className="mt-0.5 font-semibold text-stealth-100">{selected && latest.data ? formatCanonical(selected.normalized_price, latest.data.canonical_currency, latest.data.canonical_unit) : "n/a"}</div></div>
-                    <div><span className="text-stealth-400">Updated</span><div className="mt-0.5 font-semibold text-stealth-100">{selected?.quote_timestamp ? formatTimestamp(selected.quote_timestamp) : formatDate(selectedHistory?.coverage_end ?? null)}</div></div>
-                  </div>
-                  {selected?.comparability_reasons.length ? (
-                    <p className="mt-3 text-xs leading-relaxed text-orange-100">Not like-for-like: {selected.comparability_reasons.join(" · ")}</p>
-                  ) : null}
-
-                  <details className="mt-3 border-t border-stealth-800 pt-2">
-                    <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-stealth-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
-                      Full receipt <ChevronDown size={15} aria-hidden="true" />
-                    </summary>
-                    {selected ? (
-                      <dl>
-                        <DetailValue label="Instrument">{selected.symbol ?? "Symbol unavailable"} · {selected.market_type}{selected.contract_month ? ` · ${selected.contract_month}` : " · month unavailable"}</DetailValue>
-                        <DetailValue label="Native quote">{formatLocal(selected)}</DetailValue>
-                        <DetailValue label="FX">{formatFx(selected)}</DetailValue>
-                        <DetailValue label="Quote">{selected.price_type ?? "Type unavailable"} · {formatTimestamp(selected.quote_timestamp)} · {selected.data_delay}</DetailValue>
-                        <DetailValue label="Basis">{selected.tax_basis} · {selected.purity ?? "purity unavailable"} · {selected.delivery_location ?? "delivery unavailable"}</DetailValue>
-                        <DetailValue label="Source">{selected.source_name} · {selected.redistribution_status}</DetailValue>
-                      </dl>
-                    ) : selectedHistory ? (
-                      <dl>
-                        <DetailValue label="Coverage">{formatDate(selectedHistory.coverage_start)} – {formatDate(selectedHistory.coverage_end)} · {selectedHistory.observation_count} observations</DetailValue>
-                        <DetailValue label="Source">{selectedHistory.source_name} · {selectedHistory.history_scope}</DetailValue>
-                      </dl>
-                    ) : null}
-                  </details>
-                </div>
-              )}
-            </aside>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-stealth-800 pt-3 text-xs text-stealth-400">
+              <span>Compare direction, not price. Products and market closes differ.</span>
+              {latest.data ? <span>{latest.data.summary.observed_venues} current quotes</span> : null}
+            </div>
           </div>
 
           <details className="border-t border-stealth-700">
-            <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 text-sm font-semibold text-stealth-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-300 md:px-5">
-              Data, sources & method <ChevronDown size={15} aria-hidden="true" />
+            <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-3 px-4 text-sm font-semibold text-stealth-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-300 md:px-6">
+              <span>Venue prices &amp; sources</span>
+              <span className="inline-flex items-center gap-2 text-xs font-normal text-stealth-400">
+                {observedVenues.length} quotes <ChevronDown size={15} aria-hidden="true" />
+              </span>
             </summary>
-            <div className="border-t border-stealth-800">
-              <div className="overflow-x-auto p-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-300 md:p-5" role="region" aria-label={`${currentMetal} exchange trend summary table`} tabIndex={0}>
-                <table className="w-full min-w-[760px] text-left text-xs">
-                  <caption className="pb-3 text-left text-stealth-300">Source-backed series shown on the indexed chart.</caption>
+            <div className="border-t border-stealth-800 bg-stealth-950/30 p-4 md:p-6">
+              {latest.loading && !latest.data ? (
+                <div className="text-sm text-stealth-300" role="status">Loading venue prices…</div>
+              ) : (
+                <div className="overflow-x-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-300" role="region" aria-label={`${currentMetal} exchange trend summary table`} tabIndex={0}>
+                <table className="w-full min-w-[720px] text-left text-xs">
+                  <caption className="pb-3 text-left text-sm font-semibold text-white">Current normalized prices</caption>
                   <thead className="text-stealth-400">
-                    <tr>{["Venue", "Product", "Window", "Observations", "Start", "Latest", "Move", "Source"].map((heading) => <th key={heading} scope="col" className="border-b border-stealth-700 px-2 py-2 font-semibold">{heading}</th>)}</tr>
+                    <tr>{["Venue", "Product", "Latest", currentRange, "State", "Updated"].map((heading) => <th key={heading} scope="col" className="border-b border-stealth-700 px-2 py-2 font-semibold">{heading}</th>)}</tr>
                   </thead>
                   <tbody className="text-stealth-200">
-                    {(history.data?.series ?? []).map((series) => (
-                      <tr key={series.registry_id} className="border-b border-stealth-800 align-top last:border-b-0">
-                        <th scope="row" className="px-2 py-3 font-semibold text-white">{series.venue}</th>
-                        <td className="px-2 py-3">{series.product_name}</td>
-                        <td className="px-2 py-3">{formatDate(series.coverage_start)} – {formatDate(series.coverage_end)}</td>
-                        <td className="px-2 py-3">{series.observation_count}</td>
-                        <td className="px-2 py-3">{formatCanonical(series.baseline_price, series.canonical_currency, series.canonical_unit)}</td>
-                        <td className="px-2 py-3">{formatCanonical(series.latest_price, series.canonical_currency, series.canonical_unit)}</td>
-                        <td className="px-2 py-3 font-semibold">{formatMove(series.change_pct)}</td>
-                        <td className="px-2 py-3">{series.source_name}<div className="mt-1 text-stealth-400">{series.history_scope}</div></td>
-                      </tr>
-                    ))}
+                    {(latest.data?.venues ?? []).map((row) => {
+                      const rowHistory = history.data?.series.find((series) => series.registry_id === row.registry_id);
+                      const status = STATUS_LABELS[row.comparability_status];
+                      const isSelected = row.registry_id === selectedId;
+                      return (
+                        <tr key={row.registry_id} className="border-b border-stealth-800 align-top last:border-b-0">
+                          <th scope="row" className="px-2 py-2">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedId(row.registry_id)}
+                              aria-pressed={isSelected}
+                              aria-controls="selected-venue-receipt"
+                              aria-label={`${row.venue}, ${row.product_name}, ${formatCanonical(row.normalized_price, latest.data!.canonical_currency, latest.data!.canonical_unit)}, ${status.label}`}
+                              className={`min-h-11 rounded-lg px-2 text-left font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 ${isSelected ? "bg-blue-500/10 text-blue-100" : "text-white hover:bg-stealth-800"}`}
+                            >
+                              {row.venue}
+                            </button>
+                          </th>
+                          <td className="px-2 py-3">{row.product_name}</td>
+                          <td className="px-2 py-3 tabular-nums">{formatCanonical(row.normalized_price, latest.data!.canonical_currency, latest.data!.canonical_unit)}</td>
+                          <td className="px-2 py-3 font-semibold tabular-nums">{rowHistory ? formatMove(rowHistory.change_pct) : "—"}</td>
+                          <td className={`px-2 py-3 font-semibold ${status.className}`}>{status.mark} {status.label}</td>
+                          <td className="px-2 py-3">{freshnessLabel(row)}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
+              )}
 
-              <div className="grid gap-5 border-t border-stealth-800 bg-stealth-950/40 px-4 py-4 md:grid-cols-2 md:px-5">
-                <div>
-                  <h3 className="text-sm font-semibold text-white">Latest venue coverage</h3>
-                  <p className="mt-1 text-xs text-stealth-400">{unavailableVenues.length} registered venues currently lack a usable quote. They are not drawn as history.</p>
-                  <div className="mt-3 overflow-x-auto" role="region" aria-label={`${currentMetal} latest venue coverage table`} tabIndex={0}>
-                    <table className="w-full min-w-[520px] text-left text-xs">
-                      <thead className="text-stealth-400"><tr><th className="border-b border-stealth-700 px-2 py-2">Venue</th><th className="border-b border-stealth-700 px-2 py-2">Product</th><th className="border-b border-stealth-700 px-2 py-2">State</th><th className="border-b border-stealth-700 px-2 py-2">Latest</th></tr></thead>
-                      <tbody>{(latest.data?.venues ?? []).map((row) => (
-                        <tr key={row.registry_id} className="border-b border-stealth-800 last:border-b-0">
-                          <th scope="row" className="px-2 py-2 font-semibold text-white">{row.venue}</th>
-                          <td className="px-2 py-2 text-stealth-200">{row.product_name}</td>
-                          <td className={`px-2 py-2 font-semibold ${STATUS_LABELS[row.comparability_status].className}`}>{STATUS_LABELS[row.comparability_status].label}</td>
-                          <td className="px-2 py-2 text-stealth-200">{latest.data ? formatCanonical(row.normalized_price, latest.data.canonical_currency, latest.data.canonical_unit) : "n/a"}</td>
-                        </tr>
-                      ))}</tbody>
-                    </table>
+              {(selected || selectedHistory) && (
+                <div id="selected-venue-receipt" className="mt-6 border-t border-stealth-700 pt-5">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <h3 className="text-sm font-semibold text-white">{selected?.venue ?? selectedHistory?.venue} source receipt</h3>
+                      <p className="mt-1 text-xs text-stealth-400">{selected?.product_name ?? selectedHistory?.product_name}</p>
+                    </div>
+                    {selectedHistory ? <span className="text-sm font-semibold tabular-nums text-stealth-100">{currentRange} {formatMove(selectedHistory.change_pct)}</span> : null}
                   </div>
+                  {selected ? (
+                    <dl className="mt-3 grid gap-x-6 md:grid-cols-2 xl:grid-cols-3">
+                      <DetailValue label="Instrument">{selected.symbol ?? "Symbol unavailable"} · {selected.market_type}{selected.contract_month ? ` · ${selected.contract_month}` : " · month unavailable"}</DetailValue>
+                      <DetailValue label="Native quote">{formatLocal(selected)}</DetailValue>
+                      <DetailValue label="FX">{formatFx(selected)}</DetailValue>
+                      <DetailValue label="Quote">{selected.price_type ?? "Type unavailable"} · {formatTimestamp(selected.quote_timestamp)} · {selected.data_delay}</DetailValue>
+                      <DetailValue label="Basis">{selected.tax_basis} · {selected.purity ?? "purity unavailable"} · {selected.delivery_location ?? "delivery unavailable"}</DetailValue>
+                      <DetailValue label="Source">{selected.source_name} · {selected.redistribution_status}</DetailValue>
+                      {selectedHistory ? <DetailValue label="History">{formatDate(selectedHistory.coverage_start)} – {formatDate(selectedHistory.coverage_end)} · {selectedHistory.observation_count} observations · {selectedHistory.history_scope}</DetailValue> : null}
+                    </dl>
+                  ) : selectedHistory ? (
+                    <dl className="mt-3 grid gap-x-6 md:grid-cols-2">
+                      <DetailValue label="Coverage">{formatDate(selectedHistory.coverage_start)} – {formatDate(selectedHistory.coverage_end)} · {selectedHistory.observation_count} observations</DetailValue>
+                      <DetailValue label="Source">{selectedHistory.source_name} · {selectedHistory.history_scope}</DetailValue>
+                    </dl>
+                  ) : null}
+                  {selected?.comparability_reasons.length ? <p className="mt-3 text-xs text-orange-100">Not like-for-like: {selected.comparability_reasons.join(" · ")}</p> : null}
                 </div>
+              )}
 
-                <div>
-                  <h3 className="text-sm font-semibold text-white">How this is built</h3>
-                  <ul className="mt-3 space-y-2 text-xs leading-relaxed text-stealth-300">
-                    {(history.data?.limitations ?? [
-                      "Each series starts at 100 at its first source-backed observation.",
-                      "Different products and closes are not absolute price comparisons.",
-                    ]).map((item) => <li key={item}>• {item}</li>)}
-                    {latest.data ? <li>• {latest.data.method.normalization}</li> : null}
-                  </ul>
-                  <div className="mt-4 space-y-2">
-                    {[...(history.data?.sources ?? []), ...(latest.data?.sources ?? [])]
-                      .filter((source, index, all) => all.findIndex((candidate) => candidate.provider_id === source.provider_id && candidate.history_scope === source.history_scope) === index)
-                      .map((source) => (
-                        <div key={`${source.provider_id}:${source.history_scope ?? "latest"}`} className="flex items-start justify-between gap-3 border-t border-stealth-800 pt-2 text-xs">
-                          <span className="text-stealth-200">{source.provider_name}<span className="mt-0.5 block text-stealth-400">{source.history_scope ?? "Latest observation"}</span></span>
-                          <span className={source.status === "unavailable" ? "font-semibold text-orange-200" : "font-semibold text-emerald-200"}>{source.status.replace(/_/g, " ")}</span>
-                        </div>
-                      ))}
-                  </div>
+              <div className="mt-6 flex flex-col gap-3 border-t border-stealth-700 pt-5 lg:flex-row lg:items-start lg:justify-between">
+                <p className="max-w-[72ch] text-xs leading-relaxed text-stealth-400">
+                  Prices are normalized to {latest.data?.canonical_currency ?? "USD"}/{latest.data?.canonical_unit ?? "unit"}. Indexed lines compare direction only; contracts, closes, tax and delivery can differ.
+                  {unavailableVenues.length ? ` ${unavailableVenues.length} registered ${unavailableVenues.length === 1 ? "venue is" : "venues are"} currently unavailable.` : ""}
+                </p>
+                <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs" aria-label="Data source status">
+                  {[...(history.data?.sources ?? []), ...(latest.data?.sources ?? [])]
+                    .filter((source, index, all) => all.findIndex((candidate) => candidate.provider_id === source.provider_id) === index)
+                    .map((source) => (
+                      <span key={source.provider_id} className="inline-flex items-center gap-1.5 text-stealth-300">
+                        {source.provider_name}
+                        <span className={source.status === "unavailable" ? "font-semibold text-orange-200" : "font-semibold text-emerald-200"}>{source.status.replace(/_/g, " ")}</span>
+                      </span>
+                    ))}
                 </div>
               </div>
             </div>

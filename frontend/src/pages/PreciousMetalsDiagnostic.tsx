@@ -597,17 +597,13 @@ export default function PreciousMetalsDiagnostic({ embedded = false }: { embedde
   return (
     <div className={embedded ? "page-stack text-stealth-200" : "page-shell-wide page-stack text-stealth-200"}>
       {!embedded && (
-        <section className="page-hero">
-          <p className="page-kicker">Tools</p>
-          <h1 className="page-title">Metals Diagnostic</h1>
-          <p className="page-subtitle">
-            Exchange, regime, and structural evidence across precious and industrial metals.
-          </p>
-          <div className="page-meta">
-            <span className="page-badge">Precious + industrial metals</span>
-            <span className="page-badge">As of {formatTimestamp(freshestTimestamp)}</span>
+        <header className="flex flex-col gap-3 border-b border-stealth-700 pb-4 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-white md:text-3xl">Metals Diagnostic</h1>
+            <p className="mt-1 text-sm text-stealth-300">Exchange trends, market structure, and supply.</p>
           </div>
-        </section>
+          <p className="text-xs text-stealth-400">Updated {formatTimestamp(freshestTimestamp)}</p>
+        </header>
       )}
 
       {/* TAB NAVIGATION */}
