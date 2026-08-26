@@ -28,6 +28,8 @@ import math
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from app.models.institutional_flow_event import InstitutionalFlowEvent
+from app.models.news_article import NewsArticle
+from app.models.news_collection_observation import NewsCollectionObservation
 from app.models.stock_projection_snapshot import StockProjectionSnapshot
 from app.models.system_status import SystemStatus
 from app.services.institutional_flow import detect_flow_events_from_frame, summarize_flow_events
@@ -35,6 +37,7 @@ from app.services.market_data.date_utils import parse_option_expiry
 from app.services.market_data.factory import get_market_data_provider
 from app.services.market_data.provider import MarketDataProvider
 from app.services.options_quotes import option_premium_from_row, option_quote_from_row
+from app.services.narrative_analysis import NARRATIVE_WINDOW_DAYS, build_narrative_analysis
 from app.services.stock_price_cache import get_cached_intraday_frame, get_or_refresh_daily_frame
 from app.utils.db_helpers import get_db_session
 
@@ -3031,6 +3034,7 @@ def get_stock_projections(
     historical_score: Optional[float] = None
     technical_data: Optional[dict[str, Any]] = None
     fundamentals: dict[str, Any] = {}
+    narrative: Optional[dict[str, Any]] = None
     historical_cutoff_date: Optional[str] = None
     historical_observed_at: Optional[str] = None
     computed_at = datetime.now(timezone.utc).isoformat()
@@ -3375,6 +3379,52 @@ def get_stock_projections(
                 "message": "Options mispricing classification is unavailable because quote quality did not pass validation.",
             },
         })
+
+    try:
+        narrative_now = datetime.now(timezone.utc)
+        narrative_cutoff = (narrative_now - timedelta(days=NARRATIVE_WINDOW_DAYS)).replace(tzinfo=None)
+        collection_cutoff = (narrative_now - timedelta(days=14)).replace(tzinfo=None)
+        with get_db_session() as db:
+            narrative_articles = (
+                db.query(NewsArticle)
+                .filter(
+                    NewsArticle.symbol == ticker,
+                    NewsArticle.published_at >= narrative_cutoff,
+                )
+                .order_by(NewsArticle.published_at.asc())
+                .limit(500)
+                .all()
+            )
+            collection_checks = (
+                db.query(NewsCollectionObservation)
+                .filter(
+                    NewsCollectionObservation.symbol == ticker,
+                    NewsCollectionObservation.checked_at >= collection_cutoff,
+                )
+                .order_by(NewsCollectionObservation.checked_at.asc())
+                .limit(500)
+                .all()
+            )
+        try:
+            narrative_benchmark = fetch_stock_data("IGV")
+        except Exception:
+            narrative_benchmark = pd.DataFrame()
+        narrative = build_narrative_analysis(
+            ticker,
+            narrative_articles,
+            collection_checks,
+            df,
+            narrative_benchmark,
+            now=narrative_now,
+        )
+    except Exception as exc:
+        data_warnings.append({
+            "type": "narrative_unavailable",
+            "details": {
+                "symbol": ticker,
+                "message": str(exc),
+            },
+        })
     
     result = {
         "ticker": ticker,
@@ -3394,6 +3444,7 @@ def get_stock_projections(
         "options_flow": options_flow,
         "optionality": optionality,
         "institutional_flow": institutional_flow,
+        "narrative": narrative,
         "price_history_window": history_window,
         "price_history": _build_price_history(price_history_df, days=None),
         "intraday_history_2h": intraday_history,

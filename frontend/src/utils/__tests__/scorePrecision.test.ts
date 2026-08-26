@@ -6,7 +6,7 @@ const SOURCE_ROOT = join(process.cwd(), "src");
 const DIRECT_TEXT_EXPRESSION = />\s*\{([^{}\n]+)\}\s*</g;
 const SCORE_FIELD = /(?:\.\w*score\b|_\w*score\b|\bscore\b)/i;
 const FORMATTED_OR_CATEGORICAL =
-  /(?:toFixed|format(?:Number|Value)|Math\.round|scoreBar|breadthLabel|compactOpportunityGrade|properCase|\.label\b|score unavailable)/;
+  /(?:toFixed|format(?:Number|Value)|Math\.round|scoreBar|breadthLabel|biasLabel|compactOpportunityGrade|properCase|\.label\b|score unavailable)/;
 
 function sourceFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {

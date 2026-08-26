@@ -15,6 +15,7 @@ from .alternative_assets import (
 from .closed_positions import ClosedPosition
 from .institutional_flow_event import InstitutionalFlowEvent
 from .market_data_observation import MarketDataObservation
+from .news_collection_observation import NewsCollectionObservation
 from .option_training_outcomes import OptionTrainingOutcome
 from .option_position_reviews import OptionPositionReview
 from .option_decision_learning import (

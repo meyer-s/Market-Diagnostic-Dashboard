@@ -34,6 +34,7 @@ import {
   type OptionalityMetrics,
 } from "../components/widgets/OptionalityMispricingWidget";
 import { OptionsStructureMap } from "../components/widgets/OptionsStructureMap";
+import NarrativeImpulseWidget, { type NarrativeAnalysis } from "../components/widgets/NarrativeImpulseWidget";
 import MarketLoading from "../components/ui/MarketLoading";
 import "../index.css";
 import { CHART_NEUTRAL } from "../utils/chartUtils";
@@ -694,6 +695,7 @@ export default function StockAnalysis() {
     options_flow?: OptionsFlowData;
     optionality?: OptionalityMetrics;
     institutional_flow?: InstitutionalFlowPayload;
+    narrative?: NarrativeAnalysis | null;
     price_history?: PriceHistoryPoint[];
     intraday_history_2h?: IntradayHistoryPoint[];
     price_history_window?: HistoryWindow;
@@ -727,6 +729,7 @@ export default function StockAnalysis() {
   const [news, setNews] = useState<NewsArticle[]>([]);
   const [dataWarnings, setDataWarnings] = useState<DataWarning[]>([]);
   const [institutionalFlow, setInstitutionalFlow] = useState<InstitutionalFlowPayload | null>(null);
+  const [narrative, setNarrative] = useState<NarrativeAnalysis | null>(null);
   const [priceHistory, setPriceHistory] = useState<PriceHistoryPoint[]>([]);
   const [intradayHistory2h, setIntradayHistory2h] = useState<IntradayHistoryPoint[]>([]);
   const [loading, setLoading] = useState(false);
@@ -747,6 +750,7 @@ export default function StockAnalysis() {
       setOptionsFlow(payload.options_flow || null);
       setOptionalityMetrics(payload.optionality || null);
       setInstitutionalFlow(payload.institutional_flow || null);
+      setNarrative(payload.narrative || null);
       setPriceHistory(payload.price_history || []);
       setIntradayHistory2h(payload.intraday_metadata?.stale ? [] : payload.intraday_history_2h || []);
       setFundamentals(payload.fundamentals || null);
@@ -764,6 +768,7 @@ export default function StockAnalysis() {
     setOptionsFlow(null);
     setOptionalityMetrics(null);
     setInstitutionalFlow(null);
+    setNarrative(null);
     setPriceHistory([]);
     setIntradayHistory2h([]);
     setFundamentals(null);
@@ -1148,6 +1153,8 @@ export default function StockAnalysis() {
               })()}
             </section>
           )}
+
+          <NarrativeImpulseWidget narrative={narrative} ticker={searchTicker} />
 
           {/* Price analysis and signal-quality grid */}
           {projections[selectedHorizon] && (

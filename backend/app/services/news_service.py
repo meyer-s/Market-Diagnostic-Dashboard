@@ -12,6 +12,7 @@ import requests
 from dateutil import parser as dateparser
 
 from app.models.news_article import NewsArticle
+from app.models.news_collection_observation import NewsCollectionObservation
 from app.models.news_ticker import NewsTicker
 
 logger = logging.getLogger(__name__)
@@ -163,14 +164,24 @@ def _parse_entry_datetime(entry: dict) -> datetime:
     return datetime.utcnow()
 
 
-def fetch_news_for_symbol(symbol: str, max_items: int = MAX_ITEMS_PER_TICKER) -> List[Dict[str, object]]:
+def _fetch_news_evidence_for_symbol(
+    symbol: str,
+    max_items: int = MAX_ITEMS_PER_TICKER,
+) -> Dict[str, object]:
+    """Fetch one feed and retain a success receipt for negative-evidence checks."""
+
     rss_url = f"https://seekingalpha.com/api/sa/combined/{requests.utils.quote(symbol)}.xml"
     try:
         response = requests.get(rss_url, headers=HEADERS, timeout=15)
         response.raise_for_status()
     except Exception as exc:
         logger.warning("News fetch failed for %s: %s", symbol, exc)
-        return []
+        return {
+            "source": NEWS_SOURCE,
+            "succeeded": False,
+            "entries": [],
+            "error_kind": type(exc).__name__,
+        }
 
     feed = feedparser.parse(response.content)
     entries: List[Dict[str, object]] = []
@@ -184,11 +195,35 @@ def fetch_news_for_symbol(symbol: str, max_items: int = MAX_ITEMS_PER_TICKER) ->
             "title": title,
             "link": link,
             "guid": guid,
+            "source": NEWS_SOURCE,
             "published_at": _parse_entry_datetime(entry),
         })
 
     time.sleep(REQUEST_PAUSE)
-    return entries
+    if getattr(feed, "bozo", False) and not entries:
+        error = getattr(feed, "bozo_exception", None)
+        return {
+            "source": NEWS_SOURCE,
+            "succeeded": False,
+            "entries": [],
+            "error_kind": type(error).__name__ if error is not None else "FeedParseError",
+        }
+    return {
+        "source": NEWS_SOURCE,
+        "succeeded": True,
+        "entries": entries,
+        "error_kind": None,
+    }
+
+
+def fetch_news_for_symbol(
+    symbol: str,
+    max_items: int = MAX_ITEMS_PER_TICKER,
+) -> List[Dict[str, object]]:
+    """Compatibility wrapper returning only fetched entries."""
+
+    evidence = _fetch_news_evidence_for_symbol(symbol, max_items=max_items)
+    return list(evidence.get("entries") or [])
 
 
 def cache_news_entries(
@@ -207,7 +242,10 @@ def cache_news_entries(
         existing_guids = {
             row[0]
             for row in db.query(NewsArticle.guid)
-            .filter(NewsArticle.guid.in_(guids))
+            .filter(
+                NewsArticle.symbol == normalize_symbol(symbol),
+                NewsArticle.guid.in_(guids),
+            )
             .all()
         }
 
@@ -219,7 +257,7 @@ def cache_news_entries(
         article = NewsArticle(
             symbol=normalize_symbol(symbol),
             sector=sector,
-            source=NEWS_SOURCE,
+            source=str(entry.get("source") or NEWS_SOURCE),
             title=entry.get("title") or "",
             link=entry.get("link") or "",
             guid=str(guid),
@@ -252,14 +290,47 @@ def refresh_news_cache(
         tickers = [ticker for ticker in tickers if ticker.sector == filtered_sector]
 
     new_items = 0
+    successful_checks = 0
+    failed_checks = 0
     for ticker in tickers:
         try:
-            entries = fetch_news_for_symbol(ticker.symbol, max_items=max_items_per_ticker)
-            new_items += cache_news_entries(db, ticker.symbol, ticker.sector, entries)
+            checked_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            evidence = _fetch_news_evidence_for_symbol(
+                ticker.symbol,
+                max_items=max_items_per_ticker,
+            )
+            entries = list(evidence.get("entries") or [])
+            succeeded = bool(evidence.get("succeeded"))
+            added = cache_news_entries(db, ticker.symbol, ticker.sector, entries) if succeeded else 0
+            new_items += added
+            successful_checks += int(succeeded)
+            failed_checks += int(not succeeded)
+            published_values = [
+                entry.get("published_at")
+                for entry in entries
+                if isinstance(entry.get("published_at"), datetime)
+            ]
+            db.add(
+                NewsCollectionObservation(
+                    symbol=normalize_symbol(ticker.symbol),
+                    source=str(evidence.get("source") or NEWS_SOURCE),
+                    checked_at=checked_at,
+                    succeeded=succeeded,
+                    item_count=len(entries),
+                    new_item_count=added,
+                    latest_published_at=max(published_values) if published_values else None,
+                    error_kind=str(evidence.get("error_kind")) if evidence.get("error_kind") else None,
+                )
+            )
+            db.commit()
         except Exception as exc:
+            db.rollback()
             logger.warning("Failed caching news for %s: %s", ticker.symbol, exc)
+            failed_checks += 1
 
     return {
         "tickers_checked": len(tickers),
         "new_items": new_items,
+        "successful_checks": successful_checks,
+        "failed_checks": failed_checks,
     }

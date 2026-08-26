@@ -238,6 +238,8 @@ describe("StockAnalysis accuracy pass", () => {
     expect(screen.getByText("Options Pricing Context")).not.toBeNull();
     expect(screen.getByText("Unavailable")).not.toBeNull();
     expect(screen.getByText(/Latest article/)).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Narrative Impulse" })).not.toBeNull();
+    expect(screen.getByText(/Narrative evidence is unavailable/)).not.toBeNull();
     expect(screen.queryByText(/Data Warning:/)).toBeNull();
     expect(container.textContent).not.toMatch(
       /Current Price|Projection horizons|T\+|\bOutlook\b|Score Trends|Score Change|real-time|Uncertainty Cone|Trade Target|Stop Loss|Optionality Mispricing|Institutional Flow Focus|Net Flow Bias|Signal Coherence/
