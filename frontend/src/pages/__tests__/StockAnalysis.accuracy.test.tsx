@@ -238,8 +238,11 @@ describe("StockAnalysis accuracy pass", () => {
     expect(screen.getByText("Options Pricing Context")).not.toBeNull();
     expect(screen.getByText("Unavailable")).not.toBeNull();
     expect(screen.getByText(/Latest article/)).not.toBeNull();
-    expect(screen.getByRole("heading", { name: "Narrative Impulse" })).not.toBeNull();
-    expect(screen.getByText(/Narrative evidence is unavailable/)).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Narrative" })).not.toBeNull();
+    expect(screen.getByText(/No narrative takeaway is available/)).not.toBeNull();
+    const resultHeadings = Array.from(container.querySelectorAll("h2")).map((heading) => heading.textContent);
+    expect(resultHeadings.indexOf("Recent News for KVUE")).toBeLessThan(resultHeadings.indexOf("Narrative"));
+    expect(resultHeadings.indexOf("Narrative")).toBeLessThan(resultHeadings.indexOf("Methodology & Scoring Details"));
     expect(screen.queryByText(/Data Warning:/)).toBeNull();
     expect(container.textContent).not.toMatch(
       /Current Price|Projection horizons|T\+|\bOutlook\b|Score Trends|Score Change|real-time|Uncertainty Cone|Trade Target|Stop Loss|Optionality Mispricing|Institutional Flow Focus|Net Flow Bias|Signal Coherence/

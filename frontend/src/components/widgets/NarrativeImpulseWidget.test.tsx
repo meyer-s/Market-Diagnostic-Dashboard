@@ -116,29 +116,24 @@ const narrative: NarrativeAnalysis = {
 
 
 describe("NarrativeImpulseWidget", () => {
-  it("keeps the four outputs, propagation, source gaps, and market guardrails visible", () => {
+  it("leads with a plain-language takeaway and source links instead of metric machinery", () => {
     render(<NarrativeImpulseWidget narrative={narrative} ticker="NOW" />);
 
-    expect(screen.getByRole("heading", { name: "Narrative Impulse" })).not.toBeNull();
-    expect(screen.getByText("Chatter / unconfirmed")).not.toBeNull();
-    expect(screen.getByText("+0.53")).not.toBeNull();
-    expect(screen.getByText("+2.1σ")).not.toBeNull();
-    expect(screen.getAllByText("65%").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("-0.4σ").length).toBeGreaterThan(0);
-    expect(screen.getByLabelText("Narrative evidence pipeline counts").textContent).toContain("30 raw items");
-    expect(screen.getByLabelText("Narrative evidence pipeline counts").textContent).toContain("25 copy/repost items excluded from corroboration");
-    expect(screen.getByText("ServiceNow raises guidance after earnings beat")).not.toBeNull();
-    expect(screen.getAllByText("Community / public opinion").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Not collected").length).toBeGreaterThan(0);
-    expect(screen.getByText("ATM-IV change")).not.toBeNull();
-    expect(screen.getByText(/no timestamped ATM-IV history/i)).not.toBeNull();
-    expect(screen.getByText("Method, collection coverage, and limitations")).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Narrative" })).not.toBeNull();
+    expect(screen.getByText("NOW's bullish coverage has not been confirmed by the market.")).not.toBeNull();
+    expect(screen.getByText(/not broad enough to infer public consensus or company intent/i)).not.toBeNull();
+    const sourceLink = screen.getByRole("link", { name: /ServiceNow raises guidance after earnings beat/i });
+    expect(sourceLink.getAttribute("href")).toBe("https://example.com/now");
+    expect(screen.queryByText("+0.53")).toBeNull();
+    expect(screen.queryByText("Attention surprise")).toBeNull();
+    expect(screen.queryByText("ATM-IV change")).toBeNull();
+    expect(screen.queryByText(/impulse formula/i)).toBeNull();
   });
 
   it("shows an explicit unavailable state instead of manufacturing neutrality", () => {
     render(<NarrativeImpulseWidget narrative={null} ticker="NOW" />);
 
-    expect(screen.getByText(/Narrative evidence is unavailable/)).not.toBeNull();
+    expect(screen.getByText(/No narrative takeaway is available/)).not.toBeNull();
     expect(screen.queryByText("Mixed / neutral")).toBeNull();
   });
 });

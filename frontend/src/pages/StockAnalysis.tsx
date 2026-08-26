@@ -1154,8 +1154,6 @@ export default function StockAnalysis() {
             </section>
           )}
 
-          <NarrativeImpulseWidget narrative={narrative} ticker={searchTicker} />
-
           {/* Price analysis and signal-quality grid */}
           {projections[selectedHorizon] && (
             <section id="stock-price-evidence" aria-label="Price evidence and signal quality" className="surface-card-strong scroll-mt-32 p-4 sm:p-5">
@@ -1808,70 +1806,6 @@ export default function StockAnalysis() {
             </div>
           )}
 
-          {/* Methodology */}
-          <div id="stock-methodology" className="scroll-mt-32 surface-card-strong">
-            <button
-              type="button"
-              onClick={() => setMethodologyOpen(!methodologyOpen)}
-              className="flex min-h-11 w-full items-center justify-between gap-3 rounded-lg px-4 py-4 text-left transition-colors hover:bg-stealth-800/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 sm:px-6"
-              aria-expanded={methodologyOpen}
-              aria-controls="stock-methodology-content"
-            >
-              <h2 className="text-lg font-semibold">Methodology & Scoring Details</h2>
-              <span className={`collapsible-icon ${methodologyOpen ? 'collapsible-icon-open' : ''}`} aria-hidden="true">
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </span>
-            </button>
-            <div id="stock-methodology-content" className={`collapsible-panel ${methodologyOpen ? 'collapsible-panel-open' : ''}`}>
-              <div className="collapsible-panel-inner">
-                <div className="px-6 pb-6 text-sm text-stealth-200 space-y-4">
-                <p>
-                  Stock analysis uses the same transparent scoring methodology as sector analysis, 
-                  evaluating performance across 21-day, 3-month, 6-month, and 12-month lookback periods.
-                </p>
-                <div className="secondary-card p-4">
-                  <h4 className="font-semibold mb-2">Scoring Components</h4>
-                  <ul className="space-y-2 text-xs">
-                    <li><strong>Trend (45%):</strong> Price momentum and technical positioning relative to moving averages</li>
-                    <li><strong>Relative Strength (30%):</strong> Outperformance vs SPY benchmark</li>
-                    <li><strong>Risk (20%):</strong> Volatility and drawdown analysis (inverted scoring)</li>
-                    <li><strong>Regime (5%):</strong> Context-aware adjustments based on market environment</li>
-                  </ul>
-                </div>
-                <div className="secondary-card p-4">
-                  <h4 className="font-semibold mb-2">Signal Quality</h4>
-                  <p className="text-xs mb-2">
-                    Composite quality measure (0-100) based on three factors:
-                  </p>
-                  <ul className="space-y-1 text-xs">
-                    <li>- <strong>Component Alignment (40%):</strong> How well the scoring components agree with each other</li>
-                    <li>- <strong>Volatility Factor (35%):</strong> Lower realized volatility increases the composite</li>
-                    <li>- <strong>Signal Strength (25%):</strong> How far the score deviates from neutral (farther from 50 = stronger direction)</li>
-                  </ul>
-                </div>
-                <div className="secondary-card p-4">
-                  <h4 className="font-semibold mb-2">Reference Bands</h4>
-                  <ul className="space-y-2 text-xs">
-                      <li><strong>Raw Upper Reference:</strong> Calculated from trailing return with volatility and lookback adjustments.</li>
-                      <li><strong>Upper Reference:</strong> Context band after valuation and market-cap checks; it is not a recommendation.</li>
-                      <li><strong>Technical Extension:</strong> Raw upper band shown separately when it exceeds the checked upper reference.</li>
-                    <li><strong>Lower Reference:</strong> Based on a realized-volatility proxy, risk score, and lookback length. Serves as a downside context band.</li>
-                    <li><strong>Range Ratio:</strong> Upper band distance divided by lower band distance. Higher values indicate wider asymmetry.</li>
-                  </ul>
-                </div>
-                <div className="secondary-card p-4">
-                  <h4 className="font-semibold mb-2">Trailing Windows</h4>
-                  <p className="text-xs">
-                    The 21D, 3M, 6M, and 12M scores are separate historical lookbacks. The profile compares sensitivity to window length.
-                  </p>
-                </div>
-              </div>
-              </div>
-            </div>
-          </div>
-
           {/* Disclaimer */}
           <div className="rounded-lg border border-yellow-700/50 bg-yellow-900/20 p-4">
             <p className="text-xs text-yellow-200/90 leading-relaxed">
@@ -1921,6 +1855,74 @@ export default function StockAnalysis() {
                 </div>
               </a>
             ))}
+          </div>
+        </div>
+      )}
+
+      {chartData && <NarrativeImpulseWidget narrative={narrative} ticker={searchTicker} />}
+
+      {/* Methodology stays last so the page leads with conclusions and source evidence. */}
+      {chartData && (
+        <div id="stock-methodology" className="scroll-mt-32 surface-card-strong">
+          <button
+            type="button"
+            onClick={() => setMethodologyOpen(!methodologyOpen)}
+            className="flex min-h-11 w-full items-center justify-between gap-3 rounded-lg px-4 py-4 text-left transition-colors hover:bg-stealth-800/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 sm:px-6"
+            aria-expanded={methodologyOpen}
+            aria-controls="stock-methodology-content"
+          >
+            <h2 className="text-lg font-semibold">Methodology & Scoring Details</h2>
+            <span className={`collapsible-icon ${methodologyOpen ? 'collapsible-icon-open' : ''}`} aria-hidden="true">
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </span>
+          </button>
+          <div id="stock-methodology-content" className={`collapsible-panel ${methodologyOpen ? 'collapsible-panel-open' : ''}`}>
+            <div className="collapsible-panel-inner">
+              <div className="space-y-4 px-4 pb-6 text-sm text-stealth-200 sm:px-6">
+                <p>
+                  Stock analysis evaluates performance across 21-day, 3-month, 6-month, and 12-month lookback periods.
+                </p>
+                <div className="secondary-card p-4">
+                  <h3 className="mb-2 font-semibold">Scoring Components</h3>
+                  <ul className="space-y-2 text-xs">
+                    <li><strong>Trend (45%):</strong> Price momentum and technical positioning relative to moving averages</li>
+                    <li><strong>Relative Strength (30%):</strong> Outperformance vs SPY benchmark</li>
+                    <li><strong>Risk (20%):</strong> Volatility and drawdown analysis (inverted scoring)</li>
+                    <li><strong>Regime (5%):</strong> Context-aware adjustments based on market environment</li>
+                  </ul>
+                </div>
+                <div className="secondary-card p-4">
+                  <h3 className="mb-2 font-semibold">Signal Quality</h3>
+                  <p className="mb-2 text-xs">Composite quality combines component alignment, realized volatility, and distance from neutral.</p>
+                </div>
+                <div className="secondary-card p-4">
+                  <h3 className="mb-2 font-semibold">Reference Bands</h3>
+                  <ul className="space-y-2 text-xs">
+                    <li><strong>Raw Upper Reference:</strong> Calculated from trailing return with volatility and lookback adjustments.</li>
+                    <li><strong>Upper Reference:</strong> Context band after valuation and market-cap checks; it is not a recommendation.</li>
+                    <li><strong>Technical Extension:</strong> Raw upper band shown separately when it exceeds the checked upper reference.</li>
+                    <li><strong>Lower Reference:</strong> A downside context band based on realized volatility, risk score, and lookback length.</li>
+                  </ul>
+                </div>
+                <div className="secondary-card p-4">
+                  <h3 className="mb-2 font-semibold">Trailing Windows</h3>
+                  <p className="text-xs">The 21D, 3M, 6M, and 12M scores are separate historical lookbacks, not forecasts.</p>
+                </div>
+                {narrative && (
+                  <div className="secondary-card p-4">
+                    <h3 className="mb-2 font-semibold">Narrative Read</h3>
+                    <p className="text-xs leading-5">
+                      Repeated headlines are grouped into independent claim events before direction, source quality, recency, and market behavior are compared. Reposts can show attention, but they do not add corroboration.
+                    </p>
+                    <p className="mt-2 text-xs leading-5 text-stealth-400">
+                      This is a headline-level evidence read, not a measure of motive, coordination, or public consensus. Unsupported channels remain excluded.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}
