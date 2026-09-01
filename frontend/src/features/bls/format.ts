@@ -4,7 +4,6 @@ import type {
   BlsObservation,
   BlsReport,
   BlsSeries,
-  SeriesLineStyle,
 } from "./types";
 
 const monthFormatter = new Intl.DateTimeFormat("en-US", {
@@ -53,10 +52,13 @@ export function formatValue(value: number | null | undefined, maximumFractionDig
   }).format(value);
 }
 
-export function formatSigned(value: number | null | undefined, suffix = ""): string {
+export function formatSigned(value: number | null | undefined, suffix = "", maximumFractionDigits = 1): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return "Unavailable";
-  const sign = value > 0 ? "+" : "";
-  return `${sign}${formatValue(value)}${suffix}`;
+  const factor = 10 ** maximumFractionDigits;
+  const rounded = Math.round(value * factor) / factor;
+  const normalized = Object.is(rounded, -0) ? 0 : rounded;
+  const sign = normalized > 0 ? "+" : "";
+  return `${sign}${formatValue(normalized, maximumFractionDigits)}${suffix}`;
 }
 
 export function reportId(report: BlsReport): string {
@@ -95,6 +97,10 @@ export function seriesHasPrimaryData(series: BlsSeries): boolean {
   );
 }
 
+export function primaryDeltaUnit(series: BlsSeries): string {
+  return /%|percent/i.test(series.primary_unit) ? "percentage points" : series.primary_unit;
+}
+
 export function dataQualityStatus(dataQuality: BlsDataQuality): string {
   return typeof dataQuality === "string" ? dataQuality : dataQuality.status;
 }
@@ -105,26 +111,6 @@ export function dataQualityMessage(dataQuality: BlsDataQuality): string | null {
 
 export function isPriceSeries(series: BlsSeries): boolean {
   return /price|inflation|cpi|ppi/i.test(`${series.family} ${series.label} ${series.report_id}`);
-}
-
-export function lineStyleForSeries(series: BlsSeries, index: number): SeriesLineStyle {
-  const styleIndex = Math.max(0, index);
-  const dashPatterns = [
-    undefined,
-    "10 4",
-    "3 4",
-    "14 4 3 4",
-    "2 3",
-    "16 4 2 4 2 4",
-    "7 3 2 3",
-    "1 4",
-    "12 3 5 3",
-  ];
-  return {
-    color: isPriceSeries(series) ? "var(--field-caution)" : "var(--field-accent)",
-    dash: dashPatterns[styleIndex % dashPatterns.length],
-    opacity: 1,
-  };
 }
 
 export function formatFootnotes(footnotes: BlsObservation["footnotes"]): string {

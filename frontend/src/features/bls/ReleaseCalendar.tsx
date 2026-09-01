@@ -1,4 +1,6 @@
-import DataScroller from "../../components/ui/DataScroller";
+import { useMemo, useState } from "react";
+
+import { releaseCalendarHref } from "./blsOverviewModel";
 import { calendarLabel, clockTime, formatDate } from "./format";
 import type { BlsCalendarEntry } from "./types";
 
@@ -7,120 +9,142 @@ type ReleaseCalendarProps = {
   asOf: string;
 };
 
-const VISIBLE_EVENTS_PER_PHASE = 12;
+type CalendarMode = "list" | "month";
 
-function CalendarList({
-  entries,
-  emptyMessage,
-  phase,
-}: {
-  entries: BlsCalendarEntry[];
-  emptyMessage: string;
-  phase: "upcoming" | "past";
-}) {
-  if (entries.length === 0) return <p className="bls-empty-copy">{emptyMessage}</p>;
+const monthFormatter = new Intl.DateTimeFormat("en-US", {
+  month: "long",
+  year: "numeric",
+  timeZone: "America/New_York",
+});
+
+function monthKey(entry: BlsCalendarEntry): string {
+  const date = new Date(entry.scheduled_at);
+  return Number.isNaN(date.getTime()) ? entry.scheduled_at.slice(0, 7) : monthFormatter.format(date);
+}
+
+function CalendarEvent({ entry, emphasized = false }: { entry: BlsCalendarEntry; emphasized?: boolean }) {
+  const downloadHref = releaseCalendarHref(entry);
   return (
-    <ol className="bls-calendar-list">
-      {entries.map((entry) => (
-        <li key={`${entry.report_id}-${entry.scheduled_at}`}>
-          <time dateTime={entry.scheduled_at}>
-            <strong>{formatDate(entry.scheduled_at)}</strong>
-            <span>{clockTime(entry)}</span>
-          </time>
-          <span className="bls-calendar-copy">
-            <b>{calendarLabel(entry)}</b>
-            <span>{entry.report_id}</span>
-          </span>
-          <span className="bls-status-label">{phase === "upcoming" ? "Scheduled" : "Scheduled time passed"}</span>
+    <li className={emphasized ? "bls-calendar-event bls-calendar-event-next" : "bls-calendar-event"}>
+      <time dateTime={entry.scheduled_at}>
+        <strong>{formatDate(entry.scheduled_at)}</strong>
+        <span>{clockTime(entry)}</span>
+      </time>
+      <div className="bls-calendar-copy">
+        <b>{calendarLabel(entry)}</b>
+        <span>{entry.report_id}</span>
+      </div>
+      {emphasized ? <span className="bls-status-label">Scheduled</span> : null}
+      <details>
+        <summary>Release links</summary>
+        <div>
           <a href={entry.source_url} target="_blank" rel="noreferrer">Official schedule source</a>
-        </li>
-      ))}
-    </ol>
+          {downloadHref ? <a href={downloadHref} download={`bls-${entry.report_id}-${entry.scheduled_at.slice(0, 10)}.ics`}>Add to calendar</a> : null}
+        </div>
+      </details>
+    </li>
   );
 }
 
+function groupByMonth(entries: BlsCalendarEntry[]) {
+  const groups = new Map<string, BlsCalendarEntry[]>();
+  entries.forEach((entry) => {
+    const key = monthKey(entry);
+    groups.set(key, [...(groups.get(key) ?? []), entry]);
+  });
+  return [...groups.entries()];
+}
+
 export default function ReleaseCalendar({ entries, asOf }: ReleaseCalendarProps) {
+  const [mode, setMode] = useState<CalendarMode>("list");
   const asOfTime = new Date(asOf).getTime();
-  const upcoming = [...entries]
+  const upcoming = useMemo(() => [...entries]
     .filter((entry) => new Date(entry.scheduled_at).getTime() > asOfTime)
-    .sort((left, right) => left.scheduled_at.localeCompare(right.scheduled_at));
-  const recent = [...entries]
+    .sort((left, right) => left.scheduled_at.localeCompare(right.scheduled_at)), [asOfTime, entries]);
+  const past = useMemo(() => [...entries]
     .filter((entry) => new Date(entry.scheduled_at).getTime() <= asOfTime)
-    .sort((left, right) => right.scheduled_at.localeCompare(left.scheduled_at));
-  const chronological = [...entries]
+    .sort((left, right) => right.scheduled_at.localeCompare(left.scheduled_at)), [asOfTime, entries]);
+  const nextThree = upcoming.slice(0, 3);
+  const monthModeEntries = [...past.slice(0, 24).reverse(), ...upcoming.slice(0, 24)]
     .sort((left, right) => left.scheduled_at.localeCompare(right.scheduled_at));
-  const visibleUpcoming = upcoming.slice(0, VISIBLE_EVENTS_PER_PHASE);
-  const visibleRecent = recent.slice(0, VISIBLE_EVENTS_PER_PHASE);
 
   return (
     <section id="bls-calendar" className="bls-calendar section-anchor" aria-labelledby="bls-calendar-title">
       <header className="bls-section-header">
         <div>
           <p className="bls-section-kicker">Calendar</p>
-          <h2 id="bls-calendar-title">Release schedule rail</h2>
-          <p>Calendar timestamps are schedule evidence only. A past time does not confirm a release occurred and is not linked to an observation or reference period.</p>
+          <h2 id="bls-calendar-title">BLS release schedule</h2>
+          <p>Scheduled times are shown in U.S. Eastern. A past scheduled time does not prove publication or identify an observation vintage.</p>
         </div>
-        <span className="bls-clock-label">Schedule clock · scheduled U.S. Eastern</span>
+        <span className="bls-clock-label">Schedule clock · U.S. Eastern</span>
       </header>
-      <div className="bls-calendar-columns">
-        <div>
-          <h3>Upcoming scheduled releases</h3>
-          <CalendarList
-            entries={visibleUpcoming}
-            emptyMessage="No upcoming scheduled release is present in the returned calendar."
-            phase="upcoming"
-          />
-          {upcoming.length > visibleUpcoming.length ? (
-            <p className="bls-chart-footnote">Showing the next {visibleUpcoming.length} of {upcoming.length} scheduled events.</p>
-          ) : null}
+
+      <div className="bls-calendar-toolbar">
+        <div className="bls-window-control" role="group" aria-label="Calendar display">
+          <button type="button" aria-pressed={mode === "list"} onClick={() => setMode("list")}>List</button>
+          <button type="button" aria-pressed={mode === "month"} onClick={() => setMode("month")}>Month groups</button>
         </div>
-        <div>
-          <h3>Past scheduled releases</h3>
-          <CalendarList
-            entries={visibleRecent}
-            emptyMessage="No past scheduled release is present in the returned calendar."
-            phase="past"
-          />
-          {recent.length > visibleRecent.length ? (
-            <p className="bls-chart-footnote">Showing the latest {visibleRecent.length} of {recent.length} past scheduled events.</p>
-          ) : null}
-        </div>
+        <span>{upcoming.length} upcoming · {past.length} past scheduled times</span>
       </div>
-      {chronological.length > 0 ? (
-        <details className="bls-calendar-history">
-          <summary>View all {chronological.length} returned scheduled events</summary>
-          <DataScroller
-            label="Complete returned BLS release schedule"
-            hint="Scroll horizontally or vertically to inspect the complete retained schedule history."
-          >
-            <table className="bls-table bls-calendar-table">
-              <thead>
-                <tr>
-                  <th scope="col">Scheduled date</th>
-                  <th scope="col">Scheduled time</th>
-                  <th scope="col">Report</th>
-                  <th scope="col">Schedule state</th>
-                  <th scope="col">Source</th>
-                </tr>
-              </thead>
-              <tbody>
-                {chronological.map((entry) => {
-                  const isUpcoming = new Date(entry.scheduled_at).getTime() > asOfTime;
+
+      {mode === "list" ? (
+        <div className="bls-calendar-list-view">
+          <section aria-labelledby="bls-calendar-upcoming-title">
+            <h3 id="bls-calendar-upcoming-title">What comes next</h3>
+            {nextThree.length > 0 ? (
+              <ol className="bls-calendar-list">
+                {nextThree.map((entry, index) => <CalendarEvent key={`${entry.report_id}-${entry.scheduled_at}`} entry={entry} emphasized={index === 0} />)}
+              </ol>
+            ) : <p className="bls-empty-copy">No upcoming scheduled release is present in the returned calendar.</p>}
+            {upcoming.length > nextThree.length ? (
+              <details className="bls-calendar-history">
+                <summary>View {upcoming.length - nextThree.length} later scheduled releases</summary>
+                <ol className="bls-calendar-list">
+                  {upcoming.slice(3).map((entry) => <CalendarEvent key={`${entry.report_id}-${entry.scheduled_at}`} entry={entry} />)}
+                </ol>
+              </details>
+            ) : null}
+          </section>
+
+          <section aria-labelledby="bls-calendar-past-title">
+            <h3 id="bls-calendar-past-title">Past scheduled times</h3>
+            <p>Past months stay collapsed until you need the schedule record.</p>
+            <div className="bls-past-months">
+              {groupByMonth(past).map(([month, monthEntries]) => (
+                <details key={month}>
+                  <summary>{month} · {monthEntries.length} event{monthEntries.length === 1 ? "" : "s"}</summary>
+                  <ol className="bls-calendar-list">
+                    {monthEntries.map((entry) => <CalendarEvent key={`${entry.report_id}-${entry.scheduled_at}`} entry={entry} />)}
+                  </ol>
+                </details>
+              ))}
+            </div>
+          </section>
+        </div>
+      ) : (
+        <div>
+          <p className="bls-chart-footnote">Month groups show up to 24 recent past and 24 upcoming scheduled events. The complete retained history remains available in the collapsed past-month list.</p>
+          <div className="bls-calendar-month-grid" aria-label="BLS schedule grouped by month">
+          {groupByMonth(monthModeEntries).map(([month, monthEntries]) => (
+            <section key={month} aria-labelledby={`bls-month-${month.replace(/\W+/g, "-").toLowerCase()}`}>
+              <h3 id={`bls-month-${month.replace(/\W+/g, "-").toLowerCase()}`}>{month}</h3>
+              <ol>
+                {monthEntries.map((entry) => {
+                  const upcomingEntry = new Date(entry.scheduled_at).getTime() > asOfTime;
                   return (
-                    <tr key={`${entry.report_id}-${entry.scheduled_at}`}>
-                      <th scope="row">{formatDate(entry.scheduled_at)}</th>
-                      <td>{clockTime(entry)}</td>
-                      <td>{calendarLabel(entry)}</td>
-                      <td>{isUpcoming ? "Scheduled" : "Scheduled time passed"}</td>
-                      <td><a href={entry.source_url} target="_blank" rel="noreferrer">Official schedule source</a></td>
-                    </tr>
+                    <li key={`${entry.report_id}-${entry.scheduled_at}`}>
+                      <time dateTime={entry.scheduled_at}>{formatDate(entry.scheduled_at)} · {clockTime(entry)}</time>
+                      <strong>{calendarLabel(entry)}</strong>
+                      <span>{upcomingEntry ? "Upcoming scheduled time" : "Scheduled time passed"}</span>
+                    </li>
                   );
                 })}
-              </tbody>
-            </table>
-          </DataScroller>
-        </details>
-      ) : null}
+              </ol>
+            </section>
+          ))}
+          </div>
+        </div>
+      )}
     </section>
   );
 }

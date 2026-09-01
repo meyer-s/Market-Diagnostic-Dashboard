@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   CartesianGrid,
   Line,
@@ -12,7 +12,8 @@ import {
 
 import AccessibleChartFrame from "../../components/ui/AccessibleChartFrame";
 import DataScroller from "../../components/ui/DataScroller";
-import { formatPeriod, formatValue, lineStyleForSeries, seriesHasPrimaryData } from "./format";
+import { formatPeriod, formatValue, isPriceSeries, seriesHasPrimaryData } from "./format";
+import { densifyMonthlyRows } from "./monthlyRows";
 import type { BlsSeries } from "./types";
 
 type RelativeFieldProps = {
@@ -26,7 +27,15 @@ type RelativeRow = {
   [seriesId: string]: string | number | null;
 };
 
-function relativeRows(series: BlsSeries[]): RelativeRow[] {
+type WindowYears = 3 | 5 | 10;
+
+const WINDOW_OPTIONS: Array<{ value: WindowYears; label: string }> = [
+  { value: 3, label: "3 years" },
+  { value: 5, label: "5 years" },
+  { value: 10, label: "Full history" },
+];
+
+export function buildRelativeRows(series: BlsSeries[]): RelativeRow[] {
   const rows = new Map<string, RelativeRow>();
   series.forEach((item) => {
     item.observations.forEach((observation) => {
@@ -35,29 +44,59 @@ function relativeRows(series: BlsSeries[]): RelativeRow[] {
       rows.set(observation.period, row);
     });
   });
-  return [...rows.values()].sort((left, right) => left.period.localeCompare(right.period));
+  const dense = densifyMonthlyRows(
+    [...rows.values()],
+    (period) => ({ period }),
+  );
+  return dense.map((row) => {
+    const completed: RelativeRow = { ...row };
+    series.forEach((item) => {
+      if (!(item.series_id in completed)) completed[item.series_id] = null;
+    });
+    return completed;
+  });
 }
 
 export default function RelativeField({ series, selectedIds, onToggle }: RelativeFieldProps) {
+  const [windowYears, setWindowYears] = useState<WindowYears>(3);
   const selectedSeries = useMemo(
     () => selectedIds
       .map((id) => series.find((item) => item.series_id === id))
       .filter((item): item is BlsSeries => Boolean(item) && seriesHasPrimaryData(item as BlsSeries)),
     [selectedIds, series],
   );
-  const stylesById = useMemo(
-    () => new Map(series.map((item, index) => (
-      [item.series_id, lineStyleForSeries(item, index)] as const
-    ))),
-    [series],
-  );
-  const rows = useMemo(() => relativeRows(selectedSeries), [selectedSeries]);
+  const allRows = useMemo(() => buildRelativeRows(selectedSeries), [selectedSeries]);
+  const rows = useMemo(() => {
+    const latest = allRows.at(-1)?.period;
+    if (!latest) return allRows;
+    const cutoff = new Date(`${latest.slice(0, 10)}T00:00:00Z`);
+    cutoff.setUTCFullYear(cutoff.getUTCFullYear() - windowYears);
+    const cutoffPeriod = cutoff.toISOString().slice(0, 10);
+    return allRows.filter((row) => row.period >= cutoffPeriod);
+  }, [allRows, windowYears]);
   const endpoints = useMemo(() => selectedSeries.map((item) => {
-    const endpoint = [...item.observations]
-      .reverse()
-      .find((observation) => observation.relative_percentile !== null);
-    return { item, period: endpoint?.period ?? null };
-  }), [selectedSeries]);
+    const visiblePeriods = new Set(rows.map((row) => row.period));
+    const visible = item.observations
+      .filter((observation) => visiblePeriods.has(observation.period))
+      .sort((left, right) => left.period.localeCompare(right.period));
+    let endpointIndex = -1;
+    for (let index = visible.length - 1; index >= 0; index -= 1) {
+      if (visible[index].relative_percentile === null) continue;
+      endpointIndex = index;
+      break;
+    }
+    const endpoint = endpointIndex >= 0 ? visible[endpointIndex] : undefined;
+    const prior = endpointIndex > 0 ? visible[endpointIndex - 1] : undefined;
+    return {
+      item,
+      period: endpoint?.period ?? null,
+      percentile: endpoint?.relative_percentile ?? null,
+      move: endpoint?.relative_percentile !== null && endpoint?.relative_percentile !== undefined
+        && prior?.relative_percentile !== null && prior?.relative_percentile !== undefined
+        ? endpoint.relative_percentile - prior.relative_percentile
+        : null,
+    };
+  }), [rows, selectedSeries]);
   const latestPeriod = endpoints
     .map(({ period }) => period)
     .filter((period): period is string => Boolean(period))
@@ -68,16 +107,18 @@ export default function RelativeField({ series, selectedIds, onToggle }: Relativ
   return (
     <section id="bls-relative" className="section-anchor">
       <AccessibleChartFrame
-        title="Relative Field"
-        description="A common 0–100 position for unlike measures. Each point is that series' trailing five-year percentile; 50 is its own recent midpoint."
-        summary="Higher and lower describe relative position, not better and worse. Price measures use gold; labor measures use blue. Line pattern and labeled selectors carry identity beyond color."
+        title="Relative comparison"
+        description="Compare no more than two measures on the same 0–100 scale. Each point ranks that measure against its own trailing five-year history."
+        summary="0 is the low end of that measure’s recent range, 50 is its midpoint, and 100 is the high end. Higher and lower never mean better and worse."
         actions={(
           <span className="bls-clock-label">Observation clock · reference period</span>
         )}
         dataLabel="Relative percentile values by reference period"
+        dataContentFocusable={false}
         dataTable={(
-          <DataScroller label="Relative percentile values table" hint="Scroll horizontally to inspect every selected series.">
+          <DataScroller label="Relative percentile values table" hint="Scroll horizontally to inspect both selected series.">
             <table className="bls-table bls-chart-table">
+              <caption className="sr-only">Selected BLS measures by relative percentile and reference period</caption>
               <thead>
                 <tr>
                   <th scope="col">Reference period</th>
@@ -89,7 +130,7 @@ export default function RelativeField({ series, selectedIds, onToggle }: Relativ
                   <tr key={row.period}>
                     <th scope="row">{formatPeriod(row.period)}</th>
                     {selectedSeries.map((item) => (
-                      <td key={item.series_id}>{formatValue(row[item.series_id] as number | null, 0)}</td>
+                      <td key={item.series_id}>{formatValue(row[item.series_id] as number | null, 1)}</td>
                     ))}
                   </tr>
                 ))}
@@ -99,47 +140,52 @@ export default function RelativeField({ series, selectedIds, onToggle }: Relativ
         )}
         className="bls-relative-frame"
       >
-        <div className="bls-series-selector" role="group" aria-label="Relative Field series; choose up to five">
-          {series.map((item, index) => {
-            const selected = selectedIds.includes(item.series_id);
-            const usable = seriesHasPrimaryData(item);
-            const style = stylesById.get(item.series_id) ?? lineStyleForSeries(item, index);
-            const atLimit = !selected && selectedIds.length >= 5;
-            return (
+        <div className="bls-trend-toolbar">
+          <div className="bls-window-control" role="group" aria-label="Relative comparison timeframe">
+            {WINDOW_OPTIONS.map((option) => (
               <button
-                key={item.series_id}
+                key={option.value}
                 type="button"
-                className="bls-series-toggle"
-                aria-pressed={usable && selected}
-                data-unavailable={usable ? undefined : "true"}
-                disabled={!usable || atLimit}
-                onClick={() => onToggle(item.series_id)}
-                title={!usable ? "No primary observations are available for this series." : atLimit ? "Deselect a series before adding another." : undefined}
+                aria-pressed={windowYears === option.value}
+                onClick={() => setWindowYears(option.value)}
               >
-                <svg
-                  className="bls-line-key"
-                  aria-hidden="true"
-                  viewBox="0 0 30 8"
-                  focusable="false"
-                >
-                  <line
-                    x1="1"
-                    x2="29"
-                    y1="4"
-                    y2="4"
-                    stroke={style.color}
-                    strokeDasharray={style.dash}
-                    strokeOpacity={style.opacity}
-                    strokeWidth="3"
-                  />
-                </svg>
-                <span>{item.short_label}</span>
-                <small>{!usable ? "Unavailable" : selected ? "Shown" : "Available"}</small>
+                {option.label}
               </button>
-            );
-          })}
-          <p className="bls-selector-limit" aria-live="polite">{selectedIds.length} of 5 series shown</p>
+            ))}
+          </div>
+          <span className="bls-scale-key">Relative position · 0 low · 50 midpoint · 100 high</span>
         </div>
+
+        <details className="bls-compare-disclosure">
+          <summary>Compare indicators · {selectedIds.length} of 2 selected</summary>
+          <div className="bls-series-selector" role="group" aria-label="Relative comparison series; choose up to two">
+            {series.map((item) => {
+              const selected = selectedIds.includes(item.series_id);
+              const usable = seriesHasPrimaryData(item);
+              const atLimit = !selected && selectedIds.length >= 2;
+              const selectedIndex = selectedIds.indexOf(item.series_id);
+              return (
+                <button
+                  key={item.series_id}
+                  type="button"
+                  className="bls-series-toggle"
+                  aria-pressed={usable && selected}
+                  data-unavailable={usable ? undefined : "true"}
+                  disabled={!usable || atLimit}
+                  onClick={() => onToggle(item.series_id)}
+                  title={!usable ? "No primary observations are available for this series." : atLimit ? "Deselect an indicator before adding another." : undefined}
+                >
+                  <span className="bls-selector-name">
+                    <i data-marker={selectedIndex === 1 ? "hollow" : "line"} aria-hidden="true" />
+                    {item.short_label}
+                  </span>
+                  <small>{!usable ? "Unavailable" : selected ? selectedIndex === 1 ? "Shown · hollow points" : "Shown · solid line" : "Available"}</small>
+                </button>
+              );
+            })}
+            <p className="bls-selector-limit" aria-live="polite">{selectedIds.length} of 2 indicators shown</p>
+          </div>
+        </details>
 
         {rows.length > 0 ? (
           <div className="bls-chart bls-relative-chart">
@@ -165,26 +211,27 @@ export default function RelativeField({ series, selectedIds, onToggle }: Relativ
                   stroke="var(--chart-axis-line)"
                   tick={{ fill: "var(--chart-axis-tick)", fontSize: 12 }}
                 />
-                <ReferenceLine y={50} stroke="var(--field-border-strong)" strokeDasharray="4 4" />
+                <ReferenceLine y={0} stroke="var(--field-border-strong)" />
+                <ReferenceLine y={50} stroke="var(--field-text-subtle)" strokeDasharray="4 4" />
                 <Tooltip
                   labelFormatter={(label) => formatPeriod(String(label))}
-                  formatter={(value, name) => [`${formatValue(Number(value), 0)}th percentile`, String(name)]}
+                  formatter={(value, name) => [`${formatValue(Number(value), 1)}th percentile`, String(name)]}
                   contentStyle={{ background: "var(--chart-tooltip-bg)", border: "1px solid var(--chart-tooltip-border)", borderRadius: 8 }}
                   labelStyle={{ color: "var(--chart-tooltip-label)" }}
                 />
-                {selectedSeries.map((item) => {
-                  const style = stylesById.get(item.series_id) ?? lineStyleForSeries(item, 0);
+                {selectedSeries.map((item, index) => {
+                  const color = isPriceSeries(item)
+                    ? "var(--field-caution)"
+                    : index === 0 ? "var(--field-accent)" : "var(--field-accent-strong)";
                   return (
                     <Line
                       key={item.series_id}
                       type="monotone"
                       dataKey={item.series_id}
                       name={item.short_label}
-                      stroke={style.color}
-                      strokeDasharray={style.dash}
-                      strokeOpacity={style.opacity}
-                      strokeWidth={2.4}
-                      dot={false}
+                      stroke={color}
+                      strokeWidth={index === 0 ? 2.8 : 2.2}
+                      dot={index === 0 ? false : { r: 2.2, fill: "var(--field-surface)", stroke: color, strokeWidth: 1.4 }}
                       activeDot={{ r: 4 }}
                       connectNulls={false}
                     />
@@ -195,20 +242,24 @@ export default function RelativeField({ series, selectedIds, onToggle }: Relativ
           </div>
         ) : <p className="bls-empty-copy">Select at least one series to draw the relative field.</p>}
         {endpoints.length > 0 ? (
-          <div className="bls-endpoint-ledger" role="group" aria-label="Selected series coverage endpoints">
-            <span>Selected series endpoints</span>
+          <div className="bls-endpoint-ledger" role="group" aria-label="Direct labels for selected series endpoints">
+            <span>Latest plotted points</span>
             <dl>
-              {endpoints.map(({ item, period }) => (
+              {endpoints.map(({ item, period, percentile, move }) => (
                 <div key={item.series_id}>
                   <dt>{item.short_label}</dt>
-                  <dd>{period ? formatPeriod(period) : "Percentile unavailable"}</dd>
+                  <dd>
+                    {percentile === null ? "Percentile unavailable" : `${formatValue(percentile, 1)}th percentile`}
+                    {period ? ` · ${formatPeriod(period)}` : ""}
+                    {move === null ? "" : ` · ${move > 0 ? "+" : ""}${formatValue(move, 1)} points`}
+                  </dd>
                 </div>
               ))}
             </dl>
             {endpointsVary ? <p>Reference-period endpoints differ; the ledger identifies each series’ last plotted point.</p> : null}
           </div>
         ) : null}
-        {latestPeriod ? <p className="bls-chart-footnote">Latest period among selected series: {formatPeriod(latestPeriod)}.</p> : null}
+        {latestPeriod ? <p className="bls-chart-footnote">What this shows: each labeled endpoint is measured against that series’ own recent history; reference-period endpoints may differ.</p> : null}
       </AccessibleChartFrame>
     </section>
   );

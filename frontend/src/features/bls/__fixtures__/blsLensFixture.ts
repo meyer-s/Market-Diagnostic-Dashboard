@@ -26,7 +26,7 @@ function observation(
 }
 
 function fixtureSeries(
-  partial: Pick<BlsSeries, "series_id" | "report_id" | "label" | "short_label" | "family" | "primary_unit" | "change_1m_unit" | "higher_means"> & { raw_unit?: string },
+  partial: Pick<BlsSeries, "series_id" | "report_id" | "label" | "short_label" | "family" | "primary_unit" | "change_1m_unit" | "higher_means"> & { raw_unit?: string; seasonal_adjustment?: string },
   points: BlsObservation[],
 ): BlsSeries {
   return {
@@ -34,7 +34,7 @@ function fixtureSeries(
     key: partial.series_id.toLowerCase(),
     unit: partial.primary_unit,
     raw_unit: partial.raw_unit ?? partial.primary_unit,
-    seasonal_adjustment: "Seasonally adjusted",
+    seasonal_adjustment: partial.seasonal_adjustment ?? "Seasonally adjusted",
     primary_measure: "Published measure",
     source_url: `https://data.bls.gov/timeseries/${partial.series_id}`,
     coverage_start: points[0]?.period ?? null,
@@ -69,14 +69,14 @@ export const blsLensFixture: BlsLensResponse = {
       report_id: "employment_situation",
       label: "Employment Situation",
       description: "Payroll employment and household unemployment measures.",
-      series_ids: ["CES0000000001", "LNS14000000"],
+      series_ids: ["CES0000000001", "CES0500000003", "LNS14000000"],
       source_url: "https://www.bls.gov/news.release/empsit.htm",
     },
     {
       report_id: "jolts",
       label: "Job Openings and Labor Turnover",
       description: "Demand, hires, and separations in the labor market.",
-      series_ids: ["JTS000000000000000JOR"],
+      series_ids: ["JTS000000000000000JOR", "JTS000000000000000JOL", "JTS000000000000000QUR"],
       source_url: "https://www.bls.gov/jlt/",
     },
     {
@@ -99,8 +99,9 @@ export const blsLensFixture: BlsLensResponse = {
         raw_unit: "CPI index points",
         change_1m_unit: "index points",
         higher_means: "Faster consumer-price growth",
+        seasonal_adjustment: "Not seasonally adjusted",
       },
-      periods.map((period, index) => observation(period, [2.4, 2.3, 2.4, 2.6, 2.7][index], [42, 38, 43, 55, 61][index], { change_1m: [-0.1, -0.1, 0.1, 0.2, 0.1][index], change_12m_pct: [2.4, 2.3, 2.4, 2.6, 2.7][index] })),
+      periods.map((period, index) => observation(period, [2.4, 2.3, 2.4, 2.6, 2.7][index], [42, 38, 43, 55, 61][index], { raw_value: [319.8, 320.1, 320.6, 321.2, 321.5][index], change_1m: [-0.1, -0.1, 0.1, 0.2, 0.1][index], change_12m_pct: [2.4, 2.3, 2.4, 2.6, 2.7][index] })),
     ),
     fixtureSeries(
       {
@@ -113,8 +114,9 @@ export const blsLensFixture: BlsLensResponse = {
         raw_unit: "CPI index points",
         change_1m_unit: "index points",
         higher_means: "Faster underlying consumer-price growth",
+        seasonal_adjustment: "Not seasonally adjusted",
       },
-      periods.map((period, index) => observation(period, [2.8, 2.8, 2.9, 2.9, 3.0][index], [49, 49, 53, 54, 58][index])),
+      periods.map((period, index) => observation(period, [2.8, 2.8, 2.9, 2.9, 3.0][index], [49, 49, 53, 54, 58][index], { raw_value: [326.1, 326.5, 327.0, 327.4, 327.8][index] })),
     ),
     fixtureSeries(
       {
@@ -128,7 +130,21 @@ export const blsLensFixture: BlsLensResponse = {
         change_1m_unit: "thousands of jobs",
         higher_means: "More payroll jobs added during the reference month",
       },
-      periods.map((period, index) => observation(period, [151, 136, 125, 102, 73][index], [63, 55, 48, 36, 22][index], { preliminary: index === 4 })),
+      periods.map((period, index) => observation(period, [151, 136, 125, 102, 73][index], [63, 55, 48, 36, 22][index], { raw_value: [159100, 159236, 159361, 159463, 159536][index], preliminary: index === 4 })),
+    ),
+    fixtureSeries(
+      {
+        series_id: "CES0500000003",
+        report_id: "employment_situation",
+        label: "Average hourly earnings, 12-month change",
+        short_label: "Hourly earnings",
+        family: "labor",
+        primary_unit: "% y/y",
+        raw_unit: "U.S. dollars per hour",
+        change_1m_unit: "U.S. dollars per hour",
+        higher_means: "Faster average-hourly-earnings growth",
+      },
+      periods.map((period, index) => observation(period, [3.5, 3.4, 3.4, 3.3, 3.2][index], [56, 52, 51, 47, 43][index], { raw_value: [36.14, 36.22, 36.31, 36.39, 36.47][index], change_1m: [0.08, 0.08, 0.09, 0.08, 0.08][index] })),
     ),
     fixtureSeries(
       {
@@ -156,7 +172,35 @@ export const blsLensFixture: BlsLensResponse = {
         change_1m_unit: "percentage points",
         higher_means: "More open positions relative to employment and openings",
       },
-      periods.map((period, index) => observation(period, [4.4, 4.3, null, 4.2, null][index], [46, 40, null, 35, null][index])),
+      periods.slice(0, -1).map((period, index) => observation(period, [4.4, 4.3, null, 4.2][index], [46, 40, null, 35][index])),
+    ),
+    fixtureSeries(
+      {
+        series_id: "JTS000000000000000JOL",
+        report_id: "jolts",
+        label: "Job openings level",
+        short_label: "Openings level",
+        family: "labor",
+        primary_unit: "millions of openings",
+        raw_unit: "thousands of openings",
+        change_1m_unit: "thousands of openings",
+        higher_means: "More open positions",
+      },
+      periods.slice(0, -1).map((period, index) => observation(period, [7.8, 7.7, 7.7, 7.6][index], [48, 44, 43, 39][index], { raw_value: [7800, 7700, 7680, 7600][index], change_1m: [-90, -100, -20, -80][index] })),
+    ),
+    fixtureSeries(
+      {
+        series_id: "JTS000000000000000QUR",
+        report_id: "jolts",
+        label: "Quits rate",
+        short_label: "Quits rate",
+        family: "labor",
+        primary_unit: "% of employment",
+        raw_unit: "% of employment",
+        change_1m_unit: "percentage points",
+        higher_means: "More workers voluntarily leaving jobs",
+      },
+      periods.slice(0, -1).map((period, index) => observation(period, [2.1, 2.1, 2.0, 2.0][index], [44, 44, 40, 40][index], { change_1m: [0, 0, -0.1, 0][index] })),
     ),
     fixtureSeries(
       {
@@ -169,8 +213,9 @@ export const blsLensFixture: BlsLensResponse = {
         raw_unit: "PPI index points",
         change_1m_unit: "index points",
         higher_means: "Faster producer-price growth",
+        seasonal_adjustment: "Not seasonally adjusted",
       },
-      periods.map((period, index) => observation(period, [2.5, 2.4, 2.6, 2.8, 3.1][index], [44, 40, 48, 57, 69][index])),
+      periods.map((period, index) => observation(period, [2.5, 2.4, 2.6, 2.8, 3.1][index], [44, 40, 48, 57, 69][index], { raw_value: [258.1, 258.4, 259.0, 259.8, 260.5][index] })),
     ),
   ],
   payroll_revisions: [

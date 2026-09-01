@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { blsLensFixture } from "./__fixtures__/blsLensFixture";
 import BlsReleaseLens from "./BlsReleaseLens";
 import { densifyMonthlyPrimaryRows } from "./NativeTrend";
+import { buildRelativeRows } from "./RelativeField";
 
 const { useApiMock } = vi.hoisted(() => ({ useApiMock: vi.fn() }));
 
@@ -26,10 +27,15 @@ vi.mock("recharts", () => {
   };
 });
 
+function renderLens(entry = "/bls") {
+  return render(<MemoryRouter initialEntries={[entry]}><BlsReleaseLens /></MemoryRouter>);
+}
+
 describe("BlsReleaseLens", () => {
   afterEach(cleanup);
 
   beforeEach(() => {
+    window.history.replaceState({}, "", "/");
     useApiMock.mockReturnValue({
       data: blsLensFixture,
       loading: false,
@@ -38,139 +44,134 @@ describe("BlsReleaseLens", () => {
     });
   });
 
-  it("renders one coherent visible evidence spine with three explicit clocks", async () => {
-    render(<MemoryRouter><BlsReleaseLens /></MemoryRouter>);
+  it("defaults to an answer-first Overview while keeping the five proof workspaces out of the reading flow", () => {
+    renderLens();
 
     expect(screen.getByRole("heading", { level: 1, name: "BLS Release Lens" })).not.toBeNull();
-    expect(screen.getByRole("heading", { name: "Current release ledger" })).not.toBeNull();
-    expect(screen.getByRole("heading", { name: "Relative Field" })).not.toBeNull();
-    expect(screen.getByRole("heading", { name: "Native trend explorer" })).not.toBeNull();
-    expect(screen.getByRole("heading", { name: "Official payroll revision ledger" })).not.toBeNull();
-    expect(screen.getByRole("heading", { name: "Release schedule rail" })).not.toBeNull();
-    expect(screen.getByRole("heading", { name: "Definitions, coverage, and source IDs" })).not.toBeNull();
-    expect(screen.getByRole("heading", { name: "Observation vintage and footnote exceptions" })).not.toBeNull();
-
-    expect(screen.getAllByText(/Observation clock · reference period/).length).toBeGreaterThan(0);
-    expect(screen.getByText("Revision clock · estimate vintage")).not.toBeNull();
-    expect(screen.getByText("Schedule clock · scheduled U.S. Eastern")).not.toBeNull();
-    expect(screen.getByText(/Higher and lower describe relative position, not better and worse/)).not.toBeNull();
-    expect(screen.getByText("-41")).not.toBeNull();
-    expect(screen.getAllByText("8:30 AM ET").length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("columnheader", { name: "Raw published value" }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("columnheader", { name: "Observed revision" }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("columnheader", { name: "BLS footnotes" }).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Third estimate").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Second estimate").length).toBeGreaterThan(0);
-    expect(screen.getByText(/annual benchmark revision process/)).not.toBeNull();
-
-    const nowSection = document.querySelector("#bls-now");
-    const calendarSection = document.querySelector("#bls-calendar");
-    const revisionSection = document.querySelector("#bls-revisions");
-    expect(nowSection).not.toBeNull();
-    expect(calendarSection).not.toBeNull();
-    expect(revisionSection).not.toBeNull();
-    expect(within(nowSection as HTMLElement).queryByText(/published|recently published/i)).toBeNull();
-    expect(within(calendarSection as HTMLElement).queryByText(/published|recently published/i)).toBeNull();
-    expect(within(revisionSection as HTMLElement).queryByText(/\bfinal\b/i)).toBeNull();
-
-    const revisionTable = screen.getByRole("region", { name: "Exact official payroll revision values" });
-    within(revisionTable).getAllByRole("cell", { name: "Unavailable" }).forEach((cell) => {
-      expect(cell.className).not.toContain("bls-positive");
-      expect(cell.className).not.toContain("bls-negative");
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText("5 of 5 series shown")).not.toBeNull();
-    });
-    const endpoints = screen.getByRole("group", { name: "Selected series coverage endpoints" });
-    expect(within(endpoints).getByText("Headline CPI")).not.toBeNull();
-    const openingsEndpoint = within(endpoints).getByText("Openings rate").closest("div");
-    expect(openingsEndpoint).not.toBeNull();
-    expect(within(openingsEndpoint as HTMLElement).getByText("Jun 2026")).not.toBeNull();
-    expect(within(endpoints).getByText(/endpoints differ/)).not.toBeNull();
-    expect(screen.getByText(/Latest period among selected series:/)).not.toBeNull();
-    expect(screen.getAllByText("CUUR0000SA0").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("CUUR0000SA0L1E").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("WPUFD4").length).toBeGreaterThan(0);
+    expect(screen.getByText(/Updated Aug 28, 2026/)).not.toBeNull();
+    expect(screen.getByRole("tablist", { name: "BLS Release Lens views" })).not.toBeNull();
+    expect(screen.getAllByRole("tab")).toHaveLength(6);
+    expect(screen.getByRole("tab", { name: "Overview" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("heading", { name: "Labor-market overview" })).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Current read" })).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Headline observations" })).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "What changed?" })).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Next scheduled release" })).not.toBeNull();
+    expect(screen.queryByRole("heading", { name: "Latest observations by report" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Relative comparison" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "How the evidence is built" })).toBeNull();
+    expect(document.body.textContent?.toLowerCase()).not.toContain("initial claims");
     expect(document.body.textContent?.toLowerCase()).not.toContain("market consensus");
     expect(document.body.textContent?.toLowerCase()).not.toContain("price reaction");
   });
 
-  it("enforces the five-series comparison limit and keeps identity explicit", async () => {
-    render(<MemoryRouter><BlsReleaseLens /></MemoryRouter>);
+  it("renders exactly one active workspace and supports automatic keyboard tab activation", async () => {
+    renderLens();
 
-    const selector = screen.getByRole("group", { name: "Relative Field series; choose up to five" });
+    const overviewTab = screen.getByRole("tab", { name: "Overview" });
+    overviewTab.focus();
+    fireEvent.keyDown(overviewTab, { key: "ArrowRight" });
+
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Releases" }).getAttribute("aria-selected")).toBe("true"));
+    expect(screen.getByRole("heading", { name: "Latest observations by report" })).not.toBeNull();
+    expect(screen.queryByRole("heading", { name: "Labor-market overview" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Revisions" }));
+    expect(screen.getByRole("heading", { name: "Payroll revisions" })).not.toBeNull();
+    expect(screen.queryByRole("heading", { name: "Latest observations by report" })).toBeNull();
+    expect(document.querySelectorAll('[role="tabpanel"]')).toHaveLength(1);
+    expect(document.querySelector('[role="tabpanel"]')?.getAttribute("aria-labelledby")).toBe("bls-tab-revisions");
+  });
+
+  it("opens a direct Trends URL with the requested native series and a two-indicator comparison cap", async () => {
+    renderLens("/bls?view=trends&series=WPUFD4");
+
+    expect(screen.getByRole("tab", { name: "Trends" }).getAttribute("aria-selected")).toBe("true");
+    const nativeSelect = screen.getByLabelText("Indicator") as HTMLSelectElement;
+    await waitFor(() => expect(nativeSelect.value).toBe("WPUFD4"));
+    expect(screen.getByRole("heading", { name: "Native trend explorer" })).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Relative comparison" })).not.toBeNull();
+    expect(screen.getByText("Change from adjacent prior")).not.toBeNull();
+
+    fireEvent.click(screen.getByText(/Compare indicators · 2 of 2 selected/));
+    const selector = screen.getByRole("group", { name: "Relative comparison series; choose up to two" });
+    expect(within(selector).getAllByRole("button")).toHaveLength(9);
+    expect(within(selector).getAllByRole("button", { pressed: true })).toHaveLength(2);
     const ppi = within(selector).getByRole("button", { name: /Final-demand PPI/ });
-    const core = within(selector).getByRole("button", { name: /Core CPI/ });
-
-    await waitFor(() => expect(ppi).toHaveProperty("disabled", true));
-    expect(core.getAttribute("aria-pressed")).toBe("true");
-    const initialPatterns = within(selector).getAllByRole("button")
-      .filter((button) => button.getAttribute("aria-pressed") === "true")
-      .map((button) => button.querySelector("line")?.getAttribute("stroke-dasharray") ?? "solid");
-    expect(new Set(initialPatterns).size).toBe(5);
-
-    fireEvent.click(core);
-    expect(ppi).toHaveProperty("disabled", false);
-    expect(screen.getByText("4 of 5 series shown")).not.toBeNull();
-
-    fireEvent.click(ppi);
     expect(ppi.getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByText("5 of 5 series shown")).not.toBeNull();
+
+    const payroll = within(selector).getByRole("button", { name: /Payroll change/ });
+    fireEvent.click(payroll);
+    const unemployment = within(selector).getByRole("button", { name: /Unemployment/ });
+    expect(unemployment).toHaveProperty("disabled", false);
+    fireEvent.click(unemployment);
+    expect(within(selector).getAllByRole("button", { pressed: true })).toHaveLength(2);
+    expect(ppi.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText("2 of 2 indicators shown")).not.toBeNull();
   });
 
-  it("switches the native-unit series without hiding the other sections", () => {
-    render(<MemoryRouter><BlsReleaseLens /></MemoryRouter>);
+  it("preserves indicator focus when an Overview action opens Trends", async () => {
+    renderLens();
 
-    fireEvent.change(screen.getByLabelText("Series"), { target: { value: "JTS000000000000000JOR" } });
+    fireEvent.click(screen.getByRole("button", { name: "Open Payroll growth in Trends" }));
 
-    expect(screen.getByText(/Job openings rate in its published analytical unit/)).not.toBeNull();
-    expect(screen.getByRole("heading", { name: "Release schedule rail" })).not.toBeNull();
-    expect(screen.getByRole("heading", { name: "Official payroll revision ledger" })).not.toBeNull();
-    expect(screen.getAllByText("Unavailable").length).toBeGreaterThan(0);
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Trends" }).getAttribute("aria-selected")).toBe("true"));
+    expect((screen.getByLabelText("Indicator") as HTMLSelectElement).value).toBe("CES0000000001");
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("tab", { name: "Trends" })));
   });
 
-  it("uses the backend 1-month change unit instead of the raw series unit", () => {
-    render(<MemoryRouter><BlsReleaseLens /></MemoryRouter>);
+  it("keeps revision, calendar, and methods evidence behind their dedicated views", () => {
+    renderLens();
 
-    fireEvent.change(screen.getByLabelText("Series"), { target: { value: "LNS14000000" } });
+    fireEvent.click(screen.getByRole("tab", { name: "Revisions" }));
+    expect(screen.getByText(/of the last 3 completed payroll estimates were revised downward/)).not.toBeNull();
+    expect(screen.getByText("Upward revision")).not.toBeNull();
+    expect(screen.getByText("Downward revision")).not.toBeNull();
+    expect(screen.getAllByText("Third estimate").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Second estimate").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/\bfinal\b/i)).toBeNull();
 
+    fireEvent.click(screen.getByRole("tab", { name: "Calendar" }));
+    expect(screen.getByRole("heading", { name: "BLS release schedule" })).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "What comes next" })).not.toBeNull();
+    expect(screen.getAllByRole("link", { name: "Add to calendar" }).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/published|recently published/i)).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Methods & sources" }));
+    expect(screen.getByRole("heading", { name: "How the evidence is built" })).not.toBeNull();
+    expect(screen.getByLabelText("Search glossary and source mappings")).not.toBeNull();
+    expect(screen.getAllByText("Reference period").length).toBeGreaterThan(0);
+    expect(screen.getByText("Official report sources")).not.toBeNull();
+    fireEvent.click(screen.getByText(/Calculation rules and coverage receipt/));
+    expect(screen.getByRole("heading", { name: "Dashboard labor-direction rule" })).not.toBeNull();
+    expect(screen.getByText(/transparent dashboard rules, not BLS, recession, or policy classifications/i)).not.toBeNull();
+  });
+
+  it("uses the backend 1-month change unit in the detailed native data table", () => {
+    renderLens("/bls?view=trends&series=LNS14000000");
+
+    const dataDisclosure = screen.getAllByText("View chart data")[0].closest("details");
+    expect(dataDisclosure).not.toBeNull();
+    if (dataDisclosure) fireEvent.click(dataDisclosure.querySelector("summary") as HTMLElement);
+    const nativeSummary = screen.getByLabelText("Unemployment current observation summary");
+    expect(within(nativeSummary).getByText("percentage points")).not.toBeNull();
     const table = screen.getByRole("region", { name: "Unemployment native values table" });
     expect(within(table).getAllByRole("cell", { name: "+0.1 percentage points" }).length).toBeGreaterThan(0);
     expect(within(table).queryByRole("cell", { name: "+0.1 % of labor force" })).toBeNull();
   });
 
-  it("disables unavailable series and defaults both explorers to usable data", async () => {
-    const partialFixture = structuredClone(blsLensFixture);
-    const unavailable = partialFixture.series.find((series) => series.series_id === "CUUR0000SA0");
-    if (!unavailable) throw new Error("Fixture headline CPI series is missing");
-    unavailable.observations = unavailable.observations.map((observation) => ({
-      ...observation,
-      primary_value: null,
-      relative_percentile: null,
-      available: false,
-      unavailable_reason: "The upstream response omitted this value.",
-    }));
+  it("falls back to Overview for an invalid view parameter", () => {
+    renderLens("/bls?view=unknown");
+    expect(screen.getByRole("tab", { name: "Overview" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("heading", { name: "Labor-market overview" })).not.toBeNull();
+  });
 
-    useApiMock.mockReturnValue({
-      data: partialFixture,
-      loading: false,
-      error: null,
-      refetch: vi.fn(),
-    });
-    render(<MemoryRouter><BlsReleaseLens /></MemoryRouter>);
+  it("maps legacy section hashes into the corresponding workspace", async () => {
+    window.history.replaceState({}, "", "/bls#bls-revisions");
+    renderLens("/bls#bls-revisions");
 
-    const selector = screen.getByRole("group", { name: "Relative Field series; choose up to five" });
-    const unavailableButton = within(selector).getByRole("button", { name: /Headline CPI Unavailable/ });
-    await waitFor(() => expect(unavailableButton).toHaveProperty("disabled", true));
-    expect(unavailableButton.getAttribute("aria-pressed")).toBe("false");
-    expect(unavailableButton.getAttribute("title")).toContain("No primary observations");
-
-    const nativeSelect = screen.getByLabelText("Series") as HTMLSelectElement;
-    await waitFor(() => expect(nativeSelect.value).not.toBe("CUUR0000SA0"));
-    const unavailableOption = screen.getByRole("option", { name: "Headline CPI — unavailable" }) as HTMLOptionElement;
-    expect(unavailableOption.disabled).toBe(true);
-    expect(screen.getByText("5 of 5 series shown")).not.toBeNull();
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Revisions" }).getAttribute("aria-selected")).toBe("true"));
+    expect(screen.getByRole("heading", { name: "Payroll revisions" })).not.toBeNull();
   });
 
   it("densifies omitted months so the native chart preserves a visible gap", () => {
@@ -186,9 +187,48 @@ describe("BlsReleaseLens", () => {
     ]);
   });
 
+  it("densifies a month omitted by every selected Relative series", () => {
+    const selected = structuredClone(blsLensFixture.series.slice(0, 2));
+    selected.forEach((series) => {
+      series.observations = series.observations.filter((observation) => observation.period !== "2026-04-01");
+    });
+
+    const gap = buildRelativeRows(selected).find((row) => row.period === "2026-04-01");
+    expect(gap).toEqual({
+      period: "2026-04-01",
+      [selected[0].series_id]: null,
+      [selected[1].series_id]: null,
+    });
+  });
+
+  it("replaces unavailable trend actions with an explicit reason", () => {
+    const partial = structuredClone(blsLensFixture);
+    const payroll = partial.series.find((series) => series.series_id === "CES0000000001");
+    if (!payroll) throw new Error("Missing payroll fixture series");
+    payroll.observations = payroll.observations.map((observation) => ({
+      ...observation,
+      primary_value: null,
+      available: false,
+    }));
+    useApiMock.mockReturnValue({ data: partial, loading: false, error: null, refetch: vi.fn() });
+
+    renderLens();
+    const overviewAction = screen.getByRole("button", { name: "Trend unavailable" });
+    expect(overviewAction).toHaveProperty("disabled", true);
+    expect(screen.getByText("No primary observations are available for this indicator.")).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Releases" }));
+    const payrollRow = screen.getByText("Payroll change").closest("li");
+    expect(payrollRow).not.toBeNull();
+    if (payrollRow) {
+      expect(within(payrollRow).getByText("Trend unavailable · no primary observations")).not.toBeNull();
+      expect(within(payrollRow).queryByRole("button", { name: "View trend" })).toBeNull();
+    }
+  });
+
   it("keeps the page identity while reporting an unavailable response", () => {
     useApiMock.mockReturnValue({ data: null, loading: false, error: "The service is temporarily unavailable.", refetch: vi.fn() });
-    render(<MemoryRouter><BlsReleaseLens /></MemoryRouter>);
+    renderLens();
 
     expect(screen.getByRole("heading", { level: 1, name: "BLS Release Lens" })).not.toBeNull();
     expect(screen.getByRole("alert").textContent).toContain("BLS evidence is unavailable");

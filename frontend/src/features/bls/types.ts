@@ -107,9 +107,3 @@ export type BlsLensResponse = {
   methodology: Record<string, unknown> | string[];
   warnings: string[];
 };
-
-export type SeriesLineStyle = {
-  color: string;
-  dash?: string;
-  opacity: number;
-};

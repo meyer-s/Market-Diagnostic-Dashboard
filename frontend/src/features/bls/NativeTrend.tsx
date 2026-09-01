@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   CartesianGrid,
   Line,
@@ -10,7 +11,8 @@ import {
 
 import AccessibleChartFrame from "../../components/ui/AccessibleChartFrame";
 import DataScroller from "../../components/ui/DataScroller";
-import { formatDateTime, formatFootnotes, formatPeriod, formatSigned, formatValue, isPriceSeries, latestObservation, seriesHasPrimaryData } from "./format";
+import { formatDateTime, formatFootnotes, formatPeriod, formatSigned, formatValue, isPriceSeries, latestObservation, primaryDeltaUnit, seriesHasPrimaryData } from "./format";
+import { densifyMonthlyRows } from "./monthlyRows";
 import type { BlsObservation, BlsSeries } from "./types";
 
 type NativeTrendProps = {
@@ -22,39 +24,17 @@ type NativeTrendProps = {
 type NativeChartRow = Pick<BlsObservation, "period" | "primary_value">;
 
 export function densifyMonthlyPrimaryRows(observations: BlsObservation[]): NativeChartRow[] {
-  const valuesByMonth = new Map<number, NativeChartRow>();
-  observations.forEach((observation) => {
-    const match = /^(\d{4})-(\d{2})/.exec(observation.period);
-    if (!match) return;
-    const year = Number(match[1]);
-    const month = Number(match[2]);
-    if (month < 1 || month > 12) return;
-    valuesByMonth.set(year * 12 + month - 1, {
+  return densifyMonthlyRows(
+    observations.map((observation) => ({
       period: observation.period,
       primary_value: observation.primary_value,
-    });
-  });
-  const monthIndexes = [...valuesByMonth.keys()].sort((left, right) => left - right);
-  if (monthIndexes.length === 0) {
-    return observations
-      .map(({ period, primary_value }) => ({ period, primary_value }))
-      .sort((left, right) => left.period.localeCompare(right.period));
-  }
-  const rows: NativeChartRow[] = [];
-  for (let monthIndex = monthIndexes[0]; monthIndex <= monthIndexes[monthIndexes.length - 1]; monthIndex += 1) {
-    const existing = valuesByMonth.get(monthIndex);
-    if (existing) {
-      rows.push(existing);
-      continue;
-    }
-    const year = Math.floor(monthIndex / 12);
-    const month = monthIndex % 12 + 1;
-    rows.push({ period: `${year}-${String(month).padStart(2, "0")}-01`, primary_value: null });
-  }
-  return rows;
+    })),
+    (period) => ({ period, primary_value: null }),
+  );
 }
 
 export default function NativeTrend({ series, selectedId, onSelect }: NativeTrendProps) {
+  const [windowYears, setWindowYears] = useState<3 | 5 | 10>(3);
   const usableSeries = series.filter(seriesHasPrimaryData);
   const selected = usableSeries.find((item) => item.series_id === selectedId) ?? usableSeries[0];
   if (!selected) {
@@ -74,7 +54,29 @@ export default function NativeTrend({ series, selectedId, onSelect }: NativeTren
   const color = isPriceSeries(selected) ? "var(--field-caution)" : "var(--field-accent)";
   const rawUnit = selected.raw_unit ?? selected.unit ?? "native units";
   const latest = latestObservation(selected);
-  const chartRows = densifyMonthlyPrimaryRows(selected.observations);
+  const orderedObservations = [...selected.observations].sort((left, right) => left.period.localeCompare(right.period));
+  const latestIndex = latest ? orderedObservations.findIndex((observation) => observation.period === latest.period) : -1;
+  const adjacentPrior = latestIndex > 0 ? orderedObservations[latestIndex - 1] : null;
+  const previous = adjacentPrior?.primary_value !== null && adjacentPrior?.primary_value !== undefined ? adjacentPrior : null;
+  const primaryDelta = latest?.primary_value !== null && latest?.primary_value !== undefined
+    && previous?.primary_value !== null && previous?.primary_value !== undefined
+    ? latest.primary_value - previous.primary_value
+    : null;
+  const direction = primaryDelta === null
+    ? "Direction unavailable"
+    : primaryDelta > 0
+      ? "Higher than the prior observation"
+      : primaryDelta < 0
+        ? "Lower than the prior observation"
+        : "Unchanged from the prior observation";
+  const allChartRows = densifyMonthlyPrimaryRows(selected.observations);
+  const latestPeriod = allChartRows.at(-1)?.period;
+  const cutoff = latestPeriod ? new Date(`${latestPeriod.slice(0, 10)}T00:00:00Z`) : null;
+  cutoff?.setUTCFullYear(cutoff.getUTCFullYear() - windowYears);
+  const cutoffPeriod = cutoff?.toISOString().slice(0, 10) ?? null;
+  const chartRows = cutoffPeriod
+    ? allChartRows.filter((row) => row.period >= cutoffPeriod)
+    : allChartRows;
 
   return (
     <section id="bls-native" className="section-anchor">
@@ -83,24 +85,28 @@ export default function NativeTrend({ series, selectedId, onSelect }: NativeTren
         description={`${selected.label} in its published analytical unit. Missing observations remain visible gaps rather than interpolated values.`}
         summary={`${selected.higher_means}. That direction is descriptive; it is not a better/worse judgment.`}
         actions={(
-          <label className="bls-select-label">
-            <span>Series</span>
-            <select value={selected.series_id} onChange={(event) => onSelect(event.target.value)}>
-              {series.map((item) => {
-                const usable = seriesHasPrimaryData(item);
-                return (
-                  <option key={item.series_id} value={item.series_id} disabled={!usable}>
-                    {item.short_label}{usable ? "" : " — unavailable"}
-                  </option>
-                );
-              })}
-            </select>
-          </label>
+          <div className="bls-native-actions">
+            <label className="bls-select-label">
+              <span>Indicator</span>
+              <select value={selected.series_id} onChange={(event) => onSelect(event.target.value)}>
+                {series.map((item) => {
+                  const usable = seriesHasPrimaryData(item);
+                  return (
+                    <option key={item.series_id} value={item.series_id} disabled={!usable}>
+                      {item.short_label}{usable ? "" : " — unavailable"}
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+          </div>
         )}
         dataLabel={`${selected.short_label} observations by reference period`}
+        dataContentFocusable={false}
         dataTable={(
           <DataScroller label={`${selected.short_label} native values table`}>
             <table className="bls-table bls-chart-table">
+              <caption className="sr-only">{selected.short_label} native values, revisions, timestamps, and footnotes by reference period</caption>
               <thead>
                 <tr>
                   <th scope="col">Reference period</th>
@@ -120,13 +126,13 @@ export default function NativeTrend({ series, selectedId, onSelect }: NativeTren
                 {selected.observations.map((observation) => (
                   <tr key={observation.period}>
                     <th scope="row">{formatPeriod(observation.period)}</th>
-                    <td>{formatValue(observation.primary_value)} {observation.primary_value === null ? "" : selected.primary_unit}</td>
-                    <td>{formatValue(observation.raw_value)} {observation.raw_value === null ? "" : rawUnit}</td>
-                    <td>{formatSigned(observation.change_1m)} {observation.change_1m === null ? "" : selected.change_1m_unit}</td>
-                    <td>{formatSigned(observation.change_12m_pct, "%")}</td>
-                    <td>{formatValue(observation.first_seen_value)} {observation.first_seen_value === null ? "" : rawUnit}</td>
-                    <td>{formatValue(observation.current_value)} {observation.current_value === null ? "" : rawUnit}</td>
-                    <td>{formatSigned(observation.revision_delta)} {observation.revision_delta === null ? "" : rawUnit}</td>
+                    <td>{formatValue(observation.primary_value, 3)} {observation.primary_value === null ? "" : selected.primary_unit}</td>
+                    <td>{formatValue(observation.raw_value, 3)} {observation.raw_value === null ? "" : rawUnit}</td>
+                    <td>{formatSigned(observation.change_1m, "", 3)} {observation.change_1m === null ? "" : selected.change_1m_unit}</td>
+                    <td>{formatSigned(observation.change_12m_pct, "%", 3)}</td>
+                    <td>{formatValue(observation.first_seen_value, 3)} {observation.first_seen_value === null ? "" : rawUnit}</td>
+                    <td>{formatValue(observation.current_value, 3)} {observation.current_value === null ? "" : rawUnit}</td>
+                    <td>{formatSigned(observation.revision_delta, "", 3)} {observation.revision_delta === null ? "" : rawUnit}</td>
                     <td>{observation.preliminary ? "Preliminary" : observation.revision_count > 0 ? `${observation.revision_count} revision${observation.revision_count === 1 ? "" : "s"}` : "Current published value"}</td>
                     <td>
                       {observation.first_seen_at ? `First ${formatDateTime(observation.first_seen_at)}` : "First-seen time unavailable"}
@@ -140,11 +146,38 @@ export default function NativeTrend({ series, selectedId, onSelect }: NativeTren
           </DataScroller>
         )}
       >
-        <div className="bls-native-read">
-          <span>Latest reference period</span>
-          <strong>{latest ? formatPeriod(latest.period) : "Unavailable"}</strong>
-          <b>{latest ? formatValue(latest.primary_value) : "Unavailable"} <small>{selected.primary_unit}</small></b>
-          <em>{latest?.preliminary ? "Preliminary observation" : "Current published observation"}</em>
+        <dl className="bls-native-read" aria-label={`${selected.short_label} current observation summary`}>
+          <div>
+            <dt>Current observation</dt>
+            <dd>{latest ? formatValue(latest.primary_value, 3) : "Unavailable"} <small>{selected.primary_unit}</small></dd>
+          </div>
+          <div>
+            <dt>Change from adjacent prior</dt>
+            <dd>{formatSigned(primaryDelta, "", 3)} <small>{primaryDelta === null ? "" : primaryDeltaUnit(selected)}</small></dd>
+          </div>
+          <div>
+            <dt>Five-year position</dt>
+            <dd>{latest?.relative_percentile === null || latest?.relative_percentile === undefined ? "Unavailable" : `${formatValue(latest.relative_percentile, 0)}th percentile`}</dd>
+          </div>
+          <div>
+            <dt>Direction</dt>
+            <dd>{direction}</dd>
+          </div>
+          <div>
+            <dt>Reference period</dt>
+            <dd>{latest ? formatPeriod(latest.period) : "Unavailable"}</dd>
+          </div>
+          <div>
+            <dt>Vintage state</dt>
+            <dd>{latest?.preliminary ? "Preliminary observation" : "Current published observation"}</dd>
+          </div>
+        </dl>
+        <div className="bls-window-control bls-native-window" role="group" aria-label="Native trend timeframe">
+          {([3, 5, 10] as const).map((years) => (
+            <button key={years} type="button" aria-pressed={windowYears === years} onClick={() => setWindowYears(years)}>
+              {years === 10 ? "Full history" : `${years} years`}
+            </button>
+          ))}
         </div>
         <div className="bls-chart bls-native-chart">
           <ResponsiveContainer width="100%" height="100%" minWidth={0}>
@@ -170,7 +203,7 @@ export default function NativeTrend({ series, selectedId, onSelect }: NativeTren
               />
               <Tooltip
                 labelFormatter={(label) => formatPeriod(String(label))}
-                formatter={(value) => [`${formatValue(Number(value))} ${selected.primary_unit}`, selected.short_label]}
+                formatter={(value) => [`${formatValue(Number(value), 3)} ${selected.primary_unit}`, selected.short_label]}
                 contentStyle={{ background: "var(--chart-tooltip-bg)", border: "1px solid var(--chart-tooltip-border)", borderRadius: 8 }}
                 labelStyle={{ color: "var(--chart-tooltip-label)" }}
               />

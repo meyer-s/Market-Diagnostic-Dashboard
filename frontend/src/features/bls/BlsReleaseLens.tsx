@@ -1,20 +1,22 @@
 /*
-THESIS: BLS evidence becomes coherent when observation, revision, and publication clocks stay separate; this surface refuses a generic card wall of latest values.
-OWN-WORLD: Evidence Field in compact ledgers, measured charts, exact tables, gold price lines, and blue labor lines.
-STORY: Read what is current, compare unlike measures relatively, return to native units, inspect revisions, then orient to the release calendar and audit trail.
-FIRST VIEWPORT: A concise page heading gives way immediately to a report ledger beside the next-release runway; the analytical sequence remains visible below.
-FORM: Operate-mode chronological evidence spine, staged Now → Relative → Native → Revisions → Calendar → Audit.
+THESIS: The Overview explains; detailed views prove; Methods documents.
+OWN-WORLD: Evidence Field in an answer-first labor brief, quiet rows, native-unit small multiples, exact ledgers, and explicit clock labels.
+STORY: Orient to the current labor read, then enter one releases, trends, revisions, calendar, or methods workspace without carrying a long document in memory.
+FIRST VIEWPORT: A compact source receipt leads directly to the Overview decision brief and headline observations.
+FORM: Operate-mode progressive disclosure with six query-addressable views and one stable tab panel.
 */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import EvidenceStateNotice from "../../components/ui/EvidenceStateNotice";
-import PageHeader from "../../components/ui/PageHeader";
 import PageState from "../../components/ui/PageState";
-import SectionNav from "../../components/ui/SectionNav";
 import { useApi } from "../../hooks/useApi";
 import type { EvidenceState } from "../../utils/evidenceState";
 import AuditPanel from "./AuditPanel";
+import BlsOverview from "./BlsOverview";
+import type { BlsOverviewTarget } from "./blsOverviewModel";
+import BlsViewTabs, { isBlsView, type BlsView } from "./BlsViewTabs";
 import {
   dataQualityMessage,
   dataQualityStatus,
@@ -30,14 +32,14 @@ import RevisionLedger from "./RevisionLedger";
 import type { BlsLensResponse } from "./types";
 import "./bls.css";
 
-const SECTIONS = [
-  { id: "bls-now", label: "Now" },
-  { id: "bls-relative", label: "Relative" },
-  { id: "bls-native", label: "Native" },
-  { id: "bls-revisions", label: "Revisions" },
-  { id: "bls-calendar", label: "Calendar" },
-  { id: "bls-audit", label: "Audit" },
-];
+const LEGACY_HASH_TARGETS: Record<string, { view: BlsView; anchorId: string }> = {
+  "#bls-now": { view: "overview", anchorId: "bls-overview-title" },
+  "#bls-relative": { view: "trends", anchorId: "bls-relative" },
+  "#bls-native": { view: "trends", anchorId: "bls-native" },
+  "#bls-revisions": { view: "revisions", anchorId: "bls-revisions" },
+  "#bls-calendar": { view: "calendar", anchorId: "bls-calendar" },
+  "#bls-audit": { view: "methods", anchorId: "bls-methods" },
+};
 
 function evidenceState(status: string): EvidenceState {
   const normalized = status.toLowerCase();
@@ -48,26 +50,125 @@ function evidenceState(status: string): EvidenceState {
   return "partial";
 }
 
+function preferredTrendIds(data: BlsLensResponse | null): string[] {
+  if (!data) return [];
+  const usable = data.series.filter(seriesHasPrimaryData);
+  const preferred = ["CES0000000001", "LNS14000000"]
+    .filter((id) => usable.some((series) => series.series_id === id));
+  return [...new Set([...preferred, ...defaultSeriesIds(usable, 2)])].slice(0, 2);
+}
+
 export default function BlsReleaseLens() {
   const { data, loading, error, refetch } = useApi<BlsLensResponse>(
     "/bls/lens?years=10",
     { timeoutMs: 60_000 },
   );
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [legacyHash, setLegacyHash] = useState(() => window.location.hash);
+  const handledLegacyHash = useRef<string | null>(null);
+  const pendingLegacyTarget = useRef<{ view: BlsView; anchorId: string } | null>(null);
+  const queryView = searchParams.get("view");
+  const activeView: BlsView = isBlsView(queryView) ? queryView : "overview";
+  const requestedSeriesId = searchParams.get("series") ?? "";
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [nativeSeriesId, setNativeSeriesId] = useState("");
+  const defaultIds = useMemo(() => preferredTrendIds(data), [data]);
 
-  const defaultIds = useMemo(() => defaultSeriesIds(data?.series ?? []), [data?.series]);
+  useEffect(() => {
+    const handleHashChange = () => setLegacyHash(window.location.hash);
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, []);
+
+  useEffect(() => {
+    if (handledLegacyHash.current === legacyHash) return;
+    const initialHash = handledLegacyHash.current === null;
+    handledLegacyHash.current = legacyHash;
+    const target = LEGACY_HASH_TARGETS[legacyHash];
+    if (!target || (initialHash && isBlsView(queryView))) return;
+    pendingLegacyTarget.current = target;
+    const next = new URLSearchParams(searchParams);
+    if (target.view === "overview") next.delete("view");
+    else next.set("view", target.view);
+    setSearchParams(next, { replace: true });
+  }, [legacyHash, queryView, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    const invalidView = queryView !== null && !isBlsView(queryView);
+    const invalidSeries = Boolean(
+      requestedSeriesId
+      && data
+      && !data.series.some((series) => series.series_id === requestedSeriesId && seriesHasPrimaryData(series)),
+    );
+    if (!invalidView && !invalidSeries) return;
+    const next = new URLSearchParams(searchParams);
+    if (invalidView) next.delete("view");
+    if (invalidSeries) next.delete("series");
+    setSearchParams(next, { replace: true });
+  }, [data, queryView, requestedSeriesId, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    const target = pendingLegacyTarget.current;
+    if (!data || !target || target.view !== activeView) return;
+    const frame = window.requestAnimationFrame(() => {
+      const anchor = document.getElementById(target.anchorId);
+      const tab = document.getElementById(`bls-tab-${target.view}`);
+      if (!anchor || !tab) return;
+      anchor.scrollIntoView?.({ block: "start" });
+      tab.focus({ preventScroll: true });
+      pendingLegacyTarget.current = null;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeView, data]);
 
   useEffect(() => {
     if (!data?.series.length) return;
     const usableSeries = data.series.filter(seriesHasPrimaryData);
     const available = new Set(usableSeries.map((series) => series.series_id));
     setSelectedIds((current) => {
-      const valid = current.filter((id) => available.has(id)).slice(0, 5);
-      return valid.length > 0 ? valid : defaultIds;
+      const valid = current.filter((id) => available.has(id)).slice(0, 2);
+      const requested = requestedSeriesId && available.has(requestedSeriesId) ? [requestedSeriesId] : [];
+      return [...new Set([...requested, ...valid, ...defaultIds])].slice(0, 2);
     });
-    setNativeSeriesId((current) => available.has(current) ? current : defaultIds[0] ?? usableSeries[0]?.series_id ?? "");
-  }, [data?.series, defaultIds]);
+    setNativeSeriesId((current) => (
+      requestedSeriesId && available.has(requestedSeriesId)
+        ? requestedSeriesId
+        : available.has(current)
+          ? current
+          : defaultIds[0] ?? usableSeries[0]?.series_id ?? ""
+    ));
+  }, [data?.series, defaultIds, requestedSeriesId]);
+
+  function updateView(view: BlsView, seriesId?: string, focusDestination = false) {
+    const next = new URLSearchParams(searchParams);
+    if (view === "overview") next.delete("view");
+    else next.set("view", view);
+    if (seriesId) next.set("series", seriesId);
+    setSearchParams(next);
+    if (focusDestination) {
+      window.requestAnimationFrame(() => document.getElementById(`bls-tab-${view}`)?.focus());
+    }
+  }
+
+  function openDetail(target: BlsOverviewTarget, seriesId?: string) {
+    const usableSeriesId = seriesId && data?.series.some((series) => series.series_id === seriesId && seriesHasPrimaryData(series))
+      ? seriesId
+      : undefined;
+    if (usableSeriesId) {
+      setNativeSeriesId(usableSeriesId);
+      setSelectedIds((current) => [usableSeriesId, ...current.filter((id) => id !== usableSeriesId)].slice(0, 2));
+    }
+    updateView(target, usableSeriesId, true);
+  }
+
+  function selectNativeSeries(seriesId: string) {
+    setNativeSeriesId(seriesId);
+    setSelectedIds((current) => [seriesId, ...current.filter((id) => id !== seriesId)].slice(0, 2));
+    const next = new URLSearchParams(searchParams);
+    next.set("view", "trends");
+    next.set("series", seriesId);
+    setSearchParams(next, { replace: true });
+  }
 
   function toggleSeries(seriesId: string) {
     if (!data?.series.some((series) => series.series_id === seriesId && seriesHasPrimaryData(series))) return;
@@ -75,41 +176,33 @@ export default function BlsReleaseLens() {
       if (current.includes(seriesId)) {
         return current.length === 1 ? current : current.filter((id) => id !== seriesId);
       }
-      return current.length >= 5 ? current : [...current, seriesId];
+      return current.length >= 2 ? current : [...current, seriesId];
     });
   }
 
   const header = (
-    <PageHeader
-      kicker="Bureau of Labor Statistics"
-      title="BLS Release Lens"
-      description="Follow what each report measured, how published estimates changed, and when the next release is scheduled—without collapsing three different clocks into one timeline."
-      meta={data ? (
-        <>
-          <span className="page-badge">Assembled {formatDateTime(data.as_of)}</span>
-          <span className="page-badge">{data.requested_years}-year request</span>
-          <span className="page-badge">Quality · {dataQualityStatus(data.data_quality)}</span>
-        </>
-      ) : <span className="page-badge">Official BLS series and schedules</span>}
-      actions={(
+    <header className="bls-compact-header">
+      <div>
+        <p className="bls-header-kicker">Bureau of Labor Statistics</p>
+        <h1>BLS Release Lens</h1>
+        <p className="bls-header-status">
+          {data ? `Updated ${formatDateTime(data.as_of)} · ${dataQualityStatus(data.data_quality) === "complete" ? "All expected sources available" : `${dataQualityStatus(data.data_quality)} source coverage`}` : "Official BLS observations, revisions, and schedules"}
+        </p>
+      </div>
+      <div className="bls-header-actions">
+        {data ? <button type="button" className="field-button field-button-secondary" onClick={() => openDetail("methods")}>Methods &amp; source status</button> : null}
         <button type="button" className="field-button field-button-secondary" onClick={refetch} disabled={loading}>
-          {loading && data ? "Refreshing…" : "Refresh BLS data"}
+          {loading && data ? "Refreshing…" : "Refresh data"}
         </button>
-      )}
-      className="bls-page-header"
-    />
+      </div>
+    </header>
   );
 
   if (loading && !data) {
     return (
       <div className="page-shell-wide page-stack bls-page">
         {header}
-        <PageState
-          variant="loading"
-          headingLevel={2}
-          title="Loading the BLS release lens"
-          message="Retrieving official observations, estimate vintages, and scheduled publication times."
-        />
+        <PageState variant="loading" headingLevel={2} title="Loading the BLS release lens" message="Retrieving official observations, estimate vintages, and scheduled publication times." />
       </div>
     );
   }
@@ -118,13 +211,7 @@ export default function BlsReleaseLens() {
     return (
       <div className="page-shell-wide page-stack bls-page">
         {header}
-        <PageState
-          variant="error"
-          headingLevel={2}
-          title="BLS evidence is unavailable"
-          message={error ?? "The response did not contain BLS release evidence. Try again."}
-          actions={<button type="button" className="field-button field-button-primary" onClick={refetch}>Try again</button>}
-        />
+        <PageState variant="error" headingLevel={2} title="BLS evidence is unavailable" message={error ?? "The response did not contain BLS release evidence. Try again."} actions={<button type="button" className="field-button field-button-primary" onClick={refetch}>Try again</button>} />
       </div>
     );
   }
@@ -133,13 +220,7 @@ export default function BlsReleaseLens() {
     return (
       <div className="page-shell-wide page-stack bls-page">
         {header}
-        <PageState
-          variant="empty"
-          headingLevel={2}
-          title="No BLS series were returned"
-          message="The release receipt is available, but there are no observations to compare yet."
-          actions={<button type="button" className="field-button field-button-primary" onClick={refetch}>Refresh data</button>}
-        />
+        <PageState variant="empty" headingLevel={2} title="No BLS series were returned" message="The release receipt is available, but there are no observations to compare yet." actions={<button type="button" className="field-button field-button-primary" onClick={refetch}>Refresh data</button>} />
       </div>
     );
   }
@@ -149,33 +230,42 @@ export default function BlsReleaseLens() {
   const qualityMessage = error
     ? "The newest refresh failed. The retained response remains visible and may be stale."
     : dataQualityMessage(data.data_quality)
-      ?? (data.warnings.length > 0 ? "The response includes coverage or timing qualifications." : "All returned evidence passed the service's current completeness checks.");
+      ?? "Some expected BLS evidence is incomplete; available observations remain visible.";
 
   return (
-    <div className="page-shell-wide page-stack bls-page">
+    <div className="page-shell-wide bls-page">
       {header}
-      <SectionNav items={SECTIONS} label="BLS lens sections" />
+      <BlsViewTabs activeView={activeView} onChange={(view) => updateView(view)} />
 
-      {(qualityState !== "complete" || error || data.warnings.length > 0) ? (
+      {(qualityState !== "complete" || error) ? (
         <EvidenceStateNotice
           panelId="bls-lens"
-          title="BLS evidence quality"
+          title="BLS source status"
           state={error ? "stale" : qualityState}
           message={qualityMessage}
-          details={data.warnings.length > 0 ? (
-            <ul className="bls-warning-list">
-              {data.warnings.map((warning) => <li key={warning}>{warning}</li>)}
-            </ul>
-          ) : undefined}
+          details={data.warnings.length > 0 ? <ul className="bls-warning-list">{data.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : undefined}
         />
       ) : null}
 
-      <ReleaseOverview data={data} />
-      <RelativeField series={data.series} selectedIds={selectedIds} onToggle={toggleSeries} />
-      <NativeTrend series={data.series} selectedId={nativeSeriesId} onSelect={setNativeSeriesId} />
-      <RevisionLedger revisions={data.payroll_revisions} />
-      <ReleaseCalendar entries={data.release_calendar} asOf={data.as_of} />
-      <AuditPanel data={data} />
+      <section
+        id="bls-active-panel"
+        role="tabpanel"
+        aria-labelledby={`bls-tab-${activeView}`}
+        tabIndex={0}
+        className="bls-active-panel"
+      >
+        {activeView === "overview" ? <BlsOverview data={data} onNavigate={openDetail} /> : null}
+        {activeView === "releases" ? <ReleaseOverview data={data} onOpenTrend={(seriesId) => openDetail("trends", seriesId)} /> : null}
+        {activeView === "trends" ? (
+          <div className="page-stack">
+            <NativeTrend series={data.series} selectedId={nativeSeriesId} onSelect={selectNativeSeries} />
+            <RelativeField series={data.series} selectedIds={selectedIds} onToggle={toggleSeries} />
+          </div>
+        ) : null}
+        {activeView === "revisions" ? <RevisionLedger revisions={data.payroll_revisions} /> : null}
+        {activeView === "calendar" ? <ReleaseCalendar entries={data.release_calendar} asOf={data.as_of} /> : null}
+        {activeView === "methods" ? <AuditPanel data={data} /> : null}
+      </section>
     </div>
   );
 }

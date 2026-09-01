@@ -8,6 +8,7 @@ export type AccessibleChartFrameProps = {
   actions?: ReactNode;
   dataTable?: ReactNode;
   dataLabel?: string;
+  dataContentFocusable?: boolean;
   className?: string;
 };
 
@@ -19,6 +20,7 @@ export default function AccessibleChartFrame({
   actions,
   dataTable,
   dataLabel,
+  dataContentFocusable = true,
   className = "",
 }: AccessibleChartFrameProps) {
   const baseId = useId().replace(/:/g, "");
@@ -51,7 +53,7 @@ export default function AccessibleChartFrame({
             className="chart-frame-data-content"
             role="region"
             aria-label={dataLabel ?? `${title} data`}
-            tabIndex={0}
+            tabIndex={dataContentFocusable ? 0 : undefined}
           >
             {dataTable}
           </div>
