@@ -29,6 +29,7 @@ from app.api.agriculture import router as agriculture_router
 from app.api.energy import router as energy_router
 from app.api.real_estate import router as real_estate_router
 from app.api.market_weather import router as market_weather_router
+from app.api.bls import router as bls_router
 from app.utils.logging_config import configure_safe_dependency_logging
 
 # Set up logging
@@ -159,6 +160,9 @@ app.include_router(real_estate_router, tags=["RealEstate"])
 
 # Experimental multi-horizon market weather radar
 app.include_router(market_weather_router, tags=["MarketWeather"])
+
+# Bureau of Labor Statistics trend and revision lens
+app.include_router(bls_router, tags=["BLS"])
 
 # Metal Projections
 from app.api.metal_projections import router as metal_projections_router

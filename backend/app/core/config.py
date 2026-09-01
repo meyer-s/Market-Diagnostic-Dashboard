@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     # the applied candidate order unless an operator deliberately opts in.
     OPTION_LEARNING_CANARY_ENABLED: bool = False
     FRED_API_KEY: Optional[str] = None
+    BLS_API_KEY: Optional[str] = None
     EIA_API_KEY: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None
     MARKET_DIAGNOSTIC_MODEL: Optional[str] = None

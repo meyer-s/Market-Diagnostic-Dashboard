@@ -1,0 +1,243 @@
+import type { BlsLensResponse, BlsObservation, BlsSeries } from "../types";
+
+function observation(
+  period: string,
+  primaryValue: number | null,
+  percentile: number | null,
+  overrides: Partial<BlsObservation> = {},
+): BlsObservation {
+  return {
+    period,
+    raw_value: primaryValue,
+    primary_value: primaryValue,
+    relative_percentile: percentile,
+    change_1m: null,
+    change_12m_pct: null,
+    available: primaryValue !== null,
+    unavailable_reason: primaryValue === null ? "No observation was returned for this reference month." : null,
+    preliminary: false,
+    footnotes: [],
+    first_seen_value: primaryValue,
+    current_value: primaryValue,
+    revision_delta: 0,
+    revision_count: 0,
+    ...overrides,
+  };
+}
+
+function fixtureSeries(
+  partial: Pick<BlsSeries, "series_id" | "report_id" | "label" | "short_label" | "family" | "primary_unit" | "change_1m_unit" | "higher_means"> & { raw_unit?: string },
+  points: BlsObservation[],
+): BlsSeries {
+  return {
+    ...partial,
+    key: partial.series_id.toLowerCase(),
+    unit: partial.primary_unit,
+    raw_unit: partial.raw_unit ?? partial.primary_unit,
+    seasonal_adjustment: "Seasonally adjusted",
+    primary_measure: "Published measure",
+    source_url: `https://data.bls.gov/timeseries/${partial.series_id}`,
+    coverage_start: points[0]?.period ?? null,
+    coverage_end: points[points.length - 1]?.period ?? null,
+    observations: points,
+  };
+}
+
+const periods = ["2026-03-01", "2026-04-01", "2026-05-01", "2026-06-01", "2026-07-01"];
+
+export const blsLensFixture: BlsLensResponse = {
+  as_of: "2026-08-28T10:15:00-04:00",
+  requested_years: 10,
+  coverage: {
+    start: "2016-08-01",
+    end: "2026-07-01",
+    note: "Observation coverage varies by series.",
+  },
+  data_quality: {
+    status: "partial",
+    message: "The opening-rate series ends one reference month before the other default comparisons and includes one historical gap.",
+  },
+  reports: [
+    {
+      report_id: "cpi",
+      label: "Consumer Price Index",
+      description: "Consumer prices and inflation measures.",
+      series_ids: ["CUUR0000SA0", "CUUR0000SA0L1E"],
+      source_url: "https://www.bls.gov/cpi/",
+    },
+    {
+      report_id: "employment_situation",
+      label: "Employment Situation",
+      description: "Payroll employment and household unemployment measures.",
+      series_ids: ["CES0000000001", "LNS14000000"],
+      source_url: "https://www.bls.gov/news.release/empsit.htm",
+    },
+    {
+      report_id: "jolts",
+      label: "Job Openings and Labor Turnover",
+      description: "Demand, hires, and separations in the labor market.",
+      series_ids: ["JTS000000000000000JOR"],
+      source_url: "https://www.bls.gov/jlt/",
+    },
+    {
+      report_id: "ppi",
+      label: "Producer Price Index",
+      description: "Producer selling prices.",
+      series_ids: ["WPUFD4"],
+      source_url: "https://www.bls.gov/ppi/",
+    },
+  ],
+  series: [
+    fixtureSeries(
+      {
+        series_id: "CUUR0000SA0",
+        report_id: "cpi",
+        label: "Headline CPI, 12-month change",
+        short_label: "Headline CPI",
+        family: "prices",
+        primary_unit: "% y/y",
+        raw_unit: "CPI index points",
+        change_1m_unit: "index points",
+        higher_means: "Faster consumer-price growth",
+      },
+      periods.map((period, index) => observation(period, [2.4, 2.3, 2.4, 2.6, 2.7][index], [42, 38, 43, 55, 61][index], { change_1m: [-0.1, -0.1, 0.1, 0.2, 0.1][index], change_12m_pct: [2.4, 2.3, 2.4, 2.6, 2.7][index] })),
+    ),
+    fixtureSeries(
+      {
+        series_id: "CUUR0000SA0L1E",
+        report_id: "cpi",
+        label: "Core CPI, 12-month change",
+        short_label: "Core CPI",
+        family: "prices",
+        primary_unit: "% y/y",
+        raw_unit: "CPI index points",
+        change_1m_unit: "index points",
+        higher_means: "Faster underlying consumer-price growth",
+      },
+      periods.map((period, index) => observation(period, [2.8, 2.8, 2.9, 2.9, 3.0][index], [49, 49, 53, 54, 58][index])),
+    ),
+    fixtureSeries(
+      {
+        series_id: "CES0000000001",
+        report_id: "employment_situation",
+        label: "Total nonfarm payroll employment, monthly change",
+        short_label: "Payroll change",
+        family: "labor",
+        primary_unit: "thousands of jobs",
+        raw_unit: "thousands of jobs",
+        change_1m_unit: "thousands of jobs",
+        higher_means: "More payroll jobs added during the reference month",
+      },
+      periods.map((period, index) => observation(period, [151, 136, 125, 102, 73][index], [63, 55, 48, 36, 22][index], { preliminary: index === 4 })),
+    ),
+    fixtureSeries(
+      {
+        series_id: "LNS14000000",
+        report_id: "employment_situation",
+        label: "Unemployment rate",
+        short_label: "Unemployment",
+        family: "labor",
+        primary_unit: "%",
+        raw_unit: "% of labor force",
+        change_1m_unit: "percentage points",
+        higher_means: "A larger share of the labor force is unemployed",
+      },
+      periods.map((period, index) => observation(period, [4.1, 4.1, 4.2, 4.2, 4.3][index], [45, 45, 52, 52, 59][index], { change_1m: [0, 0, 0.1, 0, 0.1][index] })),
+    ),
+    fixtureSeries(
+      {
+        series_id: "JTS000000000000000JOR",
+        report_id: "jolts",
+        label: "Job openings rate",
+        short_label: "Openings rate",
+        family: "labor",
+        primary_unit: "%",
+        raw_unit: "% of employment and openings",
+        change_1m_unit: "percentage points",
+        higher_means: "More open positions relative to employment and openings",
+      },
+      periods.map((period, index) => observation(period, [4.4, 4.3, null, 4.2, null][index], [46, 40, null, 35, null][index])),
+    ),
+    fixtureSeries(
+      {
+        series_id: "WPUFD4",
+        report_id: "ppi",
+        label: "Producer prices, final demand",
+        short_label: "Final-demand PPI",
+        family: "prices",
+        primary_unit: "% y/y",
+        raw_unit: "PPI index points",
+        change_1m_unit: "index points",
+        higher_means: "Faster producer-price growth",
+      },
+      periods.map((period, index) => observation(period, [2.5, 2.4, 2.6, 2.8, 3.1][index], [44, 40, 48, 57, 69][index])),
+    ),
+  ],
+  payroll_revisions: [
+    {
+      period: "2026-04-01",
+      first_estimate: 177,
+      second_estimate: 147,
+      third_estimate: 136,
+      second_minus_first: -30,
+      third_minus_second: -11,
+      total_revision: -41,
+      revision_stage: "third_estimate",
+    },
+    {
+      period: "2026-05-01",
+      first_estimate: 139,
+      second_estimate: 144,
+      third_estimate: 125,
+      second_minus_first: 5,
+      third_minus_second: -19,
+      total_revision: -14,
+      revision_stage: "third_estimate",
+    },
+    {
+      period: "2026-06-01",
+      first_estimate: 92,
+      second_estimate: 102,
+      third_estimate: null,
+      second_minus_first: 10,
+      third_minus_second: null,
+      total_revision: 10,
+      revision_stage: "second_estimate",
+    },
+  ],
+  release_calendar: [
+    {
+      report_id: "employment_situation",
+      report: "Employment Situation",
+      scheduled_at: "2026-09-04T08:30:00-04:00",
+      date: "2026-09-04",
+      time_label: "8:30 AM ET",
+      status: "scheduled",
+      source_url: "https://www.bls.gov/schedule/news_release/empsit.htm",
+    },
+    {
+      report_id: "jolts",
+      report: "Job Openings and Labor Turnover",
+      scheduled_at: "2026-09-09T10:00:00-04:00",
+      date: "2026-09-09",
+      time_label: "10:00 AM ET",
+      status: "scheduled",
+      source_url: "https://www.bls.gov/schedule/news_release/jolts.htm",
+    },
+    {
+      report_id: "cpi",
+      report: "Consumer Price Index",
+      scheduled_at: "2026-08-12T08:30:00-04:00",
+      date: "2026-08-12",
+      time_label: "8:30 AM ET",
+      status: "past_scheduled",
+      source_url: "https://www.bls.gov/schedule/news_release/cpi.htm",
+    },
+  ],
+  methodology: {
+    relative_percentile: "Each observation is ranked against that series' trailing five-year history; it is not a cross-series unit conversion.",
+    revisions: "Payroll revision values reproduce the official first, second, and third estimate sequence.",
+    calendar: "Scheduled release times are shown in U.S. Eastern time and are not linked to observations.",
+  },
+  warnings: ["JOLTS schedule dates generally follow the report’s earlier reference month; no calendar-to-observation linkage is asserted."],
+};

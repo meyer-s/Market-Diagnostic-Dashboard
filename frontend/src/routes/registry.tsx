@@ -24,6 +24,7 @@ const AgricultureIndex = lazy(() => import("../pages/AgricultureIndex"));
 const AgricultureReportDesk = lazy(() => import("../pages/AgricultureReportDesk"));
 const EnergyIndex = lazy(() => import("../pages/EnergyIndex"));
 const RealEstateDiagnostic = lazy(() => import("../pages/RealEstateDiagnostic"));
+const BlsReleaseLens = lazy(() => import("../features/bls/BlsReleaseLens"));
 
 type NavGroup = "primary" | "tools";
 type ToolGroup = "market-views" | "asset-classes" | "research";
@@ -121,6 +122,7 @@ export const routeRegistry: AppRouteDefinition[] = [
   { path: "/market-weather", label: "Market Field Language", analyticsName: "Market Field Language", navGroup: "tools", toolGroup: "market-views", visible: true, activeMatch: "/market-weather", element: <MarketWeatherRadar /> },
   { path: "/secret/options", analyticsName: "Secret Options", element: <SecretOptions /> },
   { path: "/tools/recap", label: "Recap", analyticsName: "Recap", navGroup: "tools", toolGroup: "research", visible: true, activeMatch: "/tools/recap", element: <RecapIndex /> },
+  { path: "/bls", label: "BLS Releases", analyticsName: "BLS Release Lens", navGroup: "tools", toolGroup: "research", visible: true, activeMatch: "/bls", element: <BlsReleaseLens /> },
   { path: "/tools/recap/:slug", analyticsName: "Recap", element: <RecapPost /> },
   { path: "/tools/volume-breadth", analyticsName: "Volume & Breadth", element: <VolumeBreadthTools /> },
   { path: "/tools/experiments", analyticsName: "Recap", element: <Navigate to="/tools/recap" replace /> },

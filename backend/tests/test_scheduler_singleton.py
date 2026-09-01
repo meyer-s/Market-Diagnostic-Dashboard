@@ -117,3 +117,30 @@ def test_scheduler_registers_three_weekday_sp500_scans(
     assert "hour='10,12,14'" in str(trigger)
     assert "minute='0'" in str(trigger)
     assert str(trigger.timezone) == "America/New_York"
+
+
+def test_scheduler_registers_two_weekday_bls_refreshes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class SchedulerProbe:
+        running = True
+
+        def __init__(self) -> None:
+            self.jobs: dict[str, object] = {}
+
+        def get_job(self, _job_id: str):
+            return None
+
+        def add_job(self, _func, trigger, *, id: str, **_kwargs) -> None:
+            self.jobs[id] = trigger
+
+    probe = SchedulerProbe()
+    monkeypatch.setattr(scheduler_module, "scheduler", probe)
+
+    scheduler_module.start_scheduler()
+
+    trigger = probe.jobs["bls_lens_refresh"]
+    assert "day_of_week='mon-fri'" in str(trigger)
+    assert "hour='8,10'" in str(trigger)
+    assert "minute='45'" in str(trigger)
+    assert str(trigger.timezone) == "America/New_York"

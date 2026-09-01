@@ -39,3 +39,4 @@ from .stock_projection_snapshot import StockProjectionSnapshot
 from .endpoint_response_snapshot import EndpointResponseSnapshot
 from .agriculture_wasde_observation import AgricultureWasdeObservation
 from .agriculture_report_release import AgricultureReportRelease
+from .bls_observation_vintage import BlsObservationVintage

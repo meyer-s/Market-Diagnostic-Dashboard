@@ -37,6 +37,7 @@ const REQUIRED_ROUTE_CHUNKS = Object.freeze([
   "AgricultureIndex",
   "EnergyIndex",
   "RealEstateDiagnostic",
+  "BlsReleaseLens",
 ]);
 
 function formatKiB(bytes) {

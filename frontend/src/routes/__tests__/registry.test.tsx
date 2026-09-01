@@ -32,7 +32,19 @@ describe("route registry", () => {
     expect(getAnalyticsNameForPath("/")).toBe("Dashboard");
     expect(getAnalyticsNameForPath("/stock-analysis/MSFT")).toBe("Stock Analysis");
     expect(getAnalyticsNameForPath("/market-weather")).toBe("Market Field Language");
+    expect(getAnalyticsNameForPath("/bls")).toBe("BLS Release Lens");
     expect(getAnalyticsNameForPath("/aas-breakdown")).toBe("Not Found");
+  });
+
+  it("registers BLS Releases as a visible Research tool", () => {
+    expect(toolRoutes).toContainEqual(
+      expect.objectContaining({
+        path: "/bls",
+        label: "BLS Releases",
+        analyticsName: "BLS Release Lens",
+        toolGroup: "research",
+      }),
+    );
   });
 
   it("gives parameterized research pages specific reader-facing names", () => {

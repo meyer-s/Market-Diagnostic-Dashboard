@@ -275,6 +275,13 @@ const baseTargets: AuditTarget[] = [
     group: "route",
     template: "AgricultureReportDesk",
   },
+  {
+    id: "22c-bls-release-lens",
+    name: "BLS Release Lens",
+    path: "/bls",
+    group: "route",
+    template: "BlsReleaseLens",
+  },
   { id: "23-energy", name: "Energy", path: "/energy", group: "route", template: "EnergyIndex" },
   {
     id: "24-real-estate-overview",

@@ -30,6 +30,7 @@ from app.services.sector_projection import (
 from app.models.system_status import SystemStatus
 from app.utils.db_helpers import get_db_session
 from app.services.scheduler_lock import scheduler_job_lock
+from app.services.bls_lens import refresh_bls_lens_snapshot
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -197,6 +198,24 @@ async def scheduled_agriculture_report_refresh_job():
         logger.info("✅ Agriculture report caches refreshed")
     except Exception as exc:
         logger.error("❌ Agriculture report cache refresh failed: %s", exc, exc_info=True)
+
+
+async def scheduled_bls_lens_refresh_job():
+    """Refresh official BLS series, revisions, calendar, and observed vintages."""
+    try:
+        with scheduler_job_lock("bls_lens_refresh") as acquired:
+            if not acquired:
+                return
+            logger.info("Refreshing the official BLS Lens snapshot...")
+            payload = await refresh_bls_lens_snapshot(force=True)
+            quality = payload.get("data_quality", {}) if isinstance(payload, dict) else {}
+            logger.info(
+                "BLS Lens refresh completed: status=%s stale=%s",
+                quality.get("status"),
+                quality.get("stale"),
+            )
+    except Exception as exc:
+        logger.error("BLS Lens refresh failed: %s", exc, exc_info=True)
 
 
 def scheduled_market_diagnostic_publish_job():
@@ -392,6 +411,20 @@ def start_scheduler():
             ),
             id="option_decision_learning",
             name="Option Decision Outcome Learning",
+            replace_existing=True,
+        )
+
+    if scheduler.get_job("bls_lens_refresh") is None:
+        scheduler.add_job(
+            scheduled_bls_lens_refresh_job,
+            CronTrigger(
+                day_of_week="mon-fri",
+                hour="8,10",
+                minute=45,
+                timezone="America/New_York",
+            ),
+            id="bls_lens_refresh",
+            name="Official BLS Lens Refresh",
             replace_existing=True,
         )
 
