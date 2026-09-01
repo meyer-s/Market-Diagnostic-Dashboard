@@ -32,11 +32,10 @@ function CalendarEvent({ entry, emphasized = false }: { entry: BlsCalendarEntry;
       </time>
       <div className="bls-calendar-copy">
         <b>{calendarLabel(entry)}</b>
-        <span>{entry.report_id}</span>
       </div>
       {emphasized ? <span className="bls-status-label">Scheduled</span> : null}
       <details>
-        <summary>Release links</summary>
+        <summary>Official source &amp; calendar</summary>
         <div>
           <a href={entry.source_url} target="_blank" rel="noreferrer">Official schedule source</a>
           {downloadHref ? <a href={downloadHref} download={`bls-${entry.report_id}-${entry.scheduled_at.slice(0, 10)}.ics`}>Add to calendar</a> : null}

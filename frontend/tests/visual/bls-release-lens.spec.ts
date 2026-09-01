@@ -128,10 +128,40 @@ async function assertSeriousAndCriticalAxe(page: Page, view: BlsView) {
   expect(severeViolations, `${view.tab} serious/critical Axe violations`).toEqual([]);
 }
 
+async function assertVisibleCopyBudget(page: Page, view: BlsView, viewportHeight: number) {
+  const visibleWordBudgets: Record<BlsView["id"], number> = {
+    overview: 230,
+    releases: 240,
+    trends: 130,
+    revisions: 140,
+    calendar: 160,
+    methods: 170,
+  };
+  const metrics = await page.locator("#bls-active-panel").evaluate((panel) => ({
+    words: (panel.innerText.match(/\S+/g) ?? []).length,
+    pageHeight: document.documentElement.scrollHeight,
+  }));
+
+  expect(metrics.words, `${view.tab} visible copy count`).toBeLessThanOrEqual(visibleWordBudgets[view.id]);
+  if (view.id === "overview") {
+    const nextReleaseTop = await page.getByRole("heading", { name: "Next release", exact: true }).evaluate(
+      (heading) => heading.getBoundingClientRect().top,
+    );
+    expect(nextReleaseTop, "Next release should remain in the opening scan").toBeLessThanOrEqual(viewportHeight * 1.25);
+    expect(metrics.pageHeight / viewportHeight, "Overview should not regress into an unbounded document").toBeLessThanOrEqual(4.5);
+  }
+}
+
 async function selectView(page: Page, view: BlsView) {
   const tab = page.getByRole("tab", { name: view.tab, exact: true });
-  await tab.click();
-  await expect(tab).toHaveAttribute("aria-selected", "true");
+  const select = page.getByLabel("BLS workspace", { exact: true });
+  if (await select.isVisible()) {
+    await select.selectOption(view.id);
+    await expect(select).toHaveValue(view.id);
+  } else {
+    await tab.click();
+    await expect(tab).toHaveAttribute("aria-selected", "true");
+  }
   await expect(page.locator("#bls-active-panel")).toHaveCount(1);
   await expect(page.locator("#bls-active-panel")).toHaveAttribute("aria-labelledby", `bls-tab-${view.id}`);
   await expect(page.getByRole("heading", { level: 2, name: view.heading, exact: true })).toBeVisible();
@@ -144,7 +174,7 @@ async function selectView(page: Page, view: BlsView) {
 }
 
 async function captureReviewScreenshot(page: Page, testInfo: TestInfo, viewportName: string, viewId: string) {
-  if (["overview", "trends", "revisions"].includes(viewId)) {
+  if (["overview", "trends", "relative", "revisions"].includes(viewId)) {
     // Recharts animates SVG paths in JavaScript, outside Playwright's CSS/Web
     // Animations controls. Capture the complete line/bar rather than a frame.
     await page.waitForTimeout(1_700);
@@ -166,14 +196,30 @@ test.describe("@release BLS Release Lens", () => {
       await page.goto("/bls", { waitUntil: "networkidle" });
 
       await expect(page.getByRole("heading", { level: 1, name: "BLS Release Lens" })).toBeVisible();
-      await expect(page.getByRole("tablist", { name: "BLS Release Lens views" })).toBeVisible();
-      await expect(page.getByRole("tab")).toHaveCount(6);
+      if (viewport.width <= 640) {
+        await expect(page.getByLabel("BLS workspace", { exact: true })).toBeVisible();
+        await expect(page.getByRole("tablist", { name: "BLS Release Lens views" })).toBeHidden();
+      } else {
+        await expect(page.getByRole("tablist", { name: "BLS Release Lens views" })).toBeVisible();
+        await expect(page.getByRole("tab")).toHaveCount(6);
+        await expect(page.getByLabel("BLS workspace", { exact: true })).toBeHidden();
+      }
 
       for (const view of views) {
         await selectView(page, view);
         await assertNoPageOverflow(page);
+        await assertVisibleCopyBudget(page, view, viewport.height);
         await captureReviewScreenshot(page, testInfo, viewport.name, view.id);
         await assertSeriousAndCriticalAxe(page, view);
+
+        if (view.id === "trends") {
+          await page.getByRole("button", { name: "Relative comparison", exact: true }).click();
+          await expect(page.getByRole("heading", { level: 2, name: "Relative comparison" })).toBeVisible();
+          await assertNoPageOverflow(page);
+          await assertVisibleCopyBudget(page, view, viewport.height);
+          await captureReviewScreenshot(page, testInfo, viewport.name, "relative");
+          await assertSeriousAndCriticalAxe(page, view);
+        }
       }
     });
   }
@@ -212,9 +258,12 @@ test.describe("@release BLS Release Lens", () => {
 
     await expect(page.getByRole("tab", { name: "Trends", exact: true })).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("heading", { level: 2, name: "Native trend explorer" })).toBeVisible();
-    await expect(page.getByRole("heading", { level: 2, name: "Relative comparison" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Relative comparison" })).toHaveCount(0);
     await expect(page.getByLabel("Indicator")).toHaveValue("WPUFD4");
 
+    await page.getByRole("button", { name: "Relative comparison", exact: true }).click();
+    await expect(page).toHaveURL(/(?:\?|&)trend=relative(?:&|$)/);
+    await expect(page.getByRole("heading", { level: 2, name: "Relative comparison" })).toBeVisible();
     await page.getByText(/Compare indicators · 2 of 2 selected/).click();
     const comparison = page.getByRole("group", { name: "Relative comparison series; choose up to two" });
     await expect(comparison.getByRole("button", { pressed: true })).toHaveCount(2);
@@ -230,7 +279,8 @@ test.describe("@release BLS Release Lens", () => {
 
     await expect(page.getByRole("tab", { name: "Trends", exact: true })).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("heading", { level: 2, name: "Relative comparison" })).toBeVisible();
-    await expect.poll(async () => page.evaluate(() => window.scrollY)).toBeGreaterThan(500);
+    await expect(page).toHaveURL(/(?:\?|&)trend=relative(?:&|$)/);
+    await expect.poll(async () => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
     await expect.poll(async () => page.locator("#bls-relative").evaluate((element) => (
       element.getBoundingClientRect().top
     ))).toBeLessThan(700);

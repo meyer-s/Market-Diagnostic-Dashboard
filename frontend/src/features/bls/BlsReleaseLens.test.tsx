@@ -54,9 +54,9 @@ describe("BlsReleaseLens", () => {
     expect(screen.getByRole("tab", { name: "Overview" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.getByRole("heading", { name: "Labor-market overview" })).not.toBeNull();
     expect(screen.getByRole("heading", { name: "Current read" })).not.toBeNull();
-    expect(screen.getByRole("heading", { name: "Headline observations" })).not.toBeNull();
-    expect(screen.getByRole("heading", { name: "What changed?" })).not.toBeNull();
-    expect(screen.getByRole("heading", { name: "Next scheduled release" })).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Four key measures" })).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Payroll revisions" })).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Next release" })).not.toBeNull();
     expect(screen.queryByRole("heading", { name: "Latest observations by report" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Relative comparison" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "How the evidence is built" })).toBeNull();
@@ -90,9 +90,11 @@ describe("BlsReleaseLens", () => {
     const nativeSelect = screen.getByLabelText("Indicator") as HTMLSelectElement;
     await waitFor(() => expect(nativeSelect.value).toBe("WPUFD4"));
     expect(screen.getByRole("heading", { name: "Native trend explorer" })).not.toBeNull();
-    expect(screen.getByRole("heading", { name: "Relative comparison" })).not.toBeNull();
+    expect(screen.queryByRole("heading", { name: "Relative comparison" })).toBeNull();
     expect(screen.getByText("Change from adjacent prior")).not.toBeNull();
 
+    fireEvent.click(screen.getByRole("button", { name: "Relative comparison" }));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Relative comparison" })).not.toBeNull());
     fireEvent.click(screen.getByText(/Compare indicators · 2 of 2 selected/));
     const selector = screen.getByRole("group", { name: "Relative comparison series; choose up to two" });
     expect(within(selector).getAllByRole("button")).toHaveLength(9);
@@ -110,10 +112,24 @@ describe("BlsReleaseLens", () => {
     expect(screen.getByText("2 of 2 indicators shown")).not.toBeNull();
   });
 
-  it("preserves indicator focus when an Overview action opens Trends", async () => {
+  it("keeps Relative comparison active when the selected Trends tab is clicked again", async () => {
+    renderLens("/bls?view=trends&trend=relative");
+
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Relative comparison" })).not.toBeNull());
+    fireEvent.click(screen.getByRole("tab", { name: "Trends" }));
+
+    expect(screen.getByRole("heading", { name: "Relative comparison" })).not.toBeNull();
+    expect(screen.queryByRole("heading", { name: "Native trend explorer" })).toBeNull();
+  });
+
+  it("preserves indicator focus when a Release action opens Trends", async () => {
     renderLens();
 
-    fireEvent.click(screen.getByRole("button", { name: "Open Payroll growth in Trends" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Releases" }));
+    const payrollRow = screen.getByText("Payroll change").closest("li");
+    expect(payrollRow).not.toBeNull();
+    if (!payrollRow) return;
+    fireEvent.click(within(payrollRow).getByRole("button", { name: "View trend" }));
 
     await waitFor(() => expect(screen.getByRole("tab", { name: "Trends" }).getAttribute("aria-selected")).toBe("true"));
     expect((screen.getByLabelText("Indicator") as HTMLSelectElement).value).toBe("CES0000000001");
@@ -127,6 +143,7 @@ describe("BlsReleaseLens", () => {
     expect(screen.getByText(/of the last 3 completed payroll estimates were revised downward/)).not.toBeNull();
     expect(screen.getByText("Upward revision")).not.toBeNull();
     expect(screen.getByText("Downward revision")).not.toBeNull();
+    fireEvent.click(screen.getByText("View estimate data"));
     expect(screen.getAllByText("Third estimate").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Second estimate").length).toBeGreaterThan(0);
     expect(screen.queryByText(/\bfinal\b/i)).toBeNull();
@@ -134,12 +151,14 @@ describe("BlsReleaseLens", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Calendar" }));
     expect(screen.getByRole("heading", { name: "BLS release schedule" })).not.toBeNull();
     expect(screen.getByRole("heading", { name: "What comes next" })).not.toBeNull();
+    fireEvent.click(screen.getAllByText("Official source & calendar")[0]);
     expect(screen.getAllByRole("link", { name: "Add to calendar" }).length).toBeGreaterThan(0);
     expect(screen.queryByText(/published|recently published/i)).toBeNull();
 
     fireEvent.click(screen.getByRole("tab", { name: "Methods & sources" }));
     expect(screen.getByRole("heading", { name: "How the evidence is built" })).not.toBeNull();
     expect(screen.getByLabelText("Search glossary and source mappings")).not.toBeNull();
+    fireEvent.click(screen.getByText(/Glossary ·/));
     expect(screen.getAllByText("Reference period").length).toBeGreaterThan(0);
     expect(screen.getByText("Official report sources")).not.toBeNull();
     fireEvent.click(screen.getByText(/Calculation rules and coverage receipt/));
@@ -213,9 +232,8 @@ describe("BlsReleaseLens", () => {
     useApiMock.mockReturnValue({ data: partial, loading: false, error: null, refetch: vi.fn() });
 
     renderLens();
-    const overviewAction = screen.getByRole("button", { name: "Trend unavailable" });
-    expect(overviewAction).toHaveProperty("disabled", true);
-    expect(screen.getByText("No primary observations are available for this indicator.")).not.toBeNull();
+    expect(screen.getByText("Trend unavailable · 0 finite observations")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: /trend/i })).toBeNull();
 
     fireEvent.click(screen.getByRole("tab", { name: "Releases" }));
     const payrollRow = screen.getByText("Payroll change").closest("li");

@@ -23,6 +23,18 @@ export function isBlsView(value: string | null): value is BlsView {
 export default function BlsViewTabs({ activeView, onChange }: BlsViewTabsProps) {
   return (
     <nav className="bls-view-nav" aria-label="BLS workspaces">
+      <label className="bls-view-select-wrap">
+        <span>View</span>
+        <select
+          aria-label="BLS workspace"
+          value={activeView}
+          onChange={(event) => onChange(event.target.value as BlsView)}
+        >
+          {BLS_VIEWS.map((view) => (
+            <option key={view.id} value={view.id}>{view.label}</option>
+          ))}
+        </select>
+      </label>
       <MarketTabs<BlsView>
         label="BLS Release Lens views"
         value={activeView}

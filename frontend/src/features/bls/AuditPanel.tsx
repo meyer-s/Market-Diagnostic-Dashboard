@@ -117,14 +117,16 @@ export default function AuditPanel({ data }: AuditPanelProps) {
 
       <div className="bls-method-grid">
         <section aria-labelledby="bls-glossary-title">
-          <h3 id="bls-glossary-title">Glossary</h3>
-          {filteredGlossary.length > 0 ? (
-            <dl className="bls-definition-list">
-              {filteredGlossary.map(({ term, definition }) => (
-                <div key={term}><dt>{term}</dt><dd>{definition}</dd></div>
-              ))}
-            </dl>
-          ) : <p className="bls-empty-copy">No glossary term matches “{query}”.</p>}
+          <details className="bls-revision-history">
+            <summary id="bls-glossary-title">Glossary · {filteredGlossary.length} definition{filteredGlossary.length === 1 ? "" : "s"}</summary>
+            {filteredGlossary.length > 0 ? (
+              <dl className="bls-definition-list">
+                {filteredGlossary.map(({ term, definition }) => (
+                  <div key={term}><dt>{term}</dt><dd>{definition}</dd></div>
+                ))}
+              </dl>
+            ) : <p className="bls-empty-copy">No glossary term matches “{query}”.</p>}
+          </details>
         </section>
         <section aria-labelledby="bls-report-sources-title">
           <h3 id="bls-report-sources-title">Official report sources</h3>

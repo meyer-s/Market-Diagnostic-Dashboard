@@ -114,7 +114,6 @@ export default function RevisionLedger({ revisions }: RevisionLedgerProps) {
       <AccessibleChartFrame
         title="Payroll revisions"
         description={conclusion}
-        summary="Each bar is the latest available estimate minus the first estimate for the same reference month. The third estimate can still change through the separate annual benchmark process."
         actions={<span className="bls-clock-label">Revision clock · estimate vintage</span>}
       >
         {rows.length > 0 ? (
@@ -132,7 +131,7 @@ export default function RevisionLedger({ revisions }: RevisionLedgerProps) {
               </div>
               <div>
                 <dt>Current signed streak</dt>
-                <dd>{summary.streakCount === 0 ? "No streak" : `${summary.streakCount} ${summary.streakDirection}`}</dd>
+                <dd>{summary.streakCount === 0 ? "No streak" : `${summary.streakCount} ${summary.streakDirection} revision${summary.streakCount === 1 ? "" : "s"}`}</dd>
                 <dd className="bls-revision-summary-note">Consecutive completed revisions</dd>
               </div>
             </dl>
@@ -166,14 +165,17 @@ export default function RevisionLedger({ revisions }: RevisionLedgerProps) {
                 </BarChart>
               </ResponsiveContainer>
             </div>
-            <RevisionTable rows={visibleRows} label="Latest payroll revision values" />
-            {rows.length > visibleRows.length ? (
-              <details className="bls-revision-history">
-                <summary>Show all {rows.length} returned revisions</summary>
-                <RevisionTable rows={[...rows].reverse()} label="Complete official payroll revision history" />
-              </details>
-            ) : null}
-            <p className="bls-chart-footnote">Chart window: latest {chartRows.length} reference months. Values are thousands of payroll jobs; “Unavailable” means that estimate vintage has not been published.</p>
+            <details className="bls-revision-history">
+              <summary>View estimate data</summary>
+              <p className="bls-chart-footnote">Each bar is the latest available estimate minus the first estimate for the same month. The chart shows {chartRows.length} months in thousands of payroll jobs; “Unavailable” means that estimate vintage has not been published. Third estimates can still change through the annual benchmark process.</p>
+              <RevisionTable rows={visibleRows} label="Latest payroll revision values" />
+              {rows.length > visibleRows.length ? (
+                <details className="bls-revision-history">
+                  <summary>Show all {rows.length} returned revisions</summary>
+                  <RevisionTable rows={[...rows].reverse()} label="Complete official payroll revision history" />
+                </details>
+              ) : null}
+            </details>
           </>
         ) : <p className="bls-empty-copy">Official payroll revision history is not available in this response.</p>}
       </AccessibleChartFrame>

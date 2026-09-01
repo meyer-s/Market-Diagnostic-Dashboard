@@ -83,7 +83,6 @@ export default function NativeTrend({ series, selectedId, onSelect }: NativeTren
       <AccessibleChartFrame
         title="Native trend explorer"
         description={`${selected.label} in its published analytical unit. Missing observations remain visible gaps rather than interpolated values.`}
-        summary={`${selected.higher_means}. That direction is descriptive; it is not a better/worse judgment.`}
         actions={(
           <div className="bls-native-actions">
             <label className="bls-select-label">
@@ -156,22 +155,30 @@ export default function NativeTrend({ series, selectedId, onSelect }: NativeTren
             <dd>{formatSigned(primaryDelta, "", 3)} <small>{primaryDelta === null ? "" : primaryDeltaUnit(selected)}</small></dd>
           </div>
           <div>
-            <dt>Five-year position</dt>
-            <dd>{latest?.relative_percentile === null || latest?.relative_percentile === undefined ? "Unavailable" : `${formatValue(latest.relative_percentile, 0)}th percentile`}</dd>
-          </div>
-          <div>
-            <dt>Direction</dt>
-            <dd>{direction}</dd>
-          </div>
-          <div>
             <dt>Reference period</dt>
             <dd>{latest ? formatPeriod(latest.period) : "Unavailable"}</dd>
           </div>
-          <div>
-            <dt>Vintage state</dt>
-            <dd>{latest?.preliminary ? "Preliminary observation" : "Current published observation"}</dd>
-          </div>
         </dl>
+        <details className="chart-frame-data bls-native-context">
+          <summary>More context</summary>
+          <div className="chart-frame-data-content">
+            <p className="bls-chart-footnote">{selected.higher_means}. Direction is descriptive, not a better/worse judgment.</p>
+            <dl className="bls-native-read" aria-label={`${selected.short_label} additional observation context`}>
+              <div>
+                <dt>Five-year position</dt>
+                <dd>{latest?.relative_percentile === null || latest?.relative_percentile === undefined ? "Unavailable" : `${formatValue(latest.relative_percentile, 0)}th percentile`}</dd>
+              </div>
+              <div>
+                <dt>Direction</dt>
+                <dd>{direction}</dd>
+              </div>
+              <div>
+                <dt>Vintage state</dt>
+                <dd>{latest?.preliminary ? "Preliminary observation" : "Current published observation"}</dd>
+              </div>
+            </dl>
+          </div>
+        </details>
         <div className="bls-window-control bls-native-window" role="group" aria-label="Native trend timeframe">
           {([3, 5, 10] as const).map((years) => (
             <button key={years} type="button" aria-pressed={windowYears === years} onClick={() => setWindowYears(years)}>

@@ -75,7 +75,6 @@ export type OverviewRevisionSummary = {
 export type OverviewScheduledRelease = {
   entry: BlsCalendarEntry;
   label: string;
-  description: string;
   calendarHref: string | null;
 };
 
@@ -571,12 +570,10 @@ export function releaseCalendarHref(entry: BlsCalendarEntry): string | null {
   return `data:text/calendar;charset=utf-8,${encodeURIComponent(calendar)}`;
 }
 
-function scheduledRelease(data: BlsLensResponse, entry: BlsCalendarEntry): OverviewScheduledRelease {
-  const report = data.reports.find((candidate) => (candidate.report_id ?? candidate.id) === entry.report_id);
+function scheduledRelease(entry: BlsCalendarEntry): OverviewScheduledRelease {
   return {
     entry,
     label: calendarLabel(entry),
-    description: report?.description ?? "The returned report metadata does not specify which measures this schedule covers.",
     calendarHref: releaseCalendarHref(entry),
   };
 }
@@ -626,7 +623,7 @@ export function buildBlsOverviewModel(data: BlsLensResponse): BlsOverviewModel {
     .filter((entry) => new Date(entry.scheduled_at).getTime() > asOfTime)
     .sort((left, right) => left.scheduled_at.localeCompare(right.scheduled_at))
     .slice(0, 1)
-    .map((entry) => scheduledRelease(data, entry));
+    .map(scheduledRelease);
   const nextRelease = upcoming[0] ?? null;
 
   return {

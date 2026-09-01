@@ -97,19 +97,13 @@ export default function RelativeField({ series, selectedIds, onToggle }: Relativ
         : null,
     };
   }), [rows, selectedSeries]);
-  const latestPeriod = endpoints
-    .map(({ period }) => period)
-    .filter((period): period is string => Boolean(period))
-    .sort((left, right) => left.localeCompare(right))
-    .at(-1) ?? null;
   const endpointsVary = new Set(endpoints.map(({ period }) => period).filter(Boolean)).size > 1;
 
   return (
     <section id="bls-relative" className="section-anchor">
       <AccessibleChartFrame
         title="Relative comparison"
-        description="Compare no more than two measures on the same 0–100 scale. Each point ranks that measure against its own trailing five-year history."
-        summary="0 is the low end of that measure’s recent range, 50 is its midpoint, and 100 is the high end. Higher and lower never mean better and worse."
+        description="Each measure is ranked against its own trailing five-year history: 0 = low, 50 = midpoint, and 100 = high—not better or worse."
         actions={(
           <span className="bls-clock-label">Observation clock · reference period</span>
         )}
@@ -153,7 +147,6 @@ export default function RelativeField({ series, selectedIds, onToggle }: Relativ
               </button>
             ))}
           </div>
-          <span className="bls-scale-key">Relative position · 0 low · 50 midpoint · 100 high</span>
         </div>
 
         <details className="bls-compare-disclosure">
@@ -243,7 +236,7 @@ export default function RelativeField({ series, selectedIds, onToggle }: Relativ
         ) : <p className="bls-empty-copy">Select at least one series to draw the relative field.</p>}
         {endpoints.length > 0 ? (
           <div className="bls-endpoint-ledger" role="group" aria-label="Direct labels for selected series endpoints">
-            <span>Latest plotted points</span>
+            <span>Latest points</span>
             <dl>
               {endpoints.map(({ item, period, percentile, move }) => (
                 <div key={item.series_id}>
@@ -259,7 +252,6 @@ export default function RelativeField({ series, selectedIds, onToggle }: Relativ
             {endpointsVary ? <p>Reference-period endpoints differ; the ledger identifies each series’ last plotted point.</p> : null}
           </div>
         ) : null}
-        {latestPeriod ? <p className="bls-chart-footnote">What this shows: each labeled endpoint is measured against that series’ own recent history; reference-period endpoints may differ.</p> : null}
       </AccessibleChartFrame>
     </section>
   );

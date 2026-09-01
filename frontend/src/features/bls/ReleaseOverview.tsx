@@ -55,10 +55,7 @@ export default function ReleaseOverview({ data, onOpenTrend }: ReleaseOverviewPr
           return (
             <article className="bls-release-group" key={reportId(report)}>
               <header>
-                <div>
-                  <h3>{reportLabel(report)}</h3>
-                  {report.description ? <p>{report.description}</p> : null}
-                </div>
+                <h3>{reportLabel(report)}</h3>
                 {report.source_url ? (
                   <a href={report.source_url} target="_blank" rel="noreferrer">Official report</a>
                 ) : null}
@@ -74,6 +71,7 @@ export default function ReleaseOverview({ data, onOpenTrend }: ReleaseOverviewPr
                       && prior?.primary_value !== null && prior?.primary_value !== undefined
                       ? latest.primary_value - prior.primary_value
                       : null;
+                    const hasCurrentValue = latest?.primary_value !== null && latest?.primary_value !== undefined;
                     return (
                       <li key={item.series_id}>
                         <div className="bls-release-identity">
@@ -81,18 +79,17 @@ export default function ReleaseOverview({ data, onOpenTrend }: ReleaseOverviewPr
                           <span>{latest ? formatPeriod(latest.period) : "Reference period unavailable"}</span>
                         </div>
                         <div className="bls-release-value">
-                          <span>Current</span>
+                          <span>Latest</span>
                           <strong>{latest ? formatValue(latest.primary_value, 3) : "Unavailable"}</strong>
-                          <small>{latest?.primary_value === null ? "" : item.primary_unit}</small>
+                          <small>{hasCurrentValue ? item.primary_unit : ""}</small>
                         </div>
                         <div className="bls-release-change">
-                          <span>From adjacent prior observation</span>
+                          <span>Vs prior</span>
                           <strong>{formatSigned(delta, "", 3)}</strong>
                           <small>{delta === null ? "" : primaryDeltaUnit(item)}</small>
                         </div>
                         <div className="bls-release-meaning">
                           <span className="bls-direction-label">{directionLabel(delta)}</span>
-                          <p>{item.higher_means}.</p>
                         </div>
                         <div className="bls-release-actions">
                           {onOpenTrend && trendAvailable ? (
@@ -103,10 +100,26 @@ export default function ReleaseOverview({ data, onOpenTrend }: ReleaseOverviewPr
                           <details>
                             <summary>Technical details</summary>
                             <dl>
+                              <div>
+                                <dt>Prior observation</dt>
+                                <dd>
+                                  {prior
+                                    ? `${formatValue(prior.primary_value, 3)} ${item.primary_unit} · ${formatPeriod(prior.period)}`
+                                    : "Unavailable"}
+                                </dd>
+                              </div>
                               <div><dt>Series ID</dt><dd><code>{item.series_id}</code></dd></div>
+                              <div><dt>Report ID</dt><dd><code>{reportId(report)}</code></dd></div>
                               <div><dt>Adjustment</dt><dd>{item.seasonal_adjustment}</dd></div>
                               <div><dt>Primary measure</dt><dd>{item.primary_measure}</dd></div>
-                              <div><dt>Vintage state</dt><dd>{latest?.preliminary ? "Preliminary" : "Current published observation"}</dd></div>
+                              <div><dt>Higher values describe</dt><dd>{item.higher_means}</dd></div>
+                              <div>
+                                <dt>Vintage state</dt>
+                                <dd>{latest ? (latest.preliminary ? "Preliminary" : "Current published observation") : "Unavailable"}</dd>
+                              </div>
+                              {item.source_url ? (
+                                <div><dt>Source</dt><dd><a href={item.source_url} target="_blank" rel="noreferrer">Official series</a></dd></div>
+                              ) : null}
                             </dl>
                           </details>
                         </div>

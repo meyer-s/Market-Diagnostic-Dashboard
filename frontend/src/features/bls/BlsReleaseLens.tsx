@@ -41,6 +41,12 @@ const LEGACY_HASH_TARGETS: Record<string, { view: BlsView; anchorId: string }> =
   "#bls-audit": { view: "methods", anchorId: "bls-methods" },
 };
 
+type TrendMode = "native" | "relative";
+
+function isTrendMode(value: string | null): value is TrendMode {
+  return value === "native" || value === "relative";
+}
+
 function evidenceState(status: string): EvidenceState {
   const normalized = status.toLowerCase();
   if (normalized === "complete") return "complete";
@@ -69,6 +75,8 @@ export default function BlsReleaseLens() {
   const pendingLegacyTarget = useRef<{ view: BlsView; anchorId: string } | null>(null);
   const queryView = searchParams.get("view");
   const activeView: BlsView = isBlsView(queryView) ? queryView : "overview";
+  const queryTrendMode = searchParams.get("trend");
+  const activeTrendMode: TrendMode = queryTrendMode === "relative" ? "relative" : "native";
   const requestedSeriesId = searchParams.get("series") ?? "";
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [nativeSeriesId, setNativeSeriesId] = useState("");
@@ -90,22 +98,27 @@ export default function BlsReleaseLens() {
     const next = new URLSearchParams(searchParams);
     if (target.view === "overview") next.delete("view");
     else next.set("view", target.view);
+    if (target.anchorId === "bls-relative") next.set("trend", "relative");
+    else next.delete("trend");
     setSearchParams(next, { replace: true });
   }, [legacyHash, queryView, searchParams, setSearchParams]);
 
   useEffect(() => {
     const invalidView = queryView !== null && !isBlsView(queryView);
+    const invalidTrendMode = queryTrendMode !== null && !isTrendMode(queryTrendMode);
+    const misplacedTrendMode = queryTrendMode !== null && activeView !== "trends";
     const invalidSeries = Boolean(
       requestedSeriesId
       && data
       && !data.series.some((series) => series.series_id === requestedSeriesId && seriesHasPrimaryData(series)),
     );
-    if (!invalidView && !invalidSeries) return;
+    if (!invalidView && !invalidTrendMode && !misplacedTrendMode && !invalidSeries) return;
     const next = new URLSearchParams(searchParams);
     if (invalidView) next.delete("view");
+    if (invalidTrendMode || misplacedTrendMode) next.delete("trend");
     if (invalidSeries) next.delete("series");
     setSearchParams(next, { replace: true });
-  }, [data, queryView, requestedSeriesId, searchParams, setSearchParams]);
+  }, [activeView, data, queryTrendMode, queryView, requestedSeriesId, searchParams, setSearchParams]);
 
   useEffect(() => {
     const target = pendingLegacyTarget.current;
@@ -143,6 +156,7 @@ export default function BlsReleaseLens() {
     const next = new URLSearchParams(searchParams);
     if (view === "overview") next.delete("view");
     else next.set("view", view);
+    if (view !== "trends" || activeView !== "trends") next.delete("trend");
     if (seriesId) next.set("series", seriesId);
     setSearchParams(next);
     if (focusDestination) {
@@ -166,7 +180,16 @@ export default function BlsReleaseLens() {
     setSelectedIds((current) => [seriesId, ...current.filter((id) => id !== seriesId)].slice(0, 2));
     const next = new URLSearchParams(searchParams);
     next.set("view", "trends");
+    next.delete("trend");
     next.set("series", seriesId);
+    setSearchParams(next, { replace: true });
+  }
+
+  function setTrendMode(mode: TrendMode) {
+    const next = new URLSearchParams(searchParams);
+    next.set("view", "trends");
+    if (mode === "relative") next.set("trend", "relative");
+    else next.delete("trend");
     setSearchParams(next, { replace: true });
   }
 
@@ -182,18 +205,15 @@ export default function BlsReleaseLens() {
 
   const header = (
     <header className="bls-compact-header">
-      <div>
+      <div className="bls-header-copy">
         <p className="bls-header-kicker">Bureau of Labor Statistics</p>
         <h1>BLS Release Lens</h1>
         <p className="bls-header-status">
-          {data ? `Updated ${formatDateTime(data.as_of)} · ${dataQualityStatus(data.data_quality) === "complete" ? "All expected sources available" : `${dataQualityStatus(data.data_quality)} source coverage`}` : "Official BLS observations, revisions, and schedules"}
+          <span>{data ? `Updated ${formatDateTime(data.as_of)} · ${dataQualityStatus(data.data_quality) === "complete" ? "Sources complete" : `${dataQualityStatus(data.data_quality)} source coverage`}` : "Official BLS observations, revisions, and schedules"}</span>
+          <button type="button" className="bls-header-refresh" onClick={refetch} disabled={loading}>
+            {loading && data ? "Refreshing…" : "Refresh"}
+          </button>
         </p>
-      </div>
-      <div className="bls-header-actions">
-        {data ? <button type="button" className="field-button field-button-secondary" onClick={() => openDetail("methods")}>Methods &amp; source status</button> : null}
-        <button type="button" className="field-button field-button-secondary" onClick={refetch} disabled={loading}>
-          {loading && data ? "Refreshing…" : "Refresh data"}
-        </button>
       </div>
     </header>
   );
@@ -243,7 +263,12 @@ export default function BlsReleaseLens() {
           title="BLS source status"
           state={error ? "stale" : qualityState}
           message={qualityMessage}
-          details={data.warnings.length > 0 ? <ul className="bls-warning-list">{data.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : undefined}
+          details={data.warnings.length > 0 ? (
+            <details className="bls-source-notes">
+              <summary>View {data.warnings.length} source note{data.warnings.length === 1 ? "" : "s"}</summary>
+              <ul className="bls-warning-list">{data.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
+            </details>
+          ) : undefined}
         />
       ) : null}
 
@@ -257,9 +282,14 @@ export default function BlsReleaseLens() {
         {activeView === "overview" ? <BlsOverview data={data} onNavigate={openDetail} /> : null}
         {activeView === "releases" ? <ReleaseOverview data={data} onOpenTrend={(seriesId) => openDetail("trends", seriesId)} /> : null}
         {activeView === "trends" ? (
-          <div className="page-stack">
-            <NativeTrend series={data.series} selectedId={nativeSeriesId} onSelect={selectNativeSeries} />
-            <RelativeField series={data.series} selectedIds={selectedIds} onToggle={toggleSeries} />
+          <div className="bls-trends-workspace">
+            <div className="bls-trend-mode" role="group" aria-label="Trend workspace">
+              <button type="button" aria-pressed={activeTrendMode === "native"} onClick={() => setTrendMode("native")}>Native trend</button>
+              <button type="button" aria-pressed={activeTrendMode === "relative"} onClick={() => setTrendMode("relative")}>Relative comparison</button>
+            </div>
+            {activeTrendMode === "native"
+              ? <NativeTrend series={data.series} selectedId={nativeSeriesId} onSelect={selectNativeSeries} />
+              : <RelativeField series={data.series} selectedIds={selectedIds} onToggle={toggleSeries} />}
           </div>
         ) : null}
         {activeView === "revisions" ? <RevisionLedger revisions={data.payroll_revisions} /> : null}

@@ -320,26 +320,33 @@ describe("BlsOverview", () => {
 
     expect(screen.getByRole("heading", { name: "Labor-market overview" })).not.toBeNull();
     expect(screen.getByRole("heading", { name: "Current read" })).not.toBeNull();
-    expect(screen.getByText("Dashboard rule state: Cooling. Payroll growth is lower than its prior observation; Unemployment is higher than its prior observation.")).not.toBeNull();
-    expect(screen.getByText(/dashboard rules, not BLS thresholds or classifications/i)).not.toBeNull();
-    expect(screen.getAllByText("Cooling").length).toBeGreaterThan(0);
+    expect(screen.getByText("Cooling")).not.toBeNull();
+    expect(screen.getByText("Payroll growth is lower than its prior observation; Unemployment is higher than its prior observation.")).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Four key measures" })).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Payroll growth" })).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Unemployment" })).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Hourly earnings" })).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Job openings" })).not.toBeNull();
     expect(screen.getAllByText(/recent primary values by reference period/i)).toHaveLength(4);
-    expect(screen.getByText("Revision clock · estimate vintage")).not.toBeNull();
-    expect(screen.getByText(/Second estimate · Upward revision/)).not.toBeNull();
-    expect(screen.getByRole("heading", { level: 4, name: "Latest revision" })).not.toBeNull();
-    expect(screen.getByText("Schedule clock · U.S. Eastern")).not.toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "Open Payroll growth in Trends" }));
-    expect(onNavigate).toHaveBeenCalledWith("trends", "CES0000000001");
+    expect(screen.getByRole("heading", { name: "Payroll revisions" })).not.toBeNull();
+    expect(screen.getByText("Net three months")).not.toBeNull();
+    expect(screen.getByText("Current streak")).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Next release" })).not.toBeNull();
+    expect(screen.getByText("Scheduled")).not.toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "View revision history" }));
     expect(onNavigate).toHaveBeenCalledWith("revisions");
 
-    fireEvent.click(screen.getByRole("button", { name: "Open Methods & sources" }));
+    fireEvent.click(screen.getByRole("button", { name: "How calculated" }));
     expect(onNavigate).toHaveBeenCalledWith("methods");
+
+    fireEvent.click(screen.getByRole("button", { name: "Full calendar" }));
+    expect(onNavigate).toHaveBeenCalledWith("calendar");
 
     const calendarLink = screen.getByRole("link", { name: "Add to calendar" });
     expect(calendarLink.getAttribute("href")?.startsWith("data:text/calendar")).toBe(true);
+    expect(document.body.textContent).not.toContain("Dashboard rule state:");
+    expect(document.body.textContent).not.toContain("dashboard rules, not BLS thresholds or classifications");
     expect(document.body.textContent?.toLowerCase()).not.toContain("initial claims");
     expect(document.body.textContent?.toLowerCase()).not.toContain("caused by");
   });
