@@ -33,14 +33,16 @@ function CalendarEvent({ entry, emphasized = false }: { entry: BlsCalendarEntry;
       <div className="bls-calendar-copy">
         <b>{calendarLabel(entry)}</b>
       </div>
-      {emphasized ? <span className="bls-status-label">Scheduled</span> : null}
-      <details>
-        <summary>Official source &amp; calendar</summary>
-        <div>
-          <a href={entry.source_url} target="_blank" rel="noreferrer">Official schedule source</a>
-          {downloadHref ? <a href={downloadHref} download={`bls-${entry.report_id}-${entry.scheduled_at.slice(0, 10)}.ics`}>Add to calendar</a> : null}
-        </div>
-      </details>
+      <div className="bls-calendar-event-actions">
+        {emphasized ? <span className="bls-status-label">Scheduled</span> : null}
+        <details>
+          <summary>Official source &amp; calendar</summary>
+          <div>
+            <a href={entry.source_url} target="_blank" rel="noreferrer">Official schedule source</a>
+            {downloadHref ? <a href={downloadHref} download={`bls-${entry.report_id}-${entry.scheduled_at.slice(0, 10)}.ics`}>Add to calendar</a> : null}
+          </div>
+        </details>
+      </div>
     </li>
   );
 }
@@ -107,7 +109,6 @@ export default function ReleaseCalendar({ entries, asOf }: ReleaseCalendarProps)
 
           <section aria-labelledby="bls-calendar-past-title">
             <h3 id="bls-calendar-past-title">Past scheduled times</h3>
-            <p>Past months stay collapsed until you need the schedule record.</p>
             <div className="bls-past-months">
               {groupByMonth(past).map(([month, monthEntries]) => (
                 <details key={month}>

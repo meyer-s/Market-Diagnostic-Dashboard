@@ -35,38 +35,40 @@ function metricValue(value: number | null | undefined, unit: string): string {
   return value === null || value === undefined ? "Unavailable" : `${formatValue(value, 2)} ${unit}`.trim();
 }
 
-function revisionTone(direction: OverviewRevisionSummary["latestDirection"] | OverviewRevisionSummary["streakDirection"]): string {
-  if (direction === "upward") return "bls-positive";
-  if (direction === "downward") return "bls-negative";
-  return "";
-}
-
-function signedTone(value: number | null): string {
-  if (value === null || Math.abs(value) < 1e-9) return "";
-  return value > 0 ? "bls-positive" : "bls-negative";
-}
-
 function driverLine(briefLine: string): string {
   const stateSeparator = briefLine.indexOf(". ");
   return stateSeparator >= 0 ? briefLine.slice(stateSeparator + 2) : briefLine;
 }
 
+function indicatorStatusLabel(indicator: OverviewIndicator): string {
+  if (indicator.current?.primary_value === null || indicator.current?.primary_value === undefined) return "Unavailable";
+  if (indicator.state === "prior_unavailable") return "Prior unavailable";
+
+  const conciseState = indicator.trendStateLabel
+    .replace(/^Payroll gains /, "")
+    .replace(/^Unemployment /, "")
+    .replace(/^Wage growth /, "")
+    .replace(/^Openings (?:level|rate) /, "");
+  const label = conciseState.charAt(0).toUpperCase() + conciseState.slice(1);
+  return indicator.current.preliminary || indicator.trendProvisional ? `${label} · Preliminary` : label;
+}
+
 function RecentValuesTable({ indicator }: { indicator: OverviewIndicator }) {
   return (
     <DataScroller label={`${indicator.role} recent observation values`} hint="">
-      <table className="w-full min-w-[320px] border-collapse text-left text-[13px] text-[var(--field-text-muted)]">
+      <table className="bls-overview-values-table">
         <caption className="sr-only">{indicator.role} recent primary values by reference period</caption>
         <thead>
           <tr>
-            <th scope="col" className="border-b border-[var(--field-border)] px-2 py-2 text-xs font-bold text-[var(--field-text-subtle)]">Reference period</th>
-            <th scope="col" className="border-b border-[var(--field-border)] px-2 py-2 text-xs font-bold text-[var(--field-text-subtle)]">Primary value</th>
+            <th scope="col">Reference period</th>
+            <th scope="col">Primary value</th>
           </tr>
         </thead>
         <tbody>
           {indicator.trendPoints.slice(-12).map((point) => (
             <tr key={point.period}>
-              <th scope="row" className="border-b border-[var(--field-border)] px-2 py-2 font-semibold text-[var(--field-text)]">{formatPeriod(point.period)}</th>
-              <td className="border-b border-[var(--field-border)] px-2 py-2">{metricValue(point.value, indicator.series.primary_unit)}</td>
+              <th scope="row">{formatPeriod(point.period)}</th>
+              <td>{metricValue(point.value, indicator.series.primary_unit)}</td>
             </tr>
           ))}
         </tbody>
@@ -78,49 +80,40 @@ function RecentValuesTable({ indicator }: { indicator: OverviewIndicator }) {
 function IndicatorFigure({ indicator }: { indicator: OverviewIndicator }) {
   const canPlot = indicator.plottablePointCount >= 8;
   const currentValue = indicator.current?.primary_value ?? null;
+  const headingId = `bls-overview-indicator-${indicator.series.series_id}`;
 
   return (
-    <figure className="m-0 min-w-0 border-t border-[var(--field-border)] py-5">
-      <figcaption className="grid gap-3">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <h4 className="m-0 text-base font-bold text-[var(--field-text)]">{indicator.role}</h4>
-          <span className="bls-status-label">{indicator.trendStateLabel}</span>
+    <figure className="bls-overview-metric" aria-labelledby={headingId}>
+      <figcaption className="bls-overview-metric-caption">
+        <div className="bls-overview-metric-title">
+          <h4 id={headingId}>{indicator.role}</h4>
+          <span className="bls-status-label">{indicatorStatusLabel(indicator)}</span>
         </div>
 
-        <div className="flex flex-wrap items-end justify-between gap-x-5 gap-y-2">
-          <div>
-            <strong className="block text-3xl font-bold tracking-[-0.025em] text-[var(--field-text)]">
-              {currentValue === null ? "Unavailable" : formatValue(currentValue, 2)}
-            </strong>
-            <span className="text-xs font-semibold text-[var(--field-text-muted)]">
-              {currentValue === null ? "Primary value unavailable" : indicator.series.primary_unit}
-            </span>
+        <div className="bls-overview-metric-reading">
+          <div className="bls-overview-primary-value">
+            <strong>{currentValue === null ? "—" : formatValue(currentValue, 2)}</strong>
+            {currentValue === null ? null : <span>{indicator.series.primary_unit}</span>}
           </div>
-          <dl className="m-0 grid gap-1 text-right text-xs">
+          <dl className="bls-overview-metric-meta">
             <div>
               <dt className="sr-only">Change from prior reference period</dt>
-              <dd className="m-0 font-bold text-[var(--field-text)]">
-                {indicator.delta === null ? "Δ unavailable" : `Δ ${formatSigned(indicator.delta, "", 3)} ${indicator.deltaUnit}`}
+              <dd>
+                <strong>{indicator.delta === null ? "—" : formatSigned(indicator.delta, "", 3)}</strong>
+                {indicator.delta === null ? null : <span>{indicator.deltaUnit}</span>}
               </dd>
             </div>
             <div>
               <dt className="sr-only">Reference period</dt>
-              <dd className="m-0 font-semibold text-[var(--field-text-subtle)]">
-                {indicator.current ? formatPeriod(indicator.current.period) : "Period unavailable"}
-              </dd>
+              <dd>{indicator.current ? formatPeriod(indicator.current.period) : "—"}</dd>
             </div>
           </dl>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          <span className="text-xs font-semibold text-[var(--field-text-subtle)]">{indicator.stateLabel}</span>
-          {indicator.current?.preliminary || indicator.trendProvisional ? <span className="text-xs font-bold text-[var(--field-caution)]">Preliminary</span> : null}
         </div>
       </figcaption>
 
       {canPlot ? (
-        <div className="mt-2 min-w-0">
-          <ResponsiveContainer width="100%" height={128} minWidth={0}>
+        <div className="bls-overview-metric-chart">
+          <ResponsiveContainer width="100%" height={120} minWidth={0}>
             <LineChart
               data={indicator.trendPoints}
               margin={{ top: 8, right: 4, bottom: 2, left: 4 }}
@@ -157,13 +150,13 @@ function IndicatorFigure({ indicator }: { indicator: OverviewIndicator }) {
           </ResponsiveContainer>
         </div>
       ) : (
-        <div className="mt-3 flex min-h-[128px] items-center border-y border-[var(--field-border)] py-4 text-sm leading-6 text-[var(--field-text-muted)]">
+        <div className="bls-overview-trend-empty">
           Trend unavailable · {indicator.plottablePointCount} finite observation{indicator.plottablePointCount === 1 ? "" : "s"}
         </div>
       )}
 
-      <details className="mt-3 border-t border-[var(--field-border)] pt-2">
-        <summary className="min-h-[44px] cursor-pointer py-3 text-sm font-bold text-[var(--field-accent-strong)]">Recent values</summary>
+      <details className="bls-overview-values-disclosure">
+        <summary>Recent values</summary>
         <RecentValuesTable indicator={indicator} />
       </details>
     </figure>
@@ -178,32 +171,34 @@ function RevisionSummary({
   onNavigate: BlsOverviewProps["onNavigate"];
 }) {
   return (
-    <section className="mt-8 border-y border-[var(--field-border-strong)] py-4" aria-labelledby="bls-overview-revisions-title">
-      <div className="grid gap-4 md:grid-cols-[minmax(140px,0.65fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_auto] md:items-center">
-        <h3 id="bls-overview-revisions-title" className="m-0 text-base font-bold text-[var(--field-text)]">Payroll revisions</h3>
-        <dl className="m-0">
-          <dt className="text-xs font-bold text-[var(--field-text-subtle)]">Latest</dt>
-          <dd className={`m-0 mt-1 font-bold text-[var(--field-text)] ${revisionTone(summary.latestDirection)}`}>
+    <section className="bls-overview-revisions" aria-labelledby="bls-overview-revisions-title">
+      <header>
+        <h3 id="bls-overview-revisions-title">Payroll revisions</h3>
+        <button type="button" className="field-button field-button-secondary" onClick={() => onNavigate("revisions")}>View revision history</button>
+      </header>
+      <dl className="bls-overview-revision-ledger">
+        <div>
+          <dt>Latest</dt>
+          <dd className={summary.latestDelta !== null && Math.abs(summary.latestDelta) >= 1e-9 ? "bls-revision-value" : undefined}>
             {summary.latestDelta === null ? "Unavailable" : `${formatSigned(summary.latestDelta)} ${summary.unit}`}
           </dd>
-          <dd className="m-0 mt-1 text-xs font-semibold text-[var(--field-text-subtle)]">
+          <dd className="bls-overview-revision-note">
             {summary.latestStageLabel}{summary.latestPeriod ? ` · ${formatPeriod(summary.latestPeriod)}` : ""}
           </dd>
-        </dl>
-        <dl className="m-0">
-          <dt className="text-xs font-bold text-[var(--field-text-subtle)]">Net three months</dt>
-          <dd className={`m-0 mt-1 font-bold text-[var(--field-text)] ${signedTone(summary.netThreeMonth)}`}>
+        </div>
+        <div>
+          <dt>Net three months</dt>
+          <dd className={summary.netThreeMonth !== null && Math.abs(summary.netThreeMonth) >= 1e-9 ? "bls-revision-value" : undefined}>
             {summary.netThreeMonth === null ? "Unavailable" : `${formatSigned(summary.netThreeMonth)} ${summary.unit}`}
           </dd>
-        </dl>
-        <dl className="m-0">
-          <dt className="text-xs font-bold text-[var(--field-text-subtle)]">Current streak</dt>
-          <dd className={`m-0 mt-1 font-bold capitalize text-[var(--field-text)] ${revisionTone(summary.streakDirection)}`}>
+        </div>
+        <div>
+          <dt>Current streak</dt>
+          <dd className={summary.streakCount > 0 ? "bls-revision-value" : undefined}>
             {summary.streakCount === 0 ? "No streak" : `${summary.streakCount} ${summary.streakDirection} revision${summary.streakCount === 1 ? "" : "s"}`}
           </dd>
-        </dl>
-        <button type="button" className="field-button field-button-secondary w-fit md:justify-self-end" onClick={() => onNavigate("revisions")}>View revision history</button>
-      </div>
+        </div>
+      </dl>
     </section>
   );
 }
@@ -220,13 +215,13 @@ export default function BlsOverview({ data, onNavigate }: BlsOverviewProps) {
           <button type="button" className="field-button field-button-secondary" onClick={() => onNavigate("methods")}>How calculated</button>
         </header>
 
-        <div className="grid gap-3 border-y border-[var(--field-border-strong)] py-5 md:grid-cols-[minmax(190px,0.55fr)_minmax(0,1.45fr)] md:items-center" aria-labelledby="bls-overview-brief-title">
+        <div className="bls-overview-current" aria-labelledby="bls-overview-brief-title">
           <div>
             <h3 id="bls-overview-brief-title" className="m-0 text-xs font-bold uppercase tracking-[0.08em] text-[var(--field-text-subtle)]">Current read</h3>
             <strong className="mt-1 block text-3xl font-bold tracking-[-0.025em] text-[var(--field-text)]">{model.overall.label}</strong>
             {model.overall.provisional ? <span className="bls-status-label mt-2">Provisional · preliminary anchor</span> : null}
           </div>
-          <p className="m-0 max-w-[72ch] text-base leading-7 text-[var(--field-text-muted)]">{driverLine(model.briefLines[0] ?? model.overall.explanation)}</p>
+          <p className="bls-overview-answer">{driverLine(model.briefLines[0] ?? model.overall.explanation)}</p>
         </div>
 
         <section className="mt-5 border-b border-[var(--field-border-strong)] pb-5" aria-labelledby="bls-overview-calendar-title">
@@ -267,14 +262,14 @@ export default function BlsOverview({ data, onNavigate }: BlsOverviewProps) {
           )}
         </section>
 
-        <section className="mt-7" aria-labelledby="bls-overview-indicators-title">
+        <section className="bls-overview-evidence" aria-labelledby="bls-overview-indicators-title">
           <header className="bls-section-header">
             <h3 id="bls-overview-indicators-title">Four key measures</h3>
-            <span className="bls-clock-label">Latest 24 reference months</span>
+            <span className="bls-overview-window">Latest 24 reference months</span>
           </header>
 
           {model.indicators.length > 0 ? (
-            <div id="bls-overview-trends-title" className="grid gap-x-8 md:grid-cols-2">
+            <div id="bls-overview-trends-title" className="bls-overview-matrix">
               {model.indicators.map((indicator) => (
                 <IndicatorFigure key={indicator.series.series_id} indicator={indicator} />
               ))}

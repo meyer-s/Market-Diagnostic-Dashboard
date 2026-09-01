@@ -52,7 +52,7 @@ function revisionStatus(row: PayrollRevision): string {
 
 function revisionClass(value: number | null): string | undefined {
   if (value === null || Math.abs(value) < 1e-9) return undefined;
-  return value < 0 ? "bls-negative" : "bls-positive";
+  return "bls-revision-value";
 }
 
 function revisionDirectionLabel(value: number): string {
@@ -120,19 +120,18 @@ export default function RevisionLedger({ revisions }: RevisionLedgerProps) {
           <>
             <dl className="bls-revision-summary" aria-label="Recent payroll revision summary">
               <div>
-                <dt>Latest completed revision</dt>
-                <dd>{summary.latestDelta === null ? "Unavailable" : `${formatSigned(summary.latestDelta)} ${summary.unit}`}</dd>
+                <dt>Latest</dt>
+                <dd className={revisionClass(summary.latestDelta)}>{summary.latestDelta === null ? "Unavailable" : `${formatSigned(summary.latestDelta)} ${summary.unit}`}</dd>
                 <dd className="bls-revision-summary-note">{summary.latestStageLabel} · {summary.latestPeriod ? formatPeriod(summary.latestPeriod) : "No completed comparison"}</dd>
               </div>
               <div>
-                <dt>Net latest three</dt>
-                <dd>{summary.netThreeMonth === null ? "Unavailable" : `${formatSigned(summary.netThreeMonth)} ${summary.unit}`}</dd>
-                <dd className="bls-revision-summary-note">{summary.netMonthCount === 3 ? "3 contiguous completed reference months" : "Requires 3 contiguous completed months"}</dd>
+                <dt>Net three months</dt>
+                <dd className={revisionClass(summary.netThreeMonth)}>{summary.netThreeMonth === null ? "Unavailable" : `${formatSigned(summary.netThreeMonth)} ${summary.unit}`}</dd>
+                {summary.netMonthCount === 3 ? null : <dd className="bls-revision-summary-note">Requires 3 contiguous completed months</dd>}
               </div>
               <div>
-                <dt>Current signed streak</dt>
-                <dd>{summary.streakCount === 0 ? "No streak" : `${summary.streakCount} ${summary.streakDirection} revision${summary.streakCount === 1 ? "" : "s"}`}</dd>
-                <dd className="bls-revision-summary-note">Consecutive completed revisions</dd>
+                <dt>Current streak</dt>
+                <dd className={summary.streakCount > 0 ? "bls-revision-value" : undefined}>{summary.streakCount === 0 ? "No streak" : `${summary.streakCount} ${summary.streakDirection} revision${summary.streakCount === 1 ? "" : "s"}`}</dd>
               </div>
             </dl>
             <div className="bls-revision-direction-key" aria-label="Revision direction labels">
@@ -159,7 +158,7 @@ export default function RevisionLedger({ revisions }: RevisionLedgerProps) {
                   />
                   <Bar dataKey="chart_total_revision" name="Total revision" radius={[4, 4, 0, 0]}>
                     {chartRows.map((row) => (
-                      <Cell key={row.period} fill={(row.chart_total_revision ?? 0) >= 0 ? "var(--field-accent)" : "var(--field-caution)"} />
+                      <Cell key={row.period} fill="var(--field-accent)" />
                     ))}
                   </Bar>
                 </BarChart>

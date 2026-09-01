@@ -586,11 +586,12 @@ function observationBrief(overall: OverviewOverallState, indicators: OverviewInd
   if (comparable.length === 0) {
     return `Dashboard rule state: ${ruleLabel}. Current headline observations do not contain enough prior-period evidence for a directional comparison.`;
   }
-  const clauses = comparable.slice(0, 2).map((indicator) => {
-    if (indicator.state === "unchanged") return `${indicator.role} is unchanged from its prior observation`;
-    return `${indicator.role} is ${indicator.state} than its prior observation`;
+  const clauses = comparable.slice(0, 2).map((indicator, index) => {
+    const role = index === 0 ? indicator.role : `${indicator.role.charAt(0).toLowerCase()}${indicator.role.slice(1)}`;
+    if (indicator.state === "unchanged") return `${role} was unchanged`;
+    return `${role} ${indicator.state === "higher" ? "rose" : "fell"}`;
   });
-  return `Dashboard rule state: ${ruleLabel}. ${clauses.join("; ")}.`;
+  return `Dashboard rule state: ${ruleLabel}. ${clauses.join("; ")} versus the prior observation.`;
 }
 
 function revisionBrief(revisions: OverviewRevisionSummary): string {

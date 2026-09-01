@@ -314,19 +314,30 @@ describe("BLS Overview revisions and schedule", () => {
 });
 
 describe("BlsOverview", () => {
+  afterEach(cleanup);
+
   it("renders an answer-first semantic surface and passes view plus series focus to the shell", () => {
     const onNavigate = vi.fn();
     render(<BlsOverview data={completeLaborFixture()} onNavigate={onNavigate} />);
 
     expect(screen.getByRole("heading", { name: "Labor-market overview" })).not.toBeNull();
     expect(screen.getByRole("heading", { name: "Current read" })).not.toBeNull();
-    expect(screen.getByText("Cooling")).not.toBeNull();
-    expect(screen.getByText("Payroll growth is lower than its prior observation; Unemployment is higher than its prior observation.")).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Current read" }).parentElement?.textContent).toContain("Cooling");
+    expect(screen.getByText("Payroll growth fell; unemployment rose versus the prior observation.")).not.toBeNull();
     expect(screen.getByRole("heading", { name: "Four key measures" })).not.toBeNull();
     expect(screen.getByRole("heading", { name: "Payroll growth" })).not.toBeNull();
     expect(screen.getByRole("heading", { name: "Unemployment" })).not.toBeNull();
     expect(screen.getByRole("heading", { name: "Hourly earnings" })).not.toBeNull();
     expect(screen.getByRole("heading", { name: "Job openings" })).not.toBeNull();
+    const indicatorFigures = screen.getAllByRole("figure");
+    expect(indicatorFigures).toHaveLength(4);
+    indicatorFigures.forEach((figure) => {
+      expect(figure.querySelectorAll(".bls-status-label")).toHaveLength(1);
+      expect(figure.querySelector("p")).toBeNull();
+      expect(figure.querySelector(".bls-overview-metric-meta dt")?.textContent).toBe("Change from prior reference period");
+    });
+    expect(screen.queryByText("Lower than prior")).toBeNull();
+    expect(screen.queryByText("Higher than prior")).toBeNull();
     expect(screen.getAllByText(/recent primary values by reference period/i)).toHaveLength(4);
     expect(screen.getByRole("heading", { name: "Payroll revisions" })).not.toBeNull();
     expect(screen.getByText("Net three months")).not.toBeNull();
@@ -349,5 +360,34 @@ describe("BlsOverview", () => {
     expect(document.body.textContent).not.toContain("dashboard rules, not BLS thresholds or classifications");
     expect(document.body.textContent?.toLowerCase()).not.toContain("initial claims");
     expect(document.body.textContent?.toLowerCase()).not.toContain("caused by");
+  });
+
+  it("uses one explicit status when a current metric value is unavailable", () => {
+    const data = completeLaborFixture();
+    const payroll = data.series.find((series) => series.series_id === "CES0000000001");
+    if (!payroll) throw new Error("Missing payroll fixture series");
+    const current = payroll.observations.at(-1);
+    if (!current) throw new Error("Missing current payroll observation");
+    current.primary_value = null;
+
+    render(<BlsOverview data={data} onNavigate={vi.fn()} />);
+
+    const figure = screen.getByRole("figure", { name: "Payroll growth" });
+    expect(figure.querySelector(".bls-status-label")?.textContent).toBe("Unavailable");
+    expect(figure.querySelector(".bls-overview-primary-value strong")?.textContent).toBe("—");
+    expect(figure.textContent).not.toContain("Primary value unavailable");
+  });
+
+  it("labels a missing prior observation without adding another status row", () => {
+    const data = completeLaborFixture();
+    const openings = data.series.find((series) => series.series_id === "JTS000000000000000JOR");
+    if (!openings) throw new Error("Missing job-openings fixture series");
+    openings.observations = openings.observations.slice(-1);
+
+    render(<BlsOverview data={data} onNavigate={vi.fn()} />);
+
+    const figure = screen.getByRole("figure", { name: "Job openings" });
+    expect(figure.querySelector(".bls-status-label")?.textContent).toBe("Prior unavailable");
+    expect(figure.querySelectorAll(".bls-status-label")).toHaveLength(1);
   });
 });

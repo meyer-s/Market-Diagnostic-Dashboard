@@ -53,6 +53,7 @@ const visualBlsFixture = {
 const viewports = [
   { name: "desktop", width: 1440, height: 1000 },
   { name: "mobile", width: 390, height: 844 },
+  { name: "intermediate", width: 720, height: 900 },
   // A 320 CSS-pixel viewport exercises the same WCAG reflow boundary as a
   // 1280px-wide page viewed at 400% (and is stricter than the requested 200%).
   { name: "narrow-zoom-proxy", width: 320, height: 800 },
@@ -168,6 +169,14 @@ async function selectView(page: Page, view: BlsView) {
 
   if (view.id === "overview") {
     await expect(page).not.toHaveURL(/(?:\?|&)view=/);
+    const valuesDisclosure = page.locator(".bls-overview-values-disclosure").first();
+    const valuesSummary = valuesDisclosure.locator("summary");
+    await expect.poll(() => valuesSummary.evaluate((element) => getComputedStyle(element, "::before").content)).toBe('"+"');
+    await valuesSummary.click();
+    await expect(valuesDisclosure).toHaveJSProperty("open", true);
+    await expect.poll(() => valuesSummary.evaluate((element) => getComputedStyle(element, "::before").content)).toBe('"−"');
+    await valuesSummary.click();
+    await expect(valuesDisclosure).toHaveJSProperty("open", false);
   } else {
     await expect(page).toHaveURL(new RegExp(`(?:\\?|&)view=${view.id}(?:&|$)`));
   }
