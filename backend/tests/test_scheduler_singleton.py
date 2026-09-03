@@ -7,9 +7,10 @@ import pytest
 
 from app.core.config import settings
 from app.main import app
-from app.services.scheduler_lock import scheduler_job_lock
 from app.services import scheduler as scheduler_module
+from app.services import scheduler_lock as scheduler_lock_module
 from app.services import scheduler_worker
+from app.services.scheduler_lock import scheduler_job_lock
 
 
 def test_scheduler_lock_only_allows_single_holder() -> None:
@@ -17,6 +18,64 @@ def test_scheduler_lock_only_allows_single_holder() -> None:
         with scheduler_job_lock("test-job") as acquired_second:
             assert acquired_first is True
             assert acquired_second is False
+
+
+def test_postgres_scheduler_lock_releases_on_the_same_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    statements: list[str] = []
+
+    class ScalarProbe:
+        def __init__(self, value: bool) -> None:
+            self.value = value
+
+        def scalar(self) -> bool:
+            return self.value
+
+    class ConnectionProbe:
+        active = False
+
+        def execution_options(self, **options):
+            assert options == {"isolation_level": "AUTOCOMMIT"}
+            return self
+
+        def __enter__(self):
+            self.active = True
+            return self
+
+        def __exit__(self, *_args) -> None:
+            self.active = False
+
+        def execute(self, statement, parameters):
+            assert self.active is True
+            assert parameters == {"lock_key": scheduler_lock_module._job_lock_key("test-job")}
+            rendered = str(statement)
+            statements.append(rendered)
+            return ScalarProbe("pg_try_advisory_lock" in rendered or "pg_advisory_unlock" in rendered)
+
+    class EngineProbe:
+        def __init__(self) -> None:
+            self.connection = ConnectionProbe()
+            self.connect_calls = 0
+
+        def connect(self):
+            self.connect_calls += 1
+            return self.connection
+
+    engine = EngineProbe()
+    monkeypatch.setattr(settings, "DATABASE_URL", "postgresql://scheduler-test")
+    monkeypatch.setattr(scheduler_lock_module, "engine", engine)
+
+    with scheduler_job_lock("test-job") as acquired:
+        assert acquired is True
+        assert engine.connection.active is True
+
+    assert engine.connect_calls == 1
+    assert engine.connection.active is False
+    assert statements == [
+        "SELECT pg_try_advisory_lock(:lock_key)",
+        "SELECT pg_advisory_unlock(:lock_key)",
+    ]
 
 
 def test_web_lifespan_skips_scheduler_when_flag_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
