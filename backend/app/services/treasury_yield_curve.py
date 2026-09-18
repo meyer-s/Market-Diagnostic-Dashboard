@@ -119,7 +119,10 @@ async def fetch_treasury_yield_curve(
         months,
         reference_date=today,
     )
-    timeout = httpx.Timeout(18.0, connect=6.0)
+    # Treasury's CDN can take roughly 15-20 seconds to begin streaming from the
+    # production region, even when the response is healthy. Keep enough read
+    # headroom to distinguish that latency from a genuine upstream outage.
+    timeout = httpx.Timeout(45.0, connect=8.0)
     headers = {
         "Accept": "application/atom+xml, application/xml, text/xml",
         "User-Agent": "MarketDiagnosticDashboard/1.0 (+https://marketdiagnostictool.com)",
@@ -141,7 +144,7 @@ async def fetch_treasury_yield_curve(
 
     for (period, _url), response in zip(requests, responses):
         if isinstance(response, Exception):
-            logger.warning("Treasury yield-curve request failed for %s: %s", period, response)
+            logger.warning("Treasury yield-curve request failed for %s: %r", period, response)
             warnings.append(f"Treasury data for {period} could not be refreshed.")
             continue
 
