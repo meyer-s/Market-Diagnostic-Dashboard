@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 import { Link } from "react-router-dom";
 import {
   CartesianGrid,
@@ -43,7 +43,36 @@ interface YieldCurveResponse {
   curves: CurveEntry[];
 }
 
+interface CurveTooltipItem {
+  color?: string;
+  dataKey?: string | number;
+  name?: string;
+  value?: number | string | null;
+}
+
+interface CurveTooltipProps {
+  active?: boolean;
+  label?: string | number;
+  payload?: readonly CurveTooltipItem[];
+}
+
 const MATURITY_ORDER = ["1M", "2M", "3M", "4M", "6M", "1Y", "2Y", "3Y", "5Y", "7Y", "10Y", "20Y", "30Y"];
+const DAILY_CURVE_STYLES = [
+  { color: "#83bfff", opacity: 1, width: 3 },
+  { color: "#68a9ee", opacity: 0.72, width: 2.1 },
+  { color: "#5796d9", opacity: 0.55, width: 1.7 },
+  { color: "#477ead", opacity: 0.42, width: 1.4 },
+  { color: "#3b668d", opacity: 0.3, width: 1.2 },
+];
+const MONTHLY_CURVE_STYLES = [
+  { opacity: 0.55, width: 1.8 },
+  { opacity: 0.45, width: 1.6 },
+  { opacity: 0.36, width: 1.4 },
+  { opacity: 0.28, width: 1.2 },
+  { opacity: 0.2, width: 1.1 },
+];
+const MONTHLY_CURVE_COLOR = "#fbbf24";
+const MOVING_AVERAGE_COLOR = "#d5dfec";
 
 const formatObservationDate = (value?: string) => {
   if (!value) return "Date unavailable";
@@ -69,6 +98,67 @@ const formatBasisPointMove = (current: number | null, prior: number | null) => {
 const getCurveMap = (entry?: CurveEntry) =>
   new Map((entry?.curve ?? []).map((point) => [point.maturity, point.yield]));
 
+const getTooltipSection = (dataKey?: string | number) => {
+  if (typeof dataKey !== "string") return "other";
+  if (dataKey.startsWith("daily_")) return "daily";
+  if (dataKey.startsWith("monthly_")) return "monthly";
+  if (dataKey === "moving_average") return "average";
+  return "other";
+};
+
+const getTooltipOrder = (dataKey?: string | number) => {
+  const section = getTooltipSection(dataKey);
+  if (section === "daily") return 0;
+  if (section === "monthly") return 1;
+  if (section === "average") return 2;
+  return 3;
+};
+
+const renderCurveTooltip = ({ active, payload, label }: CurveTooltipProps) => {
+  if (!active || !payload?.length) return null;
+
+  const visibleItems = payload
+    .filter((item) => typeof item.value === "number")
+    .sort((left, right) => getTooltipOrder(left.dataKey) - getTooltipOrder(right.dataKey));
+  if (!visibleItems.length) return null;
+
+  let currentSection = "";
+  return (
+    <div className="min-w-56 rounded-lg border border-stealth-600 bg-stealth-950/95 p-3 shadow-[0_10px_30px_rgba(2,6,23,0.55)]">
+      <p className="mb-2 text-sm font-semibold text-stealth-100">{label} maturity</p>
+      <div className="space-y-1.5">
+        {visibleItems.map((item, index) => {
+          const section = getTooltipSection(item.dataKey);
+          const showSectionLabel = section !== currentSection;
+          currentSection = section;
+          const sectionLabel = section === "daily"
+            ? "Recent sessions"
+            : section === "monthly"
+              ? "Monthly checkpoints"
+              : "Long-run reference";
+
+          return (
+            <Fragment key={`${String(item.dataKey)}-${index}`}>
+              {showSectionLabel ? (
+                <p className="pt-1 text-xs font-semibold text-stealth-400">{sectionLabel}</p>
+              ) : null}
+              <div className="flex items-center justify-between gap-5 text-xs">
+                <span className="flex items-center gap-2 text-stealth-200">
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: item.color ?? MOVING_AVERAGE_COLOR }} />
+                  {item.name ?? "Curve"}
+                </span>
+                <span className="font-mono font-semibold tabular-nums text-stealth-100">
+                  {Number(item.value).toFixed(2)}%
+                </span>
+              </div>
+            </Fragment>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 const describeSlope = (spread: number | null) => {
   if (spread === null) return { label: "Unavailable", tone: "text-stealth-300" };
   if (spread < 0) return { label: "Inverted", tone: "text-red-300" };
@@ -78,24 +168,58 @@ const describeSlope = (spread: number | null) => {
 
 export default function YieldCurveCard() {
   const { data, loading, error, refetch } = useApi<YieldCurveResponse>(
-    "/indicators/BOND_MARKET_STABILITY/yield-curve?months=3",
-    { timeoutMs: 30_000 },
+    "/indicators/BOND_MARKET_STABILITY/yield-curve?months=12",
+    { timeoutMs: 50_000 },
   );
 
   const latest = data?.curves?.[0];
   const previous = data?.curves?.[1];
 
-  const chartData = useMemo(() => {
-    if (!latest) return [];
-    const previousMap = getCurveMap(previous);
-    const latestMap = getCurveMap(latest);
+  const onionSkin = useMemo(() => {
+    const curves = data?.curves ?? [];
+    const dailyCurves = curves.slice(0, 5);
+    const latestMonth = dailyCurves[0]?.date.slice(0, 7);
+    const seenMonths = new Set(latestMonth ? [latestMonth] : []);
+    const monthlyCurves: CurveEntry[] = [];
 
-    return MATURITY_ORDER.map((maturity) => ({
-      maturity,
-      latest: latestMap.get(maturity) ?? null,
-      previous: previousMap.get(maturity) ?? null,
-    }));
-  }, [latest, previous]);
+    for (const entry of curves) {
+      const month = entry.date.slice(0, 7);
+      if (seenMonths.has(month)) continue;
+      monthlyCurves.push(entry);
+      seenMonths.add(month);
+      if (monthlyCurves.length === 5) break;
+    }
+
+    const movingAverageWindow = curves.slice(0, 200);
+    const dailyCurveMaps = dailyCurves.map(getCurveMap);
+    const monthlyCurveMaps = monthlyCurves.map(getCurveMap);
+    const movingAverageMaps = movingAverageWindow.map(getCurveMap);
+    const chartData = MATURITY_ORDER.map((maturity) => {
+      const row: Record<string, string | number | null> = { maturity };
+
+      dailyCurveMaps.forEach((curveMap, index) => {
+        row[`daily_${index}`] = curveMap.get(maturity) ?? null;
+      });
+      monthlyCurveMaps.forEach((curveMap, index) => {
+        row[`monthly_${index}`] = curveMap.get(maturity) ?? null;
+      });
+
+      const averageValues = movingAverageMaps
+        .map((curveMap) => curveMap.get(maturity))
+        .filter((value): value is number => typeof value === "number");
+      row.moving_average = averageValues.length
+        ? averageValues.reduce((sum, value) => sum + value, 0) / averageValues.length
+        : null;
+      return row;
+    });
+
+    return {
+      chartData,
+      dailyCurves,
+      monthlyCurves,
+      movingAverageSessions: movingAverageWindow.length,
+    };
+  }, [data?.curves]);
 
   if (loading) {
     return (
@@ -187,7 +311,7 @@ export default function YieldCurveCard() {
               </span>
             </div>
             <p className="mt-1 text-sm text-stealth-300">
-              Latest close {formatObservationDate(data?.as_of ?? latest.date)} · prior session comparison
+              Latest close {formatObservationDate(data?.as_of ?? latest.date)} · onion skin: {onionSkin.dailyCurves.length} sessions, {onionSkin.monthlyCurves.length} monthly checkpoints, {onionSkin.movingAverageSessions}-session mean
             </p>
           </div>
           <Link
@@ -202,8 +326,8 @@ export default function YieldCurveCard() {
           <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <LineChart
               accessibilityLayer
-              aria-label={`Treasury yield curve for ${latest.date} compared with ${previous?.date ?? "the prior available session"}`}
-              data={chartData}
+              aria-label={`Onion-skinned Treasury yield curves through ${latest.date}, including recent sessions, monthly checkpoints, and a ${onionSkin.movingAverageSessions}-session mean`}
+              data={onionSkin.chartData}
               margin={{ top: 8, right: 10, left: -10, bottom: 8 }}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
@@ -221,44 +345,65 @@ export default function YieldCurveCard() {
                 domain={["dataMin - 0.2", "dataMax + 0.2"]}
                 width={52}
               />
-              <Tooltip
-                formatter={(value) => value === null ? "—" : `${Number(value).toFixed(2)}%`}
-                contentStyle={{
-                  background: "var(--chart-tooltip-bg)",
-                  border: "1px solid var(--chart-tooltip-border)",
-                  borderRadius: 8,
-                }}
-                labelStyle={{ color: "var(--chart-tooltip-label)" }}
-              />
+              <Tooltip content={renderCurveTooltip} />
+              {[...onionSkin.monthlyCurves].reverse().map((entry) => {
+                const index = onionSkin.monthlyCurves.indexOf(entry);
+                const style = MONTHLY_CURVE_STYLES[index] ?? MONTHLY_CURVE_STYLES[MONTHLY_CURVE_STYLES.length - 1];
+                return (
+                  <Line
+                    key={`monthly_${entry.date}`}
+                    type="monotone"
+                    dataKey={`monthly_${index}`}
+                    stroke={MONTHLY_CURVE_COLOR}
+                    strokeOpacity={style.opacity}
+                    strokeWidth={style.width}
+                    dot={false}
+                    name={formatObservationDate(entry.date)}
+                    connectNulls
+                    isAnimationActive={false}
+                  />
+                );
+              })}
               <Line
                 type="monotone"
-                dataKey="previous"
-                stroke="#91a4bd"
-                strokeWidth={1.75}
-                strokeDasharray="5 4"
+                dataKey="moving_average"
+                stroke={MOVING_AVERAGE_COLOR}
+                strokeOpacity={0.8}
+                strokeWidth={2}
+                strokeDasharray="2 6"
                 dot={false}
-                name={previous ? `Prior · ${previous.date}` : "Prior"}
+                name={`${onionSkin.movingAverageSessions}-session mean`}
                 connectNulls
                 isAnimationActive={false}
               />
-              <Line
-                type="monotone"
-                dataKey="latest"
-                stroke="#83bfff"
-                strokeWidth={3}
-                dot={{ r: 2.5, fill: "#83bfff" }}
-                activeDot={{ r: 5 }}
-                name={`Latest · ${latest.date}`}
-                connectNulls
-                isAnimationActive={false}
-              />
+              {[...onionSkin.dailyCurves].reverse().map((entry) => {
+                const index = onionSkin.dailyCurves.indexOf(entry);
+                const style = DAILY_CURVE_STYLES[index] ?? DAILY_CURVE_STYLES[DAILY_CURVE_STYLES.length - 1];
+                return (
+                  <Line
+                    key={`daily_${entry.date}`}
+                    type="monotone"
+                    dataKey={`daily_${index}`}
+                    stroke={style.color}
+                    strokeOpacity={style.opacity}
+                    strokeWidth={style.width}
+                    dot={index === 0 ? { r: 2.5, fill: style.color } : false}
+                    activeDot={index === 0 ? { r: 5 } : undefined}
+                    name={index === 0 ? `Latest · ${formatObservationDate(entry.date)}` : formatObservationDate(entry.date)}
+                    connectNulls
+                    isAnimationActive={false}
+                  />
+                );
+              })}
             </LineChart>
           </ResponsiveContainer>
         </div>
 
         <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 border-t border-stealth-700 pt-3 text-xs text-stealth-300">
           <span className="inline-flex items-center gap-2"><span className="h-0.5 w-5 bg-sky-300" />Latest official close</span>
-          <span className="inline-flex items-center gap-2"><span className="h-0.5 w-5 border-t border-dashed border-stealth-300" />Prior session</span>
+          <span className="inline-flex items-center gap-2"><span className="h-0.5 w-5 bg-sky-700/60" />Recent sessions fade with age</span>
+          <span className="inline-flex items-center gap-2"><span className="h-0.5 w-5 bg-amber-400/60" />Monthly checkpoints</span>
+          <span className="inline-flex items-center gap-2"><span className="h-0.5 w-5 border-t border-dashed border-stealth-200" />{onionSkin.movingAverageSessions}-session mean</span>
           <a
             href={data?.source?.url}
             target="_blank"

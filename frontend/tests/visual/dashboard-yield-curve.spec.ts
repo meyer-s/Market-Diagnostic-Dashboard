@@ -2,6 +2,13 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page, type Route } from "@playwright/test";
 
 
+const baseCurve: Array<[string, number]> = [
+  ["1M", 3.97], ["2M", 4.09], ["3M", 4.12], ["4M", 4.23],
+  ["6M", 4.20], ["1Y", 4.40], ["2Y", 4.67], ["3Y", 4.75],
+  ["5Y", 4.78], ["7Y", 4.86], ["10Y", 4.94], ["20Y", 5.32],
+  ["30Y", 5.29],
+];
+
 const curvePayload = {
   as_of: "2026-09-17",
   fetched_at: "2026-09-18T13:00:00Z",
@@ -17,25 +24,23 @@ const curvePayload = {
     maturities_expected: 13,
   },
   curves: [
-    {
-      date: "2026-09-17",
-      curve: [
-        ["1M", 3.97], ["2M", 4.09], ["3M", 4.12], ["4M", 4.23],
-        ["6M", 4.20], ["1Y", 4.40], ["2Y", 4.67], ["3Y", 4.75],
-        ["5Y", 4.78], ["7Y", 4.86], ["10Y", 4.94], ["20Y", 5.32],
-        ["30Y", 5.29],
-      ].map(([maturity, yieldValue]) => ({ maturity, yield: yieldValue })),
-    },
-    {
-      date: "2026-09-16",
-      curve: [
-        ["1M", 3.96], ["2M", 4.07], ["3M", 4.14], ["4M", 4.24],
-        ["6M", 4.22], ["1Y", 4.45], ["2Y", 4.74], ["3Y", 4.82],
-        ["5Y", 4.86], ["7Y", 4.94], ["10Y", 5.01], ["20Y", 5.39],
-        ["30Y", 5.35],
-      ].map(([maturity, yieldValue]) => ({ maturity, yield: yieldValue })),
-    },
-  ],
+    ["2026-09-17", 0],
+    ["2026-09-16", 0.07],
+    ["2026-09-15", 0.1],
+    ["2026-09-14", 0.13],
+    ["2026-09-11", 0.16],
+    ["2026-08-31", 0.2],
+    ["2026-07-31", 0.25],
+    ["2026-06-30", 0.3],
+    ["2026-05-29", 0.35],
+    ["2026-04-30", 0.4],
+  ].map(([date, shift]) => ({
+    date: String(date),
+    curve: baseCurve.map(([maturity, yieldValue]) => ({
+      maturity,
+      yield: yieldValue + Number(shift),
+    })),
+  })),
 };
 
 async function fulfillDashboardApi(route: Route) {
@@ -60,6 +65,9 @@ async function verifyRatesPulse(page: Page) {
   await expect(section.getByRole("heading", { name: "Benchmark yields" })).toBeVisible();
   await expect(section.getByText("Current official curve")).toBeVisible();
   await expect(section.getByText("Sep 17, 2026", { exact: false })).toBeVisible();
+  await expect(section.getByText(/onion skin: 5 sessions, 5 monthly checkpoints, 10-session mean/i)).toBeVisible();
+  await expect(section.getByText("Recent sessions fade with age")).toBeVisible();
+  await expect(section.getByText("Monthly checkpoints", { exact: true })).toBeVisible();
   await expect(section.getByRole("link", { name: "Open bond evidence" })).toHaveAttribute(
     "href",
     "/bond_health_stability",
@@ -84,6 +92,13 @@ test("dashboard yield-curve evidence is prominent and responsive", async ({ page
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await verifyRatesPulse(page);
+
+  const curveChart = page.locator("#rates-pulse .recharts-wrapper").first();
+  await curveChart.hover({ position: { x: 320, y: 180 } });
+  const curveTooltip = page.locator("#rates-pulse .recharts-tooltip-wrapper");
+  await expect(curveTooltip).toContainText("Recent sessions");
+  await expect(curveTooltip).toContainText("Monthly checkpoints");
+  await expect(curveTooltip).toContainText("Long-run reference");
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload({ waitUntil: "domcontentloaded" });
