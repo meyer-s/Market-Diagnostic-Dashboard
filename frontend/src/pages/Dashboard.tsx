@@ -5,6 +5,7 @@ import DowTheoryWidget from "../components/widgets/DowTheoryWidget";
 import SystemOverviewWidget from "../components/widgets/SystemOverviewWidget";
 import SectorDivergenceWidget from "../components/widgets/SectorDivergenceWidget";
 import AASWidget from "../components/widgets/AASWidget";
+import YieldCurveCard from "../components/widgets/YieldCurveCard";
 import MarketLoading from "../components/ui/MarketLoading";
 import { apiFetch, getErrorMessage } from "../utils/apiUtils";
 import { getTrendWindows, type InsightSignal } from "../utils/insightUtils";
@@ -362,6 +363,21 @@ export default function Dashboard() {
             </p>
           </div>
         )}
+      </section>
+
+      <section id="rates-pulse" aria-labelledby="rates-pulse-title" className="scroll-mt-32">
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="page-kicker">Rates pulse</div>
+            <h2 id="rates-pulse-title" className="mt-1 text-xl font-semibold text-stealth-100 sm:text-2xl">
+              The Treasury curve at a glance
+            </h2>
+          </div>
+          <p className="max-w-xl text-sm leading-6 text-stealth-300 sm:text-right">
+            Shape, benchmark yields, and session-to-session movement—the rates evidence transmitting through credit, equities, and financing conditions.
+          </p>
+        </div>
+        <YieldCurveCard />
       </section>
 
       <section id="drivers" aria-labelledby="drivers-title" className="dashboard-drivers scroll-mt-32">

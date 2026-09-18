@@ -28,6 +28,9 @@ vi.mock("../../components/widgets/SectorDivergenceWidget", () => ({
 vi.mock("../../components/widgets/AASWidget", () => ({
   default: () => <div>AAS Widget</div>,
 }));
+vi.mock("../../components/widgets/YieldCurveCard", () => ({
+  default: () => <div>Live Treasury Curve Widgets</div>,
+}));
 vi.mock("../../components/widgets/IndicatorCard", () => ({
   default: ({ indicator }: { indicator: { code: string; score: number | null } }) => (
     <div>{`${indicator.code}:${indicator.score ?? "N/A"}`}</div>
@@ -58,6 +61,8 @@ describe("Dashboard", () => {
 
     await waitFor(() => expect(screen.getByText("VIX:N/A")).not.toBeNull());
 
+    expect(screen.getByText("The Treasury curve at a glance")).not.toBeNull();
+    expect(screen.getByText("Live Treasury Curve Widgets")).not.toBeNull();
     expect(screen.queryByRole("button", { name: /refresh/i })).toBeNull();
     expect(apiFetchMock).toHaveBeenCalledTimes(2);
     expect(apiFetchMock).toHaveBeenNthCalledWith(1, "/indicators");
