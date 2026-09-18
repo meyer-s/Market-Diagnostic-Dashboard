@@ -6,6 +6,7 @@ import SystemOverviewWidget from "../components/widgets/SystemOverviewWidget";
 import SectorDivergenceWidget from "../components/widgets/SectorDivergenceWidget";
 import AASWidget from "../components/widgets/AASWidget";
 import YieldCurveCard from "../components/widgets/YieldCurveCard";
+import EconomicDriverSnapshots from "../components/widgets/EconomicDriverSnapshots";
 import MarketLoading from "../components/ui/MarketLoading";
 import { apiFetch, getErrorMessage } from "../utils/apiUtils";
 import { getTrendWindows, type InsightSignal } from "../utils/insightUtils";
@@ -166,7 +167,18 @@ export default function Dashboard() {
   }, [retryNonce]);
 
   const newsCount = news.length;
-  const visibleIndicators = useMemo(() => indicators?.filter((i) => i.code !== "AAS" && i.code !== "AAP") ?? [], [indicators]);
+  const activeIndicators = useMemo(
+    () => indicators?.filter((indicator) => indicator.code !== "AAS" && indicator.code !== "AAP") ?? [],
+    [indicators]
+  );
+  const snapshotCodes = useMemo(
+    () => new Set(["REAL_ESTATE_STABILITY", "AGRICULTURE_STABILITY", "ENERGY_STABILITY"]),
+    []
+  );
+  const visibleIndicators = useMemo(
+    () => activeIndicators.filter((indicator) => !snapshotCodes.has(indicator.code)),
+    [activeIndicators, snapshotCodes]
+  );
   const insightOrder: InsightSignal["id"][] = ["system", "dow", "sector", "aas"];
   const insightList = useMemo(
     () => insightOrder.map((id) => insights[id]).filter(Boolean) as InsightSignal[],
@@ -225,7 +237,7 @@ export default function Dashboard() {
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-4xl">Dashboard</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-stealth-300 md:text-[15px]">Real-time market regime assessment across volatility, rates, liquidity, and sentiment.</p>
           <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-stealth-300">
-            <span className="page-badge">{visibleIndicators.length} active indicators</span>
+            <span className="page-badge">{activeIndicators.length} active indicators</span>
             <span className="page-badge">Trend window {overallTrendLabel}</span>
             <span className="page-badge border-stealth-600 bg-stealth-900/80 text-stealth-200">Read-only public dashboard</span>
           </div>
@@ -365,27 +377,31 @@ export default function Dashboard() {
         )}
       </section>
 
-      <section id="rates-pulse" aria-labelledby="rates-pulse-title" className="scroll-mt-32">
-        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <div className="page-kicker">Rates pulse</div>
-            <h2 id="rates-pulse-title" className="mt-1 text-xl font-semibold text-stealth-100 sm:text-2xl">
-              The Treasury curve at a glance
-            </h2>
-          </div>
-          <p className="max-w-xl text-sm leading-6 text-stealth-300 sm:text-right">
-            Shape, benchmark yields, and session-to-session movement—the rates evidence transmitting through credit, equities, and financing conditions.
-          </p>
-        </div>
-        <YieldCurveCard />
-      </section>
-
       <section id="drivers" aria-labelledby="drivers-title" className="dashboard-drivers scroll-mt-32">
         <div className="mb-3">
           <div className="page-kicker">Drivers</div>
           <h2 id="drivers-title" className="mt-1 text-xl font-semibold text-stealth-100 sm:text-2xl">What is moving the read</h2>
         </div>
-        <div className="dashboard-driver-grid grid grid-cols-1 gap-3 md:gap-6 lg:grid-cols-2">
+        <div className="space-y-6 md:space-y-8">
+          <div id="rates-pulse" aria-labelledby="rates-pulse-title" className="scroll-mt-32">
+            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <div className="page-kicker">Rates pulse</div>
+                <h3 id="rates-pulse-title" className="mt-1 text-lg font-semibold text-stealth-100 sm:text-xl">
+                  The Treasury curve at a glance
+                </h3>
+              </div>
+              <p className="max-w-xl text-sm leading-6 text-stealth-300 sm:text-right">
+                Shape, benchmark yields, and session-to-session movement—the rates evidence transmitting through credit, equities, and financing conditions.
+              </p>
+            </div>
+            <YieldCurveCard />
+          </div>
+
+          <EconomicDriverSnapshots indicators={indicators} loading={indicatorsLoading} />
+        </div>
+
+        <div className="dashboard-driver-grid mt-6 grid grid-cols-1 gap-3 md:mt-8 md:gap-6 lg:grid-cols-2">
           <div className="dashboard-driver-shell dashboard-driver-system">
             <SystemOverviewWidget trendPeriod={trendPeriod} onInsight={handleInsight} />
           </div>

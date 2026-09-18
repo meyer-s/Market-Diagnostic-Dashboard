@@ -43,13 +43,44 @@ const curvePayload = {
   })),
 };
 
+const driverIndicators = [
+  {
+    code: "REAL_ESTATE_STABILITY",
+    name: "Real Estate Stability",
+    raw_value: 37.53,
+    score: 37.53,
+    state: "RED",
+    timestamp: "2026-09-18T12:03:01",
+  },
+  {
+    code: "AGRICULTURE_STABILITY",
+    name: "Agriculture Stability",
+    raw_value: 42.96,
+    score: 42.96,
+    state: "YELLOW",
+    timestamp: "2026-09-18T12:03:01",
+  },
+  {
+    code: "ENERGY_STABILITY",
+    name: "Energy Stability",
+    raw_value: 75.75,
+    score: 75.75,
+    state: "GREEN",
+    timestamp: "2026-09-18T12:02:23",
+  },
+];
+
 async function fulfillDashboardApi(route: Route) {
   const url = new URL(route.request().url());
   if (url.pathname.endsWith("/indicators/BOND_MARKET_STABILITY/yield-curve")) {
     await route.fulfill({ status: 200, json: curvePayload });
     return;
   }
-  if (url.pathname.endsWith("/indicators") || url.pathname.endsWith("/news")) {
+  if (url.pathname.endsWith("/indicators")) {
+    await route.fulfill({ status: 200, json: driverIndicators });
+    return;
+  }
+  if (url.pathname.endsWith("/news")) {
     await route.fulfill({ status: 200, json: [] });
     return;
   }
@@ -57,8 +88,11 @@ async function fulfillDashboardApi(route: Route) {
 }
 
 async function verifyRatesPulse(page: Page) {
+  const drivers = page.locator("#drivers");
   const section = page.locator("#rates-pulse");
   await section.scrollIntoViewIfNeeded();
+  await expect(drivers.getByRole("heading", { name: "What is moving the read" })).toBeVisible();
+  await expect(drivers.locator("#rates-pulse")).toBeVisible();
   await expect(section.getByRole("heading", { name: "The Treasury curve at a glance" })).toBeVisible();
   await expect(section.getByRole("heading", { name: "Official Treasury curve" })).toBeVisible();
   await expect(section.getByRole("heading", { name: "Curve shape" })).toBeVisible();
@@ -86,12 +120,40 @@ async function verifyRatesPulse(page: Page) {
   ).toEqual([]);
 }
 
+async function verifyEconomicSnapshots(page: Page) {
+  const section = page.locator("#economic-driver-snapshots");
+  await section.scrollIntoViewIfNeeded();
+  await expect(section.getByRole("heading", { name: "Rate-sensitive transmission" })).toBeVisible();
+  await expect(section.getByRole("link", { name: "Open Real estate diagnostic" })).toHaveAttribute("href", "/real-estate");
+  await expect(section.getByRole("link", { name: "Open Agriculture diagnostic" })).toHaveAttribute("href", "/agriculture");
+  await expect(section.getByRole("link", { name: "Open Energy diagnostic" })).toHaveAttribute("href", "/energy");
+  await expect(section.getByText("Stressed")).toBeVisible();
+  await expect(section.getByText("Caution")).toBeVisible();
+  await expect(section.getByText("Stable")).toBeVisible();
+  await expect(section.getByText("37.5")).toBeVisible();
+  await expect(section.getByText("43.0")).toBeVisible();
+  await expect(section.getByText("75.8")).toBeVisible();
+
+  const overflow = await section.evaluate((element) => element.scrollWidth - element.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+
+  const accessibility = await new AxeBuilder({ page })
+    .include("#economic-driver-snapshots")
+    .analyze();
+  expect(
+    accessibility.violations.filter((violation) =>
+      violation.impact === "critical" || violation.impact === "serious"
+    ),
+  ).toEqual([]);
+}
+
 test("dashboard yield-curve evidence is prominent and responsive", async ({ page }) => {
   await page.route("**/api/**", fulfillDashboardApi);
 
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await verifyRatesPulse(page);
+  await verifyEconomicSnapshots(page);
 
   const curveChart = page.locator("#rates-pulse .recharts-wrapper").first();
   await curveChart.hover({ position: { x: 320, y: 180 } });
@@ -103,6 +165,7 @@ test("dashboard yield-curve evidence is prominent and responsive", async ({ page
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload({ waitUntil: "domcontentloaded" });
   await verifyRatesPulse(page);
+  await verifyEconomicSnapshots(page);
 
   const disclosure = page.getByText("Read latest yields as values", { exact: true });
   await disclosure.click();
