@@ -382,26 +382,7 @@ export default function Dashboard() {
           <div className="page-kicker">Drivers</div>
           <h2 id="drivers-title" className="mt-1 text-xl font-semibold text-stealth-100 sm:text-2xl">What is moving the read</h2>
         </div>
-        <div className="space-y-6 md:space-y-8">
-          <div id="rates-pulse" aria-labelledby="rates-pulse-title" className="scroll-mt-32">
-            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <div className="page-kicker">Rates pulse</div>
-                <h3 id="rates-pulse-title" className="mt-1 text-lg font-semibold text-stealth-100 sm:text-xl">
-                  The Treasury curve at a glance
-                </h3>
-              </div>
-              <p className="max-w-xl text-sm leading-6 text-stealth-300 sm:text-right">
-                Shape, benchmark yields, and session-to-session movement—the rates evidence transmitting through credit, equities, and financing conditions.
-              </p>
-            </div>
-            <YieldCurveCard />
-          </div>
-
-          <EconomicDriverSnapshots indicators={indicators} loading={indicatorsLoading} />
-        </div>
-
-        <div className="dashboard-driver-grid mt-6 grid grid-cols-1 gap-3 md:mt-8 md:gap-6 lg:grid-cols-2">
+        <div className="dashboard-driver-grid grid grid-cols-1 gap-3 md:gap-6 lg:grid-cols-2">
           <div className="dashboard-driver-shell dashboard-driver-system">
             <SystemOverviewWidget trendPeriod={trendPeriod} onInsight={handleInsight} />
           </div>
@@ -418,6 +399,24 @@ export default function Dashboard() {
             />
           </div>
         </div>
+        <div className="mt-6 md:mt-8">
+          <EconomicDriverSnapshots />
+        </div>
+      </section>
+
+      <section id="rates-pulse" aria-labelledby="rates-pulse-title" className="scroll-mt-32">
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="page-kicker">Rates pulse</div>
+            <h2 id="rates-pulse-title" className="mt-1 text-xl font-semibold text-stealth-100 sm:text-2xl">
+              The Treasury curve at a glance
+            </h2>
+          </div>
+          <p className="max-w-xl text-sm leading-6 text-stealth-300 sm:text-right">
+            Shape, benchmark yields, and session-to-session movement—the rates evidence transmitting through credit, equities, and financing conditions.
+          </p>
+        </div>
+        <YieldCurveCard />
       </section>
 
       <section id="indicator-breadth" aria-labelledby="indicator-breadth-title" className="dashboard-breadth scroll-mt-32">

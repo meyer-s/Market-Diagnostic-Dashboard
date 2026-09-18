@@ -70,6 +70,36 @@ const driverIndicators = [
   },
 ];
 
+const realEstatePayload = {
+  as_of: "2026-09-18T14:29:03Z",
+  regime_label: "Late-Cycle Squeeze",
+  stability_score: 36.22,
+  metrics: { mortgage_rate_30y: 6.95, credit_spread_bps: 270 },
+  availability: { available_count: 11, total_configured: 11 },
+  data_quality: { status: "complete", stale: false },
+};
+
+const agriculturePayload = {
+  as_of: "2026-09-18T14:29:08Z",
+  regime_label: "Rotation / Mixed",
+  stability_score: 48.21,
+  strongest_markets: [{ name: "Oats", score: 93.73 }],
+  weakest_markets: [{ name: "Feeder Cattle", score: 24.49 }],
+  availability: { available_symbol_count: 22, total_configured_symbols: 25 },
+};
+
+const energyPayload = {
+  as_of: "2026-09-18T14:29:08Z",
+  regime_label: "Prices Elevated",
+  composite_score: 64.38,
+  stability_score: 42.84,
+  groups: [
+    { label: "Crude Oil", group_composite: 76.08 },
+    { label: "Natural Gas", group_composite: 52.15 },
+  ],
+  availability: { available_count: 6, total_configured: 7 },
+};
+
 async function fulfillDashboardApi(route: Route) {
   const url = new URL(route.request().url());
   if (url.pathname.endsWith("/indicators/BOND_MARKET_STABILITY/yield-curve")) {
@@ -80,6 +110,18 @@ async function fulfillDashboardApi(route: Route) {
     await route.fulfill({ status: 200, json: driverIndicators });
     return;
   }
+  if (url.pathname.endsWith("/real-estate/overview")) {
+    await route.fulfill({ status: 200, json: realEstatePayload });
+    return;
+  }
+  if (url.pathname.endsWith("/agriculture/overview")) {
+    await route.fulfill({ status: 200, json: agriculturePayload });
+    return;
+  }
+  if (url.pathname.endsWith("/energy/overview")) {
+    await route.fulfill({ status: 200, json: energyPayload });
+    return;
+  }
   if (url.pathname.endsWith("/news")) {
     await route.fulfill({ status: 200, json: [] });
     return;
@@ -88,11 +130,11 @@ async function fulfillDashboardApi(route: Route) {
 }
 
 async function verifyRatesPulse(page: Page) {
-  const drivers = page.locator("#drivers");
   const section = page.locator("#rates-pulse");
   await section.scrollIntoViewIfNeeded();
-  await expect(drivers.getByRole("heading", { name: "What is moving the read" })).toBeVisible();
-  await expect(drivers.locator("#rates-pulse")).toBeVisible();
+  await expect(page.locator("#drivers + #rates-pulse")).toBeVisible();
+  await expect(page.locator("#rates-pulse + #indicator-breadth")).toBeVisible();
+  await expect(page.locator("#drivers #rates-pulse")).toHaveCount(0);
   await expect(section.getByRole("heading", { name: "The Treasury curve at a glance" })).toBeVisible();
   await expect(section.getByRole("heading", { name: "Official Treasury curve" })).toBeVisible();
   await expect(section.getByRole("heading", { name: "Curve shape" })).toBeVisible();
@@ -123,16 +165,28 @@ async function verifyRatesPulse(page: Page) {
 async function verifyEconomicSnapshots(page: Page) {
   const section = page.locator("#economic-driver-snapshots");
   await section.scrollIntoViewIfNeeded();
-  await expect(section.getByRole("heading", { name: "Rate-sensitive transmission" })).toBeVisible();
+  await expect(section.getByRole("heading", { name: "Cross-market snapshots" })).toBeVisible();
   await expect(section.getByRole("link", { name: "Open Real estate diagnostic" })).toHaveAttribute("href", "/real-estate");
   await expect(section.getByRole("link", { name: "Open Agriculture diagnostic" })).toHaveAttribute("href", "/agriculture");
   await expect(section.getByRole("link", { name: "Open Energy diagnostic" })).toHaveAttribute("href", "/energy");
   await expect(section.getByText("Stressed")).toBeVisible();
-  await expect(section.getByText("Caution")).toBeVisible();
-  await expect(section.getByText("Stable")).toBeVisible();
-  await expect(section.getByText("37.5")).toBeVisible();
-  await expect(section.getByText("43.0")).toBeVisible();
-  await expect(section.getByText("75.8")).toBeVisible();
+  await expect(section.getByText("Caution")).toHaveCount(2);
+  await expect(section.getByText("Late-Cycle Squeeze")).toBeVisible();
+  await expect(section.getByText("Rotation / Mixed")).toBeVisible();
+  await expect(section.getByText("Prices Elevated")).toBeVisible();
+  await expect(section.getByText("6.95%")).toBeVisible();
+  await expect(section.getByText("270 bp")).toBeVisible();
+  await expect(section.getByText("Oats")).toBeVisible();
+  await expect(section.getByText("Feeder Cattle")).toBeVisible();
+  await expect(section.getByText("64.4")).toBeVisible();
+  await expect(section.getByText("Crude Oil")).toBeVisible();
+  await expect(section.getByText("Complete · 11/11 inputs")).toBeVisible();
+  await expect(section.getByText("Partial · 22/25 markets")).toBeVisible();
+  await expect(section.getByText("Partial · 6/7 contracts")).toBeVisible();
+  await expect(section.getByRole("meter", { name: "Real estate stability" })).toHaveAttribute("aria-valuenow", "36.2");
+  await expect(section.getByRole("meter", { name: "Agriculture stability" })).toHaveAttribute("aria-valuenow", "48.2");
+  await expect(section.getByRole("meter", { name: "Energy stability" })).toHaveAttribute("aria-valuenow", "42.8");
+  await expect(section.getByText(/Financing, affordability/)).toHaveCount(0);
 
   const overflow = await section.evaluate((element) => element.scrollWidth - element.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
