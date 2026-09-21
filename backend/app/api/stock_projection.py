@@ -1937,18 +1937,27 @@ def compute_optionality_metrics(
     hv30: Optional[float],
     max_expiries: Optional[int] = None,
     strike_thresholds: Optional[list[float]] = None,
+    known_primary_failure: Optional[str] = None,
 ) -> dict:
     """Compute IV/HV spread, IV percentile, and extrinsic density ratio."""
     ordered_providers = _ordered_option_providers(provider)
     if len(ordered_providers) > 1:
-        primary_metrics = compute_optionality_metrics(
-            ordered_providers[0],
-            symbol,
-            current_price,
-            hv30,
-            max_expiries=max_expiries,
-            strike_thresholds=strike_thresholds,
-        )
+        if known_primary_failure:
+            primary_metrics = _empty_optionality(
+                source_name=getattr(ordered_providers[0], "name", "primary"),
+                hv30=hv30,
+                error=known_primary_failure,
+                reason="provider_error",
+            )
+        else:
+            primary_metrics = compute_optionality_metrics(
+                ordered_providers[0],
+                symbol,
+                current_price,
+                hv30,
+                max_expiries=max_expiries,
+                strike_thresholds=strike_thresholds,
+            )
         if _optionality_has_provider_data(primary_metrics):
             return primary_metrics
 
@@ -3170,7 +3179,19 @@ def get_stock_projections(
         try:
             if option_provider is None:
                 raise RuntimeError("Market data provider is unavailable")
-            optionality = compute_optionality_metrics(option_provider, ticker, current_price, hv30)
+            known_primary_failure = None
+            if isinstance(options_flow, dict):
+                primary_source = str(options_flow.get("primary_data_source") or "")
+                fallback_reason = str(options_flow.get("fallback_reason") or "")
+                if primary_source.startswith("ibkr") and fallback_reason:
+                    known_primary_failure = fallback_reason
+            optionality = compute_optionality_metrics(
+                option_provider,
+                ticker,
+                current_price,
+                hv30,
+                known_primary_failure=known_primary_failure,
+            )
         except Exception as exc:
             optionality = _empty_optionality(
                 source_name="market_data_provider",

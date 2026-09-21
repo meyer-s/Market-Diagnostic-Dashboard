@@ -53,7 +53,12 @@ class _FallbackProvider(FakeProvider):
 
 
 class _UnavailablePrimaryProvider(_PrimaryProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.option_expiration_calls = 0
+
     def option_expirations(self, symbol: str) -> list[str]:
+        self.option_expiration_calls += 1
         raise RuntimeError("IBKR options request timed out")
 
 
@@ -157,6 +162,25 @@ def test_options_flow_records_explicit_primary_failure_on_fallback() -> None:
     assert flow["data_source"] == "yahoo_option_chain"
     assert flow["primary_data_source"] == "ibkr_option_chain"
     assert flow["fallback_reason"] == "IBKR options request timed out"
+
+
+def test_optionality_reuses_known_primary_failure_from_options_flow() -> None:
+    provider = _FallbackWrapper()
+    provider.primary = _UnavailablePrimaryProvider()
+
+    flow = compute_options_flow(provider, "FAKE", 100.0)
+    metrics = compute_optionality_metrics(
+        provider,
+        "FAKE",
+        100.0,
+        20.0,
+        known_primary_failure=flow["fallback_reason"],
+    )
+
+    assert provider.primary.option_expiration_calls == 1
+    assert metrics["data_source"] == "yahoo_option_chain"
+    assert metrics["primary_data_source"] == "ibkr_option_chain"
+    assert metrics["fallback_reason"] == "IBKR options request timed out"
 
 
 def test_fallback_provider_skips_primary_after_slow_call(monkeypatch) -> None:
