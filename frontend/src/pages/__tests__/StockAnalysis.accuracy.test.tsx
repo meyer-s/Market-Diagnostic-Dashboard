@@ -282,6 +282,34 @@ describe("StockAnalysis accuracy pass", () => {
     expect(screen.queryByText(/TTM through/)).toBeNull();
   });
 
+  it("shows the primary analysis without waiting for slow news or issuing a duplicate projection request", async () => {
+    let resolveNews: ((articles: Array<Record<string, unknown>>) => void) | undefined;
+    const pendingNews = new Promise<Array<Record<string, unknown>>>((resolve) => {
+      resolveNews = resolve;
+    });
+    apiFetchMock.mockImplementation((endpoint: string) => {
+      if (endpoint.startsWith("/stocks/KVUE/projections")) return Promise.resolve(payload);
+      if (endpoint.startsWith("/news?")) return pendingNews;
+      return Promise.reject(new Error(`Unexpected endpoint: ${endpoint}`));
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/stock-analysis?symbol=KVUE"]}>
+        <StockAnalysis />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getAllByText("Latest Close").length).toBeGreaterThan(0));
+    expect(screen.getByRole("button", { name: "Analyze" }).hasAttribute("disabled")).toBe(false);
+    expect(screen.getByText("Loading recent KVUE headlines separately…")).not.toBeNull();
+    expect(
+      apiFetchMock.mock.calls.filter(([endpoint]) => String(endpoint).startsWith("/stocks/KVUE/projections"))
+    ).toHaveLength(1);
+
+    resolveNews?.([]);
+    await waitFor(() => expect(screen.queryByText("Loading recent KVUE headlines separately…")).toBeNull());
+  });
+
   it("shows unavailable instead of the initial empty state for a partial projection payload", async () => {
     apiFetchMock.mockImplementation((endpoint: string) => {
       if (endpoint.startsWith("/stocks/KVUE/projections")) {

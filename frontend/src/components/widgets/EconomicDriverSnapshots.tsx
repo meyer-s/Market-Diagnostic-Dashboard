@@ -218,7 +218,7 @@ function SnapshotUnavailable({ label, route }: { label: string; route: string })
 }
 
 export default function EconomicDriverSnapshots() {
-  const realEstateApi = useApi<RealEstateOverview>("/real-estate/overview?days=90", { timeoutMs: 50_000 });
+  const realEstateApi = useApi<RealEstateOverview>("/real-estate/overview?days=365&prefer_cached=true", { timeoutMs: 20_000 });
   const agricultureApi = useApi<AgricultureOverview>("/agriculture/overview?days=90", { timeoutMs: 50_000 });
   const energyApi = useApi<EnergyOverview>("/energy/overview?days=90", { timeoutMs: 50_000 });
 

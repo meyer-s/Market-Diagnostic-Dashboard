@@ -15,11 +15,11 @@ from math import tanh
 from statistics import mean
 from threading import Lock
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import quote
 
 import numpy as np
 import pandas as pd
 import requests
-import yfinance as yf
 
 try:
     from curl_cffi import requests as curl_requests
@@ -106,7 +106,8 @@ _CACHE: Dict[int, Dict[str, Any]] = {}
 _CACHE_LOCK = Lock()
 _COMPUTE_LOCK = Lock()
 _CACHE_TTL_SECONDS = 20 * 60
-_MAX_STALE_AGE_SECONDS = 48 * 60 * 60
+# Covers weekends and market holidays while keeping stale evidence explicit.
+_MAX_STALE_AGE_SECONDS = 7 * 24 * 60 * 60
 _MAX_MEMORY_CACHE_ENTRIES = 6
 
 _CONTEXT_CACHE: Dict[int, Dict[str, Any]] = {}
@@ -568,38 +569,24 @@ def _fetch_proxy_batch(
     availability: List[Dict[str, Any]] = []
     missing: List[Dict[str, Any]] = []
 
-    close_frame: pd.DataFrame | None = None
-    try:
-        downloaded = yf.download(
-            tickers=" ".join(proxy.ticker for proxy in proxies),
-            start=start,
-            end=end,
-            interval="1d",
-            progress=False,
-            auto_adjust=True,
-            group_by="column",
-            threads=True,
-            timeout=YAHOO_BATCH_TIMEOUT_SECONDS,
-        )
-        if downloaded is not None and not downloaded.empty:
-            if isinstance(downloaded.columns, pd.MultiIndex):
-                level0 = downloaded.columns.get_level_values(0)
-                level1 = downloaded.columns.get_level_values(1)
-                if "Close" in level0:
-                    close_frame = downloaded["Close"]
-                elif "Close" in level1:
-                    close_frame = downloaded.swaplevel(axis=1)["Close"]
-            elif "Close" in downloaded.columns and len(proxies) == 1:
-                close_frame = pd.DataFrame(
-                    {proxies[0].ticker: downloaded["Close"]}
-                )
-    except Exception:
-        close_frame = None
+    resolved_by_ticker: Dict[str, pd.Series] = {}
+    max_workers = min(6, max(1, len(proxies)))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(_fetch_yahoo_chart_series, proxy.ticker, start, end): proxy.ticker
+            for proxy in proxies
+        }
+        for future in as_completed(futures):
+            ticker = futures[future]
+            try:
+                series = future.result()
+            except Exception:
+                series = pd.Series(dtype="float64")
+            if len(series) >= 30:
+                resolved_by_ticker[ticker] = series
 
     for proxy in proxies:
-        chosen_series = pd.Series(dtype="float64")
-        if close_frame is not None and proxy.ticker in close_frame.columns:
-            chosen_series = close_frame[proxy.ticker].dropna().astype("float64")
+        chosen_series = resolved_by_ticker.get(proxy.ticker, pd.Series(dtype="float64"))
 
         if len(chosen_series) >= 30:
             resolved[proxy.code] = chosen_series
@@ -629,6 +616,46 @@ def _fetch_proxy_batch(
         })
 
     return resolved, availability, missing
+
+
+def _fetch_yahoo_chart_series(ticker: str, start: str, end: str) -> pd.Series:
+    """Fetch one adjusted daily close series with a real wall-clock deadline."""
+
+    start_epoch = int(pd.Timestamp(start, tz="UTC").timestamp())
+    end_epoch = int(pd.Timestamp(end, tz="UTC").timestamp())
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{quote(ticker, safe='')}"
+    params = {
+        "period1": start_epoch,
+        "period2": end_epoch,
+        "interval": "1d",
+        "events": "div,splits",
+        "includeAdjustedClose": "true",
+    }
+    client = curl_requests or requests
+    request_kwargs: Dict[str, Any] = {
+        "params": params,
+        "headers": HTTP_HEADERS,
+        "timeout": YAHOO_BATCH_TIMEOUT_SECONDS,
+    }
+    if curl_requests is not None:
+        request_kwargs["impersonate"] = "chrome"
+    response = client.get(url, **request_kwargs)
+    response.raise_for_status()
+    chart = response.json().get("chart") or {}
+    results = chart.get("result") or []
+    if not results:
+        return pd.Series(dtype="float64")
+    result = results[0]
+    timestamps = result.get("timestamp") or []
+    indicators = result.get("indicators") or {}
+    adjusted_rows = indicators.get("adjclose") or []
+    quote_rows = indicators.get("quote") or []
+    adjusted = adjusted_rows[0].get("adjclose") if adjusted_rows else None
+    closes = adjusted or (quote_rows[0].get("close") if quote_rows else None) or []
+    if not timestamps or len(timestamps) != len(closes):
+        return pd.Series(dtype="float64")
+    index = pd.to_datetime(timestamps, unit="s", utc=True).tz_convert(None)
+    return pd.Series(closes, index=index, dtype="float64").dropna().sort_index()
 
 
 def fetch_real_estate_proxy_data(days: int) -> Tuple[Dict[str, pd.Series], List[Dict[str, Any]], List[Dict[str, Any]]]:
@@ -1409,6 +1436,25 @@ def calculate_real_estate_index(days: int = 365) -> Dict[str, Any]:
         if shared_snapshot and shared_snapshot.is_fresh(_CACHE_TTL_SECONDS):
             return shared_snapshot.payload
         return _resolve_real_estate_index(days, shared_snapshot)
+
+
+def get_cached_real_estate_index(days: int = 365) -> Optional[Dict[str, Any]]:
+    """Return a usable persisted snapshot without triggering provider I/O."""
+
+    cache_key = f"real-estate:overview:{days}"
+    shared_snapshot = _load_usable_shared_snapshot(cache_key)
+    if shared_snapshot is None:
+        return None
+    if shared_snapshot.is_fresh(_CACHE_TTL_SECONDS):
+        return shared_snapshot.payload
+    return mark_stale_snapshot(
+        shared_snapshot.payload,
+        shared_snapshot,
+        reason="real_estate_overview_cached_snapshot",
+        ttl_seconds=_CACHE_TTL_SECONDS,
+        max_stale_age_seconds=_MAX_STALE_AGE_SECONDS,
+        warning_message="Showing the latest cached real-estate snapshot while live evidence refreshes separately.",
+    )
 
 
 def _build_commercial_group_history(

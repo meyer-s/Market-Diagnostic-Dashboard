@@ -50,7 +50,7 @@ describe("EconomicDriverSnapshots", () => {
   beforeEach(() => {
     useApiMock.mockReset();
     useApiMock.mockImplementation((endpoint: string) => {
-      if (endpoint === "/real-estate/overview?days=90") return result(realEstate);
+      if (endpoint === "/real-estate/overview?days=365&prefer_cached=true") return result(realEstate);
       if (endpoint === "/agriculture/overview?days=90") return result(agriculture);
       if (endpoint === "/energy/overview?days=90") return result(energy);
       return result(null, { error: "Unexpected endpoint" });
@@ -92,7 +92,7 @@ describe("EconomicDriverSnapshots", () => {
     expect(screen.getByRole("link", { name: "Open Agriculture diagnostic" }).getAttribute("href")).toBe("/agriculture");
     expect(screen.getByRole("link", { name: "Open Energy diagnostic" }).getAttribute("href")).toBe("/energy");
     expect(useApiMock.mock.calls.map(([endpoint]) => endpoint)).toEqual([
-      "/real-estate/overview?days=90",
+      "/real-estate/overview?days=365&prefer_cached=true",
       "/agriculture/overview?days=90",
       "/energy/overview?days=90",
     ]);
@@ -100,7 +100,7 @@ describe("EconomicDriverSnapshots", () => {
 
   it("keeps failures local while the other domain snapshots remain usable", () => {
     useApiMock.mockImplementation((endpoint: string) => {
-      if (endpoint === "/real-estate/overview?days=90") return result(realEstate);
+      if (endpoint === "/real-estate/overview?days=365&prefer_cached=true") return result(realEstate);
       if (endpoint === "/agriculture/overview?days=90") return result(null, { error: "Unavailable" });
       return result(energy);
     });

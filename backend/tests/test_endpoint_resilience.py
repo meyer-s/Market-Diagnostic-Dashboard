@@ -779,3 +779,39 @@ def test_real_estate_failure_reuses_stale_snapshot(monkeypatch) -> None:
     assert result["stability_score"] == 57.0
     assert result["data_quality"]["status"] == "stale"
     assert result["data_quality"]["reason"] == "real_estate_overview_refresh_failed"
+
+
+def test_real_estate_cached_read_returns_weekend_snapshot_without_provider_io(
+    monkeypatch,
+) -> None:
+    prior = {
+        "stability_score": 57.0,
+        "availability": {
+            "available_count": 8,
+            "total_configured": 8,
+            "missing_macro_series": [],
+        },
+        "warnings": [],
+    }
+    snapshot = _snapshot(
+        "real-estate:overview:365",
+        prior,
+        age_seconds=3 * 24 * 60 * 60,
+    )
+    monkeypatch.setattr(
+        real_estate_index,
+        "load_response_snapshot",
+        lambda _key: snapshot,
+    )
+    monkeypatch.setattr(
+        real_estate_index,
+        "_build_real_estate_index",
+        lambda days: pytest.fail(f"cached dashboard reads must not refresh providers: {days}"),
+    )
+
+    result = real_estate_index.get_cached_real_estate_index(days=365)
+
+    assert result is not None
+    assert result["stability_score"] == 57.0
+    assert result["data_quality"]["status"] == "stale"
+    assert result["data_quality"]["reason"] == "real_estate_overview_cached_snapshot"

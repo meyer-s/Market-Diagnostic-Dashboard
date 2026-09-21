@@ -3,6 +3,7 @@ from fastapi import APIRouter, Query
 from app.services.real_estate_index import (
     calculate_commercial_real_estate,
     calculate_real_estate_index,
+    get_cached_real_estate_index,
     get_real_estate_context_payload,
 )
 
@@ -11,8 +12,13 @@ router = APIRouter(prefix="/real-estate")
 
 
 @router.get("/overview")
-def get_real_estate_overview(days: int = Query(365, ge=90, le=1095)):
-    data = calculate_real_estate_index(days=days)
+def get_real_estate_overview(
+    days: int = Query(365, ge=90, le=1095),
+    prefer_cached: bool = Query(False),
+):
+    data = get_cached_real_estate_index(days=days) if prefer_cached else None
+    if data is None:
+        data = calculate_real_estate_index(days=days)
     return {
         "as_of": data["as_of"],
         "regime_label": data["regime_label"],

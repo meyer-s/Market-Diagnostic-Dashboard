@@ -712,6 +712,10 @@ export default function StockAnalysis() {
 
   const projectionCacheRef = useRef<Map<string, { payload: ProjectionsPayload; fetchedAt: number }>>(new Map());
   const newsCacheRef = useRef<Map<string, { data: NewsArticle[]; fetchedAt: number }>>(new Map());
+  const requestGenerationRef = useRef(0);
+  const newsRequestGenerationRef = useRef(0);
+  const lastRequestedWindowRef = useRef<HistoryWindow | null>(null);
+  const resultTickerRef = useRef("");
 
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -734,6 +738,9 @@ export default function StockAnalysis() {
   const [intradayHistory2h, setIntradayHistory2h] = useState<IntradayHistoryPoint[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorRecovery, setErrorRecovery] = useState<string | null>(null);
+  const [newsLoading, setNewsLoading] = useState(false);
+  const [newsError, setNewsError] = useState<string | null>(null);
   const [projectionUnavailable, setProjectionUnavailable] = useState(false);
   const [methodologyOpen, setMethodologyOpen] = useState(false);
   const [selectedHorizon, setSelectedHorizon] = useState<ProjectionHorizon>("T");
@@ -789,15 +796,51 @@ export default function StockAnalysis() {
     const normalizedTicker = rawTicker.trim().toUpperCase();
     if (!normalizedTicker) return;
 
+    const generation = ++requestGenerationRef.current;
+    const tickerChanged = Boolean(resultTickerRef.current && resultTickerRef.current !== normalizedTicker);
+    lastRequestedWindowRef.current = window;
+
     setTicker(normalizedTicker);
     setSearchTicker(normalizedTicker);
     setLoading(true);
     setError(null);
+    setErrorRecovery(null);
     setProjectionUnavailable(false);
+    if (tickerChanged) {
+      applyProjectionsPayload(null);
+      setNews([]);
+    }
+
+    const now = Date.now();
+    if (includeNews) {
+      const newsGeneration = ++newsRequestGenerationRef.current;
+      setNewsError(null);
+      const cachedNews = newsCacheRef.current.get(normalizedTicker);
+      if (cachedNews && now - cachedNews.fetchedAt < NEWS_CACHE_TTL_MS) {
+        setNews(cachedNews.data);
+        setNewsLoading(false);
+      } else {
+        setNewsLoading(true);
+        void apiFetch<NewsArticle[]>(`/news?hours=720&limit=12&symbol=${normalizedTicker}`, { timeoutMs: 20_000 })
+          .then((tickerNews) => {
+            if (newsGeneration !== newsRequestGenerationRef.current) return;
+            const sliced = tickerNews.slice(0, 6);
+            setNews(sliced);
+            newsCacheRef.current.set(normalizedTicker, { data: sliced, fetchedAt: Date.now() });
+          })
+          .catch((newsRequestError: unknown) => {
+            if (newsGeneration !== newsRequestGenerationRef.current) return;
+            setNews([]);
+            setNewsError(getErrorMessage(newsRequestError));
+          })
+          .finally(() => {
+            if (newsGeneration === newsRequestGenerationRef.current) setNewsLoading(false);
+          });
+      }
+    }
 
     let projectionsPayload: ProjectionsPayload | null = null;
     const cacheKey = `${normalizedTicker}:${window}`;
-    const now = Date.now();
     const cachedProjection = projectionCacheRef.current.get(cacheKey);
     if (cachedProjection && now - cachedProjection.fetchedAt < PROJECTION_CACHE_TTL_MS) {
       projectionsPayload = cachedProjection.payload;
@@ -807,55 +850,48 @@ export default function StockAnalysis() {
       try {
         const parsedPayload = await apiFetch<ProjectionsPayload>(
           `/stocks/${normalizedTicker}/projections?history_window=${window}`,
-          { timeoutMs: 30_000 },
+          { timeoutMs: 55_000 },
         );
+        if (generation !== requestGenerationRef.current) return;
         projectionsPayload = parsedPayload;
         projectionCacheRef.current.set(cacheKey, {
           payload: parsedPayload,
           fetchedAt: now,
         });
       } catch (err: unknown) {
+        if (generation !== requestGenerationRef.current) return;
         if (err instanceof ApiError && err.status === 404) {
           setProjectionUnavailable(true);
         } else {
           setError(getErrorMessage(err));
+          setErrorRecovery(
+            err instanceof ApiError && (err.code === "timeout" || err.status === 408 || err.status === 504)
+              ? "The analysis did not finish before the request limit. Retry in a moment; previously loaded evidence remains available."
+              : "Retry the analysis. If the problem continues, the upstream market-data service may be temporarily unavailable."
+          );
         }
       }
     }
 
+    if (generation !== requestGenerationRef.current) return;
     if (projectionsPayload) {
       const hasAllRequiredWindows = (["T", "3m", "6m", "12m"] as const).every(
         (horizon) => Boolean(projectionsPayload?.projections?.[horizon])
       );
       setProjectionUnavailable(!hasAllRequiredWindows);
-    }
-
-    applyProjectionsPayload(projectionsPayload);
-
-    // Fetch news filtered by ticker (server-side to avoid missing relevant articles)
-    if (includeNews) {
-      const cachedNews = newsCacheRef.current.get(normalizedTicker);
-      if (cachedNews && now - cachedNews.fetchedAt < NEWS_CACHE_TTL_MS) {
-        setNews(cachedNews.data);
-      } else {
-        const tickerNews = await apiFetch<NewsArticle[]>(
-          `/news?hours=720&limit=12&symbol=${normalizedTicker}`
-        ).catch(() => null); // Last 30 days
-        if (tickerNews) {
-          const sliced = tickerNews.slice(0, 6);
-          setNews(sliced);
-          newsCacheRef.current.set(normalizedTicker, { data: sliced, fetchedAt: now });
-        } else {
-          setNews([]);
-        }
-      }
+      applyProjectionsPayload(projectionsPayload);
+      resultTickerRef.current = normalizedTicker;
+    } else if (tickerChanged || !resultTickerRef.current) {
+      applyProjectionsPayload(null);
     }
 
     setLoading(false);
+
   }, [applyProjectionsPayload]);
 
   useEffect(() => {
     if (!searchTicker) return;
+    if (lastRequestedWindowRef.current === historyWindow) return;
     void runSearch(searchTicker, historyWindow, { includeNews: false });
   }, [historyWindow, searchTicker, runSearch]);
 
@@ -1066,9 +1102,15 @@ export default function StockAnalysis() {
       {error && (
         <div className="rounded-2xl border border-red-700 bg-red-900/20 p-4" role="alert">
           <p className="text-red-300">{error}</p>
-          <p className="text-sm text-red-400 mt-2">
-            Please check the ticker symbol and try again. The stock must have sufficient historical data available.
-          </p>
+          {errorRecovery && <p className="mt-2 text-sm text-red-200/80">{errorRecovery}</p>}
+          <button
+            type="button"
+            onClick={() => void runSearch(searchTicker || ticker, historyWindow, { includeNews: true })}
+            disabled={loading}
+            className="mt-3 min-h-11 rounded-lg border border-red-500/60 px-4 text-sm font-semibold text-red-100 transition hover:bg-red-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Retry analysis
+          </button>
         </div>
       )}
 
@@ -1818,9 +1860,27 @@ export default function StockAnalysis() {
         </div>
       )}
 
-      {loading && (
+      {loading && chartData && (
+        <div className="rounded-xl border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm text-sky-100" role="status" aria-live="polite">
+          Refreshing {searchTicker} evidence. The last completed analysis remains visible.
+        </div>
+      )}
+
+      {loading && !chartData && (
         <div className="surface-card-strong p-12 flex justify-center">
-          <MarketLoading size={110} variant="scan" label="Analyzing stock..." />
+          <MarketLoading size={110} variant="scan" label={`Analyzing ${searchTicker || ticker} stock evidence…`} />
+        </div>
+      )}
+
+      {chartData && (newsLoading || newsError) && (
+        <div
+          className={`rounded-xl border px-4 py-3 text-sm ${newsError ? "border-amber-500/35 bg-amber-500/10 text-amber-100" : "border-stealth-700 bg-stealth-900/70 text-stealth-300"}`}
+          role={newsError ? "alert" : "status"}
+          aria-live="polite"
+        >
+          {newsError
+            ? "Recent news is temporarily unavailable. The stock analysis above is unaffected."
+            : `Loading recent ${searchTicker} headlines separately…`}
         </div>
       )}
 

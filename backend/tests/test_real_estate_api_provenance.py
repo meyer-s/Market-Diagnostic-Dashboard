@@ -54,6 +54,26 @@ def test_projection_routes_preserve_real_estate_provenance(monkeypatch) -> None:
     assert transmission["data_quality"] == payload["data_quality"]
 
 
+def test_overview_prefer_cached_avoids_live_calculation(monkeypatch) -> None:
+    payload = _overview_payload()
+    payload["data_quality"]["reason"] = "real_estate_overview_cached_snapshot"
+    monkeypatch.setattr(
+        real_estate,
+        "get_cached_real_estate_index",
+        lambda days: payload,
+    )
+    monkeypatch.setattr(
+        real_estate,
+        "calculate_real_estate_index",
+        lambda days: (_ for _ in ()).throw(AssertionError(f"unexpected live refresh: {days}")),
+    )
+
+    overview = real_estate.get_real_estate_overview(days=365, prefer_cached=True)
+
+    assert overview["stability_score"] == 48.0
+    assert overview["data_quality"]["reason"] == "real_estate_overview_cached_snapshot"
+
+
 def test_commercial_route_keeps_service_provenance(monkeypatch) -> None:
     payload = {
         "as_of": "2026-07-28T15:00:00Z",

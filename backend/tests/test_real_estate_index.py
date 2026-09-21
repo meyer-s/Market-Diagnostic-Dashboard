@@ -22,26 +22,23 @@ def _quarterly(values: list[float], start: str = "2024-01-01") -> pd.Series:
     return pd.Series(values, index=dates, dtype="float64")
 
 
-def test_proxy_universe_uses_one_bounded_batch_and_keeps_symbols_distinct(
+def test_proxy_universe_uses_bounded_chart_requests_and_keeps_symbols_distinct(
     monkeypatch,
 ) -> None:
     dates = pd.date_range(start="2026-01-01", periods=40, freq="D")
-    columns = pd.MultiIndex.from_product([["Close"], ["AAA", "BBB"]])
-    frame = pd.DataFrame(
-        {
-            ("Close", "AAA"): [100.0 + index for index in range(40)],
-            ("Close", "BBB"): [200.0 + index * 2 for index in range(40)],
-        },
-        index=dates,
-        columns=columns,
-    )
     calls = []
 
-    def fake_download(**kwargs):
-        calls.append(kwargs)
-        return frame
+    def fake_chart(ticker: str, start: str, end: str):
+        calls.append((ticker, start, end))
+        base = 100.0 if ticker == "AAA" else 200.0
+        slope = 1.0 if ticker == "AAA" else 2.0
+        return pd.Series(
+            [base + index * slope for index in range(40)],
+            index=dates,
+            dtype="float64",
+        )
 
-    monkeypatch.setattr(rei.yf, "download", fake_download)
+    monkeypatch.setattr(rei, "_fetch_yahoo_chart_series", fake_chart)
     proxies = (
         rei.RealEstateProxy("AAA", "AAA", "Alpha", "one"),
         rei.RealEstateProxy("BBB", "BBB", "Beta", "two"),
@@ -49,8 +46,8 @@ def test_proxy_universe_uses_one_bounded_batch_and_keeps_symbols_distinct(
 
     resolved, availability, missing = rei._fetch_proxy_batch(proxies, days=365)
 
-    assert len(calls) == 1
-    assert calls[0]["timeout"] == rei.YAHOO_BATCH_TIMEOUT_SECONDS
+    assert {ticker for ticker, _start, _end in calls} == {"AAA", "BBB"}
+    assert all(start < end for _ticker, start, end in calls)
     assert resolved["AAA"].iloc[-1] == 139.0
     assert resolved["BBB"].iloc[-1] == 278.0
     assert not resolved["AAA"].equals(resolved["BBB"])
