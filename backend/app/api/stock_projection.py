@@ -65,22 +65,27 @@ def _market_session_date(now: Optional[datetime] = None):
     return current.astimezone(_MARKET_TIMEZONE).date()
 
 
-def _option_source_name(payload: dict[str, Any], key: str) -> str:
+def _option_cache_source_matches_ibkr(payload: dict[str, Any], key: str) -> bool:
     value = payload.get(key)
     if not isinstance(value, dict):
-        return ""
-    return str(value.get("data_source") or "")
+        return True
+
+    source = str(value.get("data_source") or "")
+    if not source.startswith("yahoo"):
+        return True
+
+    primary_source = str(value.get("primary_data_source") or "")
+    return primary_source.startswith("ibkr") and bool(value.get("fallback_reason"))
 
 
 def _cache_matches_market_data_provider(payload: dict[str, Any]) -> bool:
     provider = os.getenv("MARKET_DATA_PROVIDER", "yahoo").strip().lower()
     if provider != "ibkr":
         return True
-    option_sources = (
-        _option_source_name(payload, "options_flow"),
-        _option_source_name(payload, "optionality"),
+    return all(
+        _option_cache_source_matches_ibkr(payload, key)
+        for key in ("options_flow", "optionality")
     )
-    return not any(source.startswith("yahoo") for source in option_sources)
 
 
 def _cache_matches_accuracy_contract(payload: dict[str, Any]) -> bool:
@@ -1769,21 +1774,30 @@ def compute_options_flow(
     current_price: Optional[float] = None,
 ) -> Optional[dict]:
     """Build a lightweight options flow snapshot from the nearest expiry."""
-    for candidate in _ordered_option_providers(provider):
+    candidates = _ordered_option_providers(provider)
+    primary_data_source = f"{getattr(candidates[0], 'name', 'unknown')}_option_chain"
+    primary_failure_reason: Optional[str] = None
+
+    for candidate_index, candidate in enumerate(candidates):
         try:
             expiries = candidate.option_expirations(symbol)
             if not expiries:
+                if candidate_index == 0:
+                    primary_failure_reason = "primary_options_unavailable"
                 continue
             spot = current_price
             if spot is None or spot <= 0:
                 spot = candidate.quote(symbol).price
-        except Exception:
+        except Exception as exc:
+            if candidate_index == 0:
+                primary_failure_reason = str(exc) or exc.__class__.__name__
             continue
 
         chain = None
         calls = pd.DataFrame()
         puts = pd.DataFrame()
         requested_strike_count = 0
+        last_chain_error: Optional[str] = None
         for exp in expiries[:8]:
             try:
                 strikes = candidate.option_strikes(symbol, exp)
@@ -1791,13 +1805,16 @@ def compute_options_flow(
                     continue
                 requested_strike_count = len(strikes)
                 chain = candidate.option_chain(symbol, exp, right="ALL", strikes=strikes)
-            except Exception:
+            except Exception as exc:
+                last_chain_error = str(exc) or exc.__class__.__name__
                 continue
             calls = chain.calls if chain else pd.DataFrame()
             puts = chain.puts if chain else pd.DataFrame()
             if not calls.empty or not puts.empty:
                 break
         else:
+            if candidate_index == 0:
+                primary_failure_reason = last_chain_error or "primary_options_unavailable"
             continue
 
         if calls.empty and puts.empty:
@@ -1852,7 +1869,7 @@ def compute_options_flow(
         chain_retrieved_at = getattr(chain, "retrieved_at", None) if chain else None
         latest_contract_trade_at = _latest_option_observation(valid_calls, valid_puts)
         flow_as_of = chain_observed_at or chain_retrieved_at or latest_contract_trade_at
-        return {
+        result = {
             "expiry": chain.expiry if chain else None,
             "as_of": flow_as_of,
             "observed_at": chain_observed_at or latest_contract_trade_at,
@@ -1905,6 +1922,10 @@ def compute_options_flow(
                 },
             },
         }
+        if candidate_index > 0:
+            result["primary_data_source"] = primary_data_source
+            result["fallback_reason"] = primary_failure_reason or "primary_options_unavailable"
+        return result
 
     return None
 

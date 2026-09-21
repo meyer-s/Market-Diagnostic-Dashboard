@@ -52,6 +52,11 @@ class _FallbackProvider(FakeProvider):
         return super().option_chain(symbol, expiry, right=right, strikes=strikes)
 
 
+class _UnavailablePrimaryProvider(_PrimaryProvider):
+    def option_expirations(self, symbol: str) -> list[str]:
+        raise RuntimeError("IBKR options request timed out")
+
+
 class _FallbackWrapper:
     name = "ibkr"
 
@@ -79,6 +84,22 @@ def test_cache_rejects_yahoo_options_when_ibkr_is_active(monkeypatch) -> None:
         {
             "options_flow": {"data_source": "ibkr_option_chain"},
             "optionality": {"data_source": "ibkr_option_chain"},
+        }
+    )
+
+
+def test_cache_accepts_explicit_yahoo_fallback_after_ibkr_attempt(monkeypatch) -> None:
+    monkeypatch.setenv("MARKET_DATA_PROVIDER", "ibkr")
+    fallback_metadata = {
+        "data_source": "yahoo_option_chain",
+        "primary_data_source": "ibkr_option_chain",
+        "fallback_reason": "IBKR options request timed out",
+    }
+
+    assert _cache_matches_market_data_provider(
+        {
+            "options_flow": dict(fallback_metadata),
+            "optionality": dict(fallback_metadata),
         }
     )
 
@@ -124,6 +145,18 @@ def test_optionality_metrics_exhausts_primary_expiries_before_fallback() -> None
     assert metrics["expiries_scanned"] > 0
     assert provider.primary.expiries[1] in provider.primary.option_chain_calls
     assert provider.fallback.option_chain_calls == []
+
+
+def test_options_flow_records_explicit_primary_failure_on_fallback() -> None:
+    provider = _FallbackWrapper()
+    provider.primary = _UnavailablePrimaryProvider()
+
+    flow = compute_options_flow(provider, "FAKE", 100.0)
+
+    assert flow is not None
+    assert flow["data_source"] == "yahoo_option_chain"
+    assert flow["primary_data_source"] == "ibkr_option_chain"
+    assert flow["fallback_reason"] == "IBKR options request timed out"
 
 
 def test_fallback_provider_skips_primary_after_slow_call(monkeypatch) -> None:
