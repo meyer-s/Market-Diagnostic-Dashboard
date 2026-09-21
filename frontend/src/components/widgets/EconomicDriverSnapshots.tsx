@@ -315,7 +315,7 @@ export default function EconomicDriverSnapshots() {
             Cross-market snapshots
           </h3>
         </div>
-        <p className="text-sm text-stealth-400 sm:text-right">Live page snapshots · 90-day context</p>
+        <p className="text-sm text-stealth-400 sm:text-right">Latest page snapshots · source windows vary</p>
       </div>
 
       <div
