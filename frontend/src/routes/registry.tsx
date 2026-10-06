@@ -25,6 +25,7 @@ const AgricultureReportDesk = lazy(() => import("../pages/AgricultureReportDesk"
 const EnergyIndex = lazy(() => import("../pages/EnergyIndex"));
 const RealEstateDiagnostic = lazy(() => import("../pages/RealEstateDiagnostic"));
 const BlsReleaseLens = lazy(() => import("../features/bls/BlsReleaseLens"));
+const DollarParticipation = lazy(() => import("../pages/DollarParticipation"));
 
 type NavGroup = "primary" | "tools";
 type ToolGroup = "market-views" | "asset-classes" | "research";
@@ -119,6 +120,7 @@ export const routeRegistry: AppRouteDefinition[] = [
   { path: "/stock-analysis/:symbol", analyticsName: "Stock Analysis", element: <StockAnalysis /> },
   { path: "/stock-analysis", label: "Stock Analysis", analyticsName: "Stock Analysis", navGroup: "tools", toolGroup: "research", visible: true, activeMatch: "/stock-analysis", element: <StockAnalysis /> },
   { path: "/institutional-flow", label: "Institutional Flow", analyticsName: "Institutional Flow", navGroup: "tools", toolGroup: "market-views", visible: true, activeMatch: "/institutional-flow", element: <InstitutionalFlow /> },
+  { path: "/dollar-participation", label: "Dollar Participation", analyticsName: "Dollar Participation", navGroup: "tools", toolGroup: "market-views", visible: true, activeMatch: "/dollar-participation", element: <DollarParticipation /> },
   { path: "/market-weather", label: "Market Field Language", analyticsName: "Market Field Language", navGroup: "tools", toolGroup: "market-views", visible: true, activeMatch: "/market-weather", element: <MarketWeatherRadar /> },
   { path: "/secret/options", analyticsName: "Secret Options", element: <SecretOptions /> },
   { path: "/tools/recap", label: "Recap", analyticsName: "Recap", navGroup: "tools", toolGroup: "research", visible: true, activeMatch: "/tools/recap", element: <RecapIndex /> },

@@ -171,6 +171,13 @@ const baseTargets: AuditTarget[] = [
     template: "InstitutionalFlow",
   },
   {
+    id: "10b-dollar-participation",
+    name: "Dollar Participation",
+    path: "/dollar-participation",
+    group: "route",
+    template: "DollarParticipation",
+  },
+  {
     id: "11-market-weather-single-now",
     name: "Market Weather — single — Now",
     path: "/market-weather?symbol=SPY&timeframe=1D&bars=365",

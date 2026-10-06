@@ -47,6 +47,17 @@ describe("route registry", () => {
     );
   });
 
+  it("registers Dollar Participation as a visible market view", () => {
+    expect(toolRoutes).toContainEqual(
+      expect.objectContaining({
+        path: "/dollar-participation",
+        label: "Dollar Participation",
+        analyticsName: "Dollar Participation",
+        toolGroup: "market-views",
+      }),
+    );
+  });
+
   it("gives parameterized research pages specific reader-facing names", () => {
     expect(getPageNameForPath("/indicators/BREADTH_HEALTH")).toBe(
       "Market Breadth Health Indicator",
