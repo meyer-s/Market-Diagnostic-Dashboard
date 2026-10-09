@@ -17,6 +17,7 @@ import statistics
 import pandas as pd
 import yfinance as yf
 import requests
+from curl_cffi import requests as browser_requests
 from pypdf import PdfReader
 
 from app.utils.db_helpers import get_db_session
@@ -1170,7 +1171,20 @@ class PreciousMetalsIngester:
             return []
         content_type = ""
         if source.startswith("http://") or source.startswith("https://"):
-            response = self.session.get(source, timeout=60)
+            if "cmegroup.com/" in source:
+                response = browser_requests.get(
+                    source,
+                    impersonate="chrome",
+                    headers={
+                        "Referer": (
+                            "https://www.cmegroup.com/clearing/operations-and-deliveries/"
+                            "registrar-reports.html"
+                        )
+                    },
+                    timeout=60,
+                )
+            else:
+                response = self.session.get(source, timeout=60)
             response.raise_for_status()
             content_type = response.headers.get("Content-Type", "").lower()
             content = response.content
