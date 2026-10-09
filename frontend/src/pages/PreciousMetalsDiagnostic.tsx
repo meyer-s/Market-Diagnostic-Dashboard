@@ -91,6 +91,17 @@ interface MetalIndicators {
     backwardation_severity: number | null;
     etf_flow_divergence: number | null;
   };
+  data_quality: Record<string, DataQualityEntry>;
+}
+
+interface DataQualityEntry {
+  status: "fresh" | "aging" | "stale" | "unavailable";
+  as_of: string | null;
+  loaded_at: string | null;
+  source: string | null;
+  source_url: string | null;
+  cadence: string;
+  max_age_days: number;
 }
 
 interface CorrelationMatrix {
@@ -113,6 +124,9 @@ interface CBHolding {
   pct_of_reserves: number;
   net_purchase_qty: number | null;
   net_purchase_yoy_pct: number | null;
+  date?: string;
+  prior_date?: string | null;
+  source?: string;
 }
 
 interface SupplyData {
@@ -254,6 +268,40 @@ const formatTimestamp = (value: string | null | undefined) => {
         timeStyle: "short",
       });
 };
+
+function SourceQuality({ items }: { items: Array<{ label: string; value?: DataQualityEntry }> }) {
+  const visible = items.filter((item) => item.value);
+  if (visible.length === 0) return null;
+  return (
+    <div className="mt-5 border-t border-stealth-700 pt-3 space-y-1 text-[11px] text-stealth-400">
+      {visible.map(({ label, value }) => {
+        if (!value) return null;
+        const statusClass = value.status === "fresh"
+          ? "text-green-400"
+          : value.status === "aging"
+            ? "text-yellow-400"
+            : "text-red-400";
+        const sourceText = value.source || label;
+        return (
+          <div key={label} className="flex flex-wrap gap-x-1.5 gap-y-0.5">
+            <span className="font-semibold text-stealth-300">{label}:</span>
+            {value.source_url ? (
+              <a className="underline decoration-stealth-600 underline-offset-2 hover:text-blue-300" href={value.source_url} target="_blank" rel="noreferrer">
+                {sourceText}
+              </a>
+            ) : <span>{sourceText}</span>}
+            <span aria-hidden="true">·</span>
+            <span className={statusClass}>{value.status}</span>
+            <span aria-hidden="true">·</span>
+            <span>{value.as_of ? `as of ${formatTimestamp(value.as_of)}` : "observation unavailable"}</span>
+            <span aria-hidden="true">·</span>
+            <span>{value.cadence}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 const DerivedLabel = ({ label }: { label: ReactNode }) => (
   <span className="inline-flex items-center gap-1">
@@ -780,7 +828,7 @@ function RegimeClassificationPanel({
       </div>
 
       <div className="mt-4 text-xs text-stealth-300">
-        Through {formatTimestamp(freshestTimestamp)} · Central-bank data can lag by a quarter.
+        Market prices through {formatTimestamp(freshestTimestamp)} · component observation dates are shown in Deep Dive.
       </div>
     </section>
   );
@@ -1044,15 +1092,17 @@ function CBContextPanel({ cb_holdings, indicators }: { cb_holdings: CBHolding[] 
   const netPurchases = cbContext.net_purchases_yoy;
   const smb = cbContext.structural_monetary_bid;
   const netPurchasesColor = isNumber(netPurchases)
-    ? (netPurchases > 200 ? "text-green-400" : "text-yellow-400")
+    ? (netPurchases > 0 ? "text-green-400" : "text-yellow-400")
     : "text-stealth-400";
   const netPurchasesText = isNumber(netPurchases)
-    ? `${netPurchases > 0 ? "+" : ""}${netPurchases.toFixed(0)}%`
+    ? `${netPurchases > 0 ? "+" : ""}${netPurchases.toFixed(1)}%`
     : "n/a";
   const netPurchasesSummary = isNumber(netPurchases)
-    ? (netPurchases > 200
-      ? "Yes - buying accelerated sharply vs last year"
-      : "Steady accumulation, not urgent")
+    ? (netPurchases > 1
+      ? "Official gold holdings increased meaningfully over 12 months"
+      : netPurchases > 0
+        ? "Official gold holdings increased modestly over 12 months"
+        : "Official gold holdings were flat or lower over 12 months")
     : "Data unavailable";
   const smbColor = isNumber(smb) ? (smb > 0 ? "text-green-400" : "text-red-400") : "text-stealth-400";
   const smbBarColor = isNumber(smb) ? (smb > 0 ? "bg-green-500" : "bg-red-500") : "bg-stealth-600";
@@ -1092,7 +1142,7 @@ function CBContextPanel({ cb_holdings, indicators }: { cb_holdings: CBHolding[] 
           <div>
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm font-semibold text-stealth-300">
-                <DerivedLabel label="Are governments panic-buying?" />
+                <DerivedLabel label="Official gold holdings (YoY)" />
               </span>
               <span className={`text-lg font-bold ${netPurchasesColor}`}>
                 {netPurchasesText}
@@ -1130,12 +1180,16 @@ function CBContextPanel({ cb_holdings, indicators }: { cb_holdings: CBHolding[] 
                 {cb_holdings.slice(0, 5).map((holding, idx) => (
                   <div key={idx} className="flex justify-between text-xs text-stealth-300">
                     <span>{idx + 1}. {holding.country}</span>
+                    <span>{isNumber(holding.net_purchase_qty) ? `${holding.net_purchase_qty > 0 ? "+" : ""}${holding.net_purchase_qty.toFixed(1)} t` : "n/a"}</span>
                   </div>
                 ))}
               </div>
             </div>
           )}
           <p className="text-xs text-stealth-500 mt-3">* Derived from ingested data</p>
+          <SourceQuality items={[
+            { label: "Central banks", value: indicators.data_quality?.central_bank },
+          ]} />
         </div>
       </div>
     );
@@ -1242,6 +1296,10 @@ function PriceAnchorsPanel({ indicators, correlations }: { indicators: MetalIndi
               </div>
             </div>
           </div>
+          <SourceQuality items={[
+            { label: "Metal ratios", value: indicators.data_quality?.metal_ratios },
+            { label: "Rates and M2", value: indicators.data_quality?.macro_liquidity },
+          ]} />
       </div>
     </div>
   );
@@ -1339,6 +1397,9 @@ function RelativeValuePanel({ indicators }: { indicators: MetalIndicators }) {
               Z-Score: {isNumber(pdAuZ) ? `${pdAuZ.toFixed(2)} sigma` : "n/a"} - Indicator of auto cycle demand
             </p>
           </div>
+          <SourceQuality items={[
+            { label: "Metal ratios", value: indicators.data_quality?.metal_ratios },
+          ]} />
       </div>
     </div>
   );
@@ -1413,7 +1474,7 @@ function PhysicalPaperPanel({ indicators }: { indicators: MetalIndicators }) {
             </div>
             <p className="text-xs text-stealth-400">
               {useEtfZ
-                ? "ETF holdings vs 2Y norm (yfinance)."
+                ? "GLD trust ounces vs 2Y norm (official SPDR archive)."
                 : isNumber(oiRatio)
                   ? `Normal: 0.9-1.0x. ${oiRatio > 1.3 ? "Warning: Elevated stress" : "Healthy"}`
                   : "Data unavailable"}
@@ -1459,6 +1520,11 @@ function PhysicalPaperPanel({ indicators }: { indicators: MetalIndicators }) {
                 : "Data unavailable"}
             </p>
           </div>
+          <SourceQuality items={[
+            { label: "GLD holdings", value: indicators.data_quality?.gld_holdings },
+            { label: "COMEX inventory", value: indicators.data_quality?.comex_inventory },
+            { label: "Nearby futures", value: indicators.data_quality?.futures_curve },
+          ]} />
       </div>
     </div>
   );

@@ -789,6 +789,22 @@ class MacroDataIngestion:
     def __init__(self, db: Session, fred_api_key: Optional[str] = None):
         self.db = db
         self.fred_api_key = fred_api_key or "YOUR_FRED_API_KEY"  # Should be in env config
+
+    @staticmethod
+    def _convert_m2_to_usd_trillions(series_name: str, value: float) -> Optional[float]:
+        """Normalize known FRED M2 series units into approximate USD trillions."""
+        converters = {
+            "us_m2": lambda raw: raw / 1_000.0,  # USD billions
+            "china_m2": lambda raw: (raw / 1_000_000_000_000.0) / 7.2,
+            "eurozone_m2": lambda raw: (raw / 1_000_000_000_000.0) * 1.1,
+            "japan_m2": lambda raw: (raw / 1_000_000_000_000.0) / 140.0,
+            "uk_m2": lambda raw: (raw / 1_000_000_000_000.0) * 1.27,
+        }
+        converter = converters.get(series_name)
+        if converter is None:
+            return None
+        converted = converter(float(value))
+        return converted if 0 < converted < 100 else None
     
     def fetch_current_macro_data(self) -> Optional[MacroLiquidityData]:
         """
@@ -824,24 +840,31 @@ class MacroDataIngestion:
                 m2_trillions_usd.append(us_m2_trillions)
                 logger.debug(f"US M2: ${us_m2_trillions:.2f}T")
             
-            # Eurozone M2: Millions EUR -> Trillions USD (1 EUR ≈ 1.1 USD)
-            eurozone_m2_millions_eur = self._fetch_fred_series("MABMM301EZM189S")
-            if eurozone_m2_millions_eur:
-                eurozone_m2_trillions_usd = (eurozone_m2_millions_eur / 1_000_000) * 1.1
+            # OECD broad-money levels: national-currency units -> approximate USD trillions
+            eurozone_m2_raw = self._fetch_fred_series("MABMM301EZM189S")
+            eurozone_m2_trillions_usd = (
+                self._convert_m2_to_usd_trillions("eurozone_m2", eurozone_m2_raw)
+                if eurozone_m2_raw else None
+            )
+            if eurozone_m2_trillions_usd:
                 m2_trillions_usd.append(eurozone_m2_trillions_usd)
                 logger.debug(f"Eurozone M2: ${eurozone_m2_trillions_usd:.2f}T")
             
-            # Japan M2: Millions JPY -> Trillions USD (1 USD ≈ 140 JPY)
-            japan_m2_millions_jpy = self._fetch_fred_series("MABMM301JPM189S")
-            if japan_m2_millions_jpy:
-                japan_m2_trillions_usd = (japan_m2_millions_jpy / 1_000_000) / 140
+            japan_m2_raw = self._fetch_fred_series("MABMM301JPM189S")
+            japan_m2_trillions_usd = (
+                self._convert_m2_to_usd_trillions("japan_m2", japan_m2_raw)
+                if japan_m2_raw else None
+            )
+            if japan_m2_trillions_usd:
                 m2_trillions_usd.append(japan_m2_trillions_usd)
                 logger.debug(f"Japan M2: ${japan_m2_trillions_usd:.2f}T")
             
-            # UK M2: Millions GBP -> Trillions USD (1 GBP ≈ 1.27 USD)
-            uk_m2_millions_gbp = self._fetch_fred_series("MABMM301GBM189S")
-            if uk_m2_millions_gbp:
-                uk_m2_trillions_usd = (uk_m2_millions_gbp / 1_000_000) * 1.27
+            uk_m2_raw = self._fetch_fred_series("MABMM301GBM189S")
+            uk_m2_trillions_usd = (
+                self._convert_m2_to_usd_trillions("uk_m2", uk_m2_raw)
+                if uk_m2_raw else None
+            )
+            if uk_m2_trillions_usd:
                 m2_trillions_usd.append(uk_m2_trillions_usd)
                 logger.debug(f"UK M2: ${uk_m2_trillions_usd:.2f}T")
             
@@ -983,14 +1006,18 @@ class MacroDataIngestion:
                 m2_values = []
                 for series_name, data in series_data.items():
                     if date in data:
-                        m2_values.append(data[date])
+                        converted = self._convert_m2_to_usd_trillions(
+                            series_name, data[date]
+                        )
+                        if converted is not None:
+                            m2_values.append(converted)
                 
                 # Need at least 3 major economies
                 if len(m2_values) < 3:
                     continue
                 
-                # Calculate global M2 in trillions
-                global_m2 = sum(m2_values) / 1000.0
+                # Components are already normalized to approximate USD trillions.
+                global_m2 = sum(m2_values)
                 
                 # Check if record exists
                 date_dt = datetime.combine(date, datetime.min.time())
@@ -999,7 +1026,7 @@ class MacroDataIngestion:
                 ).first()
                 
                 if existing:
-                    if existing.global_m2 is None:
+                    if existing.global_m2 != global_m2:
                         existing.global_m2 = global_m2
                         updated += 1
                 else:

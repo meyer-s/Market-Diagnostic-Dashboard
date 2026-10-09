@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Enum
+from sqlalchemy import Column, Integer, String, Float, DateTime, Enum, UniqueConstraint
 from datetime import datetime
 from app.core.db import Base
 import enum
@@ -69,6 +69,9 @@ class MetalRatio(Base):
 class CBHolding(Base):
     """Central Bank gold holdings and purchases"""
     __tablename__ = "cb_holding"
+    __table_args__ = (
+        UniqueConstraint("country", "date", name="uq_cb_holding_country_date"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     country = Column(String, index=True)

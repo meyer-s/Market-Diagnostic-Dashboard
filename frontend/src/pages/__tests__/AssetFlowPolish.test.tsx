@@ -81,6 +81,35 @@ const metalsRegime = {
     backwardation_severity: 0.1,
     etf_flow_divergence: 0.2,
   },
+  data_quality: {
+    central_bank: {
+      status: "fresh",
+      as_of: "2026-06-30T00:00:00",
+      loaded_at: "2026-07-29T14:00:00",
+      source: "World Gold Council Goldhub / IMF IFS",
+      source_url: "https://fsapi.gold.org/api/cbd/v11/charts/getPage?page=snapshot&periodicity=QTD_FULL",
+      cadence: "quarterly",
+      max_age_days: 150,
+    },
+    gld_holdings: {
+      status: "fresh",
+      as_of: "2026-07-29T00:00:00",
+      loaded_at: "2026-07-29T14:00:00",
+      source: "SPDR_OFFICIAL_ARCHIVE",
+      source_url: "https://api.spdrgoldshares.com/api/v1/historical-archive?exchange=NYSE&lang=en&product=gld",
+      cadence: "business daily",
+      max_age_days: 7,
+    },
+    metal_ratios: {
+      status: "fresh",
+      as_of: "2026-07-29T00:00:00",
+      loaded_at: "2026-07-29T14:00:00",
+      source: "Derived from ingested metal prices",
+      source_url: null,
+      cadence: "business daily",
+      max_age_days: 5,
+    },
+  },
 };
 
 const cryptoOverview = {
@@ -169,6 +198,8 @@ describe("asset and flow route polish", () => {
     fireEvent.click(deepDive);
     expect(deepDive.getAttribute("aria-selected")).toBe("true");
     expect(screen.getByRole("heading", { name: "Global exchange trends" })).not.toBeNull();
+    expect(screen.getByText("World Gold Council Goldhub / IMF IFS")).not.toBeNull();
+    expect(screen.getByText("SPDR_OFFICIAL_ARCHIVE")).not.toBeNull();
   });
 
   it("makes crypto view and range controls explicit and keyboard-readable", () => {

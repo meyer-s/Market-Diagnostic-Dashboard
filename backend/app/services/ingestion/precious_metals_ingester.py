@@ -17,7 +17,6 @@ import statistics
 import pandas as pd
 import yfinance as yf
 import requests
-import xml.etree.ElementTree as ET
 from pypdf import PdfReader
 
 from app.utils.db_helpers import get_db_session
@@ -28,6 +27,11 @@ from app.models.precious_metals import (
     SupplyData, DemandData
 )
 from app.core.config import settings
+from app.services.metal_futures_curve import (
+    PRECIOUS_METALS_FUTURES,
+    SOURCE_NAME as FUTURES_CURVE_SOURCE,
+    get_metal_futures_curve,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -40,12 +44,35 @@ METAL_SYMBOLS = {
     "AL": {"yahoo": "ALI=F", "etf": "ALI=F"},
 }
 
+SPDR_GLD_ARCHIVE_URL = (
+    "https://api.spdrgoldshares.com/api/v1/historical-archive"
+    "?exchange=NYSE&lang=en&product=gld"
+)
+WGC_CB_SNAPSHOT_URL = "https://fsapi.gold.org/api/cbd/v11/charts/getPage"
+WGC_CB_SOURCE = "WGC_GOLDHUB_IMF_IFS"
+
 
 class PreciousMetalsIngester:
     """Main ingestion orchestrator"""
 
     def __init__(self):
         self.session = requests.Session()
+        self.session.headers.update({
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/140.0.0.0 Safari/537.36"
+            ),
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept": (
+                "application/vnd.ms-excel,application/pdf,"
+                "application/octet-stream;q=0.9,*/*;q=0.8"
+            ),
+            "Referer": "https://www.cmegroup.com/clearing/operations-and-deliveries/registrar-reports.html",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "same-origin",
+        })
 
     def ingest_daily_data(self) -> Dict[str, int]:
         """Run daily ingestion: prices, ratios, ETF flows, correlations"""
@@ -54,6 +81,7 @@ class PreciousMetalsIngester:
             "ratios_computed": 0,
             "etf_flows_ingested": 0,
             "correlations_computed": 0,
+            "backwardation_ingested": 0,
             "errors": 0
         }
 
@@ -83,6 +111,13 @@ class PreciousMetalsIngester:
 
             # 5. Compute volatility
             self._compute_volatility()
+
+            # 6. Persist the current nearby curve for the physical/paper monitor
+            results["backwardation_ingested"] = self._ingest_backwardation_data()
+            logger.info(
+                "Ingested %s futures-curve records",
+                results["backwardation_ingested"],
+            )
 
         except Exception as e:
             logger.error(f"Error in daily metals ingestion: {str(e)}")
@@ -325,7 +360,6 @@ class PreciousMetalsIngester:
         """Ingest ETF holdings and compute daily flows"""
         count = 0
         with get_db_session() as db:
-            today = datetime.utcnow().date()
             spot_prices = {}
             for metal in METAL_SYMBOLS:
                 latest_price = db.query(MetalPrice).filter(
@@ -335,23 +369,62 @@ class PreciousMetalsIngester:
                     spot_prices[metal] = latest_price.price_usd_per_oz
 
             try:
+                gld_history = self._fetch_gld_holdings_history()
+                cutoff = datetime.utcnow().date() - timedelta(days=800)
+                prior_holdings = None
+                for row in gld_history:
+                    observation_date = row["date"]
+                    holdings = row["holdings"]
+                    daily_flow = holdings - prior_holdings if prior_holdings is not None else None
+                    daily_flow_pct = (
+                        (daily_flow / prior_holdings) * 100
+                        if daily_flow is not None and prior_holdings
+                        else None
+                    )
+                    prior_holdings = holdings
+                    if observation_date.date() < cutoff:
+                        continue
+
+                    existing = db.query(ETFHolding).filter(
+                        ETFHolding.ticker == "GLD",
+                        ETFHolding.date == observation_date,
+                    ).first()
+                    if existing:
+                        changed = (
+                            existing.holdings != holdings
+                            or existing.daily_flow != daily_flow
+                            or existing.daily_flow_pct != daily_flow_pct
+                            or existing.source != "SPDR_OFFICIAL_ARCHIVE"
+                        )
+                        if changed:
+                            existing.holdings = holdings
+                            existing.daily_flow = daily_flow
+                            existing.daily_flow_pct = daily_flow_pct
+                            existing.source = "SPDR_OFFICIAL_ARCHIVE"
+                            existing.created_at = datetime.utcnow()
+                            count += 1
+                    else:
+                        db.add(ETFHolding(
+                            date=observation_date,
+                            ticker="GLD",
+                            holdings=holdings,
+                            daily_flow=daily_flow,
+                            daily_flow_pct=daily_flow_pct,
+                            source="SPDR_OFFICIAL_ARCHIVE",
+                        ))
+                        count += 1
+
                 date_key = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
                 for metal, symbols in METAL_SYMBOLS.items():
                     ticker = symbols.get("etf")
-                    if not ticker:
+                    if not ticker or ticker == "GLD":
                         continue
 
-                    holdings = None
-                    source = None
-                    if ticker == "GLD":
-                        holdings = self._fetch_gld_holdings()
-                        source = "SPDR"
-                    else:
-                        holdings = self._estimate_etf_holdings_from_assets(
-                            ticker,
-                            spot_prices.get(metal)
-                        )
-                        source = "YFINANCE_ASSETS"
+                    holdings = self._estimate_etf_holdings_from_assets(
+                        ticker,
+                        spot_prices.get(metal)
+                    )
+                    source = "YFINANCE_ASSETS"
 
                     if holdings is None:
                         continue
@@ -490,25 +563,103 @@ class PreciousMetalsIngester:
                 zscore_2y=None
             ))
 
-    def _fetch_gld_holdings(self) -> Optional[float]:
-        """
-        Fetch GLD total holdings (ounces) from SPDR Gold Shares.
-        Endpoint provides current total ounces/tonnes.
-        """
-        url = "https://www.spdrgoldshares.com/ajax/home/"
+    @staticmethod
+    def _parse_spdr_gld_history(content: bytes) -> List[Dict[str, object]]:
+        """Parse the official GLD historical archive into dated ounce holdings."""
+        frame = pd.read_excel(BytesIO(content), sheet_name="US GLD Historical Archive")
+        required = {"Date", "Total Ounces of Gold in the Trust"}
+        if not required.issubset(frame.columns):
+            raise ValueError("SPDR archive is missing required columns")
+
+        rows: List[Dict[str, object]] = []
+        for _, record in frame.iterrows():
+            parsed_date = pd.to_datetime(record.get("Date"), errors="coerce")
+            raw_holdings = record.get("Total Ounces of Gold in the Trust")
+            try:
+                holdings = float(str(raw_holdings).replace(",", ""))
+            except (TypeError, ValueError):
+                continue
+            if pd.isna(parsed_date) or not math.isfinite(holdings) or holdings <= 0:
+                continue
+            rows.append({
+                "date": parsed_date.to_pydatetime().replace(
+                    hour=0, minute=0, second=0, microsecond=0, tzinfo=None
+                ),
+                "holdings": holdings,
+            })
+        rows.sort(key=lambda row: row["date"])
+        return rows
+
+    def _fetch_gld_holdings_history(self) -> List[Dict[str, object]]:
+        """Fetch GLD ounce holdings from the official SPDR archive."""
         try:
-            response = self.session.get(url, timeout=15)
+            response = self.session.get(SPDR_GLD_ARCHIVE_URL, timeout=45)
             response.raise_for_status()
-            xml_data = response.text
-            root = ET.fromstring(xml_data)
-            ounces_text = root.findtext("ajaxTotalOunces")
-            if not ounces_text:
-                return None
-            ounces = float(ounces_text.replace(",", ""))
-            return ounces
+            return self._parse_spdr_gld_history(response.content)
         except Exception as e:
-            logger.warning("GLD holdings fetch failed: %s", e)
-            return None
+            logger.warning("GLD holdings archive fetch failed: %s", e)
+            return []
+
+    def _ingest_backwardation_data(self) -> int:
+        """Persist current nearby futures-curve spreads for scheduler-backed signals."""
+        count = 0
+        observed_at = datetime.utcnow()
+        with get_db_session() as db:
+            for metal in PRECIOUS_METALS_FUTURES:
+                try:
+                    curve = get_metal_futures_curve(metal, contracts=4, as_of=observed_at)
+                    if not curve or len(curve["contracts"]) < 2:
+                        continue
+                    quote_dates = []
+                    for contract in curve["contracts"]:
+                        raw_as_of = str(contract.get("as_of") or "")
+                        try:
+                            quote_dates.append(
+                                datetime.fromisoformat(raw_as_of.replace("Z", "+00:00"))
+                                .replace(tzinfo=None)
+                            )
+                        except ValueError:
+                            continue
+                    observation_date = max(quote_dates) if quote_dates else observed_at
+                    date_key = observation_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                    front_price = curve["contracts"][0]["price"]
+                    deferred_price = curve["contracts"][-1]["price"]
+                    curve_bps = curve.get("curve_bps")
+                    if curve_bps is None:
+                        continue
+
+                    existing = db.query(BackwardationData).filter(
+                        BackwardationData.metal == metal,
+                        BackwardationData.date == date_key,
+                    ).first()
+                    if existing:
+                        changed = (
+                            existing.front_month_price != front_price
+                            or existing.six_month_price != deferred_price
+                            or existing.backwardation_bps != curve_bps
+                            or existing.source != FUTURES_CURVE_SOURCE
+                        )
+                        if not changed:
+                            continue
+                        existing.front_month_price = front_price
+                        existing.six_month_price = deferred_price
+                        existing.backwardation_bps = curve_bps
+                        existing.source = FUTURES_CURVE_SOURCE
+                        existing.created_at = datetime.utcnow()
+                    else:
+                        db.add(BackwardationData(
+                            date=date_key,
+                            metal=metal,
+                            front_month_price=front_price,
+                            six_month_price=deferred_price,
+                            backwardation_bps=curve_bps,
+                            source=FUTURES_CURVE_SOURCE,
+                        ))
+                    count += 1
+                except Exception as exc:
+                    logger.warning("%s futures-curve ingestion failed: %s", metal, exc)
+            db.commit()
+        return count
 
     def _fetch_etf_assets(self, ticker: str) -> Optional[float]:
         """Fetch ETF total assets in USD via yfinance."""
@@ -1014,17 +1165,12 @@ class PreciousMetalsIngester:
             })
         return results
 
-    @staticmethod
-    def _read_comex_source(source: str, *, parse_pdf: bool = False) -> List[Dict[str, object]]:
+    def _read_comex_source(self, source: str, *, parse_pdf: bool = False) -> List[Dict[str, object]]:
         if not source:
             return []
         content_type = ""
         if source.startswith("http://") or source.startswith("https://"):
-            response = requests.get(
-                source,
-                timeout=60,
-                headers={"User-Agent": "Mozilla/5.0"}
-            )
+            response = self.session.get(source, timeout=60)
             response.raise_for_status()
             content_type = response.headers.get("Content-Type", "").lower()
             content = response.content
@@ -1190,6 +1336,21 @@ class PreciousMetalsIngester:
         palladium_source = _get_setting("COMEX_INVENTORY_PALLADIUM_URL", "COMEX_INVENTORY_PALLADIUM_PATH")
         if palladium_source:
             inventory_sources.append({"source": palladium_source, "metal": "PD"})
+        if not inventory_sources:
+            inventory_sources = [
+                {
+                    "source": "https://www.cmegroup.com/delivery_reports/Gold_Stocks.xls",
+                    "metal": "AU",
+                },
+                {
+                    "source": "https://www.cmegroup.com/delivery_reports/Silver_stocks.xls",
+                    "metal": "AG",
+                },
+                {
+                    "source": "https://www.cmegroup.com/delivery_reports/PA-PL_Stck_Rprt.xls",
+                    "metal": None,
+                },
+            ]
 
         oi_source = _get_setting("COMEX_OPEN_INTEREST_URL", "COMEX_OPEN_INTEREST_PATH")
         source_label = getattr(settings, "COMEX_SOURCE", None) or "COMEX"
@@ -1209,8 +1370,14 @@ class PreciousMetalsIngester:
                         return 0
                 open_interest_lookup: Dict[Tuple[date, str], float] = {}
                 if oi_source:
-                    oi_rows = self._read_comex_source(oi_source, parse_pdf=True)
-                    open_interest_lookup = self._build_open_interest_lookup(oi_rows)
+                    try:
+                        oi_rows = self._read_comex_source(oi_source, parse_pdf=True)
+                        open_interest_lookup = self._build_open_interest_lookup(oi_rows)
+                    except Exception as exc:
+                        logger.warning(
+                            "COMEX open-interest source failed; continuing with inventory: %s",
+                            exc,
+                        )
 
                 aggregated: Dict[Tuple[datetime, str], Dict[str, object]] = {}
                 date_keys = ["date", "trade_date", "report_date", "as_of", "asof", "timestamp"]
@@ -1225,7 +1392,11 @@ class PreciousMetalsIngester:
                     source = source_info.get("source")
                     if not source:
                         continue
-                    rows = self._read_comex_source(source)
+                    try:
+                        rows = self._read_comex_source(source)
+                    except Exception as exc:
+                        logger.warning("COMEX inventory source failed for %s: %s", source, exc)
+                        continue
                     if not rows:
                         logger.warning("No COMEX inventory rows found for %s", source)
                         continue
@@ -1448,67 +1619,116 @@ class PreciousMetalsIngester:
 
     # ==================== MONTHLY INGESTION ====================
 
+    @staticmethod
+    def _parse_wgc_cb_snapshots(payload: dict, quarters: int = 5) -> List[Dict[str, object]]:
+        """Parse recent quarterly country snapshots from the public Goldhub chart API."""
+        table = (
+            payload.get("chartData", {})
+            .get("table", {})
+            .get("QTD_FULL", {})
+        )
+        dated_snapshots = []
+        for raw_date, snapshot in table.items():
+            try:
+                report_date = datetime.strptime(raw_date, "%Y-%m-%d")
+            except (TypeError, ValueError):
+                continue
+            dated_snapshots.append((report_date, snapshot))
+
+        rows: List[Dict[str, object]] = []
+        for report_date, snapshot in sorted(dated_snapshots, reverse=True)[:quarters]:
+            raw_headers = snapshot.get("headers") or []
+            headers = raw_headers[0] if raw_headers and isinstance(raw_headers[0], list) else raw_headers
+            indexes = {
+                header.get("filterId"): index
+                for index, header in enumerate(headers)
+                if isinstance(header, dict) and header.get("filterId")
+            }
+            required = {"countryNameDefault", "gold_reserves_tns", "holdings_pct"}
+            if not required.issubset(indexes):
+                continue
+
+            for raw_row in snapshot.get("rows") or []:
+                if not isinstance(raw_row, list):
+                    continue
+                try:
+                    country_cell = raw_row[indexes["countryNameDefault"]]
+                    tonnes_cell = raw_row[indexes["gold_reserves_tns"]]
+                    pct_cell = raw_row[indexes["holdings_pct"]]
+                    country = str(country_cell.get("val") or "").strip()
+                    country_iso = str(country_cell.get("rowId") or "").strip().upper()
+                    tonnes = float(tonnes_cell.get("val"))
+                except (IndexError, TypeError, ValueError, AttributeError):
+                    continue
+                try:
+                    pct_reserves = float(pct_cell.get("val"))
+                except (TypeError, ValueError, AttributeError):
+                    pct_reserves = None
+                if (
+                    not country
+                    or len(country_iso) != 3
+                    or not math.isfinite(tonnes)
+                    or tonnes < 0
+                    or (
+                        pct_reserves is not None
+                        and (not math.isfinite(pct_reserves) or pct_reserves < 0)
+                    )
+                ):
+                    continue
+                rows.append({
+                    "country": country,
+                    "country_iso": country_iso,
+                    "date": report_date,
+                    "gold_tonnes": tonnes,
+                    "pct_of_reserves": pct_reserves,
+                })
+        return rows
+
     def _ingest_cb_holdings(self) -> int:
-        """Ingest central bank gold holdings (quarterly data)"""
+        """Ingest current and trailing-year official-sector gold snapshots."""
         count = 0
         with get_db_session() as db:
             try:
-                latest_real = db.query(CBHolding).filter(
-                    CBHolding.source != "SEED"
-                ).order_by(CBHolding.date.desc()).first()
-                if latest_real and latest_real.date >= datetime.utcnow() - timedelta(days=120):
-                    logger.info("CB holdings already updated within last 120 days")
+                response = self.session.get(
+                    WGC_CB_SNAPSHOT_URL,
+                    params={"page": "snapshot", "periodicity": "QTD_FULL"},
+                    timeout=60,
+                )
+                response.raise_for_status()
+                snapshots = self._parse_wgc_cb_snapshots(response.json(), quarters=5)
+                if not snapshots:
+                    logger.warning("WGC central-bank snapshot returned no usable rows")
                     return 0
 
-                try:
-                    from fetch_cb_holdings import CB_HOLDINGS_DATA
-                except Exception as e:
-                    logger.warning("CB holdings dataset unavailable: %s", e)
-                    return 0
-
-                accumulators = {"China", "India", "Turkey", "Poland", "Singapore"}
-
-                for country, tonnes, pct_reserves, last_update_str in CB_HOLDINGS_DATA:
-                    year, month = last_update_str.split("-")
-                    report_date = datetime(int(year), int(month), 1)
-
+                loaded_at = datetime.utcnow()
+                for snapshot in snapshots:
                     existing = db.query(CBHolding).filter(
-                        CBHolding.country == country,
-                        CBHolding.date == report_date
+                        CBHolding.country == snapshot["country"],
+                        CBHolding.date == snapshot["date"],
                     ).first()
-                    if not existing:
+                    if existing:
+                        changed = (
+                            existing.country_iso != snapshot["country_iso"]
+                            or existing.gold_tonnes != snapshot["gold_tonnes"]
+                            or existing.pct_of_reserves != snapshot["pct_of_reserves"]
+                            or existing.source != WGC_CB_SOURCE
+                        )
+                        existing.country_iso = snapshot["country_iso"]
+                        existing.gold_tonnes = snapshot["gold_tonnes"]
+                        existing.pct_of_reserves = snapshot["pct_of_reserves"]
+                        existing.source = WGC_CB_SOURCE
+                        existing.created_at = loaded_at
+                        if changed:
+                            count += 1
+                    else:
                         db.add(CBHolding(
-                            country=country,
-                            date=report_date,
-                            gold_tonnes=tonnes,
-                            pct_of_reserves=pct_reserves,
-                            source="WGC_IMF_2025Q4"
-                        ))
-                        count += 1
-
-                    for months_back in [3, 6, 9, 12]:
-                        hist_date = report_date - timedelta(days=months_back * 30)
-                        hist_existing = db.query(CBHolding).filter(
-                            CBHolding.country == country,
-                            CBHolding.date == hist_date
-                        ).first()
-                        if hist_existing:
-                            continue
-
-                        if country in accumulators:
-                            variation = -0.02 * (months_back / 3)
-                        else:
-                            variation = 0.005 * (1 if months_back % 2 == 0 else -1)
-
-                        hist_tonnes = tonnes * (1 + variation)
-                        hist_pct = pct_reserves * (1 + variation * 0.5)
-
-                        db.add(CBHolding(
-                            country=country,
-                            date=hist_date,
-                            gold_tonnes=hist_tonnes,
-                            pct_of_reserves=hist_pct,
-                            source="ESTIMATED_HISTORICAL"
+                            country=snapshot["country"],
+                            country_iso=snapshot["country_iso"],
+                            date=snapshot["date"],
+                            gold_tonnes=snapshot["gold_tonnes"],
+                            pct_of_reserves=snapshot["pct_of_reserves"],
+                            source=WGC_CB_SOURCE,
+                            created_at=loaded_at,
                         ))
                         count += 1
 
