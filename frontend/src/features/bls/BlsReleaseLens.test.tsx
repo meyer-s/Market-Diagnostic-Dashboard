@@ -48,7 +48,7 @@ describe("BlsReleaseLens", () => {
     renderLens();
 
     expect(screen.getByRole("heading", { level: 1, name: "BLS Release Lens" })).not.toBeNull();
-    expect(screen.getByText(/Updated Aug 28, 2026/)).not.toBeNull();
+    expect(screen.getByText(/BLS snapshot checked Aug 28, 2026/)).not.toBeNull();
     expect(screen.getByRole("tablist", { name: "BLS Release Lens views" })).not.toBeNull();
     expect(screen.getAllByRole("tab")).toHaveLength(6);
     expect(screen.getByRole("tab", { name: "Overview" }).getAttribute("aria-selected")).toBe("true");

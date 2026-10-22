@@ -71,6 +71,14 @@ const views = [
 type BlsView = (typeof views)[number];
 
 async function mockBlsLens(page: Page, delayMs = 0) {
+  await page.route("**/api/bls/weekly-claims", (route) => route.fulfill({
+    json: {
+      status: "current", source_url: "https://www.dol.gov/ui/data.pdf",
+      released_on: "2026-10-22", checked_at: "2026-10-22T12:40:00Z",
+      initial_claims: { week_ending: "2026-10-17", value: 194000, change: -6000, prior_revised: 200000 },
+      continuing_claims: { week_ending: "2026-10-10", value: 1728000, change: 25000, prior_revised: 1703000 },
+    },
+  }));
   await page.route("**/api/bls/lens?**", async (route) => {
     if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
     await route.fulfill({
@@ -131,8 +139,8 @@ async function assertSeriousAndCriticalAxe(page: Page, view: BlsView) {
 
 async function assertVisibleCopyBudget(page: Page, view: BlsView, viewportHeight: number) {
   const visibleWordBudgets: Record<BlsView["id"], number> = {
-    overview: 230,
-    releases: 240,
+    overview: 300,
+    releases: 330,
     trends: 130,
     revisions: 140,
     calendar: 160,
@@ -145,10 +153,10 @@ async function assertVisibleCopyBudget(page: Page, view: BlsView, viewportHeight
 
   expect(metrics.words, `${view.tab} visible copy count`).toBeLessThanOrEqual(visibleWordBudgets[view.id]);
   if (view.id === "overview") {
-    const nextReleaseTop = await page.getByRole("heading", { name: "Next release", exact: true }).evaluate(
+    const weeklyTop = await page.getByRole("heading", { name: "Weekly jobless claims", exact: true }).evaluate(
       (heading) => heading.getBoundingClientRect().top,
     );
-    expect(nextReleaseTop, "Next release should remain in the opening scan").toBeLessThanOrEqual(viewportHeight * 1.25);
+    expect(weeklyTop, "Latest weekly release should lead the opening scan").toBeLessThanOrEqual(viewportHeight);
     expect(metrics.pageHeight / viewportHeight, "Overview should not regress into an unbounded document").toBeLessThanOrEqual(4.5);
   }
 }
@@ -258,6 +266,25 @@ test.describe("@release BLS Release Lens", () => {
     await expect(overview).toBeFocused();
     await expect(overview).toHaveAttribute("aria-selected", "true");
     await expect(page.locator("#bls-active-panel")).toHaveAttribute("aria-labelledby", "bls-tab-overview");
+  });
+
+  test("weekly claims fail locally while monthly evidence stays readable", async ({ page }) => {
+    await mockBlsLens(page);
+    await page.route("**/api/bls/weekly-claims", (route) => route.fulfill({
+      json: { status: "unavailable", message: "Weekly claims are temporarily unavailable from DOL.", source_url: "https://www.dol.gov/ui/data.pdf" },
+    }));
+    await page.goto("/bls");
+    await expect(page.getByText("Weekly claims are temporarily unavailable from DOL.", { exact: false })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Labor-market overview" })).toBeVisible();
+    await expect(page.getByRole("figure", { name: "Payroll growth" })).toBeVisible();
+  });
+
+  test("a monthly failure still shows the independently loaded weekly release", async ({ page }) => {
+    await mockBlsLens(page);
+    await page.route("**/api/bls/lens?**", (route) => route.fulfill({ status: 503, json: { detail: "Monthly BLS unavailable" } }));
+    await page.goto("/bls");
+    await expect(page.getByRole("heading", { name: "BLS evidence is unavailable" })).toBeVisible();
+    await expect(page.getByText("194,000", { exact: true })).toBeVisible();
   });
 
   test("a direct Trends URL restores the requested native series and two-series comparison", async ({ page }) => {

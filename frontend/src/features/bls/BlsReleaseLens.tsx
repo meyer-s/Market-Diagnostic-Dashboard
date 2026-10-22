@@ -29,6 +29,7 @@ import RelativeField from "./RelativeField";
 import ReleaseCalendar from "./ReleaseCalendar";
 import ReleaseOverview from "./ReleaseOverview";
 import RevisionLedger from "./RevisionLedger";
+import WeeklyClaims from "./WeeklyClaims";
 import type { BlsLensResponse } from "./types";
 import "./bls.css";
 
@@ -80,6 +81,7 @@ export default function BlsReleaseLens() {
   const requestedSeriesId = searchParams.get("series") ?? "";
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [nativeSeriesId, setNativeSeriesId] = useState("");
+  const [claimsRefresh, setClaimsRefresh] = useState(0);
   const defaultIds = useMemo(() => preferredTrendIds(data), [data]);
 
   useEffect(() => {
@@ -209,8 +211,8 @@ export default function BlsReleaseLens() {
         <p className="bls-header-kicker">Bureau of Labor Statistics</p>
         <h1>BLS Release Lens</h1>
         <p className="bls-header-status">
-          <span>{data ? `Updated ${formatDateTime(data.as_of)} · ${dataQualityStatus(data.data_quality) === "complete" ? "Sources complete" : `${dataQualityStatus(data.data_quality)} source coverage`}` : "Official BLS observations, revisions, and schedules"}</span>
-          <button type="button" className="bls-header-refresh" onClick={refetch} disabled={loading}>
+          <span>{data ? `BLS snapshot checked ${formatDateTime(data.as_of)} · ${dataQualityStatus(data.data_quality) === "complete" ? "Sources complete" : `${dataQualityStatus(data.data_quality)} source coverage`}` : "Official observations, revisions, and release schedules"}</span>
+          <button type="button" className="bls-header-refresh" onClick={() => { refetch(); setClaimsRefresh((value) => value + 1); }} disabled={loading}>
             {loading && data ? "Refreshing…" : "Refresh"}
           </button>
         </p>
@@ -222,6 +224,7 @@ export default function BlsReleaseLens() {
     return (
       <div className="page-shell-wide page-stack bls-page">
         {header}
+        {activeView === "overview" || activeView === "releases" ? <WeeklyClaims key={claimsRefresh} /> : null}
         <PageState variant="loading" headingLevel={2} title="Loading the BLS release lens" message="Retrieving official observations, estimate vintages, and scheduled publication times." />
       </div>
     );
@@ -231,6 +234,7 @@ export default function BlsReleaseLens() {
     return (
       <div className="page-shell-wide page-stack bls-page">
         {header}
+        {activeView === "overview" || activeView === "releases" ? <WeeklyClaims key={claimsRefresh} /> : null}
         <PageState variant="error" headingLevel={2} title="BLS evidence is unavailable" message={error ?? "The response did not contain BLS release evidence. Try again."} actions={<button type="button" className="field-button field-button-primary" onClick={refetch}>Try again</button>} />
       </div>
     );
@@ -240,6 +244,7 @@ export default function BlsReleaseLens() {
     return (
       <div className="page-shell-wide page-stack bls-page">
         {header}
+        {activeView === "overview" || activeView === "releases" ? <WeeklyClaims key={claimsRefresh} /> : null}
         <PageState variant="empty" headingLevel={2} title="No BLS series were returned" message="The release receipt is available, but there are no observations to compare yet." actions={<button type="button" className="field-button field-button-primary" onClick={refetch}>Refresh data</button>} />
       </div>
     );
@@ -279,8 +284,8 @@ export default function BlsReleaseLens() {
         tabIndex={0}
         className="bls-active-panel"
       >
-        {activeView === "overview" ? <BlsOverview data={data} onNavigate={openDetail} /> : null}
-        {activeView === "releases" ? <ReleaseOverview data={data} onOpenTrend={(seriesId) => openDetail("trends", seriesId)} /> : null}
+        {activeView === "overview" ? <><WeeklyClaims key={claimsRefresh} /><BlsOverview data={data} onNavigate={openDetail} /></> : null}
+        {activeView === "releases" ? <><WeeklyClaims key={claimsRefresh} /><ReleaseOverview data={data} onOpenTrend={(seriesId) => openDetail("trends", seriesId)} /></> : null}
         {activeView === "trends" ? (
           <div className="bls-trends-workspace">
             <div className="bls-trend-mode" role="group" aria-label="Trend workspace">

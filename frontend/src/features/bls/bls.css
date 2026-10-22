@@ -4,6 +4,49 @@
   color: var(--field-text);
 }
 
+/* A release brief: weekly publication, monthly readings, then deeper evidence. */
+.bls-weekly {
+  padding: 0 0 24px;
+  border-bottom: 1px solid var(--field-border-strong);
+  margin-bottom: 28px;
+}
+
+.bls-weekly .bls-section-header h2 { font-size: 22px; }
+.bls-weekly .bls-section-header > a {
+  color: var(--field-accent-strong);
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+.bls-weekly-readings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  margin: 0;
+}
+.bls-weekly-readings dt { color: var(--field-text-muted); font-size: 14px; }
+.bls-weekly-readings dd { margin: 4px 0 0; }
+.bls-weekly-readings dd:not(.bls-weekly-period) { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 16px; }
+.bls-weekly-readings strong { font-size: 30px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.bls-weekly-readings span, .bls-weekly-period, .bls-weekly-receipt { font-size: 13px; color: var(--field-text-muted); }
+.bls-weekly-receipt { margin-top: 12px; }
+.bls-weekly-receipt summary { cursor: pointer; min-height: 44px; align-content: center; }
+.bls-weekly-receipt p { max-width: 72ch; line-height: 1.6; }
+.bls-weekly-notice { color: var(--field-caution); font-size: 14px; }
+.bls-monthly .bls-ledger { border: 0; padding: 0; background: transparent; box-shadow: none; }
+.bls-current-label { font-size: 24px; font-weight: 650; display: block; margin-top: 4px; }
+.bls-metric-period, .bls-trend-description { font-size: 13px; color: var(--field-text-muted); }
+.bls-trend-description { display: block; margin: 8px 0; }
+.bls-next-release { border-top: 1px solid var(--field-border-strong); margin-top: 24px; padding-top: 20px; }
+
+@media (max-width: 560px) {
+  .bls-weekly-readings { grid-template-columns: 1fr; gap: 20px; }
+  .bls-weekly .bls-section-header { gap: 8px; }
+}
+
 .bls-page-header {
   background:
     linear-gradient(110deg, rgba(30, 43, 61, 0.98), rgba(18, 28, 42, 0.98));
@@ -1143,7 +1186,7 @@
   display: grid;
   min-width: 0;
   padding: 14px 0;
-  grid-template-columns: minmax(160px, 1fr) minmax(110px, 0.55fr) minmax(130px, 0.65fr) minmax(110px, 0.5fr) minmax(220px, auto);
+  grid-template-columns: minmax(160px, 1fr) minmax(110px, 0.55fr) minmax(130px, 0.65fr) minmax(220px, auto);
   gap: 14px;
   align-items: start;
   border-bottom: 1px solid var(--field-border);
@@ -2013,4 +2056,33 @@
   .bls-revision-summary > div:last-child {
     grid-column: auto;
   }
+}
+
+/* Monthly figures share aligned columns; history opens in place. */
+.bls-monthly .bls-overview-current { padding: 16px 0; grid-template-columns: minmax(160px, .4fr) minmax(0, 1.6fr); }
+.bls-monthly .bls-overview-evidence { margin-top: 24px; }
+.bls-monthly .bls-overview-matrix { grid-template-columns: minmax(0, 1fr); }
+.bls-monthly .bls-overview-metric { padding: 16px 0; border-right: 0; }
+.bls-monthly .bls-overview-metric-caption { grid-template-columns: minmax(180px, .8fr) minmax(0, 1.5fr); align-items: center; gap: 24px; }
+.bls-monthly .bls-overview-metric-title { display: grid; grid-template-columns: 1fr auto; gap: 3px 12px; }
+.bls-monthly .bls-overview-metric-title h4 { grid-column: 1; }
+.bls-monthly .bls-metric-period { grid-column: 1; }
+.bls-monthly .bls-overview-metric-title .bls-status-label { grid-column: 2; grid-row: 1 / 3; align-self: center; border: 0; padding: 0; background: transparent; }
+.bls-monthly .bls-overview-metric-reading { grid-template-columns: minmax(0, 1fr) minmax(140px, .7fr); }
+.bls-monthly .bls-overview-primary-value { align-items: baseline; }
+.bls-monthly .bls-overview-primary-value strong { font-size: 28px; }
+.bls-monthly .bls-overview-metric-meta dt { color: var(--field-text-subtle); font-size: 12px; margin-bottom: 3px; }
+.bls-monthly .bls-overview-values-disclosure { margin-top: 8px; border: 0; }
+.bls-monthly .bls-overview-values-disclosure > summary { min-height: 32px; padding: 0; font-size: 12px; }
+.bls-monthly .bls-overview-revisions { margin-top: 24px; }
+@media (min-width: 1000px) {
+  .bls-page { max-width: 1240px; }
+  .bls-monthly .bls-overview-matrix { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 32px; }
+  .bls-monthly .bls-overview-metric-caption { grid-template-columns: 1fr; gap: 12px; }
+}
+@media (max-width: 760px) {
+  .bls-monthly .bls-overview-current, .bls-monthly .bls-overview-metric-caption { grid-template-columns: 1fr; gap: 12px; }
+  .bls-monthly .bls-overview-metric-reading { grid-template-columns: minmax(0, 1fr) minmax(100px, .7fr); }
+  .bls-monthly .bls-overview-primary-value { display: grid; gap: 2px; }
+  .bls-monthly .bls-overview-metric-meta dd { flex-wrap: wrap; }
 }

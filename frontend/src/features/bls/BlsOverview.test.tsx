@@ -334,7 +334,7 @@ describe("BlsOverview", () => {
     indicatorFigures.forEach((figure) => {
       expect(figure.querySelectorAll(".bls-status-label")).toHaveLength(1);
       expect(figure.querySelector("p")).toBeNull();
-      expect(figure.querySelector(".bls-overview-metric-meta dt")?.textContent).toBe("Change from prior reference period");
+      expect(figure.querySelector(".bls-overview-metric-meta dt")?.textContent).toBe("Vs prior month");
     });
     expect(screen.queryByText("Lower than prior")).toBeNull();
     expect(screen.queryByText("Higher than prior")).toBeNull();

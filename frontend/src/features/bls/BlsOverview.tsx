@@ -44,13 +44,7 @@ function indicatorStatusLabel(indicator: OverviewIndicator): string {
   if (indicator.current?.primary_value === null || indicator.current?.primary_value === undefined) return "Unavailable";
   if (indicator.state === "prior_unavailable") return "Prior unavailable";
 
-  const conciseState = indicator.trendStateLabel
-    .replace(/^Payroll gains /, "")
-    .replace(/^Unemployment /, "")
-    .replace(/^Wage growth /, "")
-    .replace(/^Openings (?:level|rate) /, "");
-  const label = conciseState.charAt(0).toUpperCase() + conciseState.slice(1);
-  return indicator.current.preliminary || indicator.trendProvisional ? `${label} · Preliminary` : label;
+  return indicator.current.preliminary ? "Preliminary" : "Published";
 }
 
 function RecentValuesTable({ indicator }: { indicator: OverviewIndicator }) {
@@ -80,6 +74,10 @@ function RecentValuesTable({ indicator }: { indicator: OverviewIndicator }) {
 function IndicatorFigure({ indicator }: { indicator: OverviewIndicator }) {
   const canPlot = indicator.plottablePointCount >= 8;
   const currentValue = indicator.current?.primary_value ?? null;
+  const payroll = indicator.series.series_id === "CES0000000001";
+  const displayValue = currentValue === null ? null : currentValue * (payroll ? 1000 : 1);
+  const displayUnit = payroll ? "jobs per month" : indicator.series.primary_unit;
+  const displayDelta = indicator.delta === null ? null : indicator.delta * (payroll ? 1000 : 1);
   const headingId = `bls-overview-indicator-${indicator.series.series_id}`;
 
   return (
@@ -87,31 +85,31 @@ function IndicatorFigure({ indicator }: { indicator: OverviewIndicator }) {
       <figcaption className="bls-overview-metric-caption">
         <div className="bls-overview-metric-title">
           <h4 id={headingId}>{indicator.role}</h4>
+          <span className="bls-metric-period">{indicator.current ? formatPeriod(indicator.current.period) : "Period unavailable"}</span>
           <span className="bls-status-label">{indicatorStatusLabel(indicator)}</span>
         </div>
 
         <div className="bls-overview-metric-reading">
           <div className="bls-overview-primary-value">
-            <strong>{currentValue === null ? "—" : formatValue(currentValue, 2)}</strong>
-            {currentValue === null ? null : <span>{indicator.series.primary_unit}</span>}
+            <strong>{displayValue === null ? "—" : formatValue(displayValue, payroll ? 0 : 2)}</strong>
+            {currentValue === null ? null : <span>{displayUnit}</span>}
           </div>
           <dl className="bls-overview-metric-meta">
             <div>
-              <dt className="sr-only">Change from prior reference period</dt>
+              <dt>Vs prior month</dt>
               <dd>
-                <strong>{indicator.delta === null ? "—" : formatSigned(indicator.delta, "", 3)}</strong>
-                {indicator.delta === null ? null : <span>{indicator.deltaUnit}</span>}
+                <strong>{displayDelta === null ? "—" : formatSigned(displayDelta, "", payroll ? 0 : 3)}</strong>
+                {indicator.delta === null ? null : <span>{payroll ? "jobs per month" : indicator.deltaUnit}</span>}
               </dd>
-            </div>
-            <div>
-              <dt className="sr-only">Reference period</dt>
-              <dd>{indicator.current ? formatPeriod(indicator.current.period) : "—"}</dd>
             </div>
           </dl>
         </div>
       </figcaption>
 
-      {canPlot ? (
+      <details className="bls-overview-values-disclosure">
+        <summary>Trend & values</summary>
+        <span className="bls-trend-description">{indicator.trendStateLabel} · latest 24 reference months</span>
+        {canPlot ? (
         <div className="bls-overview-metric-chart">
           <ResponsiveContainer width="100%" height={120} minWidth={0}>
             <LineChart
@@ -155,8 +153,6 @@ function IndicatorFigure({ indicator }: { indicator: OverviewIndicator }) {
         </div>
       )}
 
-      <details className="bls-overview-values-disclosure">
-        <summary>Recent values</summary>
         <RecentValuesTable indicator={indicator} />
       </details>
     </figure>
@@ -208,23 +204,40 @@ export default function BlsOverview({ data, onNavigate }: BlsOverviewProps) {
   const nextRelease = model.nextRelease;
 
   return (
-    <div className="page-stack">
+    <div className="page-stack bls-monthly">
       <section className="bls-ledger" aria-labelledby="bls-overview-title">
         <header className="bls-section-header">
-          <h2 id="bls-overview-title">Labor-market overview</h2>
+          <div><h2 id="bls-overview-title">Labor-market overview</h2><p>Monthly BLS surveys · reference months shown beside each measure</p></div>
           <button type="button" className="field-button field-button-secondary" onClick={() => onNavigate("methods")}>How calculated</button>
         </header>
 
         <div className="bls-overview-current" aria-labelledby="bls-overview-brief-title">
           <div>
             <h3 id="bls-overview-brief-title" className="m-0 text-xs font-bold uppercase tracking-[0.08em] text-[var(--field-text-subtle)]">Current read</h3>
-            <strong className="mt-1 block text-3xl font-bold tracking-[-0.025em] text-[var(--field-text)]">{model.overall.label}</strong>
-            {model.overall.provisional ? <span className="bls-status-label mt-2">Provisional · preliminary anchor</span> : null}
+            <strong className="bls-current-label">{model.overall.label}</strong>
+            {model.overall.provisional ? <span className="bls-status-label mt-2">Includes preliminary estimates</span> : null}
           </div>
           <p className="bls-overview-answer">{driverLine(model.briefLines[0] ?? model.overall.explanation)}</p>
         </div>
 
-        <section className="mt-5 border-b border-[var(--field-border-strong)] pb-5" aria-labelledby="bls-overview-calendar-title">
+        <section className="bls-overview-evidence" aria-labelledby="bls-overview-indicators-title">
+          <header className="bls-section-header">
+            <h3 id="bls-overview-indicators-title">Four key measures</h3>
+            <span className="bls-overview-window">History available under each measure</span>
+          </header>
+
+          {model.indicators.length > 0 ? (
+            <div id="bls-overview-trends-title" className="bls-overview-matrix">
+              {model.indicators.map((indicator) => (
+                <IndicatorFigure key={indicator.series.series_id} indicator={indicator} />
+              ))}
+            </div>
+          ) : (
+            <p className="m-0 text-sm leading-6 text-[var(--field-text-muted)]">No preferred labor indicator series is present in this response. No substitute inflation series is inferred.</p>
+          )}
+        </section>
+
+        <section className="bls-next-release" aria-labelledby="bls-overview-calendar-title">
           {nextRelease ? (
             <div className="grid gap-4 md:grid-cols-[minmax(0,1.3fr)_minmax(180px,0.65fr)_auto] md:items-center">
               <div>
@@ -259,23 +272,6 @@ export default function BlsOverview({ data, onNavigate }: BlsOverviewProps) {
               </div>
               <button type="button" className="field-button field-button-secondary" onClick={() => onNavigate("calendar")}>Full calendar</button>
             </div>
-          )}
-        </section>
-
-        <section className="bls-overview-evidence" aria-labelledby="bls-overview-indicators-title">
-          <header className="bls-section-header">
-            <h3 id="bls-overview-indicators-title">Four key measures</h3>
-            <span className="bls-overview-window">Latest 24 reference months</span>
-          </header>
-
-          {model.indicators.length > 0 ? (
-            <div id="bls-overview-trends-title" className="bls-overview-matrix">
-              {model.indicators.map((indicator) => (
-                <IndicatorFigure key={indicator.series.series_id} indicator={indicator} />
-              ))}
-            </div>
-          ) : (
-            <p className="m-0 text-sm leading-6 text-[var(--field-text-muted)]">No preferred labor indicator series is present in this response. No substitute inflation series is inferred.</p>
           )}
         </section>
 

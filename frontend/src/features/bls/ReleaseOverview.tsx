@@ -30,13 +30,6 @@ function priorObservation(series: BlsSeries, latest: BlsObservation | null) {
   return prior?.primary_value !== null && prior?.primary_value !== undefined ? prior : null;
 }
 
-function directionLabel(delta: number | null) {
-  if (delta === null) return "Direction unavailable";
-  if (delta > 0) return "Higher than prior";
-  if (delta < 0) return "Lower than prior";
-  return "Unchanged";
-}
-
 export default function ReleaseOverview({ data, onOpenTrend }: ReleaseOverviewProps) {
   return (
     <section id="bls-releases" className="bls-release-workspace" aria-labelledby="bls-releases-title">
@@ -44,7 +37,7 @@ export default function ReleaseOverview({ data, onOpenTrend }: ReleaseOverviewPr
         <div>
           <p className="bls-section-kicker">Releases</p>
           <h2 id="bls-releases-title">Latest observations by report</h2>
-          <p>Read each measure in its published analytical unit. Reference periods describe what was measured; they are not publication timestamps.</p>
+          <p>Monthly BLS measures. Dates identify the reference month; changes compare adjacent months.</p>
         </div>
         <span className="bls-clock-label">Observation clock · reference period</span>
       </header>
@@ -80,16 +73,13 @@ export default function ReleaseOverview({ data, onOpenTrend }: ReleaseOverviewPr
                         </div>
                         <div className="bls-release-value">
                           <span>Latest</span>
-                          <strong>{latest ? formatValue(latest.primary_value, 3) : "Unavailable"}</strong>
+                          <strong>{latest ? formatValue(latest.primary_value, 2) : "Unavailable"}</strong>
                           <small>{hasCurrentValue ? item.primary_unit : ""}</small>
                         </div>
                         <div className="bls-release-change">
                           <span>Vs prior</span>
                           <strong>{formatSigned(delta, "", 3)}</strong>
                           <small>{delta === null ? "" : primaryDeltaUnit(item)}</small>
-                        </div>
-                        <div className="bls-release-meaning">
-                          <span className="bls-direction-label">{directionLabel(delta)}</span>
                         </div>
                         <div className="bls-release-actions">
                           {onOpenTrend && trendAvailable ? (

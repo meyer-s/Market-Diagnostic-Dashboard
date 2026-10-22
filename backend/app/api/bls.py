@@ -1,9 +1,16 @@
 from fastapi import APIRouter, HTTPException, Query
 
 from app.services.bls_lens import BlsLensUnavailable, get_bls_lens_payload
+from app.services.labor_claims import get_labor_claims
 
 
 router = APIRouter(prefix="/bls")
+
+
+@router.get("/weekly-claims")
+async def weekly_claims():
+    """DOL weekly claims; independent of the BLS monthly series contract."""
+    return await get_labor_claims()
 
 
 @router.get("/lens")
