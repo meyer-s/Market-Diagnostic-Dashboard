@@ -1,3 +1,5 @@
+import { enforceScannerFundingGate } from "./scannerTradeSafety";
+
 export type ScannerPositionMatchType = "exact_contract" | "same_symbol" | string;
 
 export type ScannerPositionMatchClassification =
@@ -869,7 +871,7 @@ export const presentOptionMarketField = (
 const replacementTone = (status: ScannerReplacementStatus): ScannerPositionMatchTone => {
   if (status === "candidate") return "positive";
   if (status === "rejected") return "negative";
-  if (status === "watch") return "warning";
+  if (status === "watch" || status === "blocked") return "warning";
   return "neutral";
 };
 
@@ -901,7 +903,8 @@ export const presentScannerPositionMatch = (
     typeof match.repeat_count === "number" && match.repeat_count > 0
       ? Math.round(match.repeat_count)
       : null;
-  const replacement = !isExactContract ? match.replacement_decision || null : null;
+  const replacement = !isExactContract && match.replacement_decision
+    ? enforceScannerFundingGate(match.replacement_decision) : null;
   const badgeParts = ["HELD"];
   if (heldContracts !== null) badgeParts.push(String(heldContracts));
   if (isExactContract && repeatCount !== null) badgeParts.push(`#${repeatCount}`);
@@ -911,6 +914,8 @@ export const presentScannerPositionMatch = (
         ? replacement.action === "partial_replace"
           ? "HARVEST"
           : "ROLL"
+        : replacement?.status === "blocked"
+          ? "FUNDING CHECK"
         : replacement?.status === "rejected"
           ? "NO ROLL"
           : replacement?.status === "watch"

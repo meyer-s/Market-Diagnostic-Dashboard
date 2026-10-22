@@ -1,4 +1,6 @@
 import { Link } from "react-router-dom";
+import { enforceScannerFundingGate } from "../../utils/scannerTradeSafety";
+import { ScannerTradeSafetyNotice } from "./ScannerTradeSafetyNotice";
 import { formatDate, formatNumber } from "../../utils/styleUtils";
 import {
   presentOptionMarketField,
@@ -552,7 +554,8 @@ export const ScannerHitDetail = ({ opportunity }: { opportunity: ScannerRankedOp
   const positionMatch = presentScannerPositionMatch(opportunity.position_match);
   const marketField = presentOptionMarketField(opportunity.field_context);
   const marketFieldHref = marketField ? marketFieldPath(opportunity.symbol, marketField.timeframe) : null;
-  const replacementDecision = opportunity.position_match?.replacement_decision || null;
+  const replacementDecision = opportunity.position_match?.replacement_decision
+    ? enforceScannerFundingGate(opportunity.position_match.replacement_decision) : null;
   const replacementComparison = replacementDecision?.comparison || null;
   const sections = parseScannerAlertSections(opportunity.message);
   const directionSection = scannerAlertSection(sections, "DIRECTION");
@@ -598,6 +601,7 @@ export const ScannerHitDetail = ({ opportunity }: { opportunity: ScannerRankedOp
 
   return (
     <div className="overflow-x-hidden bg-stealth-950/40 px-3 py-3 sm:px-4">
+      <ScannerTradeSafetyNotice />
       {replacementDecision && replacementComparison ? (
         <section className={`mb-3 rounded-lg border p-3 ${scannerPositionMatchBadgeClass[positionMatch?.tone || "neutral"]}`}>
           <div className="flex flex-wrap items-start justify-between gap-2">

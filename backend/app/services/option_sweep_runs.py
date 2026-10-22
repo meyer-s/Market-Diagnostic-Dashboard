@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.option_trade_safety import scanner_trade_safety
+
 import json
 import logging
 import os
@@ -604,6 +606,7 @@ def _ranked_opportunity_from_event(
     triggered_at = event.triggered_at
     return {
         "event_id": event.id,
+        "trade_safety": scanner_trade_safety(),
         "symbol": symbol,
         "triggered_at": triggered_at.isoformat() if triggered_at else None,
         "group": classification.group,
@@ -1213,6 +1216,7 @@ def build_scanner_summary(lookback_days: int = 45, run_limit: int = 8, event_lim
                 "convexity_probability_itm": event.selected_convexity_probability_itm,
             },
             "position_match": position_match_for_event(event, repeat_context),
+            "trade_safety": scanner_trade_safety(),
         }
         current = ranked_by_symbol.get(symbol)
         if (

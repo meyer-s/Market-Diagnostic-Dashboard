@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from app.services.option_trade_safety import scanner_trade_safety
+
 from datetime import date, datetime
 import math
 from typing import Any, Optional
 
 
-REPLACEMENT_MODEL_VERSION = "replacement_rules_v2_field_shadow"
+REPLACEMENT_MODEL_VERSION = "replacement_rules_v3_funding_gate"
 
 # These gates deliberately require a material improvement before contract drift
 # becomes a replacement candidate. Closed-trade learning may later calibrate the
@@ -474,8 +476,21 @@ def classify_option_replacement(
         label = "Watch replacement"
         summary = "The contract comparison is promising, but the held-leg execution cost is missing or too wide."
 
+    trade_safety = scanner_trade_safety()
+    gates.append(_gate("account_funding", "Account funding & restrictions", "fail", str(trade_safety["reason"])))
+    missing_inputs.extend(str(item) for item in trade_safety["required_evidence"])
+    comparison_status = status
+    if status in {"candidate", "watch"} and not trade_safety["recommendation_allowed"]:
+        status = "blocked"
+        recommendation = "funding_unverified"
+        action = "none"
+        label = "Roll withheld · funding unverified"
+        summary = str(trade_safety["reason"])
+
     return {
         "model_version": REPLACEMENT_MODEL_VERSION,
+        "trade_safety": trade_safety,
+        "comparison_status": comparison_status,
         "status": status,
         "recommendation": recommendation,
         "action": action,
@@ -535,8 +550,9 @@ def classify_option_replacement(
         "gates": gates,
         "missing_inputs": missing_inputs,
         "journal_rule": (
-            "Close and journal the held contract first. Any replacement is a new trade "
-            "with its own mandate, size, review window and decision deadline."
+            "A roll includes a closing sale and a new purchase. Verify payment and "
+            "settled funds before trading. Record completed fills as separate trades "
+            "with their own mandate, size, review window and decision deadline."
         ),
         "automated_execution_enabled": False,
     }

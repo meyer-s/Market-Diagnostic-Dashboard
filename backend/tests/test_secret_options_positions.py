@@ -2282,7 +2282,8 @@ def test_scanner_repeat_evidence_handles_missing_drift_opposite_direction_and_du
     assert missing_match["contract_comparison_status"] == "unavailable"
     assert drift_match["classification"] == "contract_drift"
     assert drift_match["held_contracts"] == 5
-    assert drift_match["replacement_decision"]["recommendation"] == "watch_replacement"
+    assert drift_match["replacement_decision"]["recommendation"] == "funding_unverified"
+    assert drift_match["replacement_decision"]["action"] == "none"
     assert drift_match["replacement_decision"]["implementation_ready"] is False
     assert opposite_match["classification"] == "contradiction"
     assert opposite_match["replacement_decision"]["recommendation"] == "direction_change"

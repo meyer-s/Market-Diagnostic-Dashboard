@@ -99,7 +99,7 @@ describe("presentScannerPositionMatch", () => {
     expect(result?.accessibleLabel).toContain("close and new entry remain separate");
   });
 
-  it("differentiates a convexity harvest from an ordinary roll", () => {
+  it("withholds a cached harvest recommendation without verified account funding", () => {
     const base = {
       model_version: "replacement_rules_v1",
       status: "candidate",
@@ -128,7 +128,7 @@ describe("presentScannerPositionMatch", () => {
         held_contracts: 3,
         replacement_decision: base,
       })
-    ).toMatchObject({ badgeLabel: "HELD · 3 · HARVEST", tone: "positive" });
+    ).toMatchObject({ badgeLabel: "HELD · 3 · FUNDING CHECK", tone: "warning", classificationLabel: "Roll withheld · funding unverified" });
   });
 });
 

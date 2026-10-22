@@ -552,7 +552,7 @@ describe("Secret Options desktop distillation", () => {
     });
     renderDesktopWorkspace();
 
-    await user.click(await screen.findByRole("button", { name: "Roll position" }));
+    await user.click(await screen.findByRole("button", { name: "Record completed roll" }));
     expect(screen.getByRole("dialog", { name: "Roll ALPHA position" })).not.toBeNull();
     expect(screen.getByText(/does not submit an order/i)).not.toBeNull();
 

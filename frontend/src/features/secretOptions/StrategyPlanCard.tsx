@@ -7,6 +7,7 @@ interface StrategyPlanCardProps {
   plan: OptionStrategyPlan;
   riskBudget?: number | null;
   disabled?: boolean;
+  fundingBlocked?: boolean;
   onUse: (candidate: OptionStrategyCandidate) => void;
 }
 
@@ -39,7 +40,7 @@ function CandidateSummary({ candidate }: { candidate: OptionStrategyCandidate })
   );
 }
 
-export function StrategyPlanCard({ plan, riskBudget, disabled = false, onUse }: StrategyPlanCardProps) {
+export function StrategyPlanCard({ plan, riskBudget, disabled = false, fundingBlocked = false, onUse }: StrategyPlanCardProps) {
   const candidate = plan.primary;
   const recommendedUnits =
     riskBudget && candidate.max_loss > 0
@@ -47,8 +48,8 @@ export function StrategyPlanCard({ plan, riskBudget, disabled = false, onUse }: 
       : 1;
   const exceedsBudget = Boolean(riskBudget && recommendedUnits < 1);
   const quotesNeedReview = candidate.status !== "actionable";
-  const useDisabled = disabled || exceedsBudget;
-  const useLabel = exceedsBudget
+  const useDisabled = disabled || exceedsBudget || fundingBlocked;
+  const useLabel = fundingBlocked ? "Funding verification required" : exceedsBudget
     ? "Above risk budget"
     : quotesNeedReview
       ? "Review quotes & continue"
@@ -69,7 +70,7 @@ export function StrategyPlanCard({ plan, riskBudget, disabled = false, onUse }: 
               {candidate.label}
             </h3>
             <span className="rounded-full border border-emerald-500/35 bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-100">
-              System plan
+              {fundingBlocked ? "Payoff comparison only" : "System plan"}
             </span>
             <span className="text-xs text-stealth-400">
               {words(candidate.direction)} · {words(candidate.volatility_exposure)}
@@ -107,7 +108,9 @@ export function StrategyPlanCard({ plan, riskBudget, disabled = false, onUse }: 
         Works if: {candidate.success_condition}
       </p>
 
-      {riskBudget ? (
+      {fundingBlocked ? (
+        <p className="mt-2 text-xs text-amber-100">Sizing is a risk comparison only. The scanner has not verified settled cash or broker permission to trade.</p>
+      ) : riskBudget ? (
         <p className={`mt-2 text-xs ${exceedsBudget ? "text-amber-200" : "text-stealth-400"}`}>
           Risk budget {formatCurrency(riskBudget)} supports {Math.max(0, recommendedUnits)} unit{recommendedUnits === 1 ? "" : "s"}; the trade form will use that quantity.
         </p>
@@ -142,11 +145,11 @@ export function StrategyPlanCard({ plan, riskBudget, disabled = false, onUse }: 
                   <button
                     type="button"
                     onClick={() => onUse(alternative)}
-                    disabled={disabled || alternativeExceedsBudget}
+                    disabled={disabled || alternativeExceedsBudget || fundingBlocked}
                     className="min-h-9 shrink-0 rounded-md border border-stealth-600 px-3 text-xs font-semibold text-stealth-200 hover:border-stealth-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
                     aria-label={`${alternativeNeedsReview ? "Review quotes and use" : "Use"} ${alternative.label}`}
                   >
-                    {alternativeExceedsBudget
+                    {fundingBlocked ? "Funding verification required" : alternativeExceedsBudget
                       ? "Above risk budget"
                       : alternativeNeedsReview
                         ? "Review & use"

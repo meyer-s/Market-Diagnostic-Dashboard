@@ -1,7 +1,36 @@
 from datetime import date, datetime
 from types import SimpleNamespace
+import pytest
 
 from app.services.option_replacement_classifier import classify_option_replacement
+
+
+@pytest.mark.parametrize("account_type", ["Margin", "Cash", None])
+def test_att_put_roll_is_withheld_without_paid_for_and_settled_cash_evidence(account_type):
+    position = _position(strike=21.0, option_type="put")
+    position.symbol = "T"
+    position.account = account_type
+    position.trade_date = date(2026, 10, 19)
+    position.expiration = date(2026, 12, 18)
+    # Neither elapsed settlement dates nor a historical balance establish
+    # current funds, account permission, or payment for this lot.
+    position.historical_cash_balance = 999999
+    event = _event(strike=21.0, expiry="2027-01-15", option_type="put")
+    event.triggered_at = datetime(2026, 10, 22, 14, 30)
+    result = classify_option_replacement(
+        position=position, event=event, candidate_score=80,
+        held_baseline_score=40, repeat_count=4,
+        latest_assessment=_assessment(pnl_pct=45, score=42, contract_status="marginal"),
+        latest_decision={"verdict": "replacement_candidate", "target_contracts": 0},
+    )
+    assert result["comparison_status"] == "candidate"
+    assert result["status"] == "blocked"
+    assert result["action"] == "none"
+    assert result["trade_safety"]["recommendation_allowed"] is False
+    assert result["trade_safety"]["broker_evidence_as_of"] is None
+    assert any(gate["key"] == "account_funding" and gate["status"] == "fail" for gate in result["gates"])
+    assert "net-credit roll" in result["trade_safety"]["funding_rule"]
+    assert "Close and journal the held contract first" not in result["journal_rule"]
 
 
 def _position(*, strike: float = 115.0, option_type: str = "call") -> SimpleNamespace:
@@ -97,7 +126,7 @@ def test_losing_up_and_out_is_rejected_as_a_rescue_roll() -> None:
     assert result["implementation_ready"] is False
 
 
-def test_winning_up_and_out_can_be_a_partial_convexity_harvest_candidate() -> None:
+def test_winning_harvest_is_withheld_without_account_funding() -> None:
     result = classify_option_replacement(
         position=_position(),
         event=_event(),
@@ -108,12 +137,13 @@ def test_winning_up_and_out_can_be_a_partial_convexity_harvest_candidate() -> No
         latest_decision={"verdict": "hold", "target_contracts": 5},
     )
 
-    assert result["status"] == "candidate"
-    assert result["recommendation"] == "convexity_harvest_candidate"
-    assert result["action"] == "partial_replace"
+    assert result["comparison_status"] == "candidate"
+    assert result["status"] == "blocked"
+    assert result["recommendation"] == "funding_unverified"
+    assert result["action"] == "none"
 
 
-def test_later_same_strike_contract_can_qualify_when_current_contract_is_marginal() -> None:
+def test_qualifying_later_contract_cannot_bypass_the_funding_gate() -> None:
     result = classify_option_replacement(
         position=_position(),
         event=_event(strike=115.0),
@@ -128,8 +158,9 @@ def test_later_same_strike_contract_can_qualify_when_current_contract_is_margina
         latest_decision={"verdict": "conditional_hold", "target_contracts": 5},
     )
 
-    assert result["status"] == "candidate"
-    assert result["recommendation"] == "roll_out_candidate"
+    assert result["comparison_status"] == "candidate"
+    assert result["status"] == "blocked"
+    assert result["recommendation"] == "funding_unverified"
     assert result["structure"]["label"] == "Straight out"
 
 
@@ -166,9 +197,10 @@ def test_contradictory_underlying_path_is_an_advisory_gate_not_a_standalone_reje
     )
 
     underlying_gate = next(gate for gate in result["gates"] if gate["key"] == "underlying_path")
-    assert result["model_version"] == "replacement_rules_v2_field_shadow"
-    assert result["status"] == "candidate"
-    assert result["recommendation"] == "roll_out_candidate"
+    assert result["model_version"] == "replacement_rules_v3_funding_gate"
+    assert result["comparison_status"] == "candidate"
+    assert result["status"] == "blocked"
+    assert result["recommendation"] == "funding_unverified"
     assert result["comparison"]["held"]["underlying_path"] == "contradictory"
     assert underlying_gate["status"] == "fail"
     assert "advisory only" in underlying_gate["detail"]

@@ -55,6 +55,19 @@ const plan: OptionStrategyPlan = {
 afterEach(cleanup);
 
 describe("StrategyPlanCard", () => {
+  it("withholds quote-ready plans and alternatives when funding is unverified", () => {
+    const onUse = vi.fn();
+    render(<StrategyPlanCard plan={{ ...plan, alternatives: [plan.primary] }} riskBudget={99999} fundingBlocked onUse={onUse} />);
+    const buttons = screen.getAllByRole("button");
+    expect(buttons).toHaveLength(2);
+    buttons.forEach((button) => {
+      expect(button).toHaveProperty("disabled", true);
+      fireEvent.click(button);
+    });
+    expect(onUse).not.toHaveBeenCalled();
+    expect(screen.getByText("Payoff comparison only")).toBeTruthy();
+    expect(screen.queryByText(/the trade form will use that quantity/)).toBeNull();
+  });
   it("presents one actionable system plan and applies the risk-budget quantity", () => {
     const onUse = vi.fn();
     render(<StrategyPlanCard plan={plan} riskBudget={400} onUse={onUse} />);

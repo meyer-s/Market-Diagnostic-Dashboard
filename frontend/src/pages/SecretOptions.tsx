@@ -32,6 +32,8 @@ import {
   Undo2,
 } from "lucide-react";
 import { apiFetch } from "../utils/apiUtils";
+import { SCANNER_RECOMMENDATIONS_PAUSED, SCANNER_FUNDING_REASON } from "../utils/scannerTradeSafety";
+import { ScannerTradeSafetyNotice } from "../features/secretOptions/ScannerTradeSafetyNotice";
 import {
   clearSecretOptionsToken,
   getSecretOptionsScope,
@@ -2517,6 +2519,10 @@ export default function SecretOptions() {
     opportunity: ScannerRankedOpportunity,
     strategyCandidate?: OptionStrategyCandidate,
   ) => {
+    if (SCANNER_RECOMMENDATIONS_PAUSED) {
+      setStrategyPlanError(SCANNER_FUNDING_REASON);
+      return;
+    }
     const contract = opportunity.selected_contract;
     const strategyPlan = strategyPlansByEvent[opportunity.event_id] ?? opportunity.strategy_plan ?? null;
     if (strategyCandidate && strategyPlan) {
@@ -4614,7 +4620,7 @@ export default function SecretOptions() {
           <div className="mt-3 border-t border-stealth-800 pt-3">
             <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-stealth-500">Position record</div>
             <div className="grid grid-cols-2 gap-2">
-              <button type="button" disabled={secretMutationDisabled || (position.strategy_type || "single_leg") !== "single_leg"} onClick={() => openRollModal(position)} title={(position.strategy_type || "single_leg") !== "single_leg" ? "Rolling a risk-defined structure is not yet supported" : secretOptionsReadOnly ? "Write access is required to roll a position" : undefined} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-violet-500/35 bg-violet-500/10 px-3 text-sm font-semibold text-violet-100 disabled:cursor-not-allowed disabled:opacity-45"><Repeat2 className="h-4 w-4" aria-hidden="true" />Roll position</button>
+              <button type="button" disabled={secretMutationDisabled || (position.strategy_type || "single_leg") !== "single_leg"} onClick={() => openRollModal(position)} title={(position.strategy_type || "single_leg") !== "single_leg" ? "Rolling a risk-defined structure is not yet supported" : secretOptionsReadOnly ? "Write access is required to roll a position" : undefined} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-violet-500/35 bg-violet-500/10 px-3 text-sm font-semibold text-violet-100 disabled:cursor-not-allowed disabled:opacity-45"><Repeat2 className="h-4 w-4" aria-hidden="true" />Record completed roll</button>
               <button type="button" disabled={secretMutationDisabled} onClick={() => openEditModal(position)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-sky-500/35 bg-sky-500/10 px-3 text-sm font-semibold text-sky-100 disabled:cursor-not-allowed disabled:opacity-45"><Pencil className="h-4 w-4" aria-hidden="true" />Edit position</button>
               <button type="button" disabled={secretMutationDisabled} onClick={() => openCloseModal(position.id)} className="col-span-2 inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-rose-500/35 bg-rose-500/10 px-3 text-sm font-semibold text-rose-100 disabled:cursor-not-allowed disabled:opacity-45"><Trash2 className="h-4 w-4" aria-hidden="true" />Close position</button>
             </div>
@@ -4961,6 +4967,7 @@ export default function SecretOptions() {
 
         {optionsWorkspace === "scanner" ? (
           <div className="space-y-3">
+            <ScannerTradeSafetyNotice />
             <section className="surface-card-strong p-3">
               <div className="flex items-center justify-between gap-3">
                 <div><h2 className="text-base font-semibold text-stealth-100">Scanner workspace</h2><p className="mt-0.5 text-xs text-stealth-400">Run a sweep, then inspect its evidence.</p></div>
@@ -5416,6 +5423,7 @@ export default function SecretOptions() {
 
       {optionsWorkspace === "scanner" ? (
       <div className="surface-card-strong p-3">
+        <ScannerTradeSafetyNotice />
         <div className="flex flex-col gap-3 border-b border-stealth-800 pb-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -6096,7 +6104,7 @@ export default function SecretOptions() {
                 title={(selected.position.strategy_type || "single_leg") !== "single_leg" ? "Rolling a risk-defined structure is not yet supported" : secretOptionsReadOnly ? "Write access is required to roll a position" : "Record both fills and link the replacement contract. No order is submitted."}
                 className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-md border border-violet-600/55 bg-violet-900/30 px-2 text-xs font-semibold text-violet-100 hover:bg-violet-800/45 disabled:cursor-not-allowed disabled:opacity-45"
               >
-                <Repeat2 className="h-3.5 w-3.5" aria-hidden="true" /> Roll position
+                <Repeat2 className="h-3.5 w-3.5" aria-hidden="true" /> Record completed roll
               </button>
               <details className="relative">
                 <summary className="inline-flex min-h-10 w-full cursor-pointer list-none items-center justify-center gap-1.5 rounded-md border border-stealth-700 bg-stealth-900/60 px-2 text-xs font-semibold text-stealth-200 hover:border-stealth-500">
@@ -6122,7 +6130,7 @@ export default function SecretOptions() {
                   <div className="min-w-0">
                     <div className="text-xs font-semibold uppercase tracking-wide opacity-70">Scanner replacement</div>
                     <div className="mt-0.5 truncate text-xs font-semibold">
-                      {selectedPositionReplacementHit.position_match.replacement_decision.label}
+                      {selectedPositionReplacementPresentation.classificationLabel}
                     </div>
                     <div className="mt-0.5 truncate text-xs text-stealth-400">
                       {selectedPositionReplacementHit.position_match.replacement_decision.comparison.candidate.contract}
@@ -6845,7 +6853,8 @@ export default function SecretOptions() {
                 <StrategyPlanCard
                   plan={selectedScannerStrategyPlan}
                   riskBudget={scannerRiskPolicy?.default_trade_risk_budget}
-                  disabled={secretMutationDisabled}
+                  fundingBlocked={SCANNER_RECOMMENDATIONS_PAUSED}
+                  disabled={secretMutationDisabled || SCANNER_RECOMMENDATIONS_PAUSED}
                   onUse={(candidate) => openScannerTradePrefill(selectedScannerHit, candidate)}
                 />
               ) : null}
@@ -6854,13 +6863,13 @@ export default function SecretOptions() {
             <div className="flex shrink-0 flex-col gap-2 border-t border-stealth-800 bg-stealth-950/95 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 sm:flex-row sm:items-center sm:justify-between sm:pb-3">
               <div className="text-xs leading-relaxed text-stealth-400">
                 {selectedScannerStrategyPlan
-                  ? `The structure above is the system default. The original single contract remains available for comparison and preserves event #${selectedScannerHit.event_id}.`
-                  : `Prefills one training lot from the recorded scanner contract and preserves event #${selectedScannerHit.event_id} for attribution.`}
+                  ? `Research comparison for event #${selectedScannerHit.event_id}. Risk-budget sizing and quote quality do not establish that the account may trade.`
+                  : `Research only for event #${selectedScannerHit.event_id}. Use Add trade to journal fills already completed at your broker.`}
               </div>
               <button
                 type="button"
                 onClick={() => openScannerTradePrefill(selectedScannerHit)}
-                disabled={secretMutationDisabled}
+                disabled={secretMutationDisabled || SCANNER_RECOMMENDATIONS_PAUSED}
                 className={`inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-45 ${
                   selectedScannerStrategyPlan
                     ? "border border-stealth-600 text-stealth-200 hover:border-stealth-400 hover:text-white"
@@ -6868,7 +6877,7 @@ export default function SecretOptions() {
                 }`}
               >
                 <Plus className="h-4 w-4" aria-hidden="true" />
-                {selectedScannerStrategyPlan ? "Use original single leg" : "Add training trade"}
+                {SCANNER_RECOMMENDATIONS_PAUSED ? "Funding verification required" : selectedScannerStrategyPlan ? "Use original single leg" : "Add training trade"}
               </button>
             </div>
           </div>
