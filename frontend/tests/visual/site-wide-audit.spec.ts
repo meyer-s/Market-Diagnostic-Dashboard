@@ -57,11 +57,11 @@ const targets: AuditTarget[] = [
   { id: "01-dashboard", name: "Dashboard", path: "/" },
   {
     id: "02-desktop-tools-menu",
-    name: "Desktop tools navigation",
+    name: "Desktop Views navigation",
     path: "/",
     only: "desktop",
     action: async (page) => {
-      await page.getByRole("button", { name: "Tools" }).hover();
+      await page.getByRole("button", { name: "Views" }).click();
     },
   },
   {

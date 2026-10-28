@@ -44,7 +44,7 @@ test("verify navigation behavior and mobile overflow", async ({ browser }) => {
   await desktop.goto("/");
   await settle(desktop);
 
-  const toolsButton = desktop.getByRole("button", { name: "Tools" });
+  const toolsButton = desktop.getByRole("button", { name: "Views" });
   await toolsButton.hover();
   const toolsAfterHover = await toolsButton.getAttribute("aria-expanded");
   await toolsButton.click();

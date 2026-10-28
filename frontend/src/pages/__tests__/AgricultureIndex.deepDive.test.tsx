@@ -103,7 +103,7 @@ describe("AgricultureIndex Deep Dive composition", () => {
   it("uses one shared agriculture snapshot and gives Report Desk an outcome label", () => {
     render(<MemoryRouter><AgricultureIndex /></MemoryRouter>);
 
-    expect(screen.getByRole("heading", { level: 1, name: "Agriculture Index" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1, name: "Agriculture" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Stable Expansion" })).toBeTruthy();
     expect(screen.getByText("Coverage")).toBeTruthy();
     expect(screen.getByText("Lead")).toBeTruthy();

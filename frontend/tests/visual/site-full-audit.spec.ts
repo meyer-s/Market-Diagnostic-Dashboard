@@ -323,13 +323,13 @@ const baseTargets: AuditTarget[] = [
   },
   {
     id: "29-desktop-tools-menu",
-    name: "Desktop Tools navigation",
+    name: "Desktop Views navigation",
     path: "/",
     group: "navigation",
     template: "Topbar",
     only: "desktop",
     action: async (page) => {
-      await page.getByRole("button", { name: "Tools", exact: true }).hover();
+      await page.getByRole("button", { name: "Views", exact: true }).click();
     },
   },
   {

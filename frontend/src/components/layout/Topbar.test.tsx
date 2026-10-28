@@ -40,10 +40,10 @@ describe("Topbar", () => {
     expect(screen.getByText("Evidence-led macro research")).not.toBeNull();
   });
 
-  it("opens the tools menu with the keyboard and exposes menu items", async () => {
+  it("opens the Views menu with the keyboard and exposes its links", async () => {
     renderTopbar();
 
-    const button = screen.getByRole("button", { name: "Tools" });
+    const button = screen.getByRole("button", { name: "Views" });
     button.focus();
     fireEvent.keyDown(button, { key: "ArrowDown" });
 
@@ -53,10 +53,10 @@ describe("Topbar", () => {
     });
   });
 
-  it("closes the tools menu on escape", async () => {
+  it("closes the Views menu on escape", async () => {
     renderTopbar();
 
-    const button = screen.getByRole("button", { name: "Tools" });
+    const button = screen.getByRole("button", { name: "Views" });
     button.focus();
     fireEvent.keyDown(button, { key: "Enter" });
     expect(button.getAttribute("aria-expanded")).toBe("true");
@@ -66,17 +66,17 @@ describe("Topbar", () => {
     expect(button.getAttribute("aria-expanded")).toBe("false");
   });
 
-  it("marks nested tool routes as active", async () => {
+  it("marks nested Views routes as active", async () => {
     renderTopbar(["/tools/recap/example-post"]);
 
-    const button = screen.getByRole("button", { name: "Tools" });
+    const button = screen.getByRole("button", { name: "Views" });
     expect(button.getAttribute("data-active")).toBe("true");
   });
 
   it("keeps theme previews out of the product navigation", () => {
     renderTopbar();
 
-    expect(screen.queryByRole("button", { name: /View/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Preview view|Theme/i })).toBeNull();
     expect(screen.queryByText("Preview view")).toBeNull();
     expect(document.querySelector("[data-theme-value]")).toBeNull();
   });
@@ -108,7 +108,7 @@ describe("Topbar", () => {
     renderTopbar();
 
     fireEvent.click(screen.getByRole("button", { name: "Open navigation menu" }));
-    const summary = screen.getByText("Asset Classes").closest("summary");
+    const summary = within(screen.getByRole("navigation", { name: "Mobile" })).getByText("Asset Classes").closest("summary");
     const group = summary?.closest("details");
 
     expect(summary).not.toBeNull();

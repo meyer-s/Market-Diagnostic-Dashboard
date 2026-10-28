@@ -345,11 +345,11 @@ export default function AgricultureIndex() {
       <div className="page-shell-wide page-stack">
         <header>
           <span className="page-kicker">Tools</span>
-          <h1 className="page-title">Agriculture Index</h1>
+          <h1 className="page-title">Agriculture</h1>
           <p className="page-subtitle">Loading futures-based agriculture diagnostics.</p>
         </header>
         <div className="flex min-h-[50vh] items-center justify-center">
-          <MarketLoading size={120} variant="pulse" label="Loading Agriculture Index..." />
+          <MarketLoading size={120} variant="pulse" label="Loading Agriculture..." />
         </div>
       </div>
     );
@@ -359,7 +359,7 @@ export default function AgricultureIndex() {
     return (
       <div className="page-shell-wide page-stack">
         <div className="surface-card-strong p-6">
-          <h1 className="text-2xl font-semibold text-stealth-100">Agriculture Index</h1>
+          <h1 className="text-2xl font-semibold text-stealth-100">Agriculture</h1>
           <p className="mt-3 text-sm text-rose-300">
             Failed to load agriculture diagnostics. The module is defensive to missing symbols, but the backend response was unavailable.
           </p>
@@ -379,7 +379,7 @@ export default function AgricultureIndex() {
     <div className="page-shell-wide page-stack">
       <div>
         <p className="page-kicker">Tools</p>
-        <h1 className="page-title">Agriculture Index</h1>
+        <h1 className="page-title">Agriculture</h1>
       </div>
 
       <section id="agriculture-now" aria-labelledby="agriculture-now-title" className="section-anchor surface-card-strong overflow-hidden p-0">

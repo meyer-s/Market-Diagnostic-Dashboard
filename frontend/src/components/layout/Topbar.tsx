@@ -1,6 +1,5 @@
 import {
   useEffect,
-  useMemo,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -17,124 +16,139 @@ import {
 import { PRODUCT_DESCRIPTOR, PRODUCT_NAME } from "./productIdentity";
 
 const MOBILE_NAV_ID = "topbar-mobile-navigation";
-const TOOLS_NAV_ID = "topbar-tools-navigation";
+type NavigationGroup = (typeof toolGroupOrder)[number];
 
-export default function Topbar() {
-  const location = useLocation();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [toolsOpen, setToolsOpen] = useState(false);
-  const mobileButtonRef = useRef<HTMLButtonElement | null>(null);
-  const mobileNavRef = useRef<HTMLElement | null>(null);
-  const toolsButtonRef = useRef<HTMLButtonElement | null>(null);
-  const toolsDisclosureRef = useRef<HTMLDivElement | null>(null);
-  const toolsMenuRef = useRef<HTMLDivElement | null>(null);
-  const toolItemRefs = useRef<Array<HTMLAnchorElement | null>>([]);
-
-  const isToolsActive = useMemo(
-    () => toolRoutes.some((item) => isRouteActive(location.pathname, item)),
-    [location.pathname],
-  );
-  const orderedToolRoutes = useMemo(
-    () => toolGroupOrder.flatMap(
-      (group) => toolRoutes.filter((route) => route.toolGroup === group),
-    ),
-    [],
-  );
+function GroupMenu({ group, open, onOpen, onClose, onToggle }: {
+  group: NavigationGroup;
+  open: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+  onToggle: () => void;
+}) {
+  const { pathname } = useLocation();
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const disclosureRef = useRef<HTMLDivElement | null>(null);
+  const itemRefs = useRef<Array<HTMLAnchorElement | null>>([]);
+  const items = toolRoutes.filter((route) => route.toolGroup === group);
+  const label = toolGroupLabels[group];
+  const menuId = `topbar-${group}-navigation`;
 
   useEffect(() => {
-    setMobileMenuOpen(false);
-    setToolsOpen(false);
-  }, [location.pathname]);
-
-  useEffect(() => {
+    if (!open) return;
     function handlePointerDown(event: MouseEvent) {
-      const target = event.target as Node;
-      if (toolsOpen && !toolsDisclosureRef.current?.contains(target)) {
-        setToolsOpen(false);
-      }
+      if (!disclosureRef.current?.contains(event.target as Node)) onClose();
     }
-
     function handleEscape(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
-      if (toolsOpen) {
-        setToolsOpen(false);
-        toolsButtonRef.current?.focus();
-      } else if (mobileMenuOpen) {
-        setMobileMenuOpen(false);
-        mobileButtonRef.current?.focus();
-      }
+      onClose();
+      buttonRef.current?.focus();
     }
-
     document.addEventListener("mousedown", handlePointerDown);
     document.addEventListener("keydown", handleEscape);
     return () => {
       document.removeEventListener("mousedown", handlePointerDown);
       document.removeEventListener("keydown", handleEscape);
     };
-  }, [mobileMenuOpen, toolsOpen]);
+  }, [open, onClose]);
 
-  function focusToolItem(index: number) {
-    toolItemRefs.current[index]?.focus();
+  function handleButtonKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
+    if (!["Enter", " ", "ArrowDown", "ArrowUp"].includes(event.key)) return;
+    event.preventDefault();
+    onOpen();
+    const index = event.key === "ArrowUp" ? items.length - 1 : 0;
+    window.requestAnimationFrame(() => itemRefs.current[index]?.focus());
   }
 
-  function openToolsMenu(focusIndex?: number) {
+  function handleItemKeyDown(event: ReactKeyboardEvent<HTMLAnchorElement>) {
+    const currentIndex = itemRefs.current.findIndex((item) => item === document.activeElement);
+    let nextIndex: number;
+    if (event.key === "ArrowDown") nextIndex = (currentIndex + 1) % items.length;
+    else if (event.key === "ArrowUp") nextIndex = (currentIndex - 1 + items.length) % items.length;
+    else if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = items.length - 1;
+    else return;
+    event.preventDefault();
+    itemRefs.current[nextIndex]?.focus();
+  }
+
+  return (
+    <div
+      ref={disclosureRef}
+      className="topbar-tools-disclosure"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) onClose();
+      }}
+    >
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={onToggle}
+        onKeyDown={handleButtonKeyDown}
+        className="topbar-nav-link topbar-tools-button"
+        data-active={items.some((item) => isRouteActive(pathname, item)) ? "true" : "false"}
+        aria-expanded={open}
+        aria-controls={menuId}
+      >
+        <span>{label}</span>
+        <svg className="topbar-chevron" data-open={open ? "true" : "false"} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open ? (
+        <div className="topbar-tools-popover">
+          <nav id={menuId} className="topbar-tools-panel" aria-label={label}>
+            {items.map((item, index) => {
+              const isActive = isRouteActive(pathname, item);
+              return (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  ref={(node) => { itemRefs.current[index] = node; }}
+                  onKeyDown={handleItemKeyDown}
+                  aria-current={isActive ? "page" : undefined}
+                  className="topbar-tools-link"
+                  data-active={isActive ? "true" : "false"}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export default function Topbar() {
+  const location = useLocation();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [openGroup, setOpenGroup] = useState<NavigationGroup | null>(null);
+  const mobileButtonRef = useRef<HTMLButtonElement | null>(null);
+  const mobileNavRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
     setMobileMenuOpen(false);
-    setToolsOpen(true);
-    if (focusIndex === undefined) return;
-    window.requestAnimationFrame(() => focusToolItem(focusIndex));
-  }
+    setOpenGroup(null);
+  }, [location.pathname]);
 
-  function toggleToolsMenu() {
-    setMobileMenuOpen(false);
-    setToolsOpen((open) => !open);
-  }
-
-  function handleToolsButtonKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
-    if (event.key === "Enter" || event.key === " " || event.key === "ArrowDown") {
-      event.preventDefault();
-      openToolsMenu(0);
-    } else if (event.key === "ArrowUp") {
-      event.preventDefault();
-      openToolsMenu(orderedToolRoutes.length - 1);
+  useEffect(() => {
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape" || !mobileMenuOpen) return;
+      setMobileMenuOpen(false);
+      mobileButtonRef.current?.focus();
     }
-  }
-
-  function handleToolsMenuKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
-    const currentIndex = toolItemRefs.current.findIndex(
-      (item) => item === document.activeElement,
-    );
-    if (event.key === "Escape") {
-      event.preventDefault();
-      setToolsOpen(false);
-      toolsButtonRef.current?.focus();
-    } else if (event.key === "ArrowDown") {
-      event.preventDefault();
-      focusToolItem(
-        (currentIndex + 1 + orderedToolRoutes.length) % orderedToolRoutes.length,
-      );
-    } else if (event.key === "ArrowUp") {
-      event.preventDefault();
-      focusToolItem(
-        (currentIndex - 1 + orderedToolRoutes.length) % orderedToolRoutes.length,
-      );
-    } else if (event.key === "Home") {
-      event.preventDefault();
-      focusToolItem(0);
-    } else if (event.key === "End") {
-      event.preventDefault();
-      focusToolItem(orderedToolRoutes.length - 1);
-    }
-  }
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [mobileMenuOpen]);
 
   function toggleMobileMenu() {
-    setToolsOpen(false);
+    setOpenGroup(null);
     setMobileMenuOpen((open) => {
       const nextOpen = !open;
       if (nextOpen) {
         window.requestAnimationFrame(() => {
-          const firstLink =
-            mobileNavRef.current?.querySelector<HTMLAnchorElement>("a");
-          firstLink?.focus();
+          mobileNavRef.current?.querySelector<HTMLAnchorElement>("a")?.focus();
         });
       }
       return nextOpen;
@@ -150,105 +164,25 @@ export default function Topbar() {
             <span className="topbar-brand-descriptor">{PRODUCT_DESCRIPTOR}</span>
           </span>
         </Link>
-
         <nav className="topbar-primary-nav" aria-label="Primary">
           {navRoutes.map((item) => {
             const isActive = isRouteActive(location.pathname, item);
             return (
-              <Link
-                key={item.path}
-                to={item.path}
-                aria-current={isActive ? "page" : undefined}
-                className="topbar-nav-link"
-                data-active={isActive ? "true" : "false"}
-              >
+              <Link key={item.path} to={item.path} aria-current={isActive ? "page" : undefined} className="topbar-nav-link" data-active={isActive ? "true" : "false"}>
                 {item.label}
               </Link>
             );
           })}
-
-          <div
-            ref={toolsDisclosureRef}
-            className="topbar-tools-disclosure"
-            onMouseEnter={() => openToolsMenu()}
-            onMouseLeave={(event) => {
-              if (!event.currentTarget.contains(document.activeElement)) {
-                setToolsOpen(false);
-              }
-            }}
-            onBlur={(event) => {
-              if (!event.currentTarget.contains(event.relatedTarget)) {
-                setToolsOpen(false);
-              }
-            }}
-          >
-            <button
-              ref={toolsButtonRef}
-              type="button"
-              onClick={toggleToolsMenu}
-              onKeyDown={handleToolsButtonKeyDown}
-              className="topbar-nav-link topbar-tools-button"
-              data-active={isToolsActive ? "true" : "false"}
-              aria-haspopup="true"
-              aria-expanded={toolsOpen}
-              aria-controls={TOOLS_NAV_ID}
-            >
-              <span>Tools</span>
-              <svg
-                className="topbar-chevron"
-                data-open={toolsOpen ? "true" : "false"}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-
-            {toolsOpen ? (
-              <div className="topbar-tools-popover">
-                <div
-                  id={TOOLS_NAV_ID}
-                  ref={toolsMenuRef}
-                  className="topbar-tools-panel"
-                  role="navigation"
-                  aria-label="Research tools"
-                  tabIndex={0}
-                >
-                  {toolGroupOrder.map((group, groupIndex) => {
-                    const groupItems = toolRoutes.filter((route) => route.toolGroup === group);
-                    if (groupItems.length === 0) return null;
-                    return (
-                      <div className="topbar-tools-group" key={group}>
-                        {groupIndex > 0 ? <div className="topbar-tools-rule" /> : null}
-                        <p className="topbar-tools-label">{toolGroupLabels[group]}</p>
-                        {groupItems.map((item) => {
-                          const itemIndex = orderedToolRoutes.indexOf(item);
-                          const isActive = isRouteActive(location.pathname, item);
-                          return (
-                            <Link
-                              key={item.path}
-                              to={item.path}
-                              ref={(node) => {
-                                toolItemRefs.current[itemIndex] = node;
-                              }}
-                              onKeyDown={handleToolsMenuKeyDown}
-                              aria-current={isActive ? "page" : undefined}
-                              className="topbar-tools-link"
-                              data-active={isActive ? "true" : "false"}
-                            >
-                              {item.label}
-                            </Link>
-                          );
-                        })}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : null}
-          </div>
+          {toolGroupOrder.map((group) => (
+            <GroupMenu
+              key={group}
+              group={group}
+              open={openGroup === group}
+              onOpen={() => { setMobileMenuOpen(false); setOpenGroup(group); }}
+              onClose={() => setOpenGroup((current) => current === group ? null : current)}
+              onToggle={() => { setMobileMenuOpen(false); setOpenGroup((current) => current === group ? null : group); }}
+            />
+          ))}
         </nav>
 
         <button

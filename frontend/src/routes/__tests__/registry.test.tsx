@@ -47,13 +47,13 @@ describe("route registry", () => {
     );
   });
 
-  it("registers Dollar Participation as a visible market view", () => {
+  it("registers Dollar Participation as a visible Research tool", () => {
     expect(toolRoutes).toContainEqual(
       expect.objectContaining({
         path: "/dollar-participation",
         label: "Dollar Participation",
         analyticsName: "Dollar Participation",
-        toolGroup: "market-views",
+        toolGroup: "research",
       }),
     );
   });

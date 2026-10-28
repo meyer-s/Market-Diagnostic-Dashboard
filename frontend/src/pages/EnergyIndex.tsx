@@ -1637,7 +1637,7 @@ export default function EnergyIndex() {
       <div className="page-shell-wide page-stack" aria-busy="true">
         <div>
           <p className="page-kicker">Tools</p>
-          <h1 className="page-title">Energy Markets</h1>
+          <h1 className="page-title">Energy</h1>
           <p className="page-subtitle">Preparing the current futures, pricing, and supply evidence.</p>
         </div>
         <MarketLoading label="Loading energy market evidence…" />
@@ -1655,7 +1655,7 @@ export default function EnergyIndex() {
       <div className="page-shell page-stack">
         <div>
           <p className="page-kicker">Tools</p>
-          <h1 className="page-title">Energy Markets</h1>
+          <h1 className="page-title">Energy</h1>
         </div>
         <div className="surface-card border-red-800/70 p-5" role="alert">
           <h2 className="text-lg font-semibold text-red-200">Energy evidence is unavailable</h2>
@@ -1702,7 +1702,7 @@ export default function EnergyIndex() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="page-kicker">Tools</p>
-          <h1 className="page-title">Energy Markets</h1>
+          <h1 className="page-title">Energy</h1>
           <p className="page-subtitle">Futures composite, price relationships, biofuels, generation mix, and renewables transition</p>
         </div>
         <SegmentedControl

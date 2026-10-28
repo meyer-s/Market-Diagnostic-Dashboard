@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+
+import { footerRoutes } from "../../routes/registry";
 
 const PRIVATE_ROUTE_PARTS = ["L3Nl", "Y3JldC", "9vcHRp", "b25z"];
 
@@ -58,6 +60,11 @@ export default function Footer() {
           © 2026 Steven J Meyer LLC. All rights reserved.
         </div>
         <div className="site-footer-links flex flex-wrap items-center justify-center gap-6">
+          {footerRoutes.map((item) => (
+            <Link key={item.path} to={item.path} className="transition-colors hover:text-stealth-200">
+              {item.label}
+            </Link>
+          ))}
           <a 
             href="https://www.steven-meyer.com/" 
             target="_blank" 
