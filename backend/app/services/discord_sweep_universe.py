@@ -15,6 +15,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import pandas as pd
 import requests
+from curl_cffi import requests as browser_requests
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,8 @@ CBOE_INTRADAY_OPTIONS_VOLUME_URL = (
 NASDAQ_EARNINGS_CALENDAR_URL = "https://api.nasdaq.com/api/calendar/earnings"
 NASDAQ_LATEST_NEWS_URL = "https://api.nasdaq.com/api/news/topic/latestnews"
 FINVIZ_SCREENER_URL = "https://finviz.com/screener.ashx"
+STOCKANALYSIS_SHORT_INTEREST_URL = "https://stockanalysis.com/list/most-shorted-stocks/"
+CBOE_OPTION_DIRECTORY_URL = "https://www.cboe.com/us/options/symboldir/equity_index_options/?download=csv"
 
 TICKER_PRESETS_PATH = (
     Path(__file__).resolve().parent.parent / "data" / "ticker_presets.json"
@@ -449,10 +452,67 @@ def _build_top_short_interest_100() -> Tuple[List[str], List[str]]:
         limit=100,
         filters="sh_opt_option",
     )
-    notes = ["Loaded from Finviz sorted by short interest share (optionable filter)."]
-    if not symbols:
-        notes.append("Failed to fetch Finviz short-interest symbols.")
-    return symbols[:100], notes
+    if symbols:
+        notes = ["Loaded from Finviz sorted by short interest share (optionable filter)."]
+        if len(symbols) < 100:
+            notes.append(f"Reduced Finviz coverage: {len(symbols)} of 100 requested symbols.")
+        return symbols[:100], notes
+
+    symbols, notes = _fetch_stockanalysis_short_interest_symbols(limit=100)
+    return symbols, ["Finviz screener unavailable; using alternate short-interest source."] + notes
+
+
+def _fetch_stockanalysis_short_interest_symbols(limit: int) -> Tuple[List[str], List[str]]:
+    """Filter the provider's bounded short-float list using verified Cboe listings."""
+    try:
+        response = browser_requests.get(
+            STOCKANALYSIS_SHORT_INTEREST_URL,
+            impersonate="chrome",
+            timeout=20,
+        )
+        response.raise_for_status()
+        tables = pd.read_html(io.StringIO(response.text))
+        ranked = None
+        for table in tables:
+            table.columns = [str(column).strip() for column in table.columns]
+            if {"Symbol", "Short % Float"}.issubset(table.columns):
+                ranked = table.copy()
+                break
+        if ranked is None:
+            raise ValueError("Short-interest table missing Symbol / Short % Float columns")
+        ranked["short_float"] = pd.to_numeric(
+            ranked["Short % Float"].astype(str).str.replace("%", "", regex=False),
+            errors="coerce",
+        )
+        ranked = ranked[ranked["short_float"].gt(0) & ranked["short_float"].lt(float("inf"))]
+        ranked = ranked.sort_values("short_float", ascending=False, kind="stable")
+        candidates = _unique_symbols(ranked["Symbol"].astype(str))
+        if not candidates:
+            raise ValueError("Short-interest table has no valid positive short-float observations")
+    except Exception as exc:
+        logger.warning("Stock Analysis short-interest fallback failed: %s", exc)
+        return [], ["Stock Analysis short-interest fallback unavailable; no verified ranking loaded."]
+
+    try:
+        response = requests.get(CBOE_OPTION_DIRECTORY_URL, headers=STANDARD_HEADERS, timeout=20)
+        response.raise_for_status()
+        directory = pd.read_csv(io.StringIO(response.text))
+        directory.columns = [str(column).strip() for column in directory.columns]
+        optionable = set(_unique_symbols(directory["Stock Symbol"].dropna().astype(str)))
+        if not optionable:
+            raise ValueError("Cboe option directory has no valid stock symbols")
+    except Exception as exc:
+        logger.warning("Cboe optionability verification failed: %s", exc)
+        return [], ["Unable to verify optionability with Cboe; short-interest fallback withheld."]
+
+    symbols = [symbol for symbol in candidates if symbol in optionable][:limit]
+    notes = [
+        f"Reduced coverage: loaded {len(symbols)} Cboe-listed optionable symbols from Stock Analysis's "
+        f"{len(candidates)} short-float candidates: {STOCKANALYSIS_SHORT_INTEREST_URL}",
+        "Reduced coverage, not a complete top-100 optionable ranking; short-interest reports are delayed. "
+        f"Optionability: {CBOE_OPTION_DIRECTORY_URL}",
+    ]
+    return symbols, notes
 
 
 def _build_major_news_21d() -> Tuple[List[str], List[str]]:

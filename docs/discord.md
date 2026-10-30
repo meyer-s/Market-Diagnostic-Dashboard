@@ -86,6 +86,15 @@ Progress updates are emitted every `DISCORD_SWEEP_STATUS_EVERY_TICKERS` scanned 
 
 ## Operational Notes
 
+`TOP_SHORT_INTEREST_100` first requests Finviz's optionable short-interest ranking.
+If Finviz is unavailable, it uses Stock Analysis's most-shorted list, ranked by
+short percentage of float, and retains only symbols verified in Cboe's options
+directory. This fallback has reduced coverage: the provider's list is bounded
+before optionability filtering, so it may return fewer than 100 symbols and is
+not a complete top-100 optionable ranking. Discord notes identify the source and
+coverage limitation. If the ranking or optionability cannot be verified, the
+fallback returns no symbols. Short-interest reports are delayed.
+
 Health check:
 
 ```bash
