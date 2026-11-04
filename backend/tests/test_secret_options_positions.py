@@ -516,6 +516,39 @@ def secret_options_client(monkeypatch: pytest.MonkeyPatch):
     return TestClient(app), testing_session_local
 
 
+def test_attribution_backfill_previews_before_explicit_apply(secret_options_client):
+    client, session_local = secret_options_client
+    with session_local() as db:
+        position = OptionPosition(
+            trade_date=date(2026, 11, 4), expiration=date(2027, 1, 15),
+            symbol="AMZN", strike=290, option_type="call", contracts=2,
+            fill_price=3, total_cost=601, source_match_method="fidelity_activity",
+            source_match_confidence=1, source_match_notes="Broker provenance",
+        )
+        event = OptionAlertEvent(symbol="AMZN", triggered_at=datetime(2026, 11, 4, 14, 36),
+            selected_expiry="2027-01-15", selected_strike=290, selected_option_type="call",
+            selected_strategy_type="call_debit_spread")
+        db.add_all([position, event])
+        db.commit()
+        pid, eid = position.id, event.id
+    preview = client.post("/secret/options/attribution/backfill?from_date=2026-11-04")
+    assert preview.status_code == 200
+    assert preview.json()["dry_run"] is True
+    assert preview.json()["open_positions_linked"] == 1
+    with session_local() as db:
+        assert db.get(OptionPosition, pid).source_event_id is None
+        assert db.query(OptionPositionEvent).count() == 0
+    applied = client.post("/secret/options/attribution/backfill?from_date=2026-11-04&dry_run=false")
+    assert applied.status_code == 200
+    with session_local() as db:
+        row = db.get(OptionPosition, pid)
+        assert row.source_event_id == eid
+        assert (row.contracts, row.total_cost) == (2, 601)
+        assert row.source_match_notes.startswith("Broker provenance")
+        assert db.query(OptionPositionEvent).count() == 1
+    assert client.post("/secret/options/attribution/backfill?dry_run=false").json()["open_positions_linked"] == 0
+
+
 def test_read_scope_get_matrix_does_not_mutate_database(
     secret_options_client,
     monkeypatch: pytest.MonkeyPatch,

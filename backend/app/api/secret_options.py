@@ -27,6 +27,10 @@ from app.api.secret_options_security import (
 from app.models.option_positions import OptionPosition
 from app.models.option_position_reviews import OptionPositionReview
 from app.models.closed_positions import ClosedPosition
+from app.services.option_signal_attribution import (
+    resolve_signal_attribution as _resolve_signal_attribution,
+    backfill_signal_links,
+)
 from app.models.option_trade_reminders import OptionTradeReminder
 from app.models.options_alerts import OptionAlertEvent
 from app.models.option_sweep_runs import OptionSweepRun
@@ -1064,94 +1068,6 @@ def _compute_training_outcome(
         "hold_days_realized": realized_hold_days,
         "days_elapsed_calendar": elapsed_calendar_days,
         "status": "matured",
-    }
-
-
-def _event_confidence_for_trade(trade_date: date, triggered_at: datetime) -> float:
-    day_delta = (trade_date - triggered_at.date()).days
-    if day_delta == 0:
-        return 1.0
-    if day_delta == 1:
-        return 0.92
-    if day_delta == 2:
-        return 0.84
-    if 3 <= day_delta <= 7:
-        return max(0.55, 0.82 - 0.06 * (day_delta - 2))
-    if -1 <= day_delta < 0:
-        return 0.6
-    return 0.35
-
-
-def _resolve_signal_attribution(
-    db,
-    symbol: str,
-    trade_date: date,
-    explicit_event_id: Optional[int] = None,
-) -> Dict[str, object]:
-    if explicit_event_id is not None:
-        event = db.query(OptionAlertEvent).filter(OptionAlertEvent.id == explicit_event_id).first()
-        if event and event.symbol.upper() == symbol.upper() and event.triggered_at:
-            confidence = _event_confidence_for_trade(trade_date, event.triggered_at)
-            return {
-                "source_event_id": event.id,
-                "source_triggered_at": event.triggered_at,
-                "source_match_method": "manual_event_id",
-                "source_match_confidence": confidence,
-                "source_match_notes": "Manually linked by event id.",
-            }
-
-    symbol_upper = symbol.upper()
-    window_start = datetime.combine(trade_date - timedelta(days=2), time.min)
-    window_end = datetime.combine(trade_date + timedelta(days=1), time.max)
-    candidates = (
-        db.query(OptionAlertEvent)
-        .filter(
-            OptionAlertEvent.symbol == symbol_upper,
-            OptionAlertEvent.triggered_at.isnot(None),
-            OptionAlertEvent.triggered_at >= window_start,
-            OptionAlertEvent.triggered_at <= window_end,
-        )
-        .order_by(OptionAlertEvent.triggered_at.desc())
-        .all()
-    )
-
-    method = "symbol+trade_date_window"
-    if not candidates:
-        fallback_start = datetime.combine(trade_date - timedelta(days=21), time.min)
-        candidates = (
-            db.query(OptionAlertEvent)
-            .filter(
-                OptionAlertEvent.symbol == symbol_upper,
-                OptionAlertEvent.triggered_at.isnot(None),
-                OptionAlertEvent.triggered_at >= fallback_start,
-                OptionAlertEvent.triggered_at <= datetime.combine(trade_date, time.max),
-            )
-            .order_by(OptionAlertEvent.triggered_at.desc())
-            .all()
-        )
-        method = "symbol+fallback_21d"
-    if not candidates:
-        return {
-            "source_event_id": None,
-            "source_triggered_at": None,
-            "source_match_method": "no_match",
-            "source_match_confidence": 0.0,
-            "source_match_notes": "No matching sweep event found for symbol/date.",
-        }
-
-    best = max(
-        candidates,
-        key=lambda event: _event_confidence_for_trade(trade_date, event.triggered_at),
-    )
-    confidence = _event_confidence_for_trade(trade_date, best.triggered_at)
-    day_delta = (trade_date - best.triggered_at.date()).days
-
-    return {
-        "source_event_id": best.id,
-        "source_triggered_at": best.triggered_at,
-        "source_match_method": method,
-        "source_match_confidence": confidence,
-        "source_match_notes": f"Matched by symbol and proximity ({day_delta} day delta).",
     }
 
 
@@ -3523,6 +3439,8 @@ def create_position(http_request: Request, payload: OptionPositionCreate):
             symbol,
             trade_date,
             explicit_event_id=payload.source_event_id,
+            expiration=expiration, strike=payload.strike, option_type=option_type,
+            strategy_type=str(strategy_fields["strategy_type"]),
         )
         position = OptionPosition(
             trade_date=trade_date,
@@ -3625,6 +3543,8 @@ def update_position(position_id: int, http_request: Request, payload: OptionPosi
             symbol,
             trade_date,
             explicit_event_id=payload.source_event_id,
+            expiration=expiration, strike=payload.strike, option_type=option_type,
+            strategy_type=str(strategy_fields["strategy_type"]),
         )
 
         position.trade_date = trade_date
@@ -5430,63 +5350,20 @@ def delete_closed_position(closed_position_id: int, http_request: Request):
 def backfill_signal_attribution(
     http_request: Request,
     limit: int = Query(1000, ge=1, le=10000),
+    from_date: Optional[date] = Query(None),
+    dry_run: bool = Query(True),
 ):
-    """
-    Backfill signal attribution for existing open/closed positions that do not
-    yet have a linked sweep event.
-    """
+    """Preview missing scanner associations; apply explicitly with dry_run=false."""
     with get_db_session() as db:
-        open_positions = (
-            db.query(OptionPosition)
-            .filter(OptionPosition.source_event_id.is_(None))
-            .order_by(OptionPosition.trade_date.desc())
-            .limit(limit)
-            .all()
-        )
-        closed_positions = (
-            db.query(ClosedPosition)
-            .filter(ClosedPosition.source_event_id.is_(None))
-            .order_by(ClosedPosition.trade_date.desc())
-            .limit(limit)
-            .all()
-        )
-
-        open_linked = 0
-        closed_linked = 0
-
-        for position in open_positions:
-            attribution = _resolve_signal_attribution(db, position.symbol, position.trade_date)
-            position.source_event_id = attribution["source_event_id"]
-            position.source_triggered_at = attribution["source_triggered_at"]
-            position.source_match_method = attribution["source_match_method"]
-            position.source_match_confidence = attribution["source_match_confidence"]
-            position.source_match_notes = attribution["source_match_notes"]
-            if position.source_event_id is not None:
-                open_linked += 1
-
-        for position in closed_positions:
-            attribution = _resolve_signal_attribution(db, position.symbol, position.trade_date)
-            position.source_event_id = attribution["source_event_id"]
-            position.source_triggered_at = attribution["source_triggered_at"]
-            position.source_match_method = attribution["source_match_method"]
-            position.source_match_confidence = attribution["source_match_confidence"]
-            position.source_match_notes = attribution["source_match_notes"]
-            if position.source_event_id is not None:
-                closed_linked += 1
-
-        db.commit()
-        response = {
-            "open_positions_checked": len(open_positions),
-            "open_positions_linked": open_linked,
-            "closed_positions_checked": len(closed_positions),
-            "closed_positions_linked": closed_linked,
-        }
-        set_secret_options_audit_change(
-            http_request,
-            object_type="signal_attribution_batch",
-            object_id="backfill",
-            after={**response, "limit": limit},
-        )
+        response = backfill_signal_links(db, limit=limit, from_date=from_date, dry_run=dry_run)
+        if dry_run:
+            db.rollback()
+        else:
+            db.commit()
+            set_secret_options_audit_change(
+                http_request, object_type="signal_attribution_batch", object_id="backfill",
+                after={key: value for key, value in response.items() if key != "links"},
+            )
         return _json_safe(response)
 
 

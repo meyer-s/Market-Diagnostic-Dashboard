@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 import logging
 from typing import Any
 
@@ -13,6 +13,7 @@ from app.services.option_decision_learning import (
     learning_summary,
     mature_decision_outcomes,
 )
+from app.services.option_signal_attribution import backfill_signal_links
 from app.services.option_thesis_engine import ensure_model_registry, serialize_assessment
 from app.services.stock_price_cache import get_or_refresh_daily_frame
 from app.utils.db_helpers import get_db_session
@@ -50,6 +51,7 @@ def refresh_due_option_assessments(limit: int = 500) -> dict[str, object]:
 
     today = date.today()
     with get_db_session() as db:
+        attribution = backfill_signal_links(db, from_date=today-timedelta(days=31), imported_only=True)
         positions = db.query(OptionPosition).order_by(OptionPosition.id.asc()).limit(limit).all()
         due = [position for position in positions if _position_is_due(db, position, today)]
         provider = get_market_data_provider()
@@ -76,6 +78,7 @@ def refresh_due_option_assessments(limit: int = 500) -> dict[str, object]:
                 errors.append({"position_id": position.id, "symbol": position.symbol, "error": str(exc)})
         db.commit()
         return {
+            "attribution": attribution,
             "checked": len(positions),
             "due": len(due),
             "assessed": assessed,
@@ -88,6 +91,7 @@ def update_option_learning_outcomes(limit: int = 5000) -> dict[str, object]:
     """Classify actual closes and mature pre-declared decision horizons."""
     with get_db_session() as db:
         ensure_model_registry(db)
+        attribution = backfill_signal_links(db, from_date=date.today()-timedelta(days=31), imported_only=True)
         trades = backfill_trade_outcomes(db, limit=limit)
         decisions = mature_decision_outcomes(
             db,
@@ -97,6 +101,7 @@ def update_option_learning_outcomes(limit: int = 5000) -> dict[str, object]:
         summary = learning_summary(db)
         db.commit()
         return {
+            "attribution": attribution,
             "trade_outcomes": trades,
             "decision_outcomes": decisions,
             "summary": summary,
