@@ -124,6 +124,7 @@ const indicatorCodes = [
 ] as const;
 
 const baseTargets: AuditTarget[] = [
+  { id: "research-truth-social", name: "Truth Social Activity", path: "/research/truth-social", group: "route", template: "TruthSocialResearch" },
   { id: "01-dashboard", name: "Dashboard", path: "/", group: "route", template: "Dashboard" },
   { id: "02-vision", name: "Vision", path: "/vision", group: "route", template: "Vision" },
   {

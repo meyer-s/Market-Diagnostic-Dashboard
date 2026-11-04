@@ -31,6 +31,7 @@ from app.api.real_estate import router as real_estate_router
 from app.api.market_weather import router as market_weather_router
 from app.api.bls import router as bls_router
 from app.api.dollar_participation import router as dollar_participation_router
+from app.api.truth_social import router as truth_social_router
 from app.utils.logging_config import configure_safe_dependency_logging
 
 # Set up logging
@@ -167,6 +168,7 @@ app.include_router(bls_router, tags=["BLS"])
 
 # Matched UUP/UDN activity compared with DXY price movement
 app.include_router(dollar_participation_router, tags=["DollarParticipation"])
+app.include_router(truth_social_router, tags=["Research"])
 
 # Metal Projections
 from app.api.metal_projections import router as metal_projections_router

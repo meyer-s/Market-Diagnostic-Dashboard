@@ -1,0 +1,41 @@
+.truth-research { --truth-daily: #b39af5; --truth-average: #83bfff; }
+.truth-source-line, .truth-date-range { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem; }
+.truth-source-line { color: var(--field-text-muted); font-size: .875rem; }
+.truth-source-line strong { color: var(--field-text); font-weight: 500; }
+.truth-source-line button { margin-left: auto; }
+.truth-qualification { color: var(--field-text-muted); font-size: .875rem; }
+.truth-controls { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1rem; }
+.truth-date-range label, .truth-year, .truth-inspect-label { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; color: var(--field-text-muted); font-size: .875rem; }
+.truth-research input, .truth-research select { color-scheme: dark; background: var(--field-surface); color: var(--field-text); border: 1px solid var(--field-border); border-radius: .4rem; padding: .5rem .65rem; max-width: 100%; min-height: 40px; }
+.truth-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.5rem; border-block: 1px solid var(--field-border); padding-block: 1.2rem; }
+.truth-summary dt, .truth-inspection dt { font-size: .8rem; color: var(--field-text-muted); }
+.truth-summary dd { font-size: 2rem; font-weight: 500; font-variant-numeric: tabular-nums; }
+.truth-summary dd span { display: block; font-size: .85rem; font-weight: 400; color: var(--field-text-muted); }
+.truth-main-chart { height: 380px; width: 100%; min-width: 0; }
+.truth-month-chart { height: 280px; min-width: 0; }
+.truth-inspection { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1.5rem; padding: 1.25rem; background: var(--field-surface); border-radius: .75rem; }
+.truth-inspection h2, .truth-day-index h2 { font-size: 1rem; font-weight: 500; }
+.truth-inspect-label { margin-top: .6rem; }
+.truth-inspection dl { display: flex; flex-wrap: wrap; gap: 1.5rem; }
+.truth-inspection dd { font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+.truth-research a { color: var(--truth-average); text-decoration: underline; text-underline-offset: 3px; }
+.truth-lower-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; align-items: start; }
+.truth-day-index > p { color: var(--field-text-muted); font-size: .8rem; margin-top: .4rem; }
+.truth-calendar { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; margin-top: 1rem; }
+.truth-calendar h3 { font-size: .8rem; color: var(--field-text-muted); margin-bottom: .4rem; }
+.truth-month-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+.truth-day { min-width: 0; min-height: 38px; color: var(--field-text); border-radius: 3px; padding: 3px 1px; font-size: .7rem; font-variant-numeric: tabular-nums; }
+.truth-day span, .truth-day strong { display: block; line-height: 1.2; }
+.truth-day span { opacity: .8; font-size: .65rem; }
+.truth-day[aria-pressed=true] { outline: 2px solid var(--field-text); outline-offset: 1px; }
+.truth-day:hover { outline: 1px solid var(--field-text-muted); }
+.truth-methods { border-top: 1px solid var(--field-border); padding-top: 1rem; color: var(--field-text-muted); font-size: .875rem; }
+.truth-methods summary { color: var(--field-text); cursor: pointer; }
+.truth-methods > div { display: grid; gap: .8rem; padding-block: 1rem; max-width: 85ch; }
+.truth-methods ul { list-style: disc; padding-left: 1.4rem; display: grid; gap: .5rem; }
+.truth-table { width: 100%; font-size: .875rem; border-collapse: collapse; }
+.truth-table th, .truth-table td { padding: .5rem; text-align: left; border-bottom: 1px solid var(--field-border); }
+.truth-table button { text-decoration: underline; text-underline-offset: 3px; }
+@media (max-width: 900px) { .truth-lower-grid { grid-template-columns: minmax(0, 1fr); } .truth-calendar { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .truth-calendar { grid-template-columns: minmax(0, 1fr); } .truth-summary { gap: .6rem; } .truth-summary dd { font-size: 1.5rem; } .truth-summary dt { min-height: 2.5em; } .truth-source-line button { margin-left: 0; } .truth-main-chart { height: 320px; } .truth-date-range { gap: .65rem; } .truth-research input, .truth-research select { font-size: 1rem; } }
+@media (pointer: coarse) { .truth-day { min-height: 44px; } }
