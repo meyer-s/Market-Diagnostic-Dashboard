@@ -32,6 +32,7 @@ import {
   Undo2,
 } from "lucide-react";
 import { apiFetch } from "../utils/apiUtils";
+import { isPersonalEtfOption, readPersonalEtfPreference, savePersonalEtfPreference } from "../utils/personalEtfOptions";
 import { SCANNER_RECOMMENDATIONS_PAUSED, SCANNER_FUNDING_REASON } from "../utils/scannerTradeSafety";
 import { ScannerTradeSafetyNotice } from "../features/secretOptions/ScannerTradeSafetyNotice";
 import {
@@ -1563,7 +1564,16 @@ export function SecretOptionsDialog({
 
 export default function SecretOptions() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [positions, setPositions] = useState<PositionPayload[]>([]);
+  const [allPositions, setPositions] = useState<PositionPayload[]>([]);
+  const [showPersonalEtfs, setShowPersonalEtfs] = useState(readPersonalEtfPreference);
+  const positions = useMemo(
+    () => showPersonalEtfs ? allPositions : allPositions.filter(({ position }) => !isPersonalEtfOption(position.symbol)),
+    [allPositions, showPersonalEtfs],
+  );
+  const personalEtfCount = useMemo(
+    () => allPositions.filter(({ position }) => isPersonalEtfOption(position.symbol)).length,
+    [allPositions],
+  );
   const [positionRowContexts, setPositionRowContexts] = useState<Record<string, PositionRowContext>>({});
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [expandedPositionId, setExpandedPositionId] = useState<number | null>(null);
@@ -1603,7 +1613,11 @@ export default function SecretOptions() {
   const [rollSubmitting, setRollSubmitting] = useState(false);
   const [rollPositionError, setRollPositionError] = useState<string | null>(null);
   const rollPositionErrorRef = useRef<HTMLDivElement>(null);
-  const [closedPositions, setClosedPositions] = useState<ClosedPositionRow[]>([]);
+  const [allClosedPositions, setClosedPositions] = useState<ClosedPositionRow[]>([]);
+  const closedPositions = useMemo(
+    () => showPersonalEtfs ? allClosedPositions : allClosedPositions.filter((position) => !isPersonalEtfOption(position.symbol)),
+    [allClosedPositions, showPersonalEtfs],
+  );
   const [showClosedLog, setShowClosedLog] = useState(false);
   const [showClosedEditModal, setShowClosedEditModal] = useState(false);
   const [editingClosedPositionId, setEditingClosedPositionId] = useState<number | null>(null);
@@ -2910,7 +2924,7 @@ export default function SecretOptions() {
     setFormError(null);
     const payload = buildPositionPayloadFromForm();
     if (!payload) return;
-    const duplicate = positions.find((item) => openPositionSignature(item.position) === openPositionSignature(payload));
+    const duplicate = allPositions.find((item) => openPositionSignature(item.position) === openPositionSignature(payload));
     if (duplicate) {
       setFormError(`This open trade already exists as trade #${duplicate.position.id}.`);
       return;
@@ -2942,7 +2956,7 @@ export default function SecretOptions() {
     setFormError(null);
     const payload = buildPositionPayloadFromForm();
     if (!payload) return;
-    const duplicate = positions.find(
+    const duplicate = allPositions.find(
       (item) =>
         item.position.id !== editingPositionId &&
         openPositionSignature(item.position) === openPositionSignature(payload)
@@ -3325,7 +3339,7 @@ export default function SecretOptions() {
     setClosedFormError(null);
     const payload = buildClosedPositionPayloadFromForm();
     if (!payload) return;
-    const duplicate = closedPositions.find(
+    const duplicate = allClosedPositions.find(
       (item) => item.id !== editingClosedPositionId && closedPositionSignature(item) === closedPositionSignature(payload)
     );
     if (duplicate) {
@@ -4103,7 +4117,12 @@ export default function SecretOptions() {
   );
 
   useEffect(() => {
-    if (loading || filteredPositions.length === 0) {
+    if (loading) {
+      return;
+    }
+    if (filteredPositions.length === 0) {
+      setSelectedId(null);
+      setExpandedPositionId(null);
       return;
     }
     const selectedIsVisible = filteredPositions.some(({ position }) => position.id === selectedId);
@@ -4706,6 +4725,32 @@ export default function SecretOptions() {
           </span>
         </div>
       </div>
+
+      <section aria-label="ETF visibility" className="border-b border-stealth-700/70 pb-3">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+          <label className="inline-flex min-h-11 cursor-pointer items-center gap-3 text-sm font-semibold text-stealth-100">
+            <input
+              type="checkbox"
+              role="switch"
+              checked={showPersonalEtfs}
+              aria-describedby="personal-etf-scope"
+              onChange={(event) => {
+                const include = event.target.checked;
+                setShowPersonalEtfs(include);
+                savePersonalEtfPreference(include);
+              }}
+              className="h-5 w-5 accent-sky-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sky-300"
+            />
+            Show personal ETF bets
+          </label>
+          <span className="text-sm text-stealth-300" aria-live="polite">
+            {personalEtfCount} ETF open {personalEtfCount === 1 ? "lot" : "lots"} {showPersonalEtfs ? "included" : "hidden"}
+          </span>
+        </div>
+        <p id="personal-etf-scope" className="max-w-prose text-sm leading-6 text-stealth-300">
+          Open positions, closed history and their performance totals follow this setting. Trade records are retained; portfolio risk and learning still use the full ledger.
+        </p>
+      </section>
 
       <div
         className="hidden w-fit rounded-xl border border-stealth-700/80 bg-stealth-950/70 p-1 xl:flex"
