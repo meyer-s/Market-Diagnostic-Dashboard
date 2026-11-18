@@ -1,15 +1,53 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { LoadingState } from "../../utils/componentUtils";
 
 const LiveNewsPanel = lazy(() => import("./LiveNewsPanel"));
 
 export default function LiveNewsSection({ compact = false }: { compact?: boolean }) {
-  const [enabled, setEnabled] = useState(false);
   const id = compact ? "dashboard-live-news" : "live-news";
+  const storageKey = compact ? "live-news:dashboard" : "live-news:news";
+  const [enabled, setEnabled] = useState(() => {
+    try {
+      return window.localStorage.getItem(storageKey) !== "off";
+    } catch {
+      return true;
+    }
+  });
+  const [viewport, setViewport] = useState({ seen: false, visible: false });
+  const sectionRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (!enabled || !sectionRef.current) return;
+    if (typeof IntersectionObserver === "undefined") {
+      setViewport({ seen: true, visible: true });
+      return;
+    }
+
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry) return;
+      setViewport(({ seen }) => ({
+        seen: seen || entry.isIntersecting,
+        visible: entry.isIntersecting,
+      }));
+    });
+    observer.observe(sectionRef.current);
+    return () => observer.disconnect();
+  }, [enabled]);
+
+  function toggle() {
+    const next = !enabled;
+    setEnabled(next);
+    setViewport({ seen: false, visible: false });
+    try {
+      window.localStorage.setItem(storageKey, next ? "on" : "off");
+    } catch {
+      // The toggle still works for this visit when storage is unavailable.
+    }
+  }
 
   return (
-    <section id={id} className="surface-card-strong p-4" aria-labelledby={`${id}-heading`}>
+    <section ref={sectionRef} id={id} className="surface-card-strong p-4" aria-labelledby={`${id}-heading`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 id={`${id}-heading`} className="text-base font-semibold text-stealth-100">Live news</h2>
         <div className="flex flex-wrap items-center gap-2">
@@ -18,7 +56,7 @@ export default function LiveNewsSection({ compact = false }: { compact?: boolean
             type="button"
             aria-controls={`${id}-panel`}
             aria-expanded={enabled}
-            onClick={() => setEnabled((current) => !current)}
+            onClick={toggle}
             className="field-button field-button-secondary"
           >
             {enabled ? "Turn off live news" : "Turn on live news"}
@@ -26,9 +64,9 @@ export default function LiveNewsSection({ compact = false }: { compact?: boolean
         </div>
       </div>
       <div id={`${id}-panel`} hidden={!enabled}>
-        {enabled && (
+        {enabled && viewport.seen && (
           <Suspense fallback={<div className="mt-4"><LoadingState message="Loading live news." /></div>}>
-            <LiveNewsPanel compact={compact} />
+            <LiveNewsPanel compact={compact} inViewport={viewport.visible} />
           </Suspense>
         )}
       </div>

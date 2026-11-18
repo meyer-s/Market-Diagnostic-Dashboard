@@ -267,7 +267,7 @@ function WeightsEditor({ close, onSaved }: { close: () => void; onSaved: () => v
   );
 }
 
-export default function LiveNewsPanel({ compact = false }: { compact?: boolean }) {
+export default function LiveNewsPanel({ compact = false, inViewport }: { compact?: boolean; inViewport: boolean }) {
   const [view, setView] = useState<View>(compact ? "focused" : "wire");
   const [topic, setTopic] = useState("");
   const [when, setWhen] = useState("");
@@ -277,6 +277,7 @@ export default function LiveNewsPanel({ compact = false }: { compact?: boolean }
   const [showWeights, setShowWeights] = useState(false);
   const [result, setResult] = useState<{ query: string; data: Snapshot }>();
   const [failedQuery, setFailedQuery] = useState<string>();
+  const nextActivity = useRef(0);
   const closeWeights = useCallback(() => setShowWeights(false), []);
   const feedQuery = new URLSearchParams({ view, topic }).toString();
   const query = new URLSearchParams({ view, topic, when, q: search, page: String(page) }).toString();
@@ -287,18 +288,20 @@ export default function LiveNewsPanel({ compact = false }: { compact?: boolean }
   const articles = data?.articles.slice(0, compact ? HOME_HEADLINE_LIMIT - data.featured.length : undefined) ?? [];
 
   useEffect(() => {
+    if (!inViewport) return;
     const controller = new AbortController();
-    let nextActivity = 0;
     const renew = () => {
-      if (document.hidden || Date.now() < nextActivity) return;
-      nextActivity = Date.now() + ACTIVITY_MS;
+      if (document.hidden || Date.now() < nextActivity.current) return;
+      nextActivity.current = Date.now() + ACTIVITY_MS;
       void request("/activity", {
         method: "POST",
         headers: { "X-Live-News": "1" },
         signal: controller.signal,
       }).catch(() => undefined);
     };
-    renew();
+    queueMicrotask(() => {
+      if (!controller.signal.aborted) renew();
+    });
     const timer = window.setInterval(renew, ACTIVITY_MS);
     document.addEventListener("visibilitychange", renew);
     return () => {
@@ -306,9 +309,10 @@ export default function LiveNewsPanel({ compact = false }: { compact?: boolean }
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", renew);
     };
-  }, []);
+  }, [inViewport]);
 
   useEffect(() => {
+    if (!inViewport) return;
     const controller = new AbortController();
     let timer: number | undefined;
     let inFlight = false;
@@ -339,7 +343,7 @@ export default function LiveNewsPanel({ compact = false }: { compact?: boolean }
       window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", refresh);
     };
-  }, [query, revision]);
+  }, [inViewport, query, revision]);
 
   const topicField = (
     <FormField label="Topic">

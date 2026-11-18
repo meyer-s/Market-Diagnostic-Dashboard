@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -43,16 +43,28 @@ vi.mock("../../components/widgets/IndicatorCard", () => ({
 describe("Dashboard", () => {
   beforeEach(() => {
     apiFetchMock.mockReset();
+    localStorage.setItem("live-news:dashboard", "off");
   });
 
   afterEach(() => {
     cleanup();
+    localStorage.removeItem("live-news:dashboard");
     vi.clearAllMocks();
     vi.unstubAllGlobals();
   });
 
-  it("loads the compact live feed on demand with view and topic controls", async () => {
+  it("starts enabled, loads in view, and remembers when the compact feed is turned off", async () => {
     apiFetchMock.mockResolvedValue([]);
+    localStorage.removeItem("live-news:dashboard");
+    let setIntersection = (_visible: boolean) => {};
+    vi.stubGlobal("IntersectionObserver", class {
+      constructor(callback: IntersectionObserverCallback) {
+        setIntersection = (isIntersecting) =>
+          callback([{ isIntersecting } as IntersectionObserverEntry], this as unknown as IntersectionObserver);
+      }
+      observe() {}
+      disconnect() {}
+    });
     const liveFetch = vi.fn(async () => Response.json({
       updated_at: "2026-11-18T12:00:00Z",
       checked_label: "Nov 18, 7:00:00 AM EST",
@@ -74,7 +86,8 @@ describe("Dashboard", () => {
     const live = within(liveSection);
     expect(liveFetch).not.toHaveBeenCalled();
     expect(live.getByRole("link", { name: "Open News tab" }).getAttribute("href")).toBe("/news");
-    fireEvent.click(live.getByRole("button", { name: "Turn on live news" }));
+    expect(live.getByRole("button", { name: "Turn off live news" })).toBeTruthy();
+    act(() => setIntersection(true));
     const headlines = await live.findByRole("list", { name: "Live headlines" });
     expect(within(headlines).getAllByRole("link")).toHaveLength(6);
     const views = within(live.getByRole("group", { name: "Live news view" }));
@@ -90,8 +103,11 @@ describe("Dashboard", () => {
     fireEvent.click(views.getByRole("button", { name: "All News" }));
     await waitFor(() => expect(liveFetch).toHaveBeenCalledWith(expect.stringContaining("view=all&topic=markets"), expect.anything()));
     expect(within(await live.findByRole("list", { name: "Live headlines" })).getAllByRole("link")).toHaveLength(6);
+    act(() => setIntersection(false));
+    expect(live.getByRole("list", { name: "Live headlines" })).toBeTruthy();
     fireEvent.click(live.getByRole("button", { name: "Turn off live news" }));
     expect(live.queryByRole("list", { name: "Live headlines" })).toBeNull();
+    expect(localStorage.getItem("live-news:dashboard")).toBe("off");
   });
 
   it("renders without a public refresh trigger and only calls public endpoints", async () => {

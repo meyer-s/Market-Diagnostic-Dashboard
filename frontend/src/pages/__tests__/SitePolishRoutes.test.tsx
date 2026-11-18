@@ -104,10 +104,12 @@ describe("site-polish route contracts", () => {
   beforeEach(() => {
     apiFetchMock.mockReset();
     useApiMock.mockReset();
+    localStorage.setItem("live-news:news", "off");
   });
 
   afterEach(() => {
     cleanup();
+    localStorage.removeItem("live-news:news");
     vi.clearAllMocks();
     vi.unstubAllGlobals();
   });
