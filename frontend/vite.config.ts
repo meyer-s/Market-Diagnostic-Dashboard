@@ -6,6 +6,7 @@ const runtimeEnv = (
     process?: { env?: Record<string, string | undefined> }
   }
 ).process?.env ?? {}
+const liveNewsProxy = { target: runtimeEnv.VITE_LIVE_NEWS_PROXY ?? 'http://market_live_news:8765' }
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -25,6 +26,7 @@ export default defineConfig({
       '100.49.90.221',
     ],
     proxy: {
+      '/live-news/': liveNewsProxy,
       '/api': {
         target: 'http://market_backend:8000',
         changeOrigin: true,
@@ -36,6 +38,7 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5173,
     proxy: {
+      '/live-news/': liveNewsProxy,
       '/api': {
         target: 'http://market_backend:8000',
         changeOrigin: true,

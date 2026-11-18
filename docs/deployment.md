@@ -32,6 +32,21 @@ Key production properties:
 - An application-only release may rebuild and recreate `frontend`, `backend`, and
   `scheduler` without restarting the independent `ibgateway` service.
 
+### Live News
+
+The News page mounts the Live News reader only after a visitor turns it on. Its
+internal `live-news` service is shared across readers and is independent of
+the API worker count. A visible reader renews demand every 20 seconds. Feed
+polling goes idle within 45 seconds of the last renewal. The reader checks its
+snapshot every five seconds. Upstream polls have a 20-second minimum per feed,
+honor publisher cache and retry headers, and use at most four workers.
+
+Nginx bounds traffic under `/live-news/`. Reader weights are browser-local.
+The separate SQLite volume keeps up to 250 wire entries per feed and 5,000 total.
+Wire entries expire after 72 hours. Cleanup runs on writes and every five minutes,
+including when feed polling is idle. This does not affect the cached watchlist
+news in PostgreSQL.
+
 ## Local development
 
 For bind mounts, hot reload, and the Vite dev server, layer the dev override on top of production:

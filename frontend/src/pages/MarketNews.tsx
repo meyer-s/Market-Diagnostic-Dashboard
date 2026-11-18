@@ -99,6 +99,7 @@ const parsePositiveInteger = (value: string | null, fallback: number) => {
 };
 
 export default function MarketNews() {
+  const [liveNewsEnabled, setLiveNewsEnabled] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isTickerOpen, setIsTickerOpen] = useState(false);
@@ -391,6 +392,31 @@ export default function MarketNews() {
           </button>
         </div>
       </header>
+
+      <section className="surface-card-strong p-4" aria-labelledby="live-news-heading">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 id="live-news-heading" className="text-base font-semibold text-stealth-100">Live news</h2>
+          <button
+            type="button"
+            aria-controls="live-news-panel"
+            aria-expanded={liveNewsEnabled}
+            onClick={() => setLiveNewsEnabled((enabled) => !enabled)}
+            className="min-h-11 rounded-xl border border-stealth-600 px-4 text-sm font-semibold text-stealth-100 transition hover:border-stealth-400"
+          >
+            {liveNewsEnabled ? "Turn off live news" : "Turn on live news"}
+          </button>
+        </div>
+        <div id="live-news-panel" hidden={!liveNewsEnabled}>
+          {liveNewsEnabled && (
+            <iframe
+              title="Live market news"
+              src="/live-news/?view=wire"
+              sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
+              className="mt-4 h-[min(75vh,50rem)] min-h-[24rem] w-full rounded-xl border border-stealth-700"
+            />
+          )}
+        </div>
+      </section>
 
       <section className="surface-card-strong p-4" aria-labelledby="ticker-cache-heading">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

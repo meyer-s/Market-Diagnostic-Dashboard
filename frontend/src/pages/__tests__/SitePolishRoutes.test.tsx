@@ -146,6 +146,12 @@ describe("site-polish route contracts", () => {
     expect(screen.getByRole("button", { name: "24h" }).getAttribute("aria-pressed")).toBe("true");
     expect((screen.getByLabelText("Sort") as HTMLSelectElement).value).toBe("oldest");
 
+    expect(screen.queryByTitle("Live market news")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Turn on live news" }));
+    expect(screen.getByTitle("Live market news").getAttribute("src")).toBe("/live-news/?view=wire");
+    fireEvent.click(screen.getByRole("button", { name: "Turn off live news" }));
+    expect(screen.queryByTitle("Live market news")).toBeNull();
+
     fireEvent.click(screen.getByRole("button", { name: "Previous" }));
     await waitFor(() => expect(screen.getByTestId("location-search").textContent).not.toContain("page="));
     expect(screen.getByText("Showing 1–12 of 25 headlines")).not.toBeNull();

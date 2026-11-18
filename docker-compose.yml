@@ -82,6 +82,32 @@ services:
         max-size: "10m"
         max-file: "5"
 
+  live-news:
+    build:
+      context: ./backend
+      dockerfile: LiveNews.Dockerfile
+    container_name: market_live_news
+    restart: unless-stopped
+    environment:
+      LIVE_NEWS_BIND: 0.0.0.0
+      LIVE_NEWS_ARCHIVE: /app/live-news/wire.sqlite3
+    volumes:
+      - market_live_news:/app/live-news
+    expose:
+      - "8765"
+    cpus: 0.5
+    mem_limit: 192m
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/healthz', timeout=3)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "2m"
+        max-file: "2"
+
   frontend:
     build:
       context: ./frontend
@@ -108,3 +134,4 @@ services:
 
 volumes:
   market_db:
+  market_live_news:
