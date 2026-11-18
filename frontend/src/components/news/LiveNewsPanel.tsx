@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { EmptyState, ErrorState, LoadingState } from "../../utils/componentUtils";
 import { formatDateTimeWithWeekday } from "../../utils/styleUtils";
-import { Dialog, FormField, SegmentedControl, SupportingContextTooltip } from "../ui";
+import { Dialog, FormField, SegmentedControl } from "../ui";
 
 const LIVE_PATH = "/live-news";
 const REFRESH_MS = 5_000;
 const ACTIVITY_MS = 20_000;
 const RETRY_MS = 15_000;
+const HOME_HEADLINE_LIMIT = 6;
+const HOVER_DELAY_MS = 180;
 const BUTTON = "field-button field-button-secondary disabled:cursor-not-allowed disabled:opacity-50";
 type View = "wire" | "focused" | "all";
 const VIEWS: { value: View; label: string }[] = [
@@ -77,11 +79,12 @@ async function request(path: string, options?: RequestInit) {
   return response;
 }
 
-function ArticlePreview({ article }: { article: Article }) {
+function HeadlineDetails({ article, expanded, featured }: { article: Article; expanded: boolean; featured: boolean }) {
   const { id, priority, summary } = article;
+  const hasExcerpt = priority === "Top" && !(featured && summary);
   const [preview, setPreview] = useState<Preview>();
   useEffect(() => {
-    if (priority !== "Top" || summary) return;
+    if (!expanded || !hasExcerpt || summary || preview) return;
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
       try {
@@ -95,29 +98,52 @@ function ArticlePreview({ article }: { article: Article }) {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [id, priority, summary]);
+  }, [expanded, hasExcerpt, id, preview, summary]);
 
   return (
-    <>
-      <span className="block font-semibold">{article.priority} priority · Relevance {article.score}</span>
-      {article.reasons.length > 0 && <span className="mt-1 block text-stealth-300">{article.reasons.join(" · ")}</span>}
-      {priority === "Top" && (
-        <span className="mt-2 block border-t border-stealth-700 pt-2">
-          {summary || preview?.text || "Loading article preview…"}
+    <div className="mb-0.5 mt-2 max-w-3xl space-y-1.5 border-t border-stealth-700 pt-2.5 text-xs text-stealth-300">
+      <p className="flex flex-wrap items-baseline gap-x-2">
+        <span className="font-semibold text-stealth-100">{priority} priority · Relevance {article.score}</span>
+        {article.reasons.length > 0 && <span>{article.reasons.join(" · ")}</span>}
+      </p>
+      {hasExcerpt && (
+        <div className="space-y-1.5">
+          <p className="text-sm leading-relaxed text-stealth-100">{summary || preview?.text || "Loading article preview…"}</p>
           {(summary || preview?.origin) && (
-            <span className="mt-1 block text-stealth-300">{summary ? "Official release" : preview?.origin}</span>
+            <p>{summary ? "Official release" : preview?.origin}</p>
           )}
-        </span>
+        </div>
       )}
-    </>
+    </div>
   );
 }
 
 function Headline({ article, topic, featured = false }: { article: Article; topic: string; featured?: boolean }) {
   const { bars, fade, color } = PRIORITY[article.priority];
   const Title = featured ? "h4" : "h3";
+  const detailsId = useId();
+  const [disclosure, setDisclosure] = useState<"closed" | "hover" | "open">("closed");
+  const hoverTimer = useRef<number>();
+  const expanded = disclosure !== "closed";
+
+  useEffect(() => () => window.clearTimeout(hoverTimer.current), []);
+
+  function closeHover() {
+    window.clearTimeout(hoverTimer.current);
+    setDisclosure((current) => current === "hover" ? "closed" : current);
+  }
+
   return (
-    <article className={`group/row relative flex gap-1.5 pl-1.5 pr-3 py-2.5 ${featured ? "surface-card-muted" : ""}`}>
+    <article
+      className={`group/row relative flex gap-1.5 py-2.5 pl-1.5 pr-3 ${featured ? "surface-card-muted" : ""}`}
+      onPointerEnter={(event) => {
+        if (event.pointerType !== "mouse") return;
+        hoverTimer.current = window.setTimeout(() => {
+          setDisclosure((current) => current === "closed" ? "hover" : current);
+        }, HOVER_DELAY_MS);
+      }}
+      onPointerLeave={closeHover}
+    >
       <div aria-hidden="true" className="relative w-4 shrink-0 self-stretch">
         <div className={`pointer-events-none absolute left-0 top-0 z-10 flex min-h-full w-1 items-center justify-center overflow-hidden rounded transition-[width] group-hover/row:w-4 group-focus-within/row:w-4 motion-reduce:transition-none ${TOPIC_COLORS[article.topic] ?? TOPIC_COLORS.general}`}>
           <span className="hidden rotate-180 whitespace-nowrap py-1 text-[10px] font-bold leading-none text-slate-950 [writing-mode:vertical-rl] group-hover/row:block group-focus-within/row:block">
@@ -125,36 +151,56 @@ function Headline({ article, topic, featured = false }: { article: Article; topi
           </span>
         </div>
       </div>
-      <SupportingContextTooltip
-        className="w-full items-center gap-2.5"
-        placement="bottom"
-        trigger={
+      <div className="flex min-w-0 flex-1 items-start gap-2.5">
+        <button
+          type="button"
+          className="field-icon-button"
+          aria-expanded={expanded}
+          aria-controls={detailsId}
+          aria-label={`${article.priority} priority · ${topic} · ${article.priority === "Top" && !featured ? "Article preview" : "Headline details"}`}
+          onClick={() => {
+            window.clearTimeout(hoverTimer.current);
+            setDisclosure((current) => current === "closed" ? "open" : "closed");
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && expanded) {
+              window.clearTimeout(hoverTimer.current);
+              setDisclosure("closed");
+            }
+          }}
+        >
           <span aria-hidden="true" className={`flex h-4 items-end gap-0.5 ${color}`}>
             {[1, 2, 3].map((bar) => (
               <span key={bar} className={`w-[3px] rounded-sm bg-current ${bar <= bars ? "" : "opacity-25"}`} style={{ height: bar * 4 + 2 }} />
             ))}
           </span>
-        }
-        triggerLabel={`${article.priority} priority · ${topic}${article.priority === "Top" ? " · Article preview" : ""}`}
-        text={<ArticlePreview article={article} />}
-        openOnContentHover={article.priority === "Top"}
-        lazy
-      >
-        <div className={`space-y-1 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100 motion-reduce:transition-none ${fade}`}>
-          <Title className="break-words text-sm font-semibold leading-snug text-stealth-100 sm:text-base">
-            <a className="hover:underline focus-visible:underline" href={article.url} target="_blank" rel="noopener noreferrer">
-              {article.title}<span className="sr-only"> (opens in a new tab)</span>
-            </a>
-          </Title>
-          <p className="flex flex-wrap gap-x-2 text-xs text-stealth-300">
-            <span className="sr-only">{topic}</span>
-            <span>{article.source}</span>
-            <time dateTime={article.published_at}>{formatDateTimeWithWeekday(article.published_at)} ET</time>
-            {article.cached && <span>Cached</span>}
-          </p>
-          {featured && article.summary && <p className="text-sm leading-relaxed text-stealth-200">{article.summary}</p>}
+        </button>
+        <div className="min-w-0 flex-1 self-center">
+          <div className={`space-y-1 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100 motion-reduce:transition-none ${expanded ? "" : fade}`}>
+            <Title className="break-words text-sm font-semibold leading-snug text-stealth-100 sm:text-base">
+              <a className="hover:underline focus-visible:underline" href={article.url} target="_blank" rel="noopener noreferrer">
+                {article.title}<span className="sr-only"> (opens in a new tab)</span>
+              </a>
+            </Title>
+            <p className="flex flex-wrap gap-x-2 text-xs text-stealth-300">
+              <span className="sr-only">{topic}</span>
+              <span>{article.source}</span>
+              <time dateTime={article.published_at}>{formatDateTimeWithWeekday(article.published_at)} ET</time>
+              {article.cached && <span>Cached</span>}
+            </p>
+            {featured && article.summary && <p className="text-sm leading-relaxed text-stealth-200">{article.summary}</p>}
+          </div>
+          <div
+            id={detailsId}
+            aria-hidden={!expanded}
+            className={`collapsible-panel ${expanded ? "collapsible-panel-open" : ""}`}
+          >
+            <div className="collapsible-panel-inner">
+              <HeadlineDetails article={article} expanded={expanded} featured={featured} />
+            </div>
+          </div>
         </div>
-      </SupportingContextTooltip>
+      </div>
     </article>
   );
 }
@@ -221,8 +267,8 @@ function WeightsEditor({ close, onSaved }: { close: () => void; onSaved: () => v
   );
 }
 
-export default function LiveNewsPanel() {
-  const [view, setView] = useState<View>("wire");
+export default function LiveNewsPanel({ compact = false }: { compact?: boolean }) {
+  const [view, setView] = useState<View>(compact ? "focused" : "wire");
   const [topic, setTopic] = useState("");
   const [when, setWhen] = useState("");
   const [search, setSearch] = useState("");
@@ -237,6 +283,7 @@ export default function LiveNewsPanel() {
   const data = result?.query === query ? result.data : undefined;
   const topics = result?.data.topics ?? {};
   const error = failedQuery === query;
+  const articles = data?.articles.slice(0, compact ? HOME_HEADLINE_LIMIT - data.featured.length : undefined) ?? [];
 
   useEffect(() => {
     const controller = new AbortController();
@@ -295,15 +342,15 @@ export default function LiveNewsPanel() {
 
   return (
     <div className="mt-4 space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      {!compact && <div className="flex flex-wrap items-center justify-between gap-2">
         <SegmentedControl label="Live news view" options={VIEWS} value={view} onChange={(value) => { setView(value); setPage(1); }} />
         <div className="flex flex-wrap gap-2">
           <button type="button" className={BUTTON} onClick={() => setRevision((value) => value + 1)}>Refresh live news</button>
           <button type="button" className={BUTTON} onClick={() => setShowWeights(true)}>Weights</button>
           <a className={BUTTON} href={`${LIVE_PATH}/rss.xml?${feedQuery}`}>RSS feed</a>
         </div>
-      </div>
-      <form
+      </div>}
+      {!compact && <form
         className="surface-card-muted grid gap-3 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,2fr)_auto] sm:items-end"
         onSubmit={(event) => {
           event.preventDefault();
@@ -328,7 +375,7 @@ export default function LiveNewsPanel() {
           <input name="search" type="search" maxLength={120} className="min-w-0 px-3 text-sm" />
         </FormField>
         <button type="submit" className={BUTTON}>Search</button>
-      </form>
+      </form>}
 
       {showWeights && <WeightsEditor close={closeWeights} onSaved={() => { closeWeights(); setRevision((value) => value + 1); }} />}
 
@@ -337,7 +384,12 @@ export default function LiveNewsPanel() {
       {data && (
         <>
           <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-stealth-300">
-            <span>{data.total ? `${data.first}–${data.last} of ${data.total.toLocaleString()} ${data.featured.length ? "other headlines" : "headlines"}` : "0 matching headlines"}</span>
+            <span>{compact
+              ? "Focused headlines"
+              : data.total
+                ? `${data.first}–${data.last} of ${data.total.toLocaleString()} ${data.featured.length ? "other headlines" : "headlines"}`
+                : "0 matching headlines"}
+            </span>
             <span>{data.checked_label ? <>Feed snapshot <time dateTime={data.updated_at ?? undefined}>{data.checked_label}</time></> : "Waiting for the collector"} · Updates every {data.read_interval}s</span>
           </div>
           {data.archive_error && view === "wire" && <p className="text-sm text-stealth-300" role="status">{data.archive_error}</p>}
@@ -347,23 +399,23 @@ export default function LiveNewsPanel() {
               {data.featured.map((article) => <Headline key={article.id} article={article} topic={topics[article.topic]} featured />)}
             </section>
           )}
-          {data.articles.length > 0 ? (
+          {articles.length > 0 ? (
             <ul aria-label="Live headlines" className="surface-card-muted divide-y divide-stealth-800">
-              {data.articles.map((article) => (
+              {articles.map((article) => (
                 <li key={article.id}><Headline article={article} topic={topics[article.topic]} /></li>
               ))}
             </ul>
           ) : data.featured.length === 0 && (
             <EmptyState message={data.updated_at ? "No headlines match these filters." : "Publisher results will appear here as the collector checks its feeds."} />
           )}
-          {data.pages > 1 && (
+          {!compact && data.pages > 1 && (
             <nav aria-label="Live headlines pages" className="flex flex-wrap items-center justify-between gap-2">
               <button type="button" className={BUTTON} disabled={data.page <= 1} onClick={() => setPage(data.page - 1)}>Previous</button>
               <span className="text-sm text-stealth-300">Page {data.page} of {data.pages}</span>
               <button type="button" className={BUTTON} disabled={data.page >= data.pages} onClick={() => setPage(data.page + 1)}>Next</button>
             </nav>
           )}
-          <details className="surface-card-muted px-3 py-2 text-sm text-stealth-300">
+          {!compact && <details className="surface-card-muted px-3 py-2 text-sm text-stealth-300">
             <summary className="min-h-8 cursor-pointer py-1 font-semibold text-stealth-100">
               Source status · {data.sources.filter((source) => source.state === "Online").length} of {data.sources.length} current
             </summary>
@@ -377,7 +429,7 @@ export default function LiveNewsPanel() {
                 </li>
               ))}
             </ul>
-          </details>
+          </details>}
         </>
       )}
     </div>

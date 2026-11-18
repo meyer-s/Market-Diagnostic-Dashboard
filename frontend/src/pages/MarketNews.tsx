@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { useSearchParams } from "react-router-dom";
-import LiveNewsPanel from "../components/news/LiveNewsPanel";
+import LiveNewsSection from "../components/news/LiveNewsSection";
 import { useApi } from "../hooks/useApi";
 import { apiFetch } from "../utils/apiUtils";
 import { EmptyState, ErrorState, LoadingState } from "../utils/componentUtils";
@@ -100,7 +100,6 @@ const parsePositiveInteger = (value: string | null, fallback: number) => {
 };
 
 export default function MarketNews() {
-  const [liveNewsEnabled, setLiveNewsEnabled] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isTickerOpen, setIsTickerOpen] = useState(false);
@@ -394,23 +393,7 @@ export default function MarketNews() {
         </div>
       </header>
 
-      <section className="surface-card-strong p-4" aria-labelledby="live-news-heading">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 id="live-news-heading" className="text-base font-semibold text-stealth-100">Live news</h2>
-          <button
-            type="button"
-            aria-controls="live-news-panel"
-            aria-expanded={liveNewsEnabled}
-            onClick={() => setLiveNewsEnabled((enabled) => !enabled)}
-            className="field-button field-button-secondary"
-          >
-            {liveNewsEnabled ? "Turn off live news" : "Turn on live news"}
-          </button>
-        </div>
-        <div id="live-news-panel" hidden={!liveNewsEnabled}>
-          {liveNewsEnabled && <LiveNewsPanel />}
-        </div>
-      </section>
+      <LiveNewsSection />
 
       <section className="surface-card-strong p-4" aria-labelledby="ticker-cache-heading">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

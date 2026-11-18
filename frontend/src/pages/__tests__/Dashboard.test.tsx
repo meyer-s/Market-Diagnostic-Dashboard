@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -46,7 +46,38 @@ describe("Dashboard", () => {
   });
 
   afterEach(() => {
+    cleanup();
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("loads a bounded Focused feed only when Live News is enabled", async () => {
+    apiFetchMock.mockResolvedValue([]);
+    const liveFetch = vi.fn(async () => Response.json({
+      updated_at: "2026-11-18T12:00:00Z",
+      checked_label: "Nov 18, 7:00:00 AM EST",
+      read_interval: 5,
+      topics: { markets: "Markets" },
+      page: 1, pages: 1, total: 8, first: 1, last: 8,
+      sources: [], featured: [],
+      articles: Array.from({ length: 8 }, (_, index) => ({
+        id: String(index), title: `Focused headline ${index + 1}`, url: `https://example.com/news/${index}`,
+        source: "Example", published_at: "2026-11-18T12:00:00Z",
+        topic: "markets", priority: "High", score: 32, reasons: [], summary: "", cached: false,
+      })),
+    }));
+    vi.stubGlobal("fetch", liveFetch);
+    render(<MemoryRouter><Dashboard /></MemoryRouter>);
+    const live = within(screen.getByRole("region", { name: "Live news" }));
+    expect(liveFetch).not.toHaveBeenCalled();
+    expect(live.getByRole("link", { name: "Open News tab" }).getAttribute("href")).toBe("/news");
+    fireEvent.click(live.getByRole("button", { name: "Turn on live news" }));
+    const headlines = await live.findByRole("list", { name: "Live headlines" });
+    expect(within(headlines).getAllByRole("link")).toHaveLength(6);
+    expect(live.queryByRole("button", { name: "Weights" })).toBeNull();
+    expect(liveFetch).toHaveBeenCalledWith(expect.stringContaining("/snapshot?view=focused"), expect.anything());
+    fireEvent.click(live.getByRole("button", { name: "Turn off live news" }));
+    expect(live.queryByRole("list", { name: "Live headlines" })).toBeNull();
   });
 
   it("renders without a public refresh trigger and only calls public endpoints", async () => {

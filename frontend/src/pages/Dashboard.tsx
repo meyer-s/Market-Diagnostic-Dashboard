@@ -8,6 +8,7 @@ import AASWidget from "../components/widgets/AASWidget";
 import YieldCurveCard from "../components/widgets/YieldCurveCard";
 import EconomicDriverSnapshots from "../components/widgets/EconomicDriverSnapshots";
 import MarketLoading from "../components/ui/MarketLoading";
+import LiveNewsSection from "../components/news/LiveNewsSection";
 import { apiFetch, getErrorMessage } from "../utils/apiUtils";
 import { getTrendWindows, type InsightSignal } from "../utils/insightUtils";
 
@@ -376,6 +377,8 @@ export default function Dashboard() {
           </div>
         )}
       </section>
+
+      <LiveNewsSection compact />
 
       <section id="drivers" aria-labelledby="drivers-title" className="dashboard-drivers scroll-mt-32">
         <div className="mb-3">

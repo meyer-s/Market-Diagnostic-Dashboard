@@ -164,11 +164,19 @@ describe("site-polish route contracts", () => {
     expect(screen.queryByRole("group", { name: "Live news view" })).toBeNull();
     expect(liveFetch).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Turn on live news" }));
-    const view = screen.getByRole("group", { name: "Live news view" });
+    const view = await screen.findByRole("group", { name: "Live news view" });
     expect(view.classList.contains("segmented-control")).toBe(true);
     expect(within(view).getByRole("button", { name: "Wires", pressed: true })).not.toBeNull();
     expect(await screen.findByRole("link", { name: /Fresh wire headline/ })).toHaveProperty("target", "_blank");
     expect(liveFetch).toHaveBeenCalledWith("/live-news/activity", expect.objectContaining({ method: "POST" }));
+    const details = screen.getByRole("button", { name: /Top priority.*Article preview/ });
+    expect(details.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(details);
+    expect(details.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText("Top priority · Relevance 61")).toBeTruthy();
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    fireEvent.keyDown(details, { key: "Escape" });
+    expect(details.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(screen.getByRole("button", { name: "Turn off live news" }));
     expect(screen.queryByRole("group", { name: "Live news view" })).toBeNull();
 

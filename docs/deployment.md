@@ -34,7 +34,8 @@ Key production properties:
 
 ### Live News
 
-The News page mounts the dashboard's Live News panel only after a visitor turns it on. Its
+The home page offers a compact Focused feed and the News page offers the full reader.
+Both mount the Live News panel only after a visitor turns it on. Its
 internal `live-news` service is shared across readers and is independent of
 the API worker count. A visible reader renews demand every 20 seconds. Feed
 polling goes idle within 45 seconds of the last renewal. The reader checks its
