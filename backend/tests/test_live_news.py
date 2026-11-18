@@ -140,3 +140,31 @@ def test_native_snapshot_keeps_release_priority_and_bounds_headline_pages():
     search = snapshot(q="retail sales")
     assert [story["id"] for story in search["articles"]] == ["retail"]
     assert search["featured"] == []
+
+
+def test_relevance_alerts_use_personal_weights_before_view_filters():
+    now = live.now_utc()
+    source = next(source for source in live.SOURCES if source.name == "U.S. Census Bureau")
+    exact = live.Story("U.S. retail sales lift options volume", source.home, now, "releases", source, "exact")
+    qualified = live.Story(
+        "U.S. retail sales lift gold futures and GLD", source.home, now, "releases", source, "qualified",
+    )
+    duplicate = replace(qualified, guid="duplicate", title=qualified.title + "!", published=now - timedelta(minutes=1))
+    archived = replace(qualified, guid="old", title="CPI and rate cuts lift GLD", published=now - timedelta(hours=3))
+    statuses = {source: live.SourceStatus(story_list=(exact, qualified, duplicate, archived), checked=now, success=now, latest=now)}
+    assert live.relevance(exact, live.DEFAULTS).points == 60
+    assert live.relevance(qualified, live.DEFAULTS).points == 61
+
+    def snapshot(preferences):
+        return json.loads(live.snapshot_payload(
+            [], statuses, now, "tech", "wire", {}, {"q": "AI", "page": "4"}, "", preferences,
+        ))
+
+    body = snapshot(live.DEFAULTS)
+    assert body["articles"] == []
+    assert [(alert["title"], alert["score"]) for alert in body["alerts"]["headlines"]] == [(qualified.title, 61)]
+    assert body["alerts"]["threshold"] == 60
+
+    low_weight = replace(live.DEFAULTS, weights={**live.DEFAULTS.weights, "releases": 3})
+    assert snapshot(low_weight)["alerts"]["headlines"] == []
+    assert live.alert_payload(statuses, None, live.DEFAULTS, now)["headlines"] == []

@@ -44,6 +44,10 @@ BACKGROUND_SOURCE_INTERVAL = 120
 JANITOR_SECONDS = 300
 MAX_FEED_STORIES = 250
 MAX_ARCHIVE_STORIES = 5000
+MAX_HEADLINE_BONUS = 40
+ALERT_THRESHOLD = 60
+ALERT_WINDOW_MINUTES = 120
+ALERT_LIMIT = 30
 FEED_TITLE = "Market News Live"
 UTC = timezone.utc
 ATOM = "{http://www.w3.org/2005/Atom}"
@@ -371,7 +375,7 @@ def relevance(story, preferences):
     matched.sort(key=lambda match: -match[0])
     topic_reason = f"{TOPICS[story.topic]} priority" if weight == 4 else f"{TOPICS[story.topic]} weight"
     penalty = 12 if LOW_SIGNAL.search(title) or COMMENTARY_PREFIX.search(title) else 0
-    score = max(0, weight * 8 + min(24, sum(points for points, _ in matched)) - penalty)
+    score = max(0, weight * 8 + min(MAX_HEADLINE_BONUS, sum(points for points, _ in matched)) - penalty)
     reasons = tuple(reason for _, reason in matched[:2]) or (topic_reason,)
     if penalty:
         reasons += ("Commentary discount",)
@@ -703,13 +707,20 @@ def source_state(source, status, now):
     return "Quiet" if now - status.latest > max_age else "Online"
 
 
-def available_stories(statuses, *, wire_only=False):
+def headline_key(title):
+    return re.sub(r"[^\w]+", " ", title.casefold()).strip()
+
+
+def available_stories(statuses, *, wire_only=False, published_since=None):
     now = now_utc()
     candidates = []
     for source, status in statuses.items():
         eligible = source.wire if wire_only else source_state(source, status, now) in {"Online", "Cached"}
         if eligible:
-            candidates.extend(story for story in status.story_list if fresh_until(story) > now)
+            candidates.extend(
+                story for story in status.story_list
+                if (published_since is None or story.published >= published_since) and fresh_until(story) > now
+            )
     # Direct articles win over redirect URLs for the same headline.
     candidates.sort(key=lambda story: (story.source.via == "Google News", bool(story.source.via),
                                        bool(story.source.sitemap_prefix), -story.published.timestamp()))
@@ -717,7 +728,7 @@ def available_stories(statuses, *, wire_only=False):
     seen_guids = set()
     seen_titles = set()
     for story in candidates:
-        headline = re.sub(r"[^\w]+", " ", story.title.casefold()).strip()
+        headline = headline_key(story.title)
         if wire_only:
             publisher = story.source.name.split(" · ", 1)[0]
             headline = (publisher, headline)
@@ -1005,6 +1016,28 @@ def rss_payload(stories, scores, statuses, updated, topic, view):
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
 
+def alert_payload(statuses, updated, preferences, now):
+    headlines = []
+    if updated:
+        cutoff = now - timedelta(minutes=ALERT_WINDOW_MINUTES)
+        recent = available_stories(statuses, published_since=cutoff)
+        recent.sort(key=lambda story: story.published, reverse=True)
+        for story in recent:
+            if preferences.weights[story.topic] * 8 + MAX_HEADLINE_BONUS <= ALERT_THRESHOLD:
+                continue
+            score = relevance(story, preferences).points
+            if score > ALERT_THRESHOLD:
+                headlines.append({
+                    "id": sha256(headline_key(story.title).encode()).hexdigest(),
+                    "title": story.title, "url": story.url,
+                    "published_at": story.published.isoformat(), "source": display_source(story.source),
+                    "score": score,
+                })
+                if len(headlines) == ALERT_LIMIT:
+                    break
+    return {"threshold": ALERT_THRESHOLD, "window_minutes": ALERT_WINDOW_MINUTES, "headlines": headlines}
+
+
 def snapshot_payload(stories, statuses, updated, topic, view, scores, params, archive_error, preferences):
     now = now_utc()
     search = params.get("q", "")[:120].casefold().split()
@@ -1053,6 +1086,7 @@ def snapshot_payload(stories, statuses, updated, topic, view, scores, params, ar
         "last": min(start + PAGE_SIZE, len(stories)), "sources": source_list,
         "articles": [display(story) for story in stories[start:start + PAGE_SIZE]],
         "featured": [display(story) for story in featured] if page == 1 else [],
+        "alerts": alert_payload(statuses, updated, preferences, now),
     }
     return json.dumps(result, ensure_ascii=False).encode()
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 
 import { EmptyState, ErrorState, LoadingState } from "../../utils/componentUtils";
 import { formatDateTimeWithWeekday } from "../../utils/styleUtils";
 import { Dialog, FormField, SegmentedControl } from "../ui";
+import LiveNewsAlerts, { type AlertSnapshot } from "./LiveNewsAlerts";
 
 const LIVE_PATH = "/live-news";
 const REFRESH_MS = 5_000;
@@ -61,6 +62,7 @@ type Snapshot = {
   sources: { name: string; url: string; state: string; last_item: string | null; error: string }[];
   articles: Article[];
   featured: Article[];
+  alerts?: AlertSnapshot;
 };
 
 type WeightSettings = {
@@ -239,7 +241,7 @@ function WeightsEditor({ close, onSaved }: { close: () => void; onSaved: () => v
   }
 
   return (
-    <Dialog open title="Live news weights" onClose={close} description="Adjust which topics rise in the Focused view and how strongly it filters headlines.">
+    <Dialog open title="Live news weights" onClose={close} description="Topic weights set personal relevance scores for Focused news and alerts. Focus strength controls which headlines appear in Focused.">
       {error && <ErrorState message={error} />}
       {settings ? (
         <form onSubmit={save} className="space-y-4">
@@ -403,6 +405,7 @@ export default function LiveNewsPanel({ compact = false, inViewport }: { compact
           </div>
         )}
       </div>
+      <LiveNewsAlerts alerts={latestSnapshot?.alerts} ready={Boolean(latestSnapshot?.updated_at)} compact={compact} />
       {!compact && <form
         className="surface-card-muted grid gap-3 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,2fr)_auto] sm:items-end"
         onSubmit={(event) => {
