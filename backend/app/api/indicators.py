@@ -26,6 +26,12 @@ from app.services.treasury_yield_curve import (
     TreasuryYieldCurveUnavailable,
     fetch_treasury_yield_curve,
 )
+from app.services.yield_curve_comparison import (
+    Comparison,
+    ComparisonUnavailable,
+    fetch_curve_comparison,
+    published_public_lending_snapshot,
+)
 from app.services.endpoint_response_cache import (
     async_response_refresh_lock,
     load_response_snapshot,
@@ -39,6 +45,8 @@ _ANALYST_COMPONENT_CACHE_TTL_SECONDS = 4 * 60 * 60
 _ANALYST_COMPONENT_MAX_STALE_AGE_SECONDS = 7 * 24 * 60 * 60
 _TREASURY_CURVE_CACHE_TTL_SECONDS = 4 * 60 * 60
 _TREASURY_CURVE_MAX_STALE_AGE_SECONDS = 7 * 24 * 60 * 60
+_COMPARISON_CACHE_TTL_SECONDS = 6 * 60 * 60
+_COMPARISON_MAX_STALE_AGE_SECONDS = 90 * 24 * 60 * 60
 
 
 def _analyst_component_quality(payload: object) -> tuple[int, int]:
@@ -294,6 +302,54 @@ async def get_treasury_yield_curve(months: int = Query(12, ge=1, le=24)):
                 max_stale_age_seconds=_TREASURY_CURVE_MAX_STALE_AGE_SECONDS,
             )
 
+        store_response_snapshot(cache_key, payload)
+        return payload
+
+
+@router.get("/indicators/BOND_MARKET_STABILITY/yield-curve/{comparison}")
+async def get_yield_curve_comparison(comparison: Comparison):
+    """Return one dated source series for the optional Treasury chart overlays."""
+    cache_key = f"yield-curve-comparison:{comparison}"
+    snapshot = load_response_snapshot(cache_key)
+    if snapshot is not None and snapshot.is_fresh(_COMPARISON_CACHE_TTL_SECONDS):
+        return snapshot.payload
+
+    async with async_response_refresh_lock(cache_key):
+        snapshot = load_response_snapshot(cache_key)
+        if snapshot is not None and snapshot.is_fresh(_COMPARISON_CACHE_TTL_SECONDS):
+            return snapshot.payload
+
+        try:
+            payload = await fetch_curve_comparison(comparison)
+        except ComparisonUnavailable as exc:
+            logger.warning("Yield curve comparison refresh failed for %s: %s", comparison, exc)
+            published = published_public_lending_snapshot() if comparison == "public-lending" else None
+            if (
+                snapshot is not None
+                and snapshot.is_within_stale_limit(_COMPARISON_MAX_STALE_AGE_SECONDS)
+                and (published is None or snapshot.payload["period_start"] > published["period_start"])
+            ):
+                return mark_stale_snapshot(
+                    snapshot.payload,
+                    snapshot,
+                    reason="yield_curve_comparison_refresh_failed",
+                    max_stale_age_seconds=_COMPARISON_MAX_STALE_AGE_SECONDS,
+                )
+            if published is None:
+                raise HTTPException(status_code=502, detail="The comparison curve is temporarily unavailable.") from exc
+            payload = published
+
+        if (
+            snapshot is not None
+            and snapshot.is_within_stale_limit(_COMPARISON_MAX_STALE_AGE_SECONDS)
+            and snapshot.payload["period_start"] > payload["period_start"]
+        ):
+            return mark_stale_snapshot(
+                snapshot.payload,
+                snapshot,
+                reason="yield_curve_comparison_period_regressed",
+                max_stale_age_seconds=_COMPARISON_MAX_STALE_AGE_SECONDS,
+            )
         store_response_snapshot(cache_key, payload)
         return payload
 

@@ -1,4 +1,4 @@
-import { Fragment, useMemo } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   CartesianGrid,
@@ -20,6 +20,15 @@ interface CurvePoint {
 
 interface CurveEntry {
   date: string;
+  curve: CurvePoint[];
+}
+
+interface ComparisonCurve {
+  period_start: string;
+  period_end: string;
+  period_label: string;
+  source: { name: string; url: string };
+  data_quality: { stale: boolean; partial: boolean; published_snapshot?: boolean };
   curve: CurvePoint[];
 }
 
@@ -73,6 +82,25 @@ const MONTHLY_CURVE_STYLES = [
 ];
 const MONTHLY_CURVE_COLOR = "#fbbf24";
 const MOVING_AVERAGE_COLOR = "#d5dfec";
+const COMPARISON_PATH = "/indicators/BOND_MARKET_STABILITY/yield-curve";
+const COMPARISONS = [
+  {
+    key: "corporate",
+    label: "Corporate bonds",
+    lineName: "HQM corporate",
+    color: "#f0abfc",
+    dash: "6 3",
+    description: "Treasury HQM month-end investment-grade corporate par yields at 2Y, 5Y, 10Y and 30Y.",
+  },
+  {
+    key: "public-lending",
+    label: "Public lending",
+    lineName: "USDA public lending",
+    color: "#6ee7b7",
+    dash: "2 4",
+    description: "USDA municipal-rate schedule for eligible rural electric loans. Tenors are approximate calendar-year terms through 20Y.",
+  },
+] as const;
 
 const formatObservationDate = (value?: string) => {
   if (!value) return "Date unavailable";
@@ -87,6 +115,21 @@ const formatObservationDate = (value?: string) => {
 };
 
 const formatRate = (value: number | null) => value === null ? "—" : `${value.toFixed(2)}%`;
+const formatCurveValue = (value: number, key?: string) => `${value.toFixed(key === "public-lending" ? 3 : 2)}%`;
+
+function CurveValues({ points, series }: { points: CurvePoint[]; series?: string }) {
+  return (
+    <dl className="grid grid-cols-2 gap-x-5 gap-y-2 pb-2 sm:grid-cols-4">
+      {points.map((point) => (
+        <div key={point.maturity} className="flex items-baseline justify-between gap-2 border-b border-stealth-800 py-1">
+          <dt className="text-stealth-400">{point.maturity}</dt>
+          <dd className="font-mono font-semibold tabular-nums text-stealth-100">{formatCurveValue(point.yield, series)}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 
 const formatBasisPointMove = (current: number | null, prior: number | null) => {
   if (current === null || prior === null) return "No comparison";
@@ -101,6 +144,7 @@ const getCurveMap = (entry?: CurveEntry) =>
 const getTooltipSection = (dataKey?: string | number) => {
   if (typeof dataKey !== "string") return "other";
   if (dataKey.startsWith("daily_")) return "daily";
+  if (COMPARISONS.some(({ key }) => key === dataKey)) return "comparison";
   if (dataKey.startsWith("monthly_")) return "monthly";
   if (dataKey === "moving_average") return "average";
   return "other";
@@ -109,9 +153,10 @@ const getTooltipSection = (dataKey?: string | number) => {
 const getTooltipOrder = (dataKey?: string | number) => {
   const section = getTooltipSection(dataKey);
   if (section === "daily") return 0;
-  if (section === "monthly") return 1;
-  if (section === "average") return 2;
-  return 3;
+  if (section === "comparison") return 1;
+  if (section === "monthly") return 2;
+  if (section === "average") return 3;
+  return 4;
 };
 
 const renderCurveTooltip = ({ active, payload, label }: CurveTooltipProps) => {
@@ -131,11 +176,13 @@ const renderCurveTooltip = ({ active, payload, label }: CurveTooltipProps) => {
           const section = getTooltipSection(item.dataKey);
           const showSectionLabel = section !== currentSection;
           currentSection = section;
-          const sectionLabel = section === "daily"
-            ? "Recent sessions"
-            : section === "monthly"
-              ? "Monthly checkpoints"
-              : "Long-run reference";
+          const sectionLabel = {
+            daily: "Recent sessions",
+            comparison: "Comparison curves",
+            monthly: "Monthly checkpoints",
+            average: "Long-run reference",
+            other: "Other",
+          }[section];
 
           return (
             <Fragment key={`${String(item.dataKey)}-${index}`}>
@@ -148,7 +195,7 @@ const renderCurveTooltip = ({ active, payload, label }: CurveTooltipProps) => {
                   {item.name ?? "Curve"}
                 </span>
                 <span className="font-mono font-semibold tabular-nums text-stealth-100">
-                  {Number(item.value).toFixed(2)}%
+                  {formatCurveValue(Number(item.value), String(item.dataKey))}
                 </span>
               </div>
             </Fragment>
@@ -167,10 +214,24 @@ const describeSlope = (spread: number | null) => {
 };
 
 export default function YieldCurveCard() {
+  const [showCorporate, setShowCorporate] = useState(false);
+  const [showPublicLending, setShowPublicLending] = useState(false);
   const { data, loading, error, refetch } = useApi<YieldCurveResponse>(
     "/indicators/BOND_MARKET_STABILITY/yield-curve?months=12",
     { timeoutMs: 50_000 },
   );
+  const corporate = useApi<ComparisonCurve>(showCorporate ? `${COMPARISON_PATH}/corporate` : "");
+  const publicLending = useApi<ComparisonCurve>(showPublicLending ? `${COMPARISON_PATH}/public-lending` : "");
+  const comparisons = [
+    { ...COMPARISONS[0], enabled: showCorporate, toggle: setShowCorporate, request: corporate },
+    { ...COMPARISONS[1], enabled: showPublicLending, toggle: setShowPublicLending, request: publicLending },
+  ];
+  const loadedComparisons = comparisons.flatMap((item) => {
+    const series = item.request.data;
+    return item.enabled && series?.curve?.length
+      ? [{ ...item, series, values: new Map(series.curve.map((point) => [point.maturity, point.yield])) }]
+      : [];
+  });
 
   const latest = data?.curves?.[0];
   const previous = data?.curves?.[1];
@@ -298,6 +359,11 @@ export default function YieldCurveCard() {
     { label: "10Y", value: y10, prior: previousMap.get("10Y") ?? null, context: "Growth + inflation" },
     { label: "30Y", value: y30, prior: previousMap.get("30Y") ?? null, context: "Long-duration" },
   ];
+  const chartData = onionSkin.chartData.map((row) => ({
+    ...row,
+    ...Object.fromEntries(loadedComparisons.map(({ key, values }) => [key, values.get(String(row.maturity)) ?? null])),
+  }));
+  const chartComparisons = loadedComparisons.map(({ lineName, series }) => `${lineName} (${series.period_label})`);
 
   return (
     <div className="grid gap-3 lg:grid-cols-3">
@@ -322,12 +388,33 @@ export default function YieldCurveCard() {
           </Link>
         </div>
 
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <span className="mr-1 text-xs font-semibold text-stealth-300" aria-hidden="true">Compare</span>
+          <div className="segmented-control flex-wrap" role="group" aria-label="Compare lending curves">
+            {comparisons.map(({ key, label, color, dash, enabled, toggle }) => (
+              <button
+                key={key}
+                type="button"
+                className="segmented-control-option inline-flex items-center gap-2"
+                aria-pressed={enabled}
+                data-selected={enabled}
+                onClick={() => toggle(!enabled)}
+              >
+                <svg aria-hidden="true" width="18" height="8" viewBox="0 0 18 8">
+                  <path d="M0 4h18" stroke={color} strokeWidth="2" strokeDasharray={dash} />
+                </svg>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="mt-5 h-64 sm:h-72 lg:h-96">
           <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <LineChart
               accessibilityLayer
-              aria-label={`Onion-skinned Treasury yield curves through ${latest.date}, including recent sessions, monthly checkpoints, and a ${onionSkin.movingAverageSessions}-session mean`}
-              data={onionSkin.chartData}
+              aria-label={`Onion-skinned Treasury yield curves through ${latest.date}, including recent sessions, monthly checkpoints, and a ${onionSkin.movingAverageSessions}-session mean${chartComparisons.length ? `. Overlays: ${chartComparisons.join(", ")}` : ""}`}
+              data={chartData}
               margin={{ top: 8, right: 10, left: -10, bottom: 8 }}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
@@ -395,6 +482,20 @@ export default function YieldCurveCard() {
                   />
                 );
               })}
+              {loadedComparisons.map(({ key, color, dash, lineName, series }) => (
+                <Line
+                  key={key}
+                  type="linear"
+                  dataKey={key}
+                  stroke={color}
+                  strokeWidth={2.4}
+                  strokeDasharray={dash}
+                  dot={{ r: 3, fill: color }}
+                  name={`${lineName} · ${series.period_label}`}
+                  connectNulls
+                  isAnimationActive={false}
+                />
+              ))}
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -414,18 +515,44 @@ export default function YieldCurveCard() {
           </a>
         </div>
 
+        {comparisons.some(({ enabled }) => enabled) && (
+          <ul className="mt-3 space-y-2 text-xs leading-relaxed text-stealth-300" aria-label="Comparison sources and dates">
+            {comparisons.filter(({ enabled }) => enabled).map(({ key, label, description, request }) => (
+              <li key={key}>
+                {request.loading ? <span role="status">Loading {label.toLowerCase()} curve…</span> : request.error || !request.data?.curve?.length ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span role="status">{label} curve unavailable.</span>
+                    <button type="button" className="field-button field-button-secondary" onClick={request.refetch}>Retry {label.toLowerCase()}</button>
+                  </div>
+                ) : (
+                  <>
+                    <span className="font-semibold text-stealth-100">{label} · {request.data.period_label}. </span>
+                    {description}{" "}
+                    <a href={request.data.source.url} target="_blank" rel="noreferrer" className="font-semibold text-stealth-200 underline underline-offset-4">
+                      {request.data.source.name}
+                    </a>
+                    {request.data.data_quality.published_snapshot && <span className="block">Verified published schedule. Automatic refresh unavailable.</span>}
+                    {request.data.data_quality.stale && <span className="block text-amber-200">Older data. Check the reporting period above.</span>}
+                    {request.data.data_quality.partial && <span className="block text-amber-200">Some maturity points are missing.</span>}
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        {loadedComparisons.length > 0 && <p className="mt-2 text-xs text-stealth-300">Dates and rate types differ by series. Dots mark reported tenors.</p>}
+
         <details className="mt-3 border-t border-stealth-700 pt-3 text-sm text-stealth-300">
           <summary className="min-h-11 cursor-pointer py-3 font-semibold text-stealth-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">
             Read latest yields as values
           </summary>
-          <dl className="grid grid-cols-2 gap-x-5 gap-y-2 pb-2 sm:grid-cols-4">
-            {latest.curve.map((point) => (
-              <div key={point.maturity} className="flex items-baseline justify-between gap-2 border-b border-stealth-800 py-1">
-                <dt className="text-stealth-400">{point.maturity}</dt>
-                <dd className="font-mono font-semibold tabular-nums text-stealth-100">{point.yield.toFixed(2)}%</dd>
-              </div>
-            ))}
-          </dl>
+          <CurveValues points={latest.curve} />
+          {loadedComparisons.map(({ key, lineName, series }) => (
+            <div key={key} className="mt-3">
+              <p className="mb-1 font-semibold text-stealth-200">{lineName} · {series.period_label}</p>
+              <CurveValues points={series.curve} series={key} />
+            </div>
+          ))}
         </details>
       </article>
 

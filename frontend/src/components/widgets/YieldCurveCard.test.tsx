@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import YieldCurveCard from "./YieldCurveCard";
 
@@ -12,7 +12,7 @@ vi.mock("../../hooks/useApi", () => ({ useApi: useApiMock }));
 vi.mock("recharts", () => ({
   ResponsiveContainer: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   LineChart: ({ children, ...props }: { children: ReactNode; [key: string]: unknown }) => (
-    <div aria-label={String(props["aria-label"] ?? "yield curve")}>{children}</div>
+    <div aria-label={String(props["aria-label"] ?? "yield curve")} data-points={JSON.stringify(props.data)}>{children}</div>
   ),
   CartesianGrid: () => null,
   Line: ({ dataKey, name }: { dataKey?: string; name?: string }) => (
@@ -64,6 +64,7 @@ describe("YieldCurveCard", () => {
   beforeEach(() => {
     useApiMock.mockReset();
   });
+  afterEach(cleanup);
 
   it("renders current curve, shape, benchmarks, provenance, and detail route", () => {
     useApiMock.mockReturnValue({
@@ -133,5 +134,45 @@ describe("YieldCurveCard", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Retry Treasury curve" }));
     expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("overlays each dated series independently and leaves unpublished maturities empty", () => {
+    const corporate = {
+      period_label: "Aug 2026 month-end",
+      source: { name: "U.S. Treasury HQM", url: "https://home.treasury.gov/hqm" },
+      data_quality: { stale: false, partial: false },
+      curve: [{ maturity: "2Y", yield: 4.75 }, { maturity: "10Y", yield: 5.63 }],
+    };
+    const publicLending = {
+      period_label: "Q3 2026",
+      source: { name: "USDA Rural Utilities Service", url: "https://www.rd.usda.gov/rates" },
+      data_quality: { stale: false, partial: false, published_snapshot: true },
+      curve: [{ maturity: "1Y", yield: 2.625 }, { maturity: "20Y", yield: 4.25 }],
+    };
+    useApiMock.mockImplementation((path: string) => ({
+      data: path.endsWith("/corporate") ? corporate : path.endsWith("/public-lending")
+        ? publicLending : path ? payload : null,
+      loading: false, error: null, refetch: vi.fn(),
+    }));
+
+    render(<MemoryRouter><YieldCurveCard /></MemoryRouter>);
+    const controls = within(screen.getByRole("group", { name: "Compare lending curves" }));
+    const corporateToggle = controls.getByRole("button", { name: "Corporate bonds", pressed: false });
+    const publicToggle = controls.getByRole("button", { name: "Public lending", pressed: false });
+    expect(screen.getAllByTestId("curve-series")).toHaveLength(11);
+    expect(useApiMock.mock.calls.every(([path]) => !/corporate|public-lending/.test(path))).toBe(true);
+
+    fireEvent.click(corporateToggle);
+    fireEvent.click(publicToggle);
+    const chart = screen.getByLabelText(/Onion-skinned Treasury yield curves.*HQM corporate.*USDA public lending/);
+    expect(screen.getAllByTestId("curve-series")).toHaveLength(13);
+    expect(JSON.parse(chart.getAttribute("data-points") ?? "[]")).toContainEqual(
+      expect.objectContaining({ maturity: "2Y", corporate: 4.75, "public-lending": null }),
+    );
+    expect(screen.getByRole("link", { name: "USDA Rural Utilities Service" })).toBeTruthy();
+    expect(screen.getByText("2.625%")).toBeTruthy();
+    fireEvent.click(corporateToggle);
+    expect(screen.getAllByTestId("curve-series")).toHaveLength(12);
+    expect(publicToggle.getAttribute("aria-pressed")).toBe("true");
   });
 });
