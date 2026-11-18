@@ -2,7 +2,7 @@
 THESIS: The Overview explains; detailed views prove; Methods documents.
 OWN-WORLD: Evidence Field in an answer-first labor brief, quiet rows, native-unit small multiples, exact ledgers, and explicit clock labels.
 STORY: Orient to the current labor read, then enter one releases, trends, revisions, calendar, or methods workspace without carrying a long document in memory.
-FIRST VIEWPORT: A compact source receipt leads directly to the Overview decision brief and headline observations.
+FIRST VIEWPORT: A compact source receipt leads directly to hiring, inflation, and labor-demand interpretations with expandable evidence.
 FORM: Operate-mode progressive disclosure with six query-addressable views and one stable tab panel.
 */
 
@@ -284,7 +284,7 @@ export default function BlsReleaseLens() {
         tabIndex={0}
         className="bls-active-panel"
       >
-        {activeView === "overview" ? <><WeeklyClaims key={claimsRefresh} /><BlsOverview data={data} onNavigate={openDetail} /></> : null}
+        {activeView === "overview" ? <><BlsOverview data={data} onNavigate={openDetail} /><WeeklyClaims key={claimsRefresh} compact /></> : null}
         {activeView === "releases" ? <><WeeklyClaims key={claimsRefresh} /><ReleaseOverview data={data} onOpenTrend={(seriesId) => openDetail("trends", seriesId)} /></> : null}
         {activeView === "trends" ? (
           <div className="bls-trends-workspace">

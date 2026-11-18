@@ -86,6 +86,9 @@ describe("Dashboard", () => {
     }));
     vi.stubGlobal("fetch", liveFetch);
     render(<MemoryRouter><Dashboard /></MemoryRouter>);
+    expect(screen.queryByText("Overall Summary")).toBeNull();
+    expect(screen.queryByText("Reading signals…")).toBeNull();
+    expect(screen.getByText("System Overview Widget")).toBeTruthy();
     const drivers = screen.getByRole("region", { name: "What is moving the read" });
     const liveSection = screen.getByRole("region", { name: "Live news" });
     expect(drivers.nextElementSibling).toBe(liveSection);

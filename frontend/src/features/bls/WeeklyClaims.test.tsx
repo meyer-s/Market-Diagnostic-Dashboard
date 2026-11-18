@@ -36,4 +36,15 @@ describe("WeeklyClaims", () => {
     expect(screen.getByRole("status").textContent).toContain("DOL unavailable");
     expect(screen.queryByText("194,000")).toBeNull();
   });
+
+  it("leads the compact receipt with interpretation and retains exact weekly evidence on demand", () => {
+    useApiMock.mockReturnValue({ data, loading: false, error: null, refetch: vi.fn() });
+    render(<WeeklyClaims compact />);
+    expect(screen.getByText(/New filings fell while ongoing claims rose/)).toBeTruthy();
+    expect(screen.getByText(/different reference weeks/)).toBeTruthy();
+    const disclosure = screen.getByText("Weekly levels & revised comparisons").closest("details");
+    expect(disclosure?.hasAttribute("open")).toBe(false);
+    expect(disclosure?.textContent).toContain("194,000");
+    expect(disclosure?.textContent).toContain("Oct 10, 2026");
+  });
 });

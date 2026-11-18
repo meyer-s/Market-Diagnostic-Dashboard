@@ -2,392 +2,130 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { blsLensFixture } from "./__fixtures__/blsLensFixture";
+import { briefReading, buildBlsBrief } from "./blsBriefModel";
 import BlsOverview from "./BlsOverview";
-import {
-  BLS_OVERVIEW_RULE_RECEIPT,
-  buildBlsOverviewModel,
-  buildOverviewRevisionSummary,
-  effectiveRevisionDelta,
-  releaseCalendarHref,
-} from "./blsOverviewModel";
-import { formatSigned } from "./format";
-import type { BlsLensResponse, BlsObservation, PayrollRevision } from "./types";
+import { buildOverviewRevisionSummary, effectiveRevisionDelta, releaseCalendarHref } from "./blsOverviewModel";
+import type { BlsLensResponse } from "./types";
 
-vi.mock("recharts", () => {
-  const Shell = ({ children }: { children?: React.ReactNode }) => <div>{children}</div>;
-  return {
-    Line: ({ name }: { name?: string }) => name ? <span>{name}</span> : null,
-    LineChart: Shell,
-    ResponsiveContainer: Shell,
-    Tooltip: () => null,
-    XAxis: () => null,
-    YAxis: () => null,
-  };
-});
-
-const SIX_MONTHS = [
-  "2026-02-01",
-  "2026-03-01",
-  "2026-04-01",
-  "2026-05-01",
-  "2026-06-01",
-  "2026-07-01",
-];
-
-function observations(template: BlsObservation, values: number[], periods = SIX_MONTHS): BlsObservation[] {
-  return periods.map((period, index) => ({
-    ...template,
-    period,
-    raw_value: values[index],
-    primary_value: values[index],
-    relative_percentile: 50,
-    available: true,
-    unavailable_reason: null,
-    preliminary: false,
-    first_seen_value: values[index],
-    current_value: values[index],
-  }));
+function fixture() { return structuredClone(blsLensFixture); }
+function setValues(data: BlsLensResponse, id: string, values: Array<number | null>, periods?: string[]) {
+  const series = data.series.find((item) => item.series_id === id)!;
+  series.latest = undefined;
+  series.observations = values.map((value, i) => ({ ...series.observations[0], period: periods?.[i] ?? `2026-0${i + 4}-01`, primary_value: value, available: value !== null }));
 }
 
-function setSeriesValues(data: BlsLensResponse, seriesId: string, values: number[], periods = SIX_MONTHS) {
-  const series = data.series.find((candidate) => candidate.series_id === seriesId);
-  if (!series) throw new Error(`Missing fixture series ${seriesId}`);
-  series.observations = observations(series.observations[0], values, periods);
-  series.coverage_start = periods[0];
-  series.coverage_end = periods.at(-1) ?? null;
-}
-
-function completeLaborFixture(): BlsLensResponse {
-  const data = structuredClone(blsLensFixture);
-  setSeriesValues(data, "CES0000000001", [200, 190, 180, 150, 140, 130]);
-  setSeriesValues(data, "LNS14000000", [4, 4, 4, 4.1, 4.1, 4.2]);
-  setSeriesValues(data, "CES0500000003", [3.5, 3.5, 3.4, 3.3, 3.2, 3.2]);
-  setSeriesValues(data, "JTS000000000000000JOR", [4.5, 4.5, 4.4, 4.2, 4.2, 4.1]);
-  return data;
-}
-
-describe("BLS Overview model", () => {
+describe("BLS knowledge brief", () => {
   afterEach(cleanup);
 
-  it("selects the four preferred labor indicators and applies the inspectable dashboard rule", () => {
-    const model = buildBlsOverviewModel(completeLaborFixture());
-
-    expect(model.indicators.map((indicator) => indicator.role)).toEqual([
-      "Payroll growth",
-      "Unemployment",
-      "Hourly earnings",
-      "Job openings",
-    ]);
-    expect(model.overall).toMatchObject({
-      state: "cooling",
-      eligibleVotes: 3,
-      coolingVotes: 3,
-      strengtheningVotes: 0,
-    });
-
-    const payroll = model.indicators[0];
-    expect(payroll.current?.primary_value).toBe(130);
-    expect(payroll.prior?.primary_value).toBe(140);
-    expect(payroll.delta).toBe(-10);
-    expect(payroll.stateLabel).toBe("Lower than prior");
-    expect(payroll.trendDelta).toBe(-50);
-    expect(payroll.trendStateLabel).toBe("Payroll gains cooling");
-
-    const earnings = model.indicators[2];
-    expect(earnings.trendStateLabel).toBe("Wage growth decelerating");
-    expect(BLS_OVERVIEW_RULE_RECEIPT.overall.excludedSeriesIds).toContain("CES0500000003");
-    expect(model.briefLines).toHaveLength(3);
-    expect(model.briefLines[0]).toContain("Dashboard rule state: Cooling");
+  it("does not substitute an older finite value for a missing latest annual CPI reading", () => {
+    const data = fixture();
+    setValues(data, "CUUR0000SA0", [3.4, 3.7, null]);
+    data.series.find((item) => item.series_id === "CUUR0000SA0")!.observations.at(-1)!.raw_value = 337.511;
+    const reading = briefReading(data, "CUUR0000SA0", "CPI");
+    expect(reading.period).toBe("2026-06-01");
+    expect(reading.value).toBeNull();
+    expect(reading.display).toBe("Unavailable");
+    expect(buildBlsBrief(data).findings[1].title).toContain("comparison has a gap");
   });
 
-  it.each([
-    ["CES0000000001", 100, 25],
-    ["LNS14000000", 4, 0.1],
-    ["CES0500000003", 3, 0.1],
-    ["JTS000000000000000JOR", 4, 0.1],
-    ["JTS000000000000000JOL", 7, 0.15],
-  ])("rounds %s to three decimals and treats its inclusive materiality boundary as stable", (seriesId, base, band) => {
-    const data = completeLaborFixture();
-    if (seriesId === "JTS000000000000000JOL") {
-      data.series = data.series.filter((series) => series.series_id !== "JTS000000000000000JOR");
-    }
-    setSeriesValues(data, seriesId, [base, base, base, base + band, base + band, base + band]);
-
-    const indicator = buildBlsOverviewModel(data).indicators.find(
-      (candidate) => candidate.series.series_id === seriesId,
-    );
-
-    expect(indicator?.trendDelta).toBe(band);
-    expect(indicator?.trendState).toBe("stable");
+  it("requires adjacent months and never bridges a missing reference month", () => {
+    const data = fixture();
+    setValues(data, "CES0000000001", [100, 200], ["2026-04-01", "2026-06-01"]);
+    setValues(data, "LNS14000000", [4.2, 4.1], ["2026-04-01", "2026-06-01"]);
+    expect(briefReading(data, "CES0000000001", "Payrolls").delta).toBeNull();
+    expect(buildBlsBrief(data).findings[0].qualification).toContain("three consecutive");
   });
 
-  it("keeps hundredths and three-decimal rule evidence visible without negative zero", () => {
-    expect(formatSigned(-0.04, "", 3)).toBe("-0.04");
-    expect(formatSigned(0.04, "", 3)).toBe("+0.04");
-    expect(formatSigned(-0.0004, "", 3)).toBe("0");
-
-    const data = completeLaborFixture();
-    setSeriesValues(data, "CES0500000003", [3, 3, 3, 3.104, 3.104, 3.104]);
-    const earnings = buildBlsOverviewModel(data).indicators.find(
-      (indicator) => indicator.series.series_id === "CES0500000003",
-    );
-    expect(earnings?.trendDelta).toBe(0.104);
-    expect(earnings?.trendInterpretation).toContain("+0.104 percentage points");
-    expect(earnings?.trendInterpretation).toContain("beyond the 0.1 percentage points");
+  it("does not combine payrolls with unemployment from a different month", () => {
+    const data = fixture();
+    setValues(data, "CES0000000001", [100, 165], ["2026-06-01", "2026-07-01"]);
+    setValues(data, "LNS14000000", [4.2, 4.1], ["2026-05-01", "2026-06-01"]);
+    const finding = buildBlsBrief(data).findings[0];
+    expect(finding.title).toBe("Employers are still adding jobs.");
+    expect(finding.qualification).toContain("different months");
   });
 
-  it("classifies opposing eligible voter directions as mixed", () => {
-    const data = completeLaborFixture();
-    setSeriesValues(data, "CES0000000001", [100, 100, 100, 130, 130, 130]);
-    setSeriesValues(data, "LNS14000000", [4, 4, 4, 4.2, 4.2, 4.2]);
-    setSeriesValues(data, "JTS000000000000000JOR", [4, 4, 4, 4.1, 4.1, 4.1]);
-
-    const model = buildBlsOverviewModel(data);
-
-    expect(model.overall).toMatchObject({
-      state: "mixed",
-      strengtheningVotes: 1,
-      coolingVotes: 1,
-      stableVotes: 1,
-    });
+  it("distinguishes opposing labor evidence from a common direction", () => {
+    const data = fixture();
+    setValues(data, "CES0000000001", [100, 165]);
+    setValues(data, "LNS14000000", [4.1, 4.2]);
+    expect(buildBlsBrief(data).findings[0].title).toBe("Jobs grew while unemployment rose.");
+    setValues(data, "CES0000000001", [100, -10]);
+    expect(buildBlsBrief(data).findings[0].title).toBe("Payrolls contracted in the latest month.");
   });
 
-  it("requires a contiguous six-month window before assigning a trend state", () => {
-    const data = completeLaborFixture();
-    setSeriesValues(
-      data,
-      "CES0000000001",
-      [100, 100, 100, 130, 130, 130],
-      ["2026-02-01", "2026-03-01", "2026-04-01", "2026-06-01", "2026-07-01", "2026-08-01"],
-    );
-
-    const payroll = buildBlsOverviewModel(data).indicators.find(
-      (indicator) => indicator.series.series_id === "CES0000000001",
-    );
-
-    expect(payroll?.trendState).toBe("observations_only");
-    expect(payroll?.trendInterpretation).toContain("Six contiguous finite monthly observations");
+  it("uses annual rate changes rather than raw CPI index-point changes", () => {
+    const data = fixture();
+    setValues(data, "CUUR0000SA0", [3.397, 3.738]);
+    setValues(data, "CUUR0000SA0L1E", [2.446, 2.564]);
+    data.series.find((item) => item.series_id === "CUUR0000SA0")!.observations.at(-1)!.change_1m = 1.96;
+    const reading = briefReading(data, "CUUR0000SA0", "CPI");
+    expect(reading.delta).toBeCloseTo(0.341);
+    expect(reading.comparison).toContain("percentage points");
+    expect(buildBlsBrief(data).findings[1].title).toContain("picked up in both");
   });
 
-  it("inserts an explicit null point when a month is omitted from an Overview trend", () => {
-    const data = completeLaborFixture();
-    const payroll = data.series.find((series) => series.series_id === "CES0000000001");
-    if (!payroll) throw new Error("Missing payroll fixture series");
-    payroll.observations = payroll.observations.filter((observation) => observation.period !== "2026-05-01");
-
-    const indicator = buildBlsOverviewModel(data).indicators.find(
-      (candidate) => candidate.series.series_id === "CES0000000001",
-    );
-
-    expect(indicator?.trendPoints.find((point) => point.period === "2026-05-01")).toEqual({
-      period: "2026-05-01",
-      value: null,
-    });
+  it("distinguishes slower inflation from falling prices and keeps PPI separate", () => {
+    const data = fixture();
+    setValues(data, "CUUR0000SA0", [3.8, 3.4]);
+    setValues(data, "CUUR0000SA0L1E", [3.0, 2.7]);
+    const prices = buildBlsBrief(data).findings[1];
+    expect(prices.title).toContain("eased in both");
+    expect(prices.interpretation).toContain("not necessarily lower prices");
+    expect(prices.qualification).toContain("cannot substitute for CPI");
   });
 
-  it("preserves missing chronological latest and prior observations instead of bridging gaps", () => {
-    const missingLatest = completeLaborFixture();
-    const missingLatestSeries = missingLatest.series.find((series) => series.series_id === "CES0000000001");
-    if (!missingLatestSeries) throw new Error("Missing payroll fixture series");
-    missingLatestSeries.observations.at(-1)!.primary_value = null;
-    missingLatestSeries.observations.at(-1)!.available = false;
-
-    const latestCard = buildBlsOverviewModel(missingLatest).indicators[0];
-    expect(latestCard.current?.period).toBe(SIX_MONTHS.at(-1));
-    expect(latestCard.current?.primary_value).toBeNull();
-    expect(latestCard.delta).toBeNull();
-    expect(latestCard.state).toBe("unavailable");
-
-    const missingPrior = completeLaborFixture();
-    const missingPriorSeries = missingPrior.series.find((series) => series.series_id === "CES0000000001");
-    if (!missingPriorSeries) throw new Error("Missing payroll fixture series");
-    missingPriorSeries.observations.at(-2)!.primary_value = null;
-    missingPriorSeries.observations.at(-2)!.available = false;
-
-    const priorCard = buildBlsOverviewModel(missingPrior).indicators[0];
-    expect(priorCard.prior?.period).toBe(SIX_MONTHS.at(-2));
-    expect(priorCard.prior?.primary_value).toBeNull();
-    expect(priorCard.delta).toBeNull();
-    expect(priorCard.state).toBe("prior_unavailable");
+  it("does not infer demand confirmation from openings alone and identifies lagged JOLTS", () => {
+    const data = fixture();
+    setValues(data, "CES0000000001", [60, 165], ["2026-09-01", "2026-10-01"]);
+    setValues(data, "JTS000000000000000JOR", [4.3, 4.5], ["2026-08-01", "2026-09-01"]);
+    setValues(data, "JTS000000000000000QUR", [2.1, 1.9], ["2026-08-01", "2026-09-01"]);
+    const demand = buildBlsBrief(data).findings[2];
+    expect(demand.title).toContain("mixed read");
+    expect(demand.qualification).toContain("different reference months");
+    setValues(data, "JTS000000000000000QUR", [null, null], ["2026-08-01", "2026-09-01"]);
+    expect(buildBlsBrief(data).findings[2].title).toContain("more confirmation");
+    setValues(data, "JTS000000000000000JOR", [4.3, 4.3]);
+    setValues(data, "JTS000000000000000QUR", [1.9, 1.9]);
+    expect(buildBlsBrief(data).findings[2].title).toContain("held steady");
   });
 
-  it("excludes an otherwise valid voter whose anchor is more than two months stale", () => {
-    const data = completeLaborFixture();
-    const stalePeriods = [
-      "2025-11-01",
-      "2025-12-01",
-      "2026-01-01",
-      "2026-02-01",
-      "2026-03-01",
-      "2026-04-01",
-    ];
-    setSeriesValues(data, "JTS000000000000000JOR", [4.5, 4.5, 4.4, 4.2, 4.2, 4.1], stalePeriods);
-
-    const model = buildBlsOverviewModel(data);
-
-    expect(model.overall.eligibleVotes).toBe(2);
-    expect(model.overall.coolingVotes).toBe(2);
-    expect(model.overall.explanation).toContain("two-month anchor window");
-  });
-
-  it("does not substitute inflation series when a preferred labor series is absent", () => {
-    const data = structuredClone(blsLensFixture);
-    data.series = data.series.filter((series) => series.series_id !== "CES0500000003");
-    const model = buildBlsOverviewModel(data);
-
-    expect(model.indicators.map((indicator) => indicator.series.series_id)).toEqual([
-      "CES0000000001",
-      "LNS14000000",
-      "JTS000000000000000JOR",
-    ]);
-    expect(model.indicators.every((indicator) => indicator.series.family === "labor")).toBe(true);
-    expect(model.overall.state).toBe("observations_only");
-  });
-
-  it("keeps preferred series visible with explicit unavailable states", () => {
-    const data = structuredClone(blsLensFixture);
-    data.series.forEach((series) => {
-      if (!["CES0000000001", "LNS14000000", "CES0500000003", "JTS000000000000000JOR", "JTS000000000000000JOL"].includes(series.series_id)) return;
-      series.observations = series.observations.map((observation) => ({
-        ...observation,
-        primary_value: null,
-        available: false,
-        unavailable_reason: "Upstream value unavailable.",
-      }));
-    });
-
-    const model = buildBlsOverviewModel(data);
-
-    expect(model.indicators).toHaveLength(4);
-    expect(model.indicators.every((indicator) => indicator.stateLabel === "Current value unavailable")).toBe(true);
-    expect(model.trends).toHaveLength(4);
-    expect(model.trends.every((indicator) => indicator.plottablePointCount === 0)).toBe(true);
+  it("renders conclusions with inspectable receipts and links into focused proof", () => {
+    const onNavigate = vi.fn();
+    render(<BlsOverview data={fixture()} onNavigate={onNavigate} />);
+    expect(screen.getByRole("heading", { name: "Labor & inflation brief" })).toBeTruthy();
+    expect(screen.getAllByRole("article")).toHaveLength(3);
+    expect(screen.queryByRole("figure")).toBeNull();
+    expect(screen.getAllByText("Evidence & next check")).toHaveLength(3);
+    fireEvent.click(screen.getAllByText("Evidence & next check")[0]);
+    expect(screen.getByRole("link", { name: "BLS source for payroll change ↗" }).getAttribute("target")).toBe("_blank");
+    fireEvent.click(screen.getByRole("button", { name: "Explore hiring history" }));
+    expect(onNavigate).toHaveBeenCalledWith("trends", "CES0000000001");
+    fireEvent.click(screen.getByRole("button", { name: "Methods & sources" }));
+    expect(onNavigate).toHaveBeenCalledWith("methods");
+    fireEvent.click(screen.getByRole("button", { name: "Full calendar" }));
+    expect(onNavigate).toHaveBeenCalledWith("calendar");
+    expect(screen.getByRole("link", { name: "Add to calendar" }).getAttribute("href")).toMatch(/^data:text\/calendar/);
   });
 });
 
-describe("BLS Overview revisions and schedule", () => {
-  it("skips a first-only latest month and uses stage-aware newest-estimate deltas", () => {
-    const firstOnly: PayrollRevision = {
-      period: "2026-07-01",
-      first_estimate: 50,
-      second_estimate: null,
-      third_estimate: null,
-      latest_estimate: 50,
-      revision_stage: "first_estimate",
-    };
-    const revisions = [...blsLensFixture.payroll_revisions, firstOnly];
-    const summary = buildOverviewRevisionSummary(revisions);
-
-    expect(effectiveRevisionDelta(firstOnly)).toBeNull();
-    expect(summary.latestPeriod).toBe("2026-06-01");
-    expect(summary.latestDelta).toBe(10);
-    expect(summary.latestStage).toBe("second_estimate");
-    expect(summary.latestStageLabel).toBe("Second estimate");
-    expect(summary.netThreeMonth).toBe(-45);
-    expect(summary.streakDirection).toBe("upward");
-    expect(summary.streakCount).toBe(1);
+describe("Payroll revisions and release clocks", () => {
+  it("does not treat an unrevised first estimate as a zero revision", () => {
+    expect(effectiveRevisionDelta({ period: "2026-07-01", first_estimate: 165, second_estimate: null, third_estimate: null, revision_stage: "first_estimate" })).toBeNull();
   });
-
-  it("breaks revision nets and streaks across missing reference months", () => {
-    const rows: PayrollRevision[] = [
-      { period: "2026-04-01", first_estimate: 100, second_estimate: 90, third_estimate: null, revision_stage: "second_estimate" },
-      { period: "2026-06-01", first_estimate: 100, second_estimate: 95, third_estimate: null, revision_stage: "second_estimate" },
-      { period: "2026-07-01", first_estimate: 100, second_estimate: 98, third_estimate: null, revision_stage: "second_estimate" },
+  it("uses the available official estimate stage and requires contiguous revised months", () => {
+    const rows = [
+      { period: "2026-05-01", first_estimate: 100, second_estimate: 90, third_estimate: 80 },
+      { period: "2026-06-01", first_estimate: 100, second_estimate: 70, third_estimate: 60 },
+      { period: "2026-07-01", first_estimate: 100, second_estimate: 80, third_estimate: null },
     ];
-
-    const summary = buildOverviewRevisionSummary(rows);
-
-    expect(summary.netThreeMonth).toBeNull();
-    expect(summary.streakDirection).toBe("downward");
-    expect(summary.streakCount).toBe(2);
+    expect(buildOverviewRevisionSummary(rows).netThreeMonth).toBe(-80);
+    expect(buildOverviewRevisionSummary([rows[0], rows[2]]).netThreeMonth).toBeNull();
   });
-
-  it("exports a start-only schedule event without inventing a duration", () => {
-    const upcoming = blsLensFixture.release_calendar[0];
-    const href = releaseCalendarHref(upcoming);
-    const calendar = decodeURIComponent(href?.split(",")[1] ?? "");
-
+  it("exports a start-only scheduled event without inventing a duration or publication", () => {
+    const calendar = decodeURIComponent(releaseCalendarHref(blsLensFixture.release_calendar[0])!.split(",")[1]);
     expect(calendar).toContain("DTSTART:");
     expect(calendar).not.toContain("DTEND:");
     expect(calendar).toContain("does not confirm an observation release");
-  });
-});
-
-describe("BlsOverview", () => {
-  afterEach(cleanup);
-
-  it("renders an answer-first semantic surface and passes view plus series focus to the shell", () => {
-    const onNavigate = vi.fn();
-    render(<BlsOverview data={completeLaborFixture()} onNavigate={onNavigate} />);
-
-    expect(screen.getByRole("heading", { name: "Labor-market overview" })).not.toBeNull();
-    expect(screen.getByRole("heading", { name: "Current read" })).not.toBeNull();
-    expect(screen.getByRole("heading", { name: "Current read" }).parentElement?.textContent).toContain("Cooling");
-    expect(screen.getByText("Payroll growth fell; unemployment rose versus the prior observation.")).not.toBeNull();
-    expect(screen.getByRole("heading", { name: "Four key measures" })).not.toBeNull();
-    expect(screen.getByRole("heading", { name: "Payroll growth" })).not.toBeNull();
-    expect(screen.getByRole("heading", { name: "Unemployment" })).not.toBeNull();
-    expect(screen.getByRole("heading", { name: "Hourly earnings" })).not.toBeNull();
-    expect(screen.getByRole("heading", { name: "Job openings" })).not.toBeNull();
-    const indicatorFigures = screen.getAllByRole("figure");
-    expect(indicatorFigures).toHaveLength(4);
-    indicatorFigures.forEach((figure) => {
-      expect(figure.querySelectorAll(".bls-status-label")).toHaveLength(1);
-      expect(figure.querySelector("p")).toBeNull();
-      expect(figure.querySelector(".bls-overview-metric-meta dt")?.textContent).toBe("Vs prior month");
-    });
-    expect(screen.queryByText("Lower than prior")).toBeNull();
-    expect(screen.queryByText("Higher than prior")).toBeNull();
-    expect(screen.getAllByText(/recent primary values by reference period/i)).toHaveLength(4);
-    expect(screen.getByRole("heading", { name: "Payroll revisions" })).not.toBeNull();
-    expect(screen.getByText("Net three months")).not.toBeNull();
-    expect(screen.getByText("Current streak")).not.toBeNull();
-    expect(screen.getByRole("heading", { name: "Next release" })).not.toBeNull();
-    expect(screen.getByText("Scheduled")).not.toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "View revision history" }));
-    expect(onNavigate).toHaveBeenCalledWith("revisions");
-
-    fireEvent.click(screen.getByRole("button", { name: "How calculated" }));
-    expect(onNavigate).toHaveBeenCalledWith("methods");
-
-    fireEvent.click(screen.getByRole("button", { name: "Full calendar" }));
-    expect(onNavigate).toHaveBeenCalledWith("calendar");
-
-    const calendarLink = screen.getByRole("link", { name: "Add to calendar" });
-    expect(calendarLink.getAttribute("href")?.startsWith("data:text/calendar")).toBe(true);
-    expect(document.body.textContent).not.toContain("Dashboard rule state:");
-    expect(document.body.textContent).not.toContain("dashboard rules, not BLS thresholds or classifications");
-    expect(document.body.textContent?.toLowerCase()).not.toContain("initial claims");
-    expect(document.body.textContent?.toLowerCase()).not.toContain("caused by");
-  });
-
-  it("uses one explicit status when a current metric value is unavailable", () => {
-    const data = completeLaborFixture();
-    const payroll = data.series.find((series) => series.series_id === "CES0000000001");
-    if (!payroll) throw new Error("Missing payroll fixture series");
-    const current = payroll.observations.at(-1);
-    if (!current) throw new Error("Missing current payroll observation");
-    current.primary_value = null;
-
-    render(<BlsOverview data={data} onNavigate={vi.fn()} />);
-
-    const figure = screen.getByRole("figure", { name: "Payroll growth" });
-    expect(figure.querySelector(".bls-status-label")?.textContent).toBe("Unavailable");
-    expect(figure.querySelector(".bls-overview-primary-value strong")?.textContent).toBe("—");
-    expect(figure.textContent).not.toContain("Primary value unavailable");
-  });
-
-  it("labels a missing prior observation without adding another status row", () => {
-    const data = completeLaborFixture();
-    const openings = data.series.find((series) => series.series_id === "JTS000000000000000JOR");
-    if (!openings) throw new Error("Missing job-openings fixture series");
-    openings.observations = openings.observations.slice(-1);
-
-    render(<BlsOverview data={data} onNavigate={vi.fn()} />);
-
-    const figure = screen.getByRole("figure", { name: "Job openings" });
-    expect(figure.querySelector(".bls-status-label")?.textContent).toBe("Prior unavailable");
-    expect(figure.querySelectorAll(".bls-status-label")).toHaveLength(1);
   });
 });

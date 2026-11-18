@@ -47,6 +47,12 @@ describe("route registry", () => {
     );
   });
 
+  it("retires the Truth Social activity route and navigation entry", () => {
+    expect(routeRegistry.some((route) => route.path === "/research/truth-social")).toBe(false);
+    expect(toolRoutes.some((route) => route.label === "Truth Social Activity")).toBe(false);
+    expect(getAnalyticsNameForPath("/research/truth-social")).toBe("Not Found");
+  });
+
   it("registers Dollar Participation as a visible Research tool", () => {
     expect(toolRoutes).toContainEqual(
       expect.objectContaining({

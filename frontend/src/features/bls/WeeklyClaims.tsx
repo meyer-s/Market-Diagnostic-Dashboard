@@ -15,15 +15,39 @@ export type WeeklyClaimsData = {
 
 const calendarDate = (date: string) => formatDate(`${date}T12:00:00Z`);
 
-export default function WeeklyClaims() {
+export default function WeeklyClaims({ compact = false }: { compact?: boolean }) {
   const { data, loading, error, refetch } = useApi<WeeklyClaimsData>("/bls/weekly-claims", { timeoutMs: 25_000 });
   useEffect(() => {
     const timer = window.setInterval(() => { if (!document.hidden) refetch(); }, 5 * 60_000);
     return () => window.clearInterval(timer);
   }, [refetch]);
   const readings = [["Initial claims", data?.initial_claims], ["Continuing claims", data?.continuing_claims]] as const;
+  const initialChange = data?.initial_claims?.change;
+  const continuingChange = data?.continuing_claims?.change;
+  const weeklyRead = initialChange === undefined || continuingChange === undefined
+    ? "Both weekly readings are needed to compare new filings with ongoing benefit claims."
+    : initialChange > 0 && continuingChange > 0
+      ? "New filings and ongoing claims both rose. One week does not establish a trend."
+      : initialChange < 0 && continuingChange < 0
+        ? "New filings and ongoing claims both fell. One week does not establish a trend."
+        : initialChange > 0 && continuingChange < 0
+          ? "New filings rose while ongoing claims fell. The measures cover different reference weeks."
+          : initialChange < 0 && continuingChange > 0
+            ? "New filings fell while ongoing claims rose. The measures cover different reference weeks."
+            : "The weekly readings do not share a clear direction. Compare both reference weeks before drawing a trend.";
+  const values = (
+    <dl className="bls-weekly-readings">
+      {readings.map(([label, reading]) => reading ? (
+        <div key={label}>
+          <dt>{label}</dt>
+          <dd><strong>{formatValue(reading.value, 0)}</strong><span>{formatSigned(reading.change, "", 0)} vs revised prior week</span></dd>
+          <dd className="bls-weekly-period">Week ending {calendarDate(reading.week_ending)}</dd>
+        </div>
+      ) : null)}
+    </dl>
+  );
   return (
-    <section className="bls-weekly" aria-labelledby="bls-weekly-title">
+    <section className={`bls-weekly${compact ? " bls-weekly-compact" : ""}`} aria-labelledby="bls-weekly-title">
       <header className="bls-section-header">
         <div>
           <h2 id="bls-weekly-title">Weekly jobless claims</h2>
@@ -38,15 +62,8 @@ export default function WeeklyClaims() {
           {" "}<button className="bls-header-refresh" type="button" onClick={refetch} disabled={loading}>Retry claims</button>
         </p>
       ) : null}
-      <dl className="bls-weekly-readings">
-        {readings.map(([label, reading]) => reading ? (
-          <div key={label}>
-            <dt>{label}</dt>
-            <dd><strong>{formatValue(reading.value, 0)}</strong><span>{formatSigned(reading.change, "", 0)} vs revised prior week</span></dd>
-            <dd className="bls-weekly-period">Week ending {calendarDate(reading.week_ending)}</dd>
-          </div>
-        ) : null)}
-      </dl>
+      {compact && data?.initial_claims ? <p className="bls-weekly-interpretation">{weeklyRead}</p> : null}
+      {compact ? <details className="bls-weekly-receipt"><summary>Weekly levels &amp; revised comparisons</summary>{values}</details> : values}
       {data?.initial_claims ? (
         <details className="bls-weekly-receipt">
           <summary>Advance estimates · seasonally adjusted · source details</summary>

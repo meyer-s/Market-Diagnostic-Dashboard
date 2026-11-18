@@ -60,7 +60,7 @@ const viewports = [
 ] as const;
 
 const views = [
-  { id: "overview", tab: "Overview", heading: "Labor-market overview" },
+  { id: "overview", tab: "Brief", heading: "Labor & inflation brief" },
   { id: "releases", tab: "Releases", heading: "Latest observations by report" },
   { id: "trends", tab: "Trends", heading: "Native trend explorer" },
   { id: "revisions", tab: "Revisions", heading: "Payroll revisions" },
@@ -139,7 +139,7 @@ async function assertSeriousAndCriticalAxe(page: Page, view: BlsView) {
 
 async function assertVisibleCopyBudget(page: Page, view: BlsView, viewportHeight: number) {
   const visibleWordBudgets: Record<BlsView["id"], number> = {
-    overview: 300,
+    overview: 420,
     releases: 330,
     trends: 130,
     revisions: 140,
@@ -153,10 +153,10 @@ async function assertVisibleCopyBudget(page: Page, view: BlsView, viewportHeight
 
   expect(metrics.words, `${view.tab} visible copy count`).toBeLessThanOrEqual(visibleWordBudgets[view.id]);
   if (view.id === "overview") {
-    const weeklyTop = await page.getByRole("heading", { name: "Weekly jobless claims", exact: true }).evaluate(
+    const weeklyTop = await page.getByRole("heading", { name: "Labor & inflation brief", exact: true }).evaluate(
       (heading) => heading.getBoundingClientRect().top,
     );
-    expect(weeklyTop, "Latest weekly release should lead the opening scan").toBeLessThanOrEqual(viewportHeight);
+    expect(weeklyTop, "The distilled brief should lead the opening scan").toBeLessThanOrEqual(viewportHeight);
     expect(metrics.pageHeight / viewportHeight, "Overview should not regress into an unbounded document").toBeLessThanOrEqual(4.5);
   }
 }
@@ -177,14 +177,12 @@ async function selectView(page: Page, view: BlsView) {
 
   if (view.id === "overview") {
     await expect(page).not.toHaveURL(/(?:\?|&)view=/);
-    const valuesDisclosure = page.locator(".bls-overview-values-disclosure").first();
-    const valuesSummary = valuesDisclosure.locator("summary");
-    await expect.poll(() => valuesSummary.evaluate((element) => getComputedStyle(element, "::before").content)).toBe('"+"');
-    await valuesSummary.click();
-    await expect(valuesDisclosure).toHaveJSProperty("open", true);
-    await expect.poll(() => valuesSummary.evaluate((element) => getComputedStyle(element, "::before").content)).toBe('"−"');
-    await valuesSummary.click();
-    await expect(valuesDisclosure).toHaveJSProperty("open", false);
+    const evidence = page.locator(".bls-brief-evidence").first();
+    await evidence.locator("summary").click();
+    await expect(evidence).toHaveJSProperty("open", true);
+    await expect(evidence.getByRole("link", { name: /BLS source for payroll/ })).toBeVisible();
+    await evidence.locator("summary").click();
+    await expect(evidence).toHaveJSProperty("open", false);
   } else {
     await expect(page).toHaveURL(new RegExp(`(?:\\?|&)view=${view.id}(?:&|$)`));
   }
@@ -246,7 +244,7 @@ test.describe("@release BLS Release Lens", () => {
     await mockBlsLens(page);
     await page.goto("/bls", { waitUntil: "networkidle" });
 
-    const overview = page.getByRole("tab", { name: "Overview", exact: true });
+    const overview = page.getByRole("tab", { name: "Brief", exact: true });
     const releases = page.getByRole("tab", { name: "Releases", exact: true });
     const methods = page.getByRole("tab", { name: "Methods & sources", exact: true });
 
@@ -255,7 +253,7 @@ test.describe("@release BLS Release Lens", () => {
     await expect(releases).toBeFocused();
     await expect(releases).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("heading", { level: 2, name: "Latest observations by report" })).toBeVisible();
-    await expect(page.getByRole("heading", { level: 2, name: "Labor-market overview" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { level: 2, name: "Labor & inflation brief" })).toHaveCount(0);
 
     await page.keyboard.press("End");
     await expect(methods).toBeFocused();
@@ -275,8 +273,8 @@ test.describe("@release BLS Release Lens", () => {
     }));
     await page.goto("/bls");
     await expect(page.getByText("Weekly claims are temporarily unavailable from DOL.", { exact: false })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Labor-market overview" })).toBeVisible();
-    await expect(page.getByRole("figure", { name: "Payroll growth" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Labor & inflation brief" })).toBeVisible();
+    await expect(page.locator(".bls-brief-finding")).toHaveCount(3);
   });
 
   test("a monthly failure still shows the independently loaded weekly release", async ({ page }) => {

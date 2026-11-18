@@ -1,7 +1,7 @@
 import MarketTabs from "../../components/ui/MarketTabs";
 
 export const BLS_VIEWS = [
-  { id: "overview", label: "Overview" },
+  { id: "overview", label: "Brief" },
   { id: "releases", label: "Releases" },
   { id: "trends", label: "Trends" },
   { id: "revisions", label: "Revisions" },

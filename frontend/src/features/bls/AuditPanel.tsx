@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 
 import DataScroller from "../../components/ui/DataScroller";
-import { BLS_OVERVIEW_RULE_RECEIPT } from "./blsOverviewModel";
 import {
   dataQualityStatus,
   formatDateTime,
@@ -29,14 +28,6 @@ const GLOSSARY = [
   { term: "Observed revision", definition: "The difference between a value first seen by this dashboard and its current observed BLS value." },
   { term: "Preliminary", definition: "A BLS observation or estimate that remains eligible for a later scheduled estimate stage." },
 ];
-
-const RULE_LABELS: Record<keyof typeof BLS_OVERVIEW_RULE_RECEIPT.series, string> = {
-  CES0000000001: "Payroll growth",
-  LNS14000000: "Unemployment rate",
-  CES0500000003: "Hourly earnings growth",
-  JTS000000000000000JOR: "Job openings rate",
-  JTS000000000000000JOL: "Job openings level fallback",
-};
 
 function printable(value: unknown): string {
   if (typeof value === "string") return value;
@@ -152,14 +143,10 @@ export default function AuditPanel({ data }: AuditPanelProps) {
         <details>
           <summary>Calculation rules and coverage receipt</summary>
           <section className="bls-rule-method" aria-labelledby="bls-rule-method-title">
-            <h3 id="bls-rule-method-title">Dashboard labor-direction rule</h3>
-            <p>This dashboard compares each eligible series’ latest three-month primary-value mean with its prior three-month mean. It requires six contiguous finite months and rounds the difference to three decimals before applying these inclusive materiality bands:</p>
-            <ul>
-              {Object.entries(BLS_OVERVIEW_RULE_RECEIPT.series).map(([seriesId, rule]) => (
-                <li key={seriesId}><strong>{RULE_LABELS[seriesId as keyof typeof RULE_LABELS]}:</strong> {formatValue(rule.band, 2)} {rule.bandUnit}.</li>
-              ))}
-            </ul>
-            <p>The overall label votes only payroll, unemployment with inverse polarity, and job openings rate—or openings level when the rate is unavailable. It requires at least {BLS_OVERVIEW_RULE_RECEIPT.overall.minimumEligibleVoters} eligible voters and excludes a voter more than {BLS_OVERVIEW_RULE_RECEIPT.overall.maximumAnchorLagMonths} months behind the freshest anchor. Hourly earnings and payroll revisions do not vote. These are transparent dashboard rules, not BLS, recession, or policy classifications.</p>
+            <h3 id="bls-rule-method-title">How the brief reaches a conclusion</h3>
+            <p>The brief uses the chronological latest reference month for each named series, including an unavailable primary value. It never replaces a missing latest month with an older finite observation.</p>
+            <p>Month-to-month direction requires two adjacent available months. Combined conclusions require matching reference months. The payroll average requires three consecutive available months; it is a descriptive mean, not a policy or recession threshold.</p>
+            <p>CPI and PPI use the returned annual rates, not raw index-point changes. Openings and quits describe different labor-market flows; producer prices cannot replace consumer prices. No overall vote or market forecast is assigned.</p>
           </section>
           <div className="bls-disclosure-grid">
             <section>

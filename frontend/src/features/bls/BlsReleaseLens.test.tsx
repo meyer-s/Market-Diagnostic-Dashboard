@@ -51,12 +51,10 @@ describe("BlsReleaseLens", () => {
     expect(screen.getByText(/BLS snapshot checked Aug 28, 2026/)).not.toBeNull();
     expect(screen.getByRole("tablist", { name: "BLS Release Lens views" })).not.toBeNull();
     expect(screen.getAllByRole("tab")).toHaveLength(6);
-    expect(screen.getByRole("tab", { name: "Overview" }).getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByRole("heading", { name: "Labor-market overview" })).not.toBeNull();
-    expect(screen.getByRole("heading", { name: "Current read" })).not.toBeNull();
-    expect(screen.getByRole("heading", { name: "Four key measures" })).not.toBeNull();
-    expect(screen.getByRole("heading", { name: "Payroll revisions" })).not.toBeNull();
-    expect(screen.getByRole("heading", { name: "Next release" })).not.toBeNull();
+    expect(screen.getByRole("tab", { name: "Brief" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("heading", { name: "Labor & inflation brief" })).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "How revisions change the read" })).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Next scheduled check" })).not.toBeNull();
     expect(screen.queryByRole("heading", { name: "Latest observations by report" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Relative comparison" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "How the evidence is built" })).toBeNull();
@@ -68,13 +66,13 @@ describe("BlsReleaseLens", () => {
   it("renders exactly one active workspace and supports automatic keyboard tab activation", async () => {
     renderLens();
 
-    const overviewTab = screen.getByRole("tab", { name: "Overview" });
+    const overviewTab = screen.getByRole("tab", { name: "Brief" });
     overviewTab.focus();
     fireEvent.keyDown(overviewTab, { key: "ArrowRight" });
 
     await waitFor(() => expect(screen.getByRole("tab", { name: "Releases" }).getAttribute("aria-selected")).toBe("true"));
     expect(screen.getByRole("heading", { name: "Latest observations by report" })).not.toBeNull();
-    expect(screen.queryByRole("heading", { name: "Labor-market overview" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Labor & inflation brief" })).toBeNull();
 
     fireEvent.click(screen.getByRole("tab", { name: "Revisions" }));
     expect(screen.getByRole("heading", { name: "Payroll revisions" })).not.toBeNull();
@@ -162,8 +160,8 @@ describe("BlsReleaseLens", () => {
     expect(screen.getAllByText("Reference period").length).toBeGreaterThan(0);
     expect(screen.getByText("Official report sources")).not.toBeNull();
     fireEvent.click(screen.getByText(/Calculation rules and coverage receipt/));
-    expect(screen.getByRole("heading", { name: "Dashboard labor-direction rule" })).not.toBeNull();
-    expect(screen.getByText(/transparent dashboard rules, not BLS, recession, or policy classifications/i)).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "How the brief reaches a conclusion" })).not.toBeNull();
+    expect(screen.getByText(/No overall vote or market forecast is assigned/i)).not.toBeNull();
   });
 
   it("uses the backend 1-month change unit in the detailed native data table", () => {
@@ -181,8 +179,8 @@ describe("BlsReleaseLens", () => {
 
   it("falls back to Overview for an invalid view parameter", () => {
     renderLens("/bls?view=unknown");
-    expect(screen.getByRole("tab", { name: "Overview" }).getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByRole("heading", { name: "Labor-market overview" })).not.toBeNull();
+    expect(screen.getByRole("tab", { name: "Brief" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("heading", { name: "Labor & inflation brief" })).not.toBeNull();
   });
 
   it("maps legacy section hashes into the corresponding workspace", async () => {
@@ -232,7 +230,7 @@ describe("BlsReleaseLens", () => {
     useApiMock.mockReturnValue({ data: partial, loading: false, error: null, refetch: vi.fn() });
 
     renderLens();
-    expect(screen.getByText("Trend unavailable · 0 finite observations")).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "The latest hiring picture is incomplete." })).not.toBeNull();
     expect(screen.queryByRole("button", { name: /trend/i })).toBeNull();
 
     fireEvent.click(screen.getByRole("tab", { name: "Releases" }));

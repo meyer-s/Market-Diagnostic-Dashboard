@@ -4,6 +4,49 @@
   color: var(--field-text);
 }
 
+/* A short reading surface; exact receipts open within each takeaway. */
+.bls-brief { margin-bottom: 28px; }
+.bls-brief-finding {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 24px;
+  padding: 24px 0;
+  border-top: 1px solid var(--field-border);
+}
+.bls-brief-topic { font-size: 13px; font-weight: 700; color: var(--field-text-muted); padding-top: 3px; }
+.bls-brief-finding h3 { font-size: clamp(18px, 2vw, 21px); font-weight: 650; line-height: 1.35; margin: 0; text-wrap: balance; }
+.bls-brief-finding p { font-size: 15px; line-height: 1.65; max-width: 74ch; margin: 8px 0 0; }
+.bls-brief-finding .bls-brief-qualification { font-size: 13px; color: var(--field-text-muted); }
+.bls-brief-evidence { margin-top: 8px; min-width: 0; }
+.bls-brief-evidence summary { cursor: pointer; padding: 12px 0; min-height: 44px; color: var(--field-accent-strong); font-size: 13px; }
+.bls-brief-evidence summary > span:first-child { font-weight: 650; }
+.bls-brief-evidence summary > span:last-child { color: var(--field-text-muted); margin-left: 16px; font-variant-numeric: tabular-nums; }
+.bls-brief-receipts { margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; padding: 16px 0; border-block: 1px solid var(--field-border); }
+.bls-brief-receipts dt { font-size: 13px; font-weight: 650; }
+.bls-brief-receipts dd { margin: 6px 0 0; font-size: 12px; color: var(--field-text-muted); line-height: 1.6; overflow-wrap: anywhere; }
+.bls-brief-receipts dd strong { font-size: 16px; color: var(--field-text); font-variant-numeric: tabular-nums; }
+.bls-brief-receipts dd span { display: block; }
+.bls-brief-receipts a, .bls-brief-calendar-actions a { color: var(--field-accent-strong); text-decoration: underline; text-underline-offset: 3px; }
+.bls-brief-evidence .field-button { margin-top: 12px; }
+.bls-brief-followup { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; padding: 20px 0; border-top: 1px solid var(--field-border); }
+.bls-brief-followup h3 { margin: 0; font-size: 14px; font-weight: 700; }
+.bls-brief-followup p, .bls-brief-followup time { margin: 8px 0 0; max-width: 56ch; font-size: 13px; line-height: 1.6; color: var(--field-text-muted); }
+.bls-brief-calendar-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; font-size: 13px; }
+.bls-brief-limits { font-size: 13px; color: var(--field-text-muted); border-top: 1px solid var(--field-border); }
+.bls-brief-limits summary { cursor: pointer; padding: 12px 0; min-height: 44px; }
+.bls-brief-limits li { line-height: 1.65; margin: 8px 0; max-width: 80ch; }
+.bls-weekly-compact { border-top: 1px solid var(--field-border-strong); padding: 24px 0 0; border-bottom: 0; }
+.bls-weekly-compact .bls-section-header h2 { font-size: 18px; }
+.bls-weekly-interpretation { font-size: 14px; line-height: 1.65; max-width: 74ch; }
+.bls-weekly-compact .bls-weekly-readings { margin: 12px 0; }
+.bls-weekly-compact .bls-weekly-readings strong { font-size: 20px; }
+@media (max-width: 640px) {
+  .bls-brief-finding { grid-template-columns: 1fr; gap: 6px; padding: 20px 0; }
+  .bls-brief-finding p { font-size: 14px; }
+  .bls-brief-evidence summary > span:last-child { display: block; margin: 6px 0 0 16px; }
+  .bls-brief-receipts, .bls-brief-followup { grid-template-columns: 1fr; gap: 20px; }
+}
+
 /* A release brief: weekly publication, monthly readings, then deeper evidence. */
 .bls-weekly {
   padding: 0 0 24px;
