@@ -6,9 +6,12 @@ router = APIRouter(prefix="/energy")
 
 
 @router.get("/overview")
-def get_energy_overview(days: int = Query(365, ge=90, le=1095)):
+def get_energy_overview(
+    days: int = Query(365, ge=90, le=1095),
+    include_stability_history: bool = False,
+):
     data = calculate_energy_index(days=days)
-    return {
+    overview = {
         "as_of": data["as_of"],
         "regime_label": data["regime_label"],
         "composite_score": data["composite_score"],
@@ -19,6 +22,9 @@ def get_energy_overview(days: int = Query(365, ge=90, le=1095)):
         "availability": data["availability"],
         "warnings": data["warnings"],
     }
+    if include_stability_history:
+        overview["stability_history"] = data["stability_history"]
+    return overview
 
 
 @router.get("/history")

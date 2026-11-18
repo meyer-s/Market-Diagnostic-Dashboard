@@ -1,8 +1,16 @@
 import { Link } from "react-router-dom";
+import { CartesianGrid, Line, LineChart, ReferenceDot, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { useApi } from "../../hooks/useApi";
+import { getFamilyColor } from "../../theme/metricColors";
+import { CHART_NEUTRAL, commonTooltipStyle } from "../../utils/chartUtils";
 import { getStateFromScore, type StabilityState } from "../../utils/stabilityConstants";
 import { formatDateTime } from "../../utils/styleUtils";
+
+interface StabilityPoint {
+  date: string;
+  value: number;
+}
 
 interface Availability {
   available_count: number;
@@ -13,6 +21,7 @@ interface RealEstateOverview {
   as_of: string;
   regime_label: string;
   stability_score: number;
+  stability_history?: StabilityPoint[];
   metrics: {
     mortgage_rate_30y?: number | null;
     credit_spread_bps?: number | null;
@@ -28,6 +37,7 @@ interface AgricultureOverview {
   as_of: string;
   regime_label: string;
   stability_score: number;
+  component_history?: Array<{ date: string; stability_score: number }>;
   strongest_markets: Array<{ name: string; score: number }>;
   weakest_markets: Array<{ name: string; score: number }>;
   availability: {
@@ -41,6 +51,7 @@ interface EnergyOverview {
   regime_label: string;
   composite_score: number;
   stability_score: number;
+  stability_history?: StabilityPoint[];
   groups: Array<{ label: string; group_composite: number }>;
   availability: Availability;
 }
@@ -57,6 +68,8 @@ interface SnapshotView {
   route: string;
   regime: string;
   stabilityScore: number;
+  stabilityHistory: StabilityPoint[];
+  historyLabel: string;
   metrics: [SnapshotMetric, SnapshotMetric];
   coverage: string;
   complete: boolean;
@@ -66,30 +79,26 @@ interface SnapshotView {
 
 type SnapshotState = StabilityState | "UNKNOWN";
 
-const STATE_PRESENTATION: Record<SnapshotState, { label: string; tone: string; badge: string; fill: string }> = {
+const STATE_PRESENTATION: Record<SnapshotState, { label: string; tone: string; badge: string }> = {
   GREEN: {
     label: "Stable",
     tone: "text-emerald-300",
     badge: "border-emerald-500/35 bg-emerald-500/10 text-emerald-200",
-    fill: "bg-emerald-400",
   },
   YELLOW: {
     label: "Caution",
     tone: "text-amber-300",
     badge: "border-amber-500/35 bg-amber-500/10 text-amber-200",
-    fill: "bg-amber-400",
   },
   RED: {
     label: "Stressed",
     tone: "text-rose-300",
     badge: "border-rose-500/35 bg-rose-500/10 text-rose-200",
-    fill: "bg-rose-400",
   },
   UNKNOWN: {
     label: "Unavailable",
     tone: "text-stealth-300",
     badge: "border-stealth-600 bg-stealth-800/70 text-stealth-300",
-    fill: "bg-stealth-500",
   },
 };
 
@@ -98,38 +107,65 @@ const formatValue = (value: number | null | undefined, digits = 1, suffix = "") 
 
 const clampScore = (value: number) => Math.min(100, Math.max(0, value));
 
-function StabilityScale({ label, score }: { label: string; score: number }) {
-  const boundedScore = clampScore(score);
-  const state = getStateFromScore(boundedScore);
-  const presentation = STATE_PRESENTATION[state];
+const HISTORY_DAYS = 90;
+const DAY_MS = 86_400_000;
+const TREND_COLOR = getFamilyColor("market");
+const dateLabel = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 
+function StabilityTrend({ snapshot }: { snapshot: SnapshotView }) {
+  const end = Date.parse(`${snapshot.asOf.slice(0, 10)}T00:00:00Z`);
+  const start = end - (HISTORY_DAYS - 1) * DAY_MS;
+  const points = snapshot.stabilityHistory
+    .map(({ date, value }) => ({ timestamp: Date.parse(`${date}T00:00:00Z`), value }))
+    .filter(({ timestamp, value }) => timestamp >= start && timestamp <= end && Number.isFinite(value) && value >= 0 && value <= 100)
+    .sort((left, right) => left.timestamp - right.timestamp);
+  const first = points[0];
+  const last = points[points.length - 1];
+
+  if (!first || first.timestamp === last.timestamp) {
+    return (
+      <p className="mt-3 flex h-28 items-center justify-center rounded-lg border border-stealth-700 text-xs text-stealth-300">
+        {first ? "One historical reading available" : "Stability history unavailable"}
+      </p>
+    );
+  }
+
+  const description = `${snapshot.label} stability history. ${snapshot.historyLabel}. ${first.value.toFixed(1)} on ${dateLabel.format(first.timestamp)} to ${last.value.toFixed(1)} on ${dateLabel.format(last.timestamp)}. Scale 0 to 100.`;
   return (
-    <div className="mt-4">
-      <div className="flex items-end justify-between gap-3">
-        <span className="text-xs font-medium text-stealth-400">Stability</span>
-        <span className={`text-xl font-semibold tabular-nums ${presentation.tone}`}>
-          {boundedScore.toFixed(1)} <span className="text-xs font-medium text-stealth-500">/ 100</span>
-        </span>
+    <div className="relative z-10 mt-3">
+      <div className="flex items-baseline justify-between gap-2 text-xs text-stealth-300">
+        <span>{snapshot.historyLabel}</span>
+        <span className="tabular-nums">{last.value.toFixed(1)}</span>
       </div>
-      <div
-        className="relative mt-2 h-2 overflow-hidden rounded-full bg-stealth-800"
-        role="meter"
-        aria-label={`${label} stability`}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Number(boundedScore.toFixed(1))}
-        aria-valuetext={`${boundedScore.toFixed(1)} out of 100, ${presentation.label}`}
-      >
-        <div className={`h-full ${presentation.fill}`} style={{ width: `${boundedScore}%` }} />
-        <span className="absolute inset-y-0 left-[40%] w-px bg-stealth-950/80" aria-hidden="true" />
-        <span className="absolute inset-y-0 left-[70%] w-px bg-stealth-950/80" aria-hidden="true" />
+      <div className="min-w-0">
+        <ResponsiveContainer width="100%" height={82} minWidth={0} initialDimension={{ width: 300, height: 82 }}>
+          <LineChart data={points} margin={{ top: 8, right: 6, bottom: 8, left: 0 }} accessibilityLayer aria-label={description}>
+            <CartesianGrid vertical={false} stroke={CHART_NEUTRAL.grid} />
+            <XAxis type="number" dataKey="timestamp" domain={[start, end]} hide />
+            <YAxis domain={[0, 100]} ticks={[0, 50, 100]} interval={0} width={28} axisLine={false} tickLine={false}
+              tick={{ fill: CHART_NEUTRAL.tick, fontSize: 11 }} />
+            <Tooltip
+              contentStyle={commonTooltipStyle}
+              labelFormatter={(timestamp) => dateLabel.format(Number(timestamp))}
+              formatter={(value) => [formatValue(Number(value)), "Stability"]}
+              isAnimationActive={false}
+            />
+            <Line type="linear" dataKey="value" stroke={TREND_COLOR} strokeWidth={2} dot={false} isAnimationActive={false} />
+            <ReferenceDot x={last.timestamp} y={last.value} r={3} fill={TREND_COLOR} stroke="none" />
+          </LineChart>
+        </ResponsiveContainer>
+        <div className="flex justify-between pl-7 pr-1.5 text-xs text-stealth-400">
+          <span>{dateLabel.format(start)}</span>
+          <span>{dateLabel.format(end)}</span>
+        </div>
       </div>
     </div>
   );
 }
 
 function SnapshotCell({ snapshot }: { snapshot: SnapshotView }) {
-  const state = getStateFromScore(clampScore(snapshot.stabilityScore));
+  const score = clampScore(snapshot.stabilityScore);
+  const state = getStateFromScore(score);
   const presentation = STATE_PRESENTATION[state];
   const qualityLabel = snapshot.stale
     ? "Stale snapshot"
@@ -139,11 +175,7 @@ function SnapshotCell({ snapshot }: { snapshot: SnapshotView }) {
   const qualityTone = snapshot.stale || !snapshot.complete ? "text-amber-300" : "text-stealth-400";
 
   return (
-    <Link
-      to={snapshot.route}
-      className="group flex min-h-64 flex-col px-4 py-4 transition-colors hover:bg-stealth-800/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400 sm:px-5"
-      aria-label={`Open ${snapshot.label} diagnostic`}
-    >
+    <article className="group relative flex min-h-64 min-w-0 flex-col px-4 py-4 transition-colors hover:bg-stealth-800/45 sm:px-5">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h4 className="text-sm font-semibold text-stealth-100">{snapshot.label}</h4>
@@ -154,7 +186,13 @@ function SnapshotCell({ snapshot }: { snapshot: SnapshotView }) {
         </span>
       </div>
 
-      <StabilityScale label={snapshot.label} score={snapshot.stabilityScore} />
+      <div className="mt-4 flex items-end justify-between gap-3">
+        <span className="text-xs font-medium text-stealth-400">Latest stability</span>
+        <span className={`text-xl font-semibold tabular-nums ${presentation.tone}`}>
+          {score.toFixed(1)} <span className="text-xs font-medium text-stealth-400">/ 100</span>
+        </span>
+      </div>
+      <StabilityTrend snapshot={snapshot} />
 
       <dl className="mt-4 grid grid-cols-2 divide-x divide-stealth-700 border-y border-stealth-700">
         {snapshot.metrics.map((metric) => (
@@ -171,11 +209,15 @@ function SnapshotCell({ snapshot }: { snapshot: SnapshotView }) {
           <p className={qualityTone}>{qualityLabel}</p>
           <p className="mt-1 truncate text-stealth-500">Updated {formatDateTime(snapshot.asOf)} ET</p>
         </div>
-        <span className="shrink-0 text-sm font-semibold text-sky-300 transition-transform group-hover:translate-x-0.5" aria-hidden="true">
+        <Link
+          to={snapshot.route}
+          className="shrink-0 text-sm font-semibold text-sky-300 after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-sky-400"
+          aria-label={`Open ${snapshot.label} diagnostic`}
+        >
           Open →
-        </span>
+        </Link>
       </div>
-    </Link>
+    </article>
   );
 }
 
@@ -185,7 +227,7 @@ function SnapshotSkeleton({ label }: { label: string }) {
       <span className="sr-only">Loading {label} snapshot</span>
       <div className="h-4 w-28 rounded bg-stealth-700" />
       <div className="mt-3 h-5 w-40 rounded bg-stealth-700" />
-      <div className="mt-7 h-2 rounded-full bg-stealth-800" />
+      <div className="mt-7 h-28 rounded-lg bg-stealth-800" />
       <div className="mt-5 grid grid-cols-2 gap-4 border-y border-stealth-700 py-4">
         <div className="h-10 rounded bg-stealth-800" />
         <div className="h-10 rounded bg-stealth-800" />
@@ -218,9 +260,9 @@ function SnapshotUnavailable({ label, route }: { label: string; route: string })
 }
 
 export default function EconomicDriverSnapshots() {
-  const realEstateApi = useApi<RealEstateOverview>("/real-estate/overview?days=365&prefer_cached=true", { timeoutMs: 20_000 });
+  const realEstateApi = useApi<RealEstateOverview>("/real-estate/overview?days=365&prefer_cached=true&include_stability_history=true", { timeoutMs: 20_000 });
   const agricultureApi = useApi<AgricultureOverview>("/agriculture/overview?days=90", { timeoutMs: 50_000 });
-  const energyApi = useApi<EnergyOverview>("/energy/overview?days=90", { timeoutMs: 50_000 });
+  const energyApi = useApi<EnergyOverview>("/energy/overview?days=90&include_stability_history=true", { timeoutMs: 50_000 });
 
   const realEstate = realEstateApi.data
     ? {
@@ -229,6 +271,8 @@ export default function EconomicDriverSnapshots() {
         route: "/real-estate",
         regime: realEstateApi.data.regime_label,
         stabilityScore: realEstateApi.data.stability_score,
+        stabilityHistory: realEstateApi.data.stability_history ?? [],
+        historyLabel: "Listed-proxy stability",
         metrics: [
           { label: "30Y mortgage", value: formatValue(realEstateApi.data.metrics.mortgage_rate_30y, 2, "%"), detail: "Financing cost" },
           { label: "Credit spread", value: formatValue(realEstateApi.data.metrics.credit_spread_bps, 0, " bp"), detail: "High-yield OAS" },
@@ -249,6 +293,8 @@ export default function EconomicDriverSnapshots() {
         route: "/agriculture",
         regime: agricultureApi.data.regime_label,
         stabilityScore: agricultureApi.data.stability_score,
+        stabilityHistory: (agricultureApi.data.component_history ?? []).map(({ date, stability_score }) => ({ date, value: stability_score })),
+        historyLabel: "Modeled stability history",
         metrics: [
           {
             label: "Leading market",
@@ -284,6 +330,8 @@ export default function EconomicDriverSnapshots() {
         route: "/energy",
         regime: energyApi.data.regime_label,
         stabilityScore: energyApi.data.stability_score,
+        stabilityHistory: energyApi.data.stability_history ?? [],
+        historyLabel: "Stability history",
         metrics: [
           { label: "Momentum", value: energyApi.data.composite_score.toFixed(1), detail: "Complex · 0–100" },
           {
@@ -315,7 +363,7 @@ export default function EconomicDriverSnapshots() {
             Cross-market snapshots
           </h3>
         </div>
-        <p className="text-sm text-stealth-400 sm:text-right">Latest page snapshots · source windows vary</p>
+        <p className="text-sm text-stealth-400 sm:text-right">{HISTORY_DAYS}-day stability trends</p>
       </div>
 
       <div

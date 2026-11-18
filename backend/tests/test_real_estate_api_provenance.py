@@ -50,12 +50,14 @@ def test_projection_routes_preserve_real_estate_provenance(monkeypatch) -> None:
     transmission = real_estate.get_real_estate_transmission(days=365)
 
     assert overview["data_quality"] == payload["data_quality"]
+    assert "stability_history" not in overview
     assert history["data_quality"] == payload["data_quality"]
     assert transmission["data_quality"] == payload["data_quality"]
 
 
 def test_overview_prefer_cached_avoids_live_calculation(monkeypatch) -> None:
     payload = _overview_payload()
+    payload["stability_history"] = [{"date": "2026-07-28", "value": 53.0}]
     payload["data_quality"]["reason"] = "real_estate_overview_cached_snapshot"
     monkeypatch.setattr(
         real_estate,
@@ -68,9 +70,10 @@ def test_overview_prefer_cached_avoids_live_calculation(monkeypatch) -> None:
         lambda days: (_ for _ in ()).throw(AssertionError(f"unexpected live refresh: {days}")),
     )
 
-    overview = real_estate.get_real_estate_overview(days=365, prefer_cached=True)
+    overview = real_estate.get_real_estate_overview(days=365, prefer_cached=True, include_stability_history=True)
 
     assert overview["stability_score"] == 48.0
+    assert overview["stability_history"] == payload["stability_history"]
     assert overview["data_quality"]["reason"] == "real_estate_overview_cached_snapshot"
 
 

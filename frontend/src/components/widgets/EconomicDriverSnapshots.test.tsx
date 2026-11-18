@@ -8,10 +8,19 @@ const { useApiMock } = vi.hoisted(() => ({ useApiMock: vi.fn() }));
 
 vi.mock("../../hooks/useApi", () => ({ useApi: useApiMock }));
 
+const realEstateEndpoint = "/real-estate/overview?days=365&prefer_cached=true&include_stability_history=true";
+const agricultureEndpoint = "/agriculture/overview?days=90";
+const energyEndpoint = "/energy/overview?days=90&include_stability_history=true";
+
 const realEstate = {
   as_of: "2026-09-18T14:29:03Z",
   regime_label: "Late-Cycle Squeeze",
   stability_score: 36.22,
+  stability_history: [
+    { date: "2026-09-17", value: 45.19 },
+    { date: "2026-06-01", value: 13.2 },
+    { date: "2026-08-12", value: 51.7 },
+  ],
   metrics: { mortgage_rate_30y: 6.95, credit_spread_bps: 270 },
   availability: { available_count: 11, total_configured: 11 },
   data_quality: { status: "complete", stale: false },
@@ -21,6 +30,10 @@ const agriculture = {
   as_of: "2026-09-18T14:29:08Z",
   regime_label: "Rotation / Mixed",
   stability_score: 48.21,
+  component_history: [
+    { date: "2026-08-12", stability_score: 27.8 },
+    { date: "2026-09-18", stability_score: 53.6 },
+  ],
   strongest_markets: [{ name: "Oats", score: 93.73 }],
   weakest_markets: [{ name: "Feeder Cattle", score: 24.49 }],
   availability: { available_symbol_count: 22, total_configured_symbols: 25 },
@@ -31,6 +44,10 @@ const energy = {
   regime_label: "Prices Elevated",
   composite_score: 64.38,
   stability_score: 42.84,
+  stability_history: [
+    { date: "2026-08-12", value: 37.6 },
+    { date: "2026-09-18", value: 42.84 },
+  ],
   groups: [
     { label: "Crude Oil", group_composite: 76.08 },
     { label: "Natural Gas", group_composite: 52.15 },
@@ -50,9 +67,9 @@ describe("EconomicDriverSnapshots", () => {
   beforeEach(() => {
     useApiMock.mockReset();
     useApiMock.mockImplementation((endpoint: string) => {
-      if (endpoint === "/real-estate/overview?days=365&prefer_cached=true") return result(realEstate);
-      if (endpoint === "/agriculture/overview?days=90") return result(agriculture);
-      if (endpoint === "/energy/overview?days=90") return result(energy);
+      if (endpoint === realEstateEndpoint) return result(realEstate);
+      if (endpoint === agricultureEndpoint) return result(agriculture);
+      if (endpoint === energyEndpoint) return result(energy);
       return result(null, { error: "Unexpected endpoint" });
     });
   });
@@ -61,7 +78,7 @@ describe("EconomicDriverSnapshots", () => {
     cleanup();
   });
 
-  it("shows source-backed regimes, stability scales, market evidence, coverage, and deep links", () => {
+  it("shows the latest scores and sourced 90-day trends with their historical values", () => {
     render(
       <MemoryRouter>
         <EconomicDriverSnapshots />
@@ -72,9 +89,12 @@ describe("EconomicDriverSnapshots", () => {
     expect(screen.getByText("Late-Cycle Squeeze")).toBeTruthy();
     expect(screen.getByText("Rotation / Mixed")).toBeTruthy();
     expect(screen.getByText("Prices Elevated")).toBeTruthy();
-    expect(screen.getByRole("meter", { name: "Real estate stability" }).getAttribute("aria-valuenow")).toBe("36.2");
-    expect(screen.getByRole("meter", { name: "Agriculture stability" }).getAttribute("aria-valuenow")).toBe("48.2");
-    expect(screen.getByRole("meter", { name: "Energy stability" }).getAttribute("aria-valuenow")).toBe("42.8");
+    expect(screen.getByText("90-day stability trends")).toBeTruthy();
+    expect(screen.getByText("36.2")).toBeTruthy();
+    expect(screen.getByText("48.2")).toBeTruthy();
+    expect(screen.getByRole("application", { name: /Real estate stability history.*Listed-proxy stability.*51.7 on Aug 12 to 45.2 on Sep 17/ })).toBeTruthy();
+    expect(screen.getByRole("application", { name: /Agriculture stability history.*Modeled stability history.*27.8 on Aug 12 to 53.6 on Sep 18/ })).toBeTruthy();
+    expect(screen.getByRole("application", { name: /Energy stability history.*37.6 on Aug 12 to 42.8 on Sep 18/ })).toBeTruthy();
     expect(screen.getByText("6.95%")).toBeTruthy();
     expect(screen.getByText("270 bp")).toBeTruthy();
     expect(screen.getByText("Oats")).toBeTruthy();
@@ -92,17 +112,17 @@ describe("EconomicDriverSnapshots", () => {
     expect(screen.getByRole("link", { name: "Open Agriculture diagnostic" }).getAttribute("href")).toBe("/agriculture");
     expect(screen.getByRole("link", { name: "Open Energy diagnostic" }).getAttribute("href")).toBe("/energy");
     expect(useApiMock.mock.calls.map(([endpoint]) => endpoint)).toEqual([
-      "/real-estate/overview?days=365&prefer_cached=true",
-      "/agriculture/overview?days=90",
-      "/energy/overview?days=90",
+      realEstateEndpoint,
+      agricultureEndpoint,
+      energyEndpoint,
     ]);
   });
 
   it("keeps failures local while the other domain snapshots remain usable", () => {
     useApiMock.mockImplementation((endpoint: string) => {
-      if (endpoint === "/real-estate/overview?days=365&prefer_cached=true") return result(realEstate);
-      if (endpoint === "/agriculture/overview?days=90") return result(null, { error: "Unavailable" });
-      return result(energy);
+      if (endpoint === realEstateEndpoint) return result(realEstate);
+      if (endpoint === agricultureEndpoint) return result(null, { error: "Unavailable" });
+      return result({ ...energy, stability_history: [] });
     });
 
     render(
@@ -112,6 +132,7 @@ describe("EconomicDriverSnapshots", () => {
     );
 
     expect(screen.getByText("Overview feed unavailable")).toBeTruthy();
+    expect(screen.getByText("Stability history unavailable")).toBeTruthy();
     expect(screen.getByText("6.95%")).toBeTruthy();
     expect(screen.getByText("64.4")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Open Agriculture diagnostic" })).toBeTruthy();

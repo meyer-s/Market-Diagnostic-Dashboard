@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from app.api import energy as energy_api
 from app.services import energy_index as energy
 
 
@@ -45,3 +46,5 @@ def test_energy_stability_falls_when_large_directional_move_increases_pressure(m
     assert data["stability_history"]
     assert data["composite_score"] == data["composite_history"][-1]["value"]
     assert data["stability_score"] == data["stability_history"][-1]["value"]
+    assert "stability_history" not in energy_api.get_energy_overview(days=365)
+    assert energy_api.get_energy_overview(days=365, include_stability_history=True)["stability_history"] == data["stability_history"]

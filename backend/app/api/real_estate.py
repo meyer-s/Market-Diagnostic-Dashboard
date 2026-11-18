@@ -15,11 +15,12 @@ router = APIRouter(prefix="/real-estate")
 def get_real_estate_overview(
     days: int = Query(365, ge=90, le=1095),
     prefer_cached: bool = Query(False),
+    include_stability_history: bool = False,
 ):
     data = get_cached_real_estate_index(days=days) if prefer_cached else None
     if data is None:
         data = calculate_real_estate_index(days=days)
-    return {
+    overview = {
         "as_of": data["as_of"],
         "regime_label": data["regime_label"],
         "composite_score": data["composite_score"],
@@ -33,6 +34,9 @@ def get_real_estate_overview(
         "warnings": data["warnings"],
         "data_quality": data.get("data_quality"),
     }
+    if include_stability_history:
+        overview["stability_history"] = data.get("stability_history", [])
+    return overview
 
 
 @router.get("/history")
