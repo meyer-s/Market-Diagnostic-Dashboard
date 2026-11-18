@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import LiveNewsSection from "../components/news/LiveNewsSection";
+import WsbDiscussion from "../components/news/WsbDiscussion";
 import { useApi } from "../hooks/useApi";
 import { apiFetch } from "../utils/apiUtils";
 import { EmptyState, ErrorState, LoadingState } from "../utils/componentUtils";
@@ -394,6 +395,7 @@ export default function MarketNews() {
       </header>
 
       <LiveNewsSection />
+      <WsbDiscussion />
 
       <section className="surface-card-strong p-4" aria-labelledby="ticker-cache-heading">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

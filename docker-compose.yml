@@ -88,6 +88,10 @@ services:
       dockerfile: LiveNews.Dockerfile
     container_name: market_live_news
     restart: unless-stopped
+    env_file:
+      - path: ./.env.wsb.local
+        required: false
+        format: raw
     environment:
       LIVE_NEWS_BIND: 0.0.0.0
       LIVE_NEWS_ARCHIVE: /app/live-news/wire.sqlite3

@@ -24,6 +24,7 @@ from urllib.error import HTTPError
 from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 from xml.etree import ElementTree as ET
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from .wsb_reader import WsbReader
 
 
 HOST = environ.get("LIVE_NEWS_BIND", "127.0.0.1")
@@ -1114,6 +1115,7 @@ def status_payload(statuses, updated, stories, all_count, wire_count, archive_er
 
 def main():
     news = News()
+    wsb = WsbReader()
 
     class Handler(BaseHTTPRequestHandler):
         def do_HEAD(self):
@@ -1189,6 +1191,12 @@ def main():
                 return
             request = urlsplit(self.path)
             path = request.path.removeprefix(PREFIX) if request.path.startswith(PREFIX + "/") else ""
+            if path == "/wsb/discussion":
+                if not wsb.authorized(self.headers.get("Authorization")):
+                    self.send_error(404)
+                    return
+                self.send_payload(json.dumps(wsb.read(), ensure_ascii=False).encode(), "application/json")
+                return
             try:
                 params = dict(parse_qsl(request.query, max_num_fields=10))
             except ValueError:
