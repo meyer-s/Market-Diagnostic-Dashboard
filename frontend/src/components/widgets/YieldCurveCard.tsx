@@ -36,7 +36,10 @@ interface ComparisonCurve extends ComparisonObservation {
   period_end: string;
   source: { name: string; url: string };
   input_source?: { name: string; url: string };
-  data_quality: { stale: boolean; partial: boolean; published_snapshot?: boolean };
+  methodology?: { name: string; url: string };
+  basis?: string;
+  frequency?: string;
+  data_quality: { stale: boolean; partial: boolean; published_snapshot?: boolean; history_partial?: boolean; refresh_partial?: boolean };
   history?: ComparisonObservation[];
 }
 
@@ -104,11 +107,11 @@ const COMPARISONS = [
   {
     key: "municipal",
     label: "Muni bonds",
-    lineName: "NYC tax-exempt GO",
+    lineName: "MBIS tax-exempt benchmark",
     color: "#6ee7b7",
     dash: "2 4",
-    description: "Selected NYC general-obligation offerings. Yields are tax-exempt, quoted at issuance, and may be to first call. Terms are approximate calendar-year buckets.",
-    historyLabel: "earlier offerings",
+    description: "National MBIS tax-exempt benchmark at every annual maturity from 1Y to 30Y, covering general-obligation and essential-purpose revenue bonds. The 5% coupon, 10-year non-call convention differs from Treasury par yields. Yields are not tax-equivalent. Each curve keeps its publisher timestamp.",
+    historyLabel: "prior published sessions",
   },
   {
     key: "infrastructure",
@@ -576,6 +579,8 @@ export default function YieldCurveCard() {
                     {request.data.data_quality.published_snapshot && <span className="block">Verified published schedule. Automatic refresh unavailable.</span>}
                     {request.data.data_quality.stale && <span className="block text-amber-200">Older data. Check the reporting period above.</span>}
                     {request.data.data_quality.partial && <span className="block text-amber-200">Some maturity points are missing.</span>}
+                    {request.data.data_quality.history_partial && <span className="block text-amber-200">Fewer than four prior published curves are available.</span>}
+                    {request.data.data_quality.refresh_partial && <span className="block text-amber-200">Some published snapshots could not be refreshed. Check the dates shown.</span>}
                   </>
                 )}
               </li>
@@ -589,7 +594,8 @@ export default function YieldCurveCard() {
               <p key={key}>
                 <strong>{label}</strong> · {description}
                 {!!series.history?.length && <> {series.history.length} {historyLabel} shown as faded curves.</>}
-                {key === "municipal" && <> Issuer examples come from reviewed statements. Coverage expands as offerings are reviewed.</>}
+                {series.frequency && <> {series.frequency}.</>}
+                {series.methodology && <> <a href={series.methodology.url} target="_blank" rel="noreferrer" className="underline underline-offset-4">{series.methodology.name}</a>.</>}
               </p>
             ))}
           </DetailsDisclosure>

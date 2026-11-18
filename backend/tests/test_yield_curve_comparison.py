@@ -1,4 +1,5 @@
 from datetime import date
+import asyncio
 from unittest.mock import MagicMock
 
 from app.services import yield_curve_comparison as comparison
@@ -57,12 +58,15 @@ def test_usda_published_copy_becomes_stale_after_its_effective_quarter():
     assert expired["data_quality"]["stale"]
 
 
-def test_municipal_offerings_keep_issue_dates_yield_basis_and_unquoted_maturities():
-    data = comparison.municipal_offering_curves(today=date(2026, 11, 18))
-    assert data["period_start"] == "2026-10-07"
-    assert [entry["period_start"] for entry in data["history"]] == ["2026-09-10", "2026-08-06"]
-    assert {"maturity": "25Y", "yield": 5.43, "basis": "Yield to first call"} in data["curve"]
-    assert not any(point["maturity"] == "20Y" for point in data["curve"])
+def test_municipal_comparison_fetches_national_provider_and_propagates_failure(monkeypatch):
+    import pytest
+
+    async def failed(**kwargs):
+        raise comparison.MunicipalCurveUnavailable("publisher failed")
+
+    monkeypatch.setattr(comparison, "fetch_municipal_curve", failed)
+    with pytest.raises(comparison.ComparisonUnavailable, match="publisher failed"):
+        asyncio.run(comparison.fetch_curve_comparison("municipal"))
 
 
 def test_wifia_estimate_uses_exact_slgs_terms_and_preserves_daily_history():

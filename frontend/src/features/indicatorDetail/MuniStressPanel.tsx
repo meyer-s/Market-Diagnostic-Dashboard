@@ -193,10 +193,10 @@ export default function MuniStressPanel({
             derived proxies rather than proprietary municipal curve feeds.
           </p>
           <p className="text-xs text-stealth-500 mt-2 max-w-3xl">
-            This public-sector view is a critical companion to the core bond composite, and in a richer
-            dataset the two would be expected to move together. Because proxy inputs are limited and
-            can be brittle, we do not compute a divergence metric today. If higher-quality data were
-            available, the spread between these lines would be a more direct read on relative health.
+            Scored coverage currently uses SIFMA funding rates and a Treasury slope proxy.
+            U.S. revenue-bond pricing and long-end credit evidence are unavailable after removing
+            a misidentified Swedish index. The national MBIS yield benchmark is available on the
+            dashboard; it does not supply those missing credit components.
           </p>
           <p
             className={`mt-2 text-xs font-semibold uppercase tracking-[0.12em] ${
@@ -239,7 +239,7 @@ export default function MuniStressPanel({
                   : "text-yellow-400"
               }`}
             >
-              {data.relationship_signal.state}
+              {data.relationship_signal.state === "UNKNOWN" ? "Unavailable" : data.relationship_signal.state}
             </div>
           </div>
           {data.relationship_signal.message && (
@@ -301,7 +301,7 @@ export default function MuniStressPanel({
               <div className="flex items-center gap-2">
                 {series.is_live === false && (
                   <span className="text-xs text-stealth-300 bg-stealth-500/10 border border-stealth-500/30 px-2 py-0.5 rounded-full">
-                    archived
+                    {series.history?.length ? "archived" : "unavailable"}
                   </span>
                 )}
                 {series.is_proxy && (
@@ -347,7 +347,7 @@ export default function MuniStressPanel({
           Missing live inputs are dropped and remaining weights re-normalized.
         </div>
         <div className="mt-2">
-          Long-end stress proxy uses Revdex drawdowns and volatility; curve stability uses a Treasury proxy curve.
+          Unverified revenue and long-end credit components are excluded; curve stability uses a Treasury proxy curve.
           Stability scoring uses rolling z-scores with direction adjustment, mapped to 0–100.
           Composite states: Green ≥ {muniPublicSectorThresholds.green}, Yellow ≥ {muniPublicSectorThresholds.yellow}, Red &lt; {muniPublicSectorThresholds.yellow}.
         </div>

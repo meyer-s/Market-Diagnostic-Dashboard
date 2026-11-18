@@ -145,10 +145,12 @@ describe("YieldCurveCard", () => {
       history: [{ period_label: "Jul 2026 month-end", curve: [{ maturity: "2Y", yield: 4.59 }] }],
     };
     const municipal = {
-      period_label: "Series D · Oct 07, 2026",
-      source: { name: "NYC official statement", url: "https://www.nyc.gov/official-statement.pdf" },
+      period_label: "Nov 18, 2026 · 01:00 PM EST",
+      source: { name: "MBIS national tax-exempt benchmark", url: "https://mbis.com/benchmark-curves" },
       data_quality: { stale: false, partial: false },
-      curve: [{ maturity: "3Y", yield: 3.71 }, { maturity: "25Y", yield: 5.43, basis: "Yield to first call" }],
+      curve: Array.from({ length: 30 }, (_, index) => ({ maturity: `${index + 1}Y`, yield: 3 + (index + 1) / 100 })),
+      history: [{ period_label: "Nov 17, 2026 · 06:00 PM EST", curve: [{ maturity: "2Y", yield: 3.12 }] }],
+      methodology: { name: "MBIS benchmark methodology", url: "https://www.msrb.org/sites/default/files/MBIS-Yield-Curve-Methodology.pdf" },
     };
     const infrastructure = {
       period_label: "Sep 17, 2026",
@@ -174,20 +176,20 @@ describe("YieldCurveCard", () => {
     fireEvent.click(corporateToggle);
     fireEvent.click(municipalToggle);
     fireEvent.click(infrastructureToggle);
-    const chart = screen.getByLabelText(/Onion-skinned Treasury yield curves.*HQM corporate.*NYC tax-exempt GO.*EPA WIFIA/);
-    expect(screen.getAllByTestId("curve-series")).toHaveLength(15);
+    const chart = screen.getByLabelText(/Onion-skinned Treasury yield curves.*HQM corporate.*MBIS tax-exempt benchmark.*EPA WIFIA/);
+    expect(screen.getAllByTestId("curve-series")).toHaveLength(16);
     expect(screen.getByText("corporate_history_1:HQM corporate · Jul 2026 month-end")).toBeTruthy();
     expect(JSON.parse(chart.getAttribute("data-points") ?? "[]")).toContainEqual(
-      expect.objectContaining({ maturity: "2Y", corporate: 4.75, corporate_history_1: 4.59, municipal: null, infrastructure: 4.41 }),
+      expect.objectContaining({ maturity: "2Y", corporate: 4.75, corporate_history_1: 4.59, municipal: 3.02, municipal_history_1: 3.12, infrastructure: 4.41 }),
     );
     expect(JSON.parse(chart.getAttribute("data-points") ?? "[]")).toContainEqual(
-      expect.objectContaining({ maturity: "25Y", municipal: 5.43 }),
+      expect.objectContaining({ maturity: "25Y", municipal: 3.25 }),
     );
-    expect(screen.getByRole("link", { name: "NYC official statement" })).toBeTruthy();
-    expect(screen.getByText("Yield to first call")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "MBIS national tax-exempt benchmark" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "MBIS benchmark methodology" })).toBeTruthy();
     expect(screen.getByText("HQM corporate history")).toBeTruthy();
     fireEvent.click(corporateToggle);
-    expect(screen.getAllByTestId("curve-series")).toHaveLength(13);
+    expect(screen.getAllByTestId("curve-series")).toHaveLength(14);
     expect(municipalToggle.getAttribute("aria-pressed")).toBe("true");
     expect(infrastructureToggle.getAttribute("aria-pressed")).toBe("true");
   });

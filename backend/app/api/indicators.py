@@ -200,8 +200,8 @@ async def get_bond_composite_components(days: int = Query(365, ge=1, le=1095)):
 async def get_bond_muni_subsystem(days: int = Query(365, ge=1, le=1095)):
     """
     Return municipal credit & funding stress subsystem data.
-    Includes Revdex revenue proxy, long-end municipal stress proxy,
-    SIFMA swap index, and Treasury curve slope stability proxy.
+    Includes SIFMA and the explicitly labeled Treasury slope proxy.
+    Unsupported U.S. revenue/credit inputs remain unavailable and unscored.
     """
     data = await get_muni_subsystem(days=days)
 
@@ -239,7 +239,9 @@ async def get_bond_muni_subsystem(days: int = Query(365, ge=1, le=1095)):
     cond_bond = bond_score is not None and bond_score >= 65
     cond_spread = proxy_z_60d is not None and proxy_z_60d >= 1.0
 
-    if cond_muni and cond_bond and cond_spread:
+    if muni_score is None or bond_score is None or proxy_z_60d is None:
+        divergence_state = "UNKNOWN"
+    elif cond_muni and cond_bond and cond_spread:
         divergence_state = "RED"
     elif cond_muni and cond_bond and proxy_z_60d is not None:
         divergence_state = "YELLOW"
@@ -249,7 +251,12 @@ async def get_bond_muni_subsystem(days: int = Query(365, ge=1, le=1095)):
     data["relationship_signal"] = {
         "name": "Muni–Corporate Divergence",
         "state": divergence_state,
-        "message": "Public-sector funding stress diverging from corporate credit." if divergence_state != "GREEN" else None,
+        "message": (
+            "Insufficient verified municipal credit-spread history for a divergence signal."
+            if divergence_state == "UNKNOWN" else
+            "Public-sector funding stress diverging from corporate credit."
+            if divergence_state != "GREEN" else None
+        ),
         "inputs": {
             "public_sector_score": muni_score,
             "bond_market_score": bond_score,
@@ -309,7 +316,10 @@ async def get_treasury_yield_curve(months: int = Query(12, ge=1, le=24)):
 @router.get("/indicators/BOND_MARKET_STABILITY/yield-curve/{comparison}")
 async def get_yield_curve_comparison(comparison: Comparison):
     """Return one dated source series for the optional Treasury chart overlays."""
-    cache_key = f"yield-curve-comparison-v2:{comparison}"
+    # Never serve the retired static NYC offerings as the new national feed.
+    version = 3 if comparison == "municipal" else 2
+    cache_key = f"yield-curve-comparison-v{version}:{comparison}"
+    max_stale_age = 7 * 24 * 60 * 60 if comparison == "municipal" else _COMPARISON_MAX_STALE_AGE_SECONDS
     snapshot = load_response_snapshot(cache_key)
     if snapshot is not None and snapshot.is_fresh(_COMPARISON_CACHE_TTL_SECONDS):
         return snapshot.payload
@@ -326,14 +336,14 @@ async def get_yield_curve_comparison(comparison: Comparison):
             published = published_public_lending_snapshot() if comparison == "public-lending" else None
             if (
                 snapshot is not None
-                and snapshot.is_within_stale_limit(_COMPARISON_MAX_STALE_AGE_SECONDS)
+                and snapshot.is_within_stale_limit(max_stale_age)
                 and (published is None or snapshot.payload["period_start"] > published["period_start"])
             ):
                 return mark_stale_snapshot(
                     snapshot.payload,
                     snapshot,
                     reason="yield_curve_comparison_refresh_failed",
-                    max_stale_age_seconds=_COMPARISON_MAX_STALE_AGE_SECONDS,
+                    max_stale_age_seconds=max_stale_age,
                 )
             if published is None:
                 raise HTTPException(status_code=502, detail="The comparison curve is temporarily unavailable.") from exc
@@ -341,14 +351,15 @@ async def get_yield_curve_comparison(comparison: Comparison):
 
         if (
             snapshot is not None
-            and snapshot.is_within_stale_limit(_COMPARISON_MAX_STALE_AGE_SECONDS)
-            and snapshot.payload["period_start"] > payload["period_start"]
+            and snapshot.is_within_stale_limit(max_stale_age)
+            and (snapshot.payload.get("as_of") or snapshot.payload["period_start"])
+            > (payload.get("as_of") or payload["period_start"])
         ):
             return mark_stale_snapshot(
                 snapshot.payload,
                 snapshot,
                 reason="yield_curve_comparison_period_regressed",
-                max_stale_age_seconds=_COMPARISON_MAX_STALE_AGE_SECONDS,
+                max_stale_age_seconds=max_stale_age,
             )
         store_response_snapshot(cache_key, payload)
         return payload

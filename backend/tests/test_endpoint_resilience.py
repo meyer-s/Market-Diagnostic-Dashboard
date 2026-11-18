@@ -703,7 +703,7 @@ def test_public_credit_failure_reuses_stale_snapshot(monkeypatch) -> None:
         "warnings": [],
     }
     snapshot = _snapshot(
-        "indicator-components:public-credit:730",
+        "indicator-components:public-credit-v2:730",
         prior,
         age_seconds=30_000,
     )
@@ -721,9 +721,66 @@ def test_public_credit_failure_reuses_stale_snapshot(monkeypatch) -> None:
     assert result["data_quality"]["reason"] == "public_credit_refresh_failed"
 
 
+@pytest.mark.parametrize("age_seconds,expected_status", [(30_000, 200), (8 * 24 * 3600, 502)])
+def test_municipal_provider_failure_only_reuses_bounded_national_snapshot(monkeypatch, age_seconds, expected_status):
+    from fastapi import HTTPException
+
+    national = {"period_start": "2026-11-17", "curve": [{"maturity": "1Y", "yield": 3.1}], "data_quality": {"stale": False}}
+    snapshot = _snapshot("yield-curve-comparison-v3:municipal", national, age_seconds=age_seconds)
+
+    def load(key):
+        assert key == "yield-curve-comparison-v3:municipal"
+        return snapshot
+
+    async def failed(_comparison):
+        raise indicators.ComparisonUnavailable("MBIS unavailable")
+
+    monkeypatch.setattr(indicators, "load_response_snapshot", load)
+    monkeypatch.setattr(indicators, "fetch_curve_comparison", failed)
+    if expected_status == 502:
+        with pytest.raises(HTTPException) as raised:
+            asyncio.run(indicators.get_yield_curve_comparison("municipal"))
+        assert raised.value.status_code == 502
+    else:
+        result = asyncio.run(indicators.get_yield_curve_comparison("municipal"))
+        assert result["curve"] == national["curve"]
+        assert result["data_quality"]["stale"]
+
+
+def test_retired_municipal_offerings_cache_is_not_reused(monkeypatch):
+    async def failed(_comparison):
+        raise indicators.ComparisonUnavailable("no national benchmark")
+
+    def load(key):
+        if key == "yield-curve-comparison-v2:municipal":
+            return _snapshot(key, {"period_start": "2026-10-07", "curve": ["old NYC offering"]}, age_seconds=10)
+        return None
+
+    from fastapi import HTTPException
+    monkeypatch.setattr(indicators, "load_response_snapshot", load)
+    monkeypatch.setattr(indicators, "fetch_curve_comparison", failed)
+    with pytest.raises(HTTPException) as raised:
+        asyncio.run(indicators.get_yield_curve_comparison("municipal"))
+    assert raised.value.status_code == 502
+
+
+def test_municipal_refresh_does_not_regress_publisher_time_on_the_same_day(monkeypatch):
+    prior = {"period_start": "2026-11-18", "as_of": "2026-11-18T13:00:00-05:00", "data_quality": {"stale": False}}
+    snapshot = _snapshot("yield-curve-comparison-v3:municipal", prior, age_seconds=30_000)
+
+    async def older(_comparison):
+        return {**prior, "as_of": "2026-11-18T10:00:00-05:00"}
+
+    monkeypatch.setattr(indicators, "load_response_snapshot", lambda _: snapshot)
+    monkeypatch.setattr(indicators, "fetch_curve_comparison", older)
+    result = asyncio.run(indicators.get_yield_curve_comparison("municipal"))
+    assert result["as_of"] == prior["as_of"]
+    assert result["data_quality"]["reason"] == "yield_curve_comparison_period_regressed"
+
+
 def test_public_credit_singleflight_rechecks_shared_snapshot(monkeypatch) -> None:
     fresh = _snapshot(
-        "indicator-components:public-credit:730",
+        "indicator-components:public-credit-v2:730",
         {
             "composite": {
                 "coverage_live": 4,

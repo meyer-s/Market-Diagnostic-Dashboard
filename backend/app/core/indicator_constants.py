@@ -8,12 +8,12 @@ MUNI_PUBLIC_SECTOR_COMPONENTS = {
     },
     "MUNI_LONG_SPREAD": {
         "weight": 0.30,
-        "label": "Long-end municipal stress (proxy)",
+        "label": "U.S. long-end municipal credit evidence",
         "unit": "percent",
     },
     "MUNI_REVENUE_PROXY": {
         "weight": 0.25,
-        "label": "Revenue Bond Price Proxy (Revdex)",
+        "label": "U.S. revenue-bond price evidence",
         "unit": "index",
     },
     "MUNI_CURVE_SLOPE_STABILITY": {

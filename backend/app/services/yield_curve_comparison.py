@@ -12,6 +12,8 @@ import httpx
 from lxml import etree, html
 import xlrd
 
+from app.services.municipal_yield_curve import MunicipalCurveUnavailable, fetch_municipal_curve
+
 
 Comparison = Literal["corporate", "public-lending", "municipal", "infrastructure"]
 CORPORATE_SOURCE = (
@@ -27,7 +29,6 @@ _SLGS_API = (
     "v1/accounting/od/slgs_time_deposit_rates"
 )
 _WIFIA_TENORS = {f"{years:02d}-00": years for years in (1, 2, 3, 5, 7, 10, 20, 30)}
-_NYC_STATEMENTS = "https://www.nyc.gov/assets/investorrelations/downloads/pdf/go-bonds-statements/2027"
 _HISTORY_LIMIT = 4
 _EASTERN = ZoneInfo("America/New_York")
 _CORPORATE_TENORS = (2, 5, 10, 30)
@@ -38,18 +39,6 @@ _QUARTER = re.compile(r"([1-4])(?:st|nd|rd|th)\s+Quarter\s+of\s+(?:CY\s+)?(20\d{
 # The pooled 2047-or-later row has no exact tenor on the chart.
 _PUBLIC_SNAPSHOT_PERIOD = date(2026, 10, 1)
 _PUBLIC_SNAPSHOT_VALUES = {1: 2.500, 2: 2.625, 3: 2.625, 5: 2.875, 7: 3.125, 10: 3.500, 20: 4.375}
-
-# Tax-exempt NYC GO offering yields from the inside covers of the official statements.
-# Maturity buckets use maturity year minus issue year. Keep the stated yield basis,
-# including yield to first call where disclosed. Price-only rows are omitted.
-_NYC_GO_ISSUES = (
-    (date(2026, 10, 7), "Series D", "nycgo-2027def.pdf",
-     {2: 3.55, 3: 3.71, 5: 3.96, 7: 4.17, 10: 4.37, 15: 4.91, 25: 5.43}, (15, 25)),
-    (date(2026, 9, 10), "Series B-1", "nycgo-2027bc.pdf",
-     {2: 2.95, 3: 3.11, 5: 3.38, 7: 3.63, 10: 3.96, 15: 4.52}, (15,)),
-    (date(2026, 8, 6), "Series A", "nycgo-2027a.pdf",
-     {2: 2.70, 3: 2.82, 5: 3.08, 7: 3.30, 10: 3.61, 15: 4.17, 20: 4.48}, (15, 20)),
-)
 
 class ComparisonUnavailable(RuntimeError):
     """The publisher did not return a recognizable comparison series."""
@@ -189,27 +178,6 @@ def published_public_lending_snapshot(*, today: date | None = None) -> dict | No
     return _public_payload(_PUBLIC_SNAPSHOT_PERIOD, _PUBLIC_SNAPSHOT_VALUES, today=today, published_snapshot=True)
 
 
-def municipal_offering_curves(*, today: date) -> dict:
-    issues = []
-    for period, label, filename, values, to_call in _NYC_GO_ISSUES:
-        if period > today:
-            continue
-        issues.append({
-            "period_start": period.isoformat(),
-            "period_end": period.isoformat(),
-            "period_label": f"{label} · {period:%b %d, %Y}",
-            "curve": [
-                {**point, "basis": "Yield to first call"} if int(point["maturity"][:-1]) in to_call else point
-                for point in _curve(values)
-            ],
-            "source": {"name": "NYC official statement", "url": f"{_NYC_STATEMENTS}/{filename}"},
-        })
-    if not issues:
-        raise ComparisonUnavailable("No reviewed municipal offerings for this date.")
-    latest, *history = issues
-    return {**latest, "history": history, "data_quality": {"stale": False, "partial": False}}
-
-
 def parse_infrastructure_rates(rows: list[dict], *, today: date) -> dict:
     rates_by_day: dict[date, dict[int, float]] = {}
     for row in rows:
@@ -248,7 +216,10 @@ def parse_infrastructure_rates(rows: list[dict], *, today: date) -> dict:
 async def fetch_curve_comparison(comparison: Comparison) -> dict:
     today = datetime.now(_EASTERN).date()
     if comparison == "municipal":
-        return municipal_offering_curves(today=today)
+        try:
+            return await fetch_municipal_curve(today=today)
+        except MunicipalCurveUnavailable as exc:
+            raise ComparisonUnavailable(str(exc)) from exc
     if comparison == "infrastructure":
         try:
             async with httpx.AsyncClient(timeout=10) as client:

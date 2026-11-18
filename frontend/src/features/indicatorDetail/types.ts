@@ -83,7 +83,7 @@ export interface MuniSubsystemResponse {
   }>;
   relationship_signal?: {
     name: string;
-    state: "GREEN" | "YELLOW" | "RED";
+    state: "GREEN" | "YELLOW" | "RED" | "UNKNOWN";
     message?: string | null;
     inputs?: {
       public_sector_score?: number | null;

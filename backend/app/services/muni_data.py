@@ -440,44 +440,6 @@ def compute_composite_score(
     return total
 
 
-def _compute_drawdown_series(values: List[float]) -> List[float]:
-    drawdowns: List[float] = []
-    peak = None
-    for value in values:
-        if peak is None or value > peak:
-            peak = value
-        if peak and peak > 0:
-            drawdown = (peak - value) / peak * 100
-        else:
-            drawdown = 0.0
-        drawdowns.append(drawdown)
-    return drawdowns
-
-
-def _compute_return_volatility(values: List[float], window: int) -> List[float]:
-    if not values:
-        return []
-    returns: List[float] = [0.0]
-    for i in range(1, len(values)):
-        prev = values[i - 1]
-        curr = values[i]
-        if prev == 0:
-            returns.append(0.0)
-        else:
-            returns.append(((curr / prev) - 1) * 100)
-    vol: List[float] = []
-    for i in range(len(returns)):
-        start_idx = max(0, i - window + 1)
-        window_vals = returns[start_idx : i + 1]
-        if len(window_vals) < 2:
-            vol.append(0.0)
-        else:
-            mean = sum(window_vals) / len(window_vals)
-            var = sum((v - mean) ** 2 for v in window_vals) / len(window_vals)
-            vol.append(var ** 0.5)
-    return vol
-
-
 async def _fetch_sifma_series() -> List[Dict[str, Any]]:
     sifma_url = settings.SIFMA_SWAP_URL or SIFMA_SWAP_DEFAULT_URL
     try:
@@ -499,15 +461,11 @@ async def _build_muni_subsystem(days: int = 365) -> Dict[str, Any]:
     lookback_start = datetime.utcnow() - timedelta(days=days + 365)
     start_date = lookback_start.strftime("%Y-%m-%d")
 
-    fred = FredClient()
-
-    omrx_result, sifma_result, curve_result = await asyncio.gather(
-        fred.fetch_series("NASDAQOMRXMUNI", start_date=start_date),
+    sifma_result, curve_result = await asyncio.gather(
         _fetch_sifma_series(),
         _build_fred_curve_points(start_date),
         return_exceptions=True,
     )
-    omrx_series = omrx_result if isinstance(omrx_result, list) else []
     sifma_series = sifma_result if isinstance(sifma_result, list) else []
     fred_curve_points = curve_result if isinstance(curve_result, list) else []
 
@@ -529,13 +487,7 @@ async def _build_muni_subsystem(days: int = 365) -> Dict[str, Any]:
             key=lambda x: x.get("date", ""),
         )
 
-    omrx_clean = _sorted_series(omrx_series)
     sifma_clean = _sorted_series(sifma_series)
-
-    # MUNI_REVENUE_PROXY: revenue bond price proxy (Revdex)
-    omrx_dates = [p["date"] for p in omrx_clean]
-    omrx_values = [float(p["value"]) for p in omrx_clean]
-    revenue_proxy_metric = omrx_values[:]
 
     def _stress_level(stress: bool, severe: bool) -> str:
         if severe:
@@ -553,17 +505,6 @@ async def _build_muni_subsystem(days: int = 365) -> Dict[str, Any]:
                 continue
             slope_vol_dates.append(point["date"])
             slope_vol_values.append(float(point["slope_vol"]))
-
-    # MUNI_LONG_SPREAD: derived long-end municipal stress proxy (price-based)
-    muni_proxy_dates: List[str] = []
-    muni_proxy_values: List[float] = []
-    if omrx_dates and omrx_values:
-        muni_proxy_dates = omrx_dates
-        drawdowns = _compute_drawdown_series(omrx_values)
-        proxy_lookback = _infer_series_lookback(omrx_dates)
-        vol_window = 13 if proxy_lookback == 104 else 21
-        vol = _compute_return_volatility(omrx_values, vol_window)
-        muni_proxy_values = [d + v for d, v in zip(drawdowns, vol)]
 
     # SIFMA data cadence settings
     sifma_dates = [p["date"] for p in sifma_clean]
@@ -610,16 +551,16 @@ async def _build_muni_subsystem(days: int = 365) -> Dict[str, Any]:
     series_payloads.append(
         _build_series_payload(
             key="MUNI_REVENUE_PROXY",
-            label="Revenue Bond Price Proxy (Revdex)",
-            source="FRED NASDAQOMRXMUNI",
+            label="U.S. revenue-bond price evidence",
+            source="Unavailable: no verified U.S. revenue-bond index connected",
             unit="index",
-            dates=omrx_dates,
-            metric_values=revenue_proxy_metric,
+            dates=[],
+            metric_values=[],
             direction=-1,
             cutoff=cutoff,
-            notes="Revdex proxy for revenue-bond pricing; higher levels = stronger demand.",
+            notes="Excluded from scoring. NASDAQOMRXMUNI is a Swedish SEK index, not U.S. Revdex. The national MBIS yield benchmark is not a revenue-bond price index.",
             is_proxy=True,
-            is_live=True,
+            is_live=False,
             trend_window_days=30,
             trend_threshold=0.02,
             extra={},
@@ -697,68 +638,23 @@ async def _build_muni_subsystem(days: int = 365) -> Dict[str, Any]:
         )
     )
 
-    if muni_proxy_dates and muni_proxy_values:
-        series_payloads.append(
-            _build_series_payload(
-                key="MUNI_LONG_SPREAD",
-                label="Long-end municipal stress (proxy)",
-                source="FRED NASDAQOMRXMUNI",
-                unit="percent",
-                dates=muni_proxy_dates,
-                metric_values=muni_proxy_values,
-                direction=1,
-                cutoff=cutoff,
-                notes="Derived from Revdex price drawdowns and volatility. Public proxy (not a yield).",
-                is_proxy=True,
-                is_live=True,
-                trend_window_days=30,
-                trend_threshold=0.05,
-                extra={
-                    "stress_cues": {
-                        "z_score": _compute_z_scores(muni_proxy_values, _infer_series_lookback(muni_proxy_dates))[-1]
-                        if muni_proxy_values
-                        else None,
-                        "change_60d": muni_proxy_values[-1] - muni_proxy_values[-61]
-                        if len(muni_proxy_values) > 61
-                        else None,
-                        "stress_level": _stress_level(
-                            stress=(
-                                muni_proxy_values
-                                and _compute_z_scores(muni_proxy_values, _infer_series_lookback(muni_proxy_dates))[-1]
-                                >= MUNI_PUBLIC_SECTOR_STRESS_CUES["MUNI_LONG_SPREAD"]["stress_z"]
-                            )
-                            or (
-                                len(muni_proxy_values) > 61
-                                and muni_proxy_values[-1] - muni_proxy_values[-61]
-                                >= MUNI_PUBLIC_SECTOR_STRESS_CUES["MUNI_LONG_SPREAD"]["stress_change_60d"]
-                            ),
-                            severe=(
-                                muni_proxy_values
-                                and _compute_z_scores(muni_proxy_values, _infer_series_lookback(muni_proxy_dates))[-1]
-                                >= MUNI_PUBLIC_SECTOR_STRESS_CUES["MUNI_LONG_SPREAD"]["severe_z"]
-                            ),
-                        ),
-                    }
-                },
-            )
+    # NASDAQOMRXMUNI is Swedish municipal debt denominated in SEK. It cannot
+    # stand in for U.S. revenue-bond prices or U.S. long-end credit stress.
+    series_payloads.append(
+        _build_series_payload(
+            key="MUNI_LONG_SPREAD",
+            label="U.S. long-end municipal credit evidence",
+            source="Unavailable: no verified U.S. municipal credit-spread history connected",
+            unit="percent",
+            dates=[],
+            metric_values=[],
+            direction=1,
+            cutoff=cutoff,
+            notes="Excluded from scoring after removing the Swedish index. A yield benchmark alone does not establish a comparable credit spread.",
+            is_proxy=True,
+            is_live=False,
         )
-    else:
-        series_payloads.append(
-            _build_series_payload(
-                key="MUNI_LONG_SPREAD",
-                label="Long-end municipal stress (proxy)",
-                source="Unavailable (requires public Revdex proxy from FRED)",
-                unit="percent",
-                dates=[],
-                metric_values=[],
-                direction=1,
-                cutoff=cutoff,
-                notes="Uses public price-based proxy (drawdown + volatility). No proprietary muni curve ingested.",
-                is_proxy=True,
-                is_live=True,
-                extra={},
-            )
-        )
+    )
 
     # Coverage + composite
     live_series = {s["key"]: s for s in series_payloads if s.get("is_live")}
@@ -876,7 +772,7 @@ async def _build_muni_subsystem(days: int = 365) -> Dict[str, Any]:
 
 
 async def get_muni_subsystem(days: int = 365) -> Dict[str, Any]:
-    cache_key = f"indicator-components:public-credit:{days}"
+    cache_key = f"indicator-components:public-credit-v2:{days}"
     shared_snapshot = load_response_snapshot(cache_key)
     if (
         shared_snapshot is not None

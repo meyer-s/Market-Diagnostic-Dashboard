@@ -225,3 +225,51 @@ test("dashboard yield-curve evidence is prominent and responsive", async ({ page
   await disclosure.click();
   await expect(page.getByText("5.29%", { exact: true })).toBeVisible();
 });
+
+test("national municipal benchmark renders 30 maturities and four dated onion skins", async ({ browser }) => {
+  const municipal = {
+    period_start: "2026-11-18",
+    period_end: "2026-11-18",
+    period_label: "Nov 18, 2026 · 01:00 PM EST",
+    source: { name: "MBIS national tax-exempt benchmark", url: "https://mbis.com/benchmark-curves" },
+    methodology: { name: "MBIS benchmark methodology", url: "https://www.msrb.org/sites/default/files/MBIS-Yield-Curve-Methodology.pdf" },
+    frequency: "Public published snapshots; cached for up to 6 hours",
+    data_quality: { stale: false, partial: false, history_partial: false, refresh_partial: false },
+    curve: Array.from({ length: 30 }, (_, i) => ({ maturity: `${i + 1}Y`, yield: 3.1 + i * 0.065 })),
+    history: ["Nov 17", "Nov 16", "Nov 13", "Nov 12"].map((day, index) => ({
+      period_label: `${day}, 2026 · 06:00 PM EST`,
+      curve: Array.from({ length: 30 }, (_, i) => ({ maturity: `${i + 1}Y`, yield: 3.12 + i * 0.065 + index * 0.02 })),
+    })),
+  };
+  for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
+    const context = await browser.newContext({ viewport, reducedMotion: "reduce" });
+    const page = await context.newPage();
+    try {
+      await page.route("**/api/**", async (route) => {
+        if (new URL(route.request().url()).pathname.endsWith("/yield-curve/municipal")) {
+          await route.fulfill({ status: 200, json: municipal });
+          return;
+        }
+        await fulfillDashboardApi(route);
+      });
+      await page.goto("/", { waitUntil: "domcontentloaded" });
+      const section = page.locator("#rates-pulse");
+      await section.scrollIntoViewIfNeeded();
+      await section.getByRole("button", { name: "Muni bonds" }).click();
+      await expect(section.getByRole("link", { name: municipal.source.name })).toBeVisible();
+      await expect(section.getByLabel(/Onion-skinned Treasury yield curves.*MBIS tax-exempt benchmark/)).toBeVisible();
+      await expect(section.locator('.recharts-line-curve[stroke="#6ee7b7"]')).toHaveCount(5);
+      await section.getByText("Comparison methodology", { exact: true }).click();
+      await expect(section.getByText(/4 prior published sessions shown as faded curves/)).toBeVisible();
+      await expect(section.getByText(/Yields are not tax-equivalent/)).toBeVisible();
+      await section.getByText("Read latest yields as values", { exact: true }).click();
+      await expect(section.getByText(`${municipal.curve[29].yield.toFixed(2)}%`, { exact: true })).toBeVisible();
+      expect(await section.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+      const accessibility = await new AxeBuilder({ page }).include("#rates-pulse").analyze();
+      expect(accessibility.violations.filter(({ impact }) => impact === "critical" || impact === "serious")).toEqual([]);
+      await section.screenshot({ path: `test-results/municipal-benchmark-${viewport.width}.png` });
+    } finally {
+      await context.close();
+    }
+  }
+});
