@@ -51,7 +51,7 @@ describe("Dashboard", () => {
     vi.unstubAllGlobals();
   });
 
-  it("loads a bounded Focused feed only when Live News is enabled", async () => {
+  it("loads the compact live feed on demand with view and topic controls", async () => {
     apiFetchMock.mockResolvedValue([]);
     const liveFetch = vi.fn(async () => Response.json({
       updated_at: "2026-11-18T12:00:00Z",
@@ -77,8 +77,19 @@ describe("Dashboard", () => {
     fireEvent.click(live.getByRole("button", { name: "Turn on live news" }));
     const headlines = await live.findByRole("list", { name: "Live headlines" });
     expect(within(headlines).getAllByRole("link")).toHaveLength(6);
+    const views = within(live.getByRole("group", { name: "Live news view" }));
+    expect(views.getByRole("button", { name: "Focused", pressed: true })).toBeTruthy();
+    expect(live.getByText("Nov 18, 7:00:00 AM EST").getAttribute("datetime")).toBe("2026-11-18T12:00:00Z");
     expect(live.queryByRole("button", { name: "Weights" })).toBeNull();
     expect(liveFetch).toHaveBeenCalledWith(expect.stringContaining("/snapshot?view=focused"), expect.anything());
+
+    fireEvent.change(live.getByRole("combobox", { name: "Topic" }), { target: { value: "markets" } });
+    await waitFor(() => expect(liveFetch).toHaveBeenCalledWith(expect.stringContaining("view=focused&topic=markets"), expect.anything()));
+    fireEvent.click(views.getByRole("button", { name: "Wires" }));
+    await waitFor(() => expect(liveFetch).toHaveBeenCalledWith(expect.stringContaining("view=wire&topic=markets"), expect.anything()));
+    fireEvent.click(views.getByRole("button", { name: "All News" }));
+    await waitFor(() => expect(liveFetch).toHaveBeenCalledWith(expect.stringContaining("view=all&topic=markets"), expect.anything()));
+    expect(within(await live.findByRole("list", { name: "Live headlines" })).getAllByRole("link")).toHaveLength(6);
     fireEvent.click(live.getByRole("button", { name: "Turn off live news" }));
     expect(live.queryByRole("list", { name: "Live headlines" })).toBeNull();
   });

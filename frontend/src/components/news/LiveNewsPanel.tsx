@@ -280,8 +280,9 @@ export default function LiveNewsPanel({ compact = false }: { compact?: boolean }
   const closeWeights = useCallback(() => setShowWeights(false), []);
   const feedQuery = new URLSearchParams({ view, topic }).toString();
   const query = new URLSearchParams({ view, topic, when, q: search, page: String(page) }).toString();
-  const data = result?.query === query ? result.data : undefined;
-  const topics = result?.data.topics ?? {};
+  const latestSnapshot = result?.data;
+  const data = result?.query === query ? latestSnapshot : undefined;
+  const topics = latestSnapshot?.topics ?? {};
   const error = failedQuery === query;
   const articles = data?.articles.slice(0, compact ? HOME_HEADLINE_LIMIT - data.featured.length : undefined) ?? [];
 
@@ -340,16 +341,37 @@ export default function LiveNewsPanel({ compact = false }: { compact?: boolean }
     };
   }, [query, revision]);
 
+  const topicField = (
+    <FormField label="Topic">
+      <select value={topic} onChange={(event) => { setTopic(event.target.value); setPage(1); }} className="min-w-0 px-3 text-sm">
+        <option value="">All topics</option>
+        {Object.entries(topics).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+      </select>
+    </FormField>
+  );
+
   return (
     <div className="mt-4 space-y-4">
-      {!compact && <div className="flex flex-wrap items-center justify-between gap-2">
-        <SegmentedControl label="Live news view" options={VIEWS} value={view} onChange={(value) => { setView(value); setPage(1); }} />
-        <div className="flex flex-wrap gap-2">
-          <button type="button" className={BUTTON} onClick={() => setRevision((value) => value + 1)}>Refresh live news</button>
-          <button type="button" className={BUTTON} onClick={() => setShowWeights(true)}>Weights</button>
-          <a className={BUTTON} href={`${LIVE_PATH}/rss.xml?${feedQuery}`}>RSS feed</a>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="flex min-w-0 flex-wrap items-end gap-3">
+          <SegmentedControl label="Live news view" options={VIEWS} value={view} onChange={(value) => { setView(value); setPage(1); }} />
+          {compact && <div className="w-full sm:w-44">{topicField}</div>}
         </div>
-      </div>}
+        {compact ? (
+          <p className="pb-1 text-xs tabular-nums text-stealth-300">
+            Last updated{" "}
+            {latestSnapshot?.checked_label
+              ? <time dateTime={latestSnapshot.updated_at ?? undefined}>{latestSnapshot.checked_label}</time>
+              : "—"}
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className={BUTTON} onClick={() => setRevision((value) => value + 1)}>Refresh live news</button>
+            <button type="button" className={BUTTON} onClick={() => setShowWeights(true)}>Weights</button>
+            <a className={BUTTON} href={`${LIVE_PATH}/rss.xml?${feedQuery}`}>RSS feed</a>
+          </div>
+        )}
+      </div>
       {!compact && <form
         className="surface-card-muted grid gap-3 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,2fr)_auto] sm:items-end"
         onSubmit={(event) => {
@@ -358,12 +380,7 @@ export default function LiveNewsPanel({ compact = false }: { compact?: boolean }
           setPage(1);
         }}
       >
-        <FormField label="Topic">
-          <select value={topic} onChange={(event) => { setTopic(event.target.value); setPage(1); }} className="min-w-0 px-3 text-sm">
-            <option value="">All topics</option>
-            {Object.entries(topics).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-          </select>
-        </FormField>
+        {topicField}
         <FormField label="Published">
           <select value={when} onChange={(event) => { setWhen(event.target.value); setPage(1); }} className="min-w-0 px-3 text-sm">
             <option value="">Any recent date</option>
@@ -383,15 +400,15 @@ export default function LiveNewsPanel({ compact = false }: { compact?: boolean }
       {!data && !error && <LoadingState message="Loading live headlines." />}
       {data && (
         <>
-          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-stealth-300">
-            <span>{compact
-              ? "Focused headlines"
-              : data.total
+          {!compact && (
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-stealth-300">
+              <span>{data.total
                 ? `${data.first}–${data.last} of ${data.total.toLocaleString()} ${data.featured.length ? "other headlines" : "headlines"}`
                 : "0 matching headlines"}
-            </span>
-            <span>{data.checked_label ? <>Feed snapshot <time dateTime={data.updated_at ?? undefined}>{data.checked_label}</time></> : "Waiting for the collector"} · Updates every {data.read_interval}s</span>
-          </div>
+              </span>
+              <span>{data.checked_label ? <>Feed snapshot <time dateTime={data.updated_at ?? undefined}>{data.checked_label}</time></> : "Waiting for the collector"} · Updates every {data.read_interval}s</span>
+            </div>
+          )}
           {data.archive_error && view === "wire" && <p className="text-sm text-stealth-300" role="status">{data.archive_error}</p>}
           {data.featured.length > 0 && (
             <section className="space-y-2" aria-labelledby="live-news-releases">
