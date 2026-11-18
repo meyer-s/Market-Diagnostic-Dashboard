@@ -49,6 +49,16 @@ export default function LiveNewsSection({ compact = false }: { compact?: boolean
         <h2 id={`${id}-heading`} className="text-base font-semibold text-stealth-100">Live news</h2>
         <div className="flex flex-wrap items-center gap-2">
           {compact && <Link className="field-button field-button-secondary" to="/news">Open News tab</Link>}
+          {!compact && (
+            <a
+              className="field-button field-button-secondary"
+              href="https://www.reddit.com/r/wallstreetbets/about/sticky/?num=1"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              WSB pinned discussion <span className="sr-only">(opens in a new tab)</span>
+            </a>
+          )}
           <button
             type="button"
             aria-controls={`${id}-panel`}
