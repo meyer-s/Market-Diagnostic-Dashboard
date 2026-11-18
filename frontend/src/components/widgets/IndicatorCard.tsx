@@ -7,6 +7,7 @@ import StateSparkline from "./StateSparkline";
 
 interface Props {
   indicator: IndicatorStatus;
+  compact?: boolean;
 }
 
 // Metadata about data update frequencies and expected publishing delays
@@ -44,7 +45,7 @@ function resolveIndicatorRoute(code: string) {
   return `/indicators/${code}`;
 }
 
-export default function IndicatorCard({ indicator }: Props) {
+export default function IndicatorCard({ indicator, compact = false }: Props) {
   const [history, setHistory] = useState<IndicatorHistoryPoint[]>([]);
 
   useEffect(() => {
@@ -118,6 +119,9 @@ export default function IndicatorCard({ indicator }: Props) {
   const displayName =
     indicator.code === "ANALYST_ANXIETY" ? "Analyst Confidence" : indicator.name;
   const routePath = resolveIndicatorRoute(indicator.code);
+  const freshnessLabel = !lastUpdated ? "No data" : isStale
+    ? `Stale · ${timeDisplay}`
+    : businessDaysAgo > metadata.expectedLag ? `Awaiting update · ${timeDisplay}` : `Updated ${timeDisplay}`;
 
   return (
     <Link to={routePath} className="indicator-sensor-link block h-full">
@@ -144,7 +148,7 @@ export default function IndicatorCard({ indicator }: Props) {
         <div className="indicator-sensor-meta mt-auto flex items-center justify-between pt-2.5 text-xs">
           <div className="indicator-sensor-freshness flex items-center gap-1.5">
             {freshnessIcon}
-            <span className="text-stealth-500">Last updated: {timeDisplay}</span>
+            <span className="text-stealth-400">{compact ? freshnessLabel : `Last updated: ${timeDisplay}`}</span>
           </div>
           
           {/* Frequency badge */}
@@ -152,11 +156,13 @@ export default function IndicatorCard({ indicator }: Props) {
             {metadata.frequency}
           </span>
         </div>
-        <p className="indicator-sensor-description mt-1 text-xs leading-5 text-stealth-400">
-          {metadata.description}
-          {isStale ? " Data appears stale." : ""}
-          {!isStale && businessDaysAgo > metadata.expectedLag ? " Waiting for new source data." : ""}
-        </p>
+        {!compact && (
+          <p className="indicator-sensor-description mt-1 text-xs leading-5 text-stealth-400">
+            {metadata.description}
+            {isStale ? " Data appears stale." : ""}
+            {!isStale && businessDaysAgo > metadata.expectedLag ? " Waiting for new source data." : ""}
+          </p>
+        )}
       </div>
     </Link>
   );

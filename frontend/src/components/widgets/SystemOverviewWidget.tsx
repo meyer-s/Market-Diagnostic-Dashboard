@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import DetailsDisclosure from "../ui/DetailsDisclosure";
 import {
   ComposedChart,
   Bar,
@@ -239,19 +240,17 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
       : null;
 
   return (
-    <Link to="/system-breakdown" className="block">
-      <div className="primary-card primary-card-hover p-3 sm:p-6 space-y-4 cursor-pointer">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-2 mb-2">
-          <div className="flex items-start gap-1 sm:gap-2 min-w-0">
-            <h3 className="text-base sm:text-lg font-semibold text-stealth-100 whitespace-nowrap">
-              System Overview
-            </h3>
-          </div>
-          <span className="text-xs text-stealth-400 flex-shrink-0">
-            {data.timestamp ? formatTime(data.timestamp) : 'N/A'}
-          </span>
-        </div>
+    <article className="primary-card space-y-4 p-4 sm:p-6">
+      <div className="flex items-start justify-between gap-2">
+        <h3 className="text-base font-semibold text-stealth-100 sm:text-lg">
+          <Link to="/system-breakdown" className="hover:underline focus-visible:underline">
+            System Overview <span aria-hidden="true" className="text-sky-300">→</span>
+          </Link>
+        </h3>
+        <span className="shrink-0 text-xs text-stealth-400">
+          {data.timestamp ? formatTime(data.timestamp) : 'N/A'}
+        </span>
+      </div>
 
       {/* Main Metrics Grid */}
       <div className="grid grid-cols-2 gap-2 sm:gap-4">
@@ -400,11 +399,11 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
         }
         
         return (
-            <div className="pt-6 border-t border-stealth-700">
+            <div className="pt-4 border-t border-stealth-700">
             <h4 className="text-sm font-semibold text-stealth-200 mb-4">
               Composite Score Trend
             </h4>
-            <div className="w-full h-60 sm:h-72 lg:h-80 -mx-6 sm:mx-0 px-3 sm:px-0">
+            <div className="h-56 w-full sm:h-64">
               <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <ComposedChart
                   accessibilityLayer
@@ -543,34 +542,22 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
         );
       })()}
 
-      {/* Summary Stats */}
-      <div className="grid grid-cols-3 gap-3 pt-3 border-t border-stealth-700">
-        <div>
-          <div className="text-xs text-stealth-400 mb-1">{periodLabel} Avg</div>
-          <div className="text-sm font-semibold text-stealth-200">
-            {scoreAverage.toFixed(1)}
-          </div>
-        </div>
-        <div>
-          <div className="text-xs text-stealth-400 mb-1">{periodLabel} High</div>
-          <div className="text-sm font-semibold text-stealth-200">
-            {scoreHigh.toFixed(1)}
-          </div>
-        </div>
-        <div>
-          <div className="text-xs text-stealth-400 mb-1">{periodLabel} Low</div>
-          <div className="text-sm font-semibold text-stealth-200">
-            {scoreLow.toFixed(1)}
-          </div>
-        </div>
-      </div>
-
-      {/* Conclusion */}
-      <div className="secondary-card p-3 mt-4">
-        <p className="text-xs text-stealth-300 leading-relaxed">{systemSummary}</p>
-      </div>
-      </div>
-    </Link>
+      <DetailsDisclosure label="System score details">
+        <dl className="grid grid-cols-3 gap-3">
+          {[
+            { label: "Avg", value: scoreAverage },
+            { label: "High", value: scoreHigh },
+            { label: "Low", value: scoreLow },
+          ].map(({ label, value }) => (
+            <div key={label}>
+              <dt className="mb-1 text-stealth-400">{periodLabel} {label}</dt>
+              <dd className="text-sm font-semibold text-stealth-200">{value.toFixed(1)}</dd>
+            </div>
+          ))}
+        </dl>
+        <p>{systemSummary}</p>
+      </DetailsDisclosure>
+    </article>
   );
 };
 

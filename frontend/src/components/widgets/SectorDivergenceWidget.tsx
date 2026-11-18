@@ -28,6 +28,7 @@ import {
   commonTooltipStyle,
 } from "../../utils/chartUtils";
 import { getFamilyColor } from "../../theme/metricColors";
+import DetailsDisclosure from "../ui/DetailsDisclosure";
 import {
   analyzeSeries,
   getConfidenceFromSignal,
@@ -282,60 +283,126 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
   const narrative = `${interpretation.title}. ${oscillatorShift === null ? "The 20-run shift is unavailable" : `${shiftLeader} by ${Math.abs(oscillatorShift).toFixed(1)} points over 20 runs`}; ${breadthSummary}.`;
 
   return (
-    <Link to="/sector-projections" className="group block h-full" aria-label="View sector rotation details">
-      <div className="primary-card primary-card-hover h-full cursor-pointer p-4 sm:p-6">
+    <article className="primary-card h-full p-4 sm:p-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-lg font-semibold">Sector Rotation</h3>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-stealth-500">
+            <span>{latest.system_state} regime</span>
+            <span aria-hidden="true">·</span>
+            <span>As of {new Date(`${latest.as_of_date}T00:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+          </div>
+        </div>
+        <Link to="/sector-projections" className="text-xs font-semibold text-sky-300 hover:text-sky-200" aria-label="View sector rotation details">
+          Open sectors <span aria-hidden="true">→</span>
+        </Link>
+      </div>
+
+      {qualityWarning && (
+        <div className="mt-4 rounded-lg border border-yellow-700/50 bg-yellow-950/20 px-3 py-2 text-xs text-yellow-200">
+          Sector data quality warning
+        </div>
+      )}
+
+      <div className="secondary-card mt-5 p-4 sm:p-5">
         <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className={`text-lg font-semibold ${interpretation.color}`}>{interpretation.title}</div>
+          </div>
+          <div className="shrink-0 text-right tabular-nums">
+            <div className="text-xs uppercase tracking-wide text-stealth-500">Cyclical − defensive</div>
+            <div className="mt-1 text-2xl font-semibold text-stealth-100">
+              {latestOscillator !== null && latestOscillator > 0 ? "+" : ""}{latestOscillator?.toFixed(1) ?? "—"}
+            </div>
+          </div>
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-2 border-t border-stealth-700/70 pt-3 text-xs">
           <div>
-            <h3 className="text-lg font-semibold">Sector Rotation</h3>
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-stealth-500">
-              <span>{latest.system_state} regime</span>
-              <span aria-hidden="true">·</span>
-              <span>As of {new Date(`${latest.as_of_date}T00:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
-              <span aria-hidden="true">·</span>
-              <span>{analytics.analytics_version.replace("sector_stability_", "analytics ")}</span>
-            </div>
+            <div className="text-xs uppercase tracking-wide text-stealth-500">20-run shift</div>
+            <div className="mt-1 font-semibold text-stealth-200">{shiftLeader}</div>
+            <div className="mt-0.5 text-xs text-stealth-500">{oscillatorShift === null ? "—" : `${Math.abs(oscillatorShift).toFixed(1)} pts`}</div>
           </div>
-          <span className="text-stealth-400 transition-colors group-hover:text-stealth-200" aria-hidden="true">
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-            </svg>
-          </span>
+          <div>
+            <div className="text-xs uppercase tracking-wide text-stealth-500">Clear signal</div>
+            <div className="mt-1 font-semibold text-stealth-200">Beyond ±{leadershipBand}</div>
+            <div className="mt-0.5 text-xs text-stealth-500">Smoothed basket spread</div>
+          </div>
         </div>
+      </div>
 
-        {qualityWarning && (
-          <div className="mt-4 rounded-lg border border-yellow-700/50 bg-yellow-950/20 px-3 py-2 text-xs text-yellow-200">
-            Sector data includes a quality warning; treat the current read cautiously.
+      <div className="secondary-card mt-4 p-3 sm:p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold text-stealth-200">Cyclical vs defensive oscillator</div>
+            <div className="mt-0.5 text-xs text-stealth-500">Native score-point spread · 25% EWMA</div>
           </div>
+          <div className="text-xs text-stealth-500">{periodLabel}</div>
+        </div>
+        {chartData.length > 0 ? (
+          <div className="mt-3 h-44">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+              <AreaChart
+                accessibilityLayer
+                aria-label="Cyclical versus defensive sector leadership oscillator history"
+                data={chartData}
+                margin={{ ...CHART_MARGIN, left: 12, right: 4 }}
+              >
+                <CartesianGrid {...commonGridProps} />
+                <ReferenceArea y1={leadershipBand} y2={oscillatorDomain} fill={getFamilyColor("market")} fillOpacity={0.035} />
+                <ReferenceArea y1={-oscillatorDomain} y2={-leadershipBand} fill={getFamilyColor("volatility")} fillOpacity={0.035} />
+                <ReferenceLine y={0} stroke={CHART_NEUTRAL.axis} strokeWidth={1.5} />
+                <ReferenceLine y={leadershipBand} stroke={CHART_NEUTRAL.grid} strokeDasharray="3 4" />
+                <ReferenceLine y={-leadershipBand} stroke={CHART_NEUTRAL.grid} strokeDasharray="3 4" />
+                <XAxis
+                  dataKey="timestampNum"
+                  type="number"
+                  domain={[minTime, maxTime]}
+                  ticks={tickPositions}
+                  tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
+                  stroke={CHART_NEUTRAL.axis}
+                  tickFormatter={(value: number) => new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                />
+                <YAxis
+                  width={58}
+                  axisLine={false}
+                  tickLine={false}
+                  domain={[-oscillatorDomain, oscillatorDomain]}
+                  ticks={[-oscillatorDomain, 0, oscillatorDomain]}
+                  tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
+                  tickFormatter={(value: number) => value > 0 ? "Cyclical" : value < 0 ? "Defensive" : "Balanced"}
+                />
+                <Tooltip
+                  contentStyle={commonTooltipStyle}
+                  labelFormatter={(label: number) => new Date(label).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                  formatter={(value: number) => {
+                    const leader = value >= 0 ? primaryComparison.positive_axis_label : primaryComparison.negative_axis_label;
+                    return [`${leader} by ${Math.abs(value).toFixed(1)} score points`, primaryComparison.title];
+                  }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="oscillator"
+                  name={primaryComparison.title}
+                  baseValue={0}
+                  stroke={getFamilyColor("market")}
+                  strokeWidth={2.5}
+                  fill={getFamilyColor("market")}
+                  fillOpacity={0.09}
+                  dot={false}
+                  animationDuration={CHART_ANIMATION.duration}
+                  animationEasing={CHART_ANIMATION.easing}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <div className="flex h-44 items-center justify-center text-xs text-stealth-400">No oscillator history available.</div>
         )}
+      </div>
 
-        <div className="secondary-card mt-5 p-4 sm:p-5">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <div className={`text-lg font-semibold ${interpretation.color}`}>{interpretation.title}</div>
-              <div className="mt-1 text-xs leading-relaxed text-stealth-400">{interpretation.description}</div>
-            </div>
-            <div className="shrink-0 text-right tabular-nums">
-              <div className="text-xs uppercase tracking-wide text-stealth-500">Cyclical − defensive</div>
-              <div className="mt-1 text-2xl font-semibold text-stealth-100">
-                {latestOscillator !== null && latestOscillator > 0 ? "+" : ""}{latestOscillator?.toFixed(1) ?? "—"}
-              </div>
-            </div>
-          </div>
-          <div className="mt-4 grid grid-cols-2 gap-2 border-t border-stealth-700/70 pt-3 text-xs">
-            <div>
-              <div className="text-xs uppercase tracking-wide text-stealth-500">20-run shift</div>
-              <div className="mt-1 font-semibold text-stealth-200">{shiftLeader}</div>
-              <div className="mt-0.5 text-xs text-stealth-500">{oscillatorShift === null ? "—" : `${Math.abs(oscillatorShift).toFixed(1)} pts`}</div>
-            </div>
-            <div>
-              <div className="text-xs uppercase tracking-wide text-stealth-500">Clear signal</div>
-              <div className="mt-1 font-semibold text-stealth-200">Beyond ±{leadershipBand}</div>
-              <div className="mt-0.5 text-xs text-stealth-500">Smoothed basket spread</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <DetailsDisclosure label="Sector ranks and rotation details" className="mt-4">
+        <p>{interpretation.description} {narrative}</p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="secondary-card p-4">
             <div className="text-xs text-stealth-400">3M leadership</div>
             <div className="mt-3 flex flex-wrap gap-2">
@@ -356,78 +423,7 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
             </div>
           </div>
         </div>
-
-        <div className="secondary-card mt-4 p-3 sm:p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold text-stealth-200">Cyclical vs defensive oscillator</div>
-              <div className="mt-0.5 text-xs text-stealth-500">Native score-point spread · 25% EWMA</div>
-            </div>
-            <div className="text-xs text-stealth-500">{periodLabel}</div>
-          </div>
-          {chartData.length > 0 ? (
-            <div className="mt-3 h-44">
-              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                <AreaChart
-                  accessibilityLayer
-                  aria-label="Cyclical versus defensive sector leadership oscillator history"
-                  data={chartData}
-                  margin={{ ...CHART_MARGIN, left: 12, right: 4 }}
-                >
-                  <CartesianGrid {...commonGridProps} />
-                  <ReferenceArea y1={leadershipBand} y2={oscillatorDomain} fill={getFamilyColor("market")} fillOpacity={0.035} />
-                  <ReferenceArea y1={-oscillatorDomain} y2={-leadershipBand} fill={getFamilyColor("volatility")} fillOpacity={0.035} />
-                  <ReferenceLine y={0} stroke={CHART_NEUTRAL.axis} strokeWidth={1.5} />
-                  <ReferenceLine y={leadershipBand} stroke={CHART_NEUTRAL.grid} strokeDasharray="3 4" />
-                  <ReferenceLine y={-leadershipBand} stroke={CHART_NEUTRAL.grid} strokeDasharray="3 4" />
-                  <XAxis
-                    dataKey="timestampNum"
-                    type="number"
-                    domain={[minTime, maxTime]}
-                    ticks={tickPositions}
-                    tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
-                    stroke={CHART_NEUTRAL.axis}
-                    tickFormatter={(value: number) => new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                  />
-                  <YAxis
-                    width={58}
-                    axisLine={false}
-                    tickLine={false}
-                    domain={[-oscillatorDomain, oscillatorDomain]}
-                    ticks={[-oscillatorDomain, 0, oscillatorDomain]}
-                    tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }}
-                    tickFormatter={(value: number) => value > 0 ? "Cyclical" : value < 0 ? "Defensive" : "Balanced"}
-                  />
-                  <Tooltip
-                    contentStyle={commonTooltipStyle}
-                    labelFormatter={(label: number) => new Date(label).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
-                    formatter={(value: number) => {
-                      const leader = value >= 0 ? primaryComparison.positive_axis_label : primaryComparison.negative_axis_label;
-                      return [`${leader} by ${Math.abs(value).toFixed(1)} score points`, primaryComparison.title];
-                    }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="oscillator"
-                    name={primaryComparison.title}
-                    baseValue={0}
-                    stroke={getFamilyColor("market")}
-                    strokeWidth={2.5}
-                    fill={getFamilyColor("market")}
-                    fillOpacity={0.09}
-                    dot={false}
-                    animationDuration={CHART_ANIMATION.duration}
-                    animationEasing={CHART_ANIMATION.easing}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <div className="flex h-44 items-center justify-center text-xs text-stealth-400">No oscillator history available.</div>
-          )}
-        </div>
-
-        <div className="mt-4">
+        <div>
           <div className="text-xs uppercase tracking-wide text-stealth-500">Other rotation lenses</div>
           <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
             {analytics.leadership_comparisons
@@ -443,9 +439,8 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
               })}
           </div>
         </div>
-
-        <p className="mt-4 text-xs leading-relaxed text-stealth-300">{narrative}</p>
-      </div>
-    </Link>
+        <p className="text-stealth-400">{analytics.analytics_version.replace("sector_stability_", "Analytics ")}</p>
+      </DetailsDisclosure>
+    </article>
   );
 }

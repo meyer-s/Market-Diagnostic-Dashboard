@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { getFamilyColor } from "../../theme/metricColors";
 import { CHART_NEUTRAL } from "../../utils/chartUtils";
+import DetailsDisclosure from "../ui/DetailsDisclosure";
 import {
   buildTechnicalProjections,
   type TechnicalProjection,
@@ -433,84 +434,6 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
           </div>
         </div>
 
-        <div className="mb-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
-          <Link
-            to="/metals-indicators"
-            className="group secondary-card block p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-stealth-500/80 hover:bg-stealth-800/80"
-            aria-label="Open Metals detail"
-          >
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: metalsColor }}>
-                Metals Leaders
-              </p>
-              <span className="text-xs text-stealth-500 transition-colors group-hover:text-stealth-300">ranked basket</span>
-            </div>
-            <div className="space-y-2">
-              {metalsRankings.length > 0 ? (
-                metalsRankings.map((metal) => (
-                  <div key={metal.metal} className="flex items-center justify-between gap-3 rounded border border-stealth-700/80 bg-stealth-800/60 px-2.5 py-2 text-xs transition-colors group-hover:border-amber-500/40 group-hover:bg-stealth-800/90">
-                    <div className="min-w-0">
-                      <div className="font-semibold text-stealth-100">
-                        #{metal.rank} <span>{metal.metal_name}</span>
-                      </div>
-                      <div className="text-stealth-400">{formatMiniPrice(metal.current_price)} · Score {metal.score_total.toFixed(0)}</div>
-                    </div>
-                    <span className={`shrink-0 rounded border px-2 py-1 text-xs font-semibold ${getRelativeClassStyles(metal.relative_classification)}`}>
-                      {metal.relative_classification}
-                    </span>
-                  </div>
-                ))
-              ) : (
-                <div className="rounded border border-stealth-700/80 bg-stealth-800/60 px-2.5 py-2 text-xs text-stealth-400">
-                  Loading metals ranking...
-                </div>
-              )}
-            </div>
-            <div className="mt-2 flex items-center justify-end text-xs text-stealth-500 transition-colors group-hover:text-amber-300">
-              View metals tab
-              <span className="ml-1">→</span>
-            </div>
-          </Link>
-
-          <Link
-            to="/crypto-indicators"
-            className="group secondary-card block p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-stealth-500/80 hover:bg-stealth-800/80"
-            aria-label="Open Crypto detail"
-          >
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: cryptoColor }}>
-                Crypto Leaders
-              </p>
-              <span className="text-xs text-stealth-500 transition-colors group-hover:text-stealth-300">technical basket</span>
-            </div>
-            <div className="space-y-2">
-              {cryptoRankings.length > 0 ? (
-                cryptoRankings.map((asset) => (
-                  <div key={asset.symbol} className="flex items-center justify-between gap-3 rounded border border-stealth-700/80 bg-stealth-800/60 px-2.5 py-2 text-xs transition-colors group-hover:border-blue-500/40 group-hover:bg-stealth-800/90">
-                    <div className="min-w-0">
-                      <div className="font-semibold text-stealth-100">
-                        #{asset.rank} <span>{asset.name}</span>
-                      </div>
-                      <div className="text-stealth-400">{formatMiniPrice(asset.current_price)} · Score {asset.score_total.toFixed(0)}</div>
-                    </div>
-                    <span className={`shrink-0 rounded border px-2 py-1 text-xs font-semibold ${getRelativeClassStyles(asset.relativeClassification)}`}>
-                      {asset.relativeClassification}
-                    </span>
-                  </div>
-                ))
-              ) : (
-                <div className="rounded border border-stealth-700/80 bg-stealth-800/60 px-2.5 py-2 text-xs text-stealth-400">
-                  Loading crypto ranking...
-                </div>
-              )}
-            </div>
-            <div className="mt-2 flex items-center justify-end text-xs text-stealth-500 transition-colors group-hover:text-blue-300">
-              View crypto tab
-              <span className="ml-1">→</span>
-            </div>
-          </Link>
-        </div>
-
         {/* Historical Chart */}
         <div className="mb-4">
           <p className="text-xs text-stealth-400 mb-2">{parseInt(timeframe)}-Day Contribution Trend</p>
@@ -591,10 +514,86 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
           )}
         </div>
 
-        {/* Conclusion */}
-        <div className="text-xs text-stealth-400 border-t border-stealth-700 pt-3">
-          <p className="leading-relaxed">{aasSummary}</p>
-        </div>
+        <DetailsDisclosure label="Metals and crypto rankings">
+          <p>{aasSummary}</p>
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+            <Link
+              to="/metals-indicators"
+              className="group secondary-card block p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-stealth-500/80 hover:bg-stealth-800/80"
+              aria-label="Open Metals detail"
+            >
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: metalsColor }}>
+                  Metals Leaders
+                </p>
+                <span className="text-xs text-stealth-500 transition-colors group-hover:text-stealth-300">ranked basket</span>
+              </div>
+              <div className="space-y-2">
+                {metalsRankings.length > 0 ? (
+                  metalsRankings.map((metal) => (
+                    <div key={metal.metal} className="flex items-center justify-between gap-3 rounded border border-stealth-700/80 bg-stealth-800/60 px-2.5 py-2 text-xs transition-colors group-hover:border-amber-500/40 group-hover:bg-stealth-800/90">
+                      <div className="min-w-0">
+                        <div className="font-semibold text-stealth-100">
+                          #{metal.rank} <span>{metal.metal_name}</span>
+                        </div>
+                        <div className="text-stealth-400">{formatMiniPrice(metal.current_price)} · Score {metal.score_total.toFixed(0)}</div>
+                      </div>
+                      <span className={`shrink-0 rounded border px-2 py-1 text-xs font-semibold ${getRelativeClassStyles(metal.relative_classification)}`}>
+                        {metal.relative_classification}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded border border-stealth-700/80 bg-stealth-800/60 px-2.5 py-2 text-xs text-stealth-400">
+                    Loading metals ranking...
+                  </div>
+                )}
+              </div>
+              <div className="mt-2 flex items-center justify-end text-xs text-stealth-500 transition-colors group-hover:text-amber-300">
+                View metals tab
+                <span className="ml-1">→</span>
+              </div>
+            </Link>
+
+            <Link
+              to="/crypto-indicators"
+              className="group secondary-card block p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-stealth-500/80 hover:bg-stealth-800/80"
+              aria-label="Open Crypto detail"
+            >
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: cryptoColor }}>
+                  Crypto Leaders
+                </p>
+                <span className="text-xs text-stealth-500 transition-colors group-hover:text-stealth-300">technical basket</span>
+              </div>
+              <div className="space-y-2">
+                {cryptoRankings.length > 0 ? (
+                  cryptoRankings.map((asset) => (
+                    <div key={asset.symbol} className="flex items-center justify-between gap-3 rounded border border-stealth-700/80 bg-stealth-800/60 px-2.5 py-2 text-xs transition-colors group-hover:border-blue-500/40 group-hover:bg-stealth-800/90">
+                      <div className="min-w-0">
+                        <div className="font-semibold text-stealth-100">
+                          #{asset.rank} <span>{asset.name}</span>
+                        </div>
+                        <div className="text-stealth-400">{formatMiniPrice(asset.current_price)} · Score {asset.score_total.toFixed(0)}</div>
+                      </div>
+                      <span className={`shrink-0 rounded border px-2 py-1 text-xs font-semibold ${getRelativeClassStyles(asset.relativeClassification)}`}>
+                        {asset.relativeClassification}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded border border-stealth-700/80 bg-stealth-800/60 px-2.5 py-2 text-xs text-stealth-400">
+                    Loading crypto ranking...
+                  </div>
+                )}
+              </div>
+              <div className="mt-2 flex items-center justify-end text-xs text-stealth-500 transition-colors group-hover:text-blue-300">
+                View crypto tab
+                <span className="ml-1">→</span>
+              </div>
+            </Link>
+          </div>
+        </DetailsDisclosure>
       </div>
   );
 }

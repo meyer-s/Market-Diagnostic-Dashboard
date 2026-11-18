@@ -11,6 +11,7 @@ import {
 } from "recharts";
 
 import { useApi } from "../../hooks/useApi";
+import DetailsDisclosure from "../ui/DetailsDisclosure";
 
 
 interface CurvePoint {
@@ -555,7 +556,7 @@ export default function YieldCurveCard() {
 
         {comparisons.some(({ enabled }) => enabled) && (
           <ul className="mt-3 space-y-2 text-xs leading-relaxed text-stealth-300" aria-label="Comparison sources and dates">
-            {comparisons.filter(({ enabled }) => enabled).map(({ key, label, description, historyLabel, request }) => (
+            {comparisons.filter(({ enabled }) => enabled).map(({ key, label, request }) => (
               <li key={key}>
                 {request.loading ? <span role="status">Loading {label.toLowerCase()} curve…</span> : request.error || !request.data?.curve?.length ? (
                   <div className="flex flex-wrap items-center gap-2">
@@ -564,16 +565,14 @@ export default function YieldCurveCard() {
                   </div>
                 ) : (
                   <>
-                    <span className="font-semibold text-stealth-100">{label} · {request.data.period_label}. </span>
-                    {description}{" "}
+                    <span className="font-semibold text-stealth-100">{label} · {request.data.period_label}</span>
+                    {" · "}
                     <a href={request.data.source.url} target="_blank" rel="noreferrer" className="font-semibold text-stealth-200 underline underline-offset-4">
                       {request.data.source.name}
                     </a>
                     {request.data.input_source && (
                       <>{" · "}<a href={request.data.input_source.url} target="_blank" rel="noreferrer" className="font-semibold text-stealth-200 underline underline-offset-4">{request.data.input_source.name}</a></>
                     )}
-                    {!!request.data.history?.length && <span className="block">{request.data.history.length} {historyLabel} shown as faded curves.</span>}
-                    {key === "municipal" && <span className="block">Issuer examples from reviewed statements, with updates added as offerings are reviewed.</span>}
                     {request.data.data_quality.published_snapshot && <span className="block">Verified published schedule. Automatic refresh unavailable.</span>}
                     {request.data.data_quality.stale && <span className="block text-amber-200">Older data. Check the reporting period above.</span>}
                     {request.data.data_quality.partial && <span className="block text-amber-200">Some maturity points are missing.</span>}
@@ -583,7 +582,18 @@ export default function YieldCurveCard() {
             ))}
           </ul>
         )}
-        {loadedComparisons.length > 0 && <p className="mt-2 text-xs text-stealth-300">Dates, rate types, and tax treatment differ by series. Dots mark the latest plotted points.</p>}
+        {loadedComparisons.length > 0 && (
+          <DetailsDisclosure label="Comparison methodology" className="mt-3">
+            <p>Dates, rate types, and tax treatment differ by series. Dots mark the latest plotted points.</p>
+            {loadedComparisons.map(({ key, label, description, historyLabel, series }) => (
+              <p key={key}>
+                <strong>{label}</strong> · {description}
+                {!!series.history?.length && <> {series.history.length} {historyLabel} shown as faded curves.</>}
+                {key === "municipal" && <> Issuer examples come from reviewed statements. Coverage expands as offerings are reviewed.</>}
+              </p>
+            ))}
+          </DetailsDisclosure>
+        )}
 
         <details className="mt-3 border-t border-stealth-700 pt-3 text-sm text-stealth-300">
           <summary className="min-h-11 cursor-pointer py-3 font-semibold text-stealth-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">
@@ -616,10 +626,7 @@ export default function YieldCurveCard() {
       <div className="grid content-start gap-3">
         <article className="surface-card p-5">
           <div className="flex items-start justify-between gap-3">
-            <div>
-              <h3 className="text-lg font-semibold text-stealth-100">Curve shape</h3>
-              <p className="mt-1 text-xs text-stealth-400">Term-spread state, not a forecast</p>
-            </div>
+            <h3 className="text-lg font-semibold text-stealth-100">Curve shape</h3>
             <span className={`text-sm font-semibold ${slope.tone}`}>{slope.label}</span>
           </div>
           <dl className="mt-5 divide-y divide-stealth-700 border-y border-stealth-700">
@@ -634,19 +641,19 @@ export default function YieldCurveCard() {
               </div>
             ))}
           </dl>
-          <p className="mt-4 text-sm leading-6 text-stealth-300">{curveRead}</p>
-          <p className="mt-2 text-xs font-semibold text-stealth-400">
+          <p className="mt-3 text-xs font-semibold text-stealth-400">
             {spreadMove === null
               ? "Daily slope change unavailable"
               : `${spreadMove >= 0 ? "Steepened" : "Flattened"} ${Math.abs(spreadMove).toFixed(0)} bp vs prior session`}
           </p>
+          <DetailsDisclosure label="How to read the curve" className="mt-3">
+            <p>{curveRead}</p>
+            <p>The spreads describe the current curve shape.</p>
+          </DetailsDisclosure>
         </article>
 
         <article className="surface-card p-5">
-          <div>
-            <h3 className="text-lg font-semibold text-stealth-100">Benchmark yields</h3>
-            <p className="mt-1 text-xs text-stealth-400">Levels and one-session change</p>
-          </div>
+          <h3 className="text-lg font-semibold text-stealth-100">Benchmark yields</h3>
           <dl className="mt-5 divide-y divide-stealth-700 border-y border-stealth-700">
             {benchmarks.map((benchmark) => (
               <div key={benchmark.label} className="grid grid-cols-[1fr_auto] gap-x-4 py-2.5">

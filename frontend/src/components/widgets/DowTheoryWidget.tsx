@@ -13,6 +13,7 @@ import {
 import { getLegacyApiUrl } from "../../utils/apiUtils";
 import { CHART_MARGIN } from "../../utils/chartUtils";
 import { formatTime } from "../../utils/styleUtils";
+import DetailsDisclosure from "../ui/DetailsDisclosure";
 import {
   analyzeSeries,
   getTrendTone,
@@ -395,14 +396,8 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
 
       <div className="secondary-card p-4 space-y-3">
         <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="text-sm font-semibold text-stealth-200">
-              Classic vs Modern Alignment
-            </div>
-            <p className="text-xs text-stealth-400">
-              Higher score means classic DJI/DJT and modern ETF proxies confirm
-              the same economic trend.
-            </p>
+          <div className="text-sm font-semibold text-stealth-200">
+            Classic vs Modern Alignment
           </div>
           <div className="text-right">
             <div className={`text-2xl font-bold ${alignmentColor}`}>
@@ -489,7 +484,9 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
         </div>
       )}
 
-      <div className="pt-2 border-t border-stealth-700">
+      <DetailsDisclosure label="Classic and modern signals">
+        <p>{dowSummary}</p>
+        <p>A higher alignment score means the classic indexes and modern ETF proxies agree more closely.</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="secondary-card p-3 text-xs text-stealth-300">
             <div className="text-xs uppercase tracking-wide text-stealth-500">Classic snapshot</div>
@@ -534,14 +531,7 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
             </div>
           </div>
         </div>
-      </div>
-
-      <div className="pt-3">
-        <div className="secondary-card p-3">
-          <p className="text-xs text-stealth-300 leading-relaxed">{dowSummary}</p>
-        </div>
-      </div>
-
+      </DetailsDisclosure>
     </div>
   );
 };

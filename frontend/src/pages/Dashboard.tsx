@@ -7,20 +7,12 @@ import SectorDivergenceWidget from "../components/widgets/SectorDivergenceWidget
 import AASWidget from "../components/widgets/AASWidget";
 import YieldCurveCard from "../components/widgets/YieldCurveCard";
 import EconomicDriverSnapshots from "../components/widgets/EconomicDriverSnapshots";
+import DetailsDisclosure from "../components/ui/DetailsDisclosure";
 import MarketLoading from "../components/ui/MarketLoading";
+import SegmentedControl from "../components/ui/SegmentedControl";
 import LiveNewsSection from "../components/news/LiveNewsSection";
 import { apiFetch, getErrorMessage } from "../utils/apiUtils";
 import { getTrendWindows, type InsightSignal } from "../utils/insightUtils";
-
-interface NewsArticle {
-  id: number;
-  symbol: string;
-  sector?: string | null;
-  title: string;
-  link: string;
-  source: string;
-  published_at: string;
-}
 
 type OverallInsight = {
   label: string;
@@ -121,7 +113,6 @@ const buildOverallInsight = (
 };
 
 export default function Dashboard() {
-  const [news, setNews] = useState<NewsArticle[]>([]);
   const [indicators, setIndicators] = useState<IndicatorStatus[] | null>(null);
   const [indicatorsLoading, setIndicatorsLoading] = useState(true);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
@@ -132,29 +123,16 @@ export default function Dashboard() {
   useEffect(() => {
     let mounted = true;
     setIndicatorsLoading(true);
-    Promise.allSettled([
-      apiFetch<IndicatorStatus[]>("/indicators"),
-      apiFetch<NewsArticle[]>("/news?hours=24&limit=200"),
-    ])
-      .then(([indicatorsResult, newsResult]) => {
+    void apiFetch<IndicatorStatus[]>("/indicators")
+      .then((result) => {
         if (!mounted) return;
-        let nextError: string | null = null;
-        if (indicatorsResult.status === "fulfilled") {
-          setIndicators(indicatorsResult.value);
-        } else {
-          setIndicators(null);
-          nextError = getErrorMessage(indicatorsResult.reason);
-        }
-
-        if (newsResult.status === "fulfilled") {
-          setNews(newsResult.value);
-        } else {
-          setNews([]);
-          if (!nextError) {
-            nextError = getErrorMessage(newsResult.reason);
-          }
-        }
-        setDashboardError(nextError);
+        setIndicators(result);
+        setDashboardError(null);
+      })
+      .catch((error: unknown) => {
+        if (!mounted) return;
+        setIndicators(null);
+        setDashboardError(getErrorMessage(error));
       })
       .finally(() => {
         if (mounted) {
@@ -167,7 +145,6 @@ export default function Dashboard() {
     };
   }, [retryNonce]);
 
-  const newsCount = news.length;
   const activeIndicators = useMemo(
     () => indicators?.filter((indicator) => indicator.code !== "AAS" && indicator.code !== "AAP") ?? [],
     [indicators]
@@ -234,71 +211,18 @@ export default function Dashboard() {
     <div className="dashboard-surface page-shell page-stack">
       <div className="dashboard-masthead flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="dashboard-masthead-copy flex flex-col">
-          <span className="page-kicker">Daily Diagnostic</span>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-4xl">Dashboard</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-stealth-300 md:text-[15px]">Real-time market regime assessment across volatility, rates, liquidity, and sentiment.</p>
-          <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-stealth-300">
-            <span className="page-badge">{activeIndicators.length} active indicators</span>
-            <span className="page-badge">Trend window {overallTrendLabel}</span>
-            <span className="page-badge border-stealth-600 bg-stealth-900/80 text-stealth-200">Read-only public dashboard</span>
-          </div>
+          <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">Dashboard</h1>
+          {indicators && <p className="mt-1 text-xs text-stealth-300">{activeIndicators.length} active indicators</p>}
         </div>
 
-        <div className="dashboard-command-dock flex flex-col gap-3 sm:items-end">
-          <div className="flex items-center gap-2 sm:gap-4">
-            {newsCount > 0 && (
-              <div className="page-badge border-sky-500/40 bg-sky-500/12 text-sky-200">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-sky-500"></span>
-                </span>
-                <span className="text-xs sm:text-sm font-semibold text-sky-300">
-                  {newsCount} News Item{newsCount !== 1 ? 's' : ''}
-                </span>
-              </div>
-            )}
-          </div>
-
-          <div className="flex flex-col justify-end gap-2 sm:flex-row sm:items-center sm:gap-3">
-            <div className="control-strip">
-              <button
-                type="button"
-                onClick={() => setTrendPeriod(90)}
-                aria-pressed={trendPeriod === 90}
-                className={`min-h-11 flex-1 whitespace-nowrap rounded-full px-3 text-xs font-medium transition sm:text-sm ${
-                  trendPeriod === 90
-                    ? 'bg-stealth-700 text-white'
-                    : 'text-stealth-400 hover:text-stealth-200'
-                }`}
-              >
-                90d
-              </button>
-              <button
-                type="button"
-                onClick={() => setTrendPeriod(180)}
-                aria-pressed={trendPeriod === 180}
-                className={`min-h-11 flex-1 whitespace-nowrap rounded-full px-3 text-xs font-medium transition sm:text-sm ${
-                  trendPeriod === 180
-                    ? 'bg-stealth-700 text-white'
-                    : 'text-stealth-400 hover:text-stealth-200'
-                }`}
-              >
-                6mo
-              </button>
-              <button
-                type="button"
-                onClick={() => setTrendPeriod(365)}
-                aria-pressed={trendPeriod === 365}
-                className={`min-h-11 flex-1 whitespace-nowrap rounded-full px-3 text-xs font-medium transition sm:text-sm ${
-                  trendPeriod === 365
-                    ? 'bg-stealth-700 text-white'
-                    : 'text-stealth-400 hover:text-stealth-200'
-                }`}
-              >
-                1yr
-              </button>
-            </div>
-          </div>
+        <div className="dashboard-command-dock flex flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold text-stealth-300" aria-hidden="true">Trend window</span>
+          <SegmentedControl<90 | 180 | 365>
+            label="Trend window"
+            value={trendPeriod}
+            onChange={setTrendPeriod}
+            options={[{ value: 90, label: "90d" }, { value: 180, label: "6mo" }, { value: 365, label: "1yr" }]}
+          />
         </div>
       </div>
 
@@ -319,14 +243,8 @@ export default function Dashboard() {
         )}
         {!overallInsight && (
           <div className="dashboard-current-read-console surface-card-strong p-4 sm:p-5" role="status" aria-live="polite">
-            <div className="dashboard-current-read-heading flex items-start justify-between gap-3">
-              <div>
-                <div className="text-xs text-stealth-400 uppercase tracking-wide">Overall Summary</div>
-                <h2 className="dashboard-current-read-read text-lg font-semibold text-stealth-100">Reading signals</h2>
-              </div>
-              <div className="dashboard-current-read-confidence text-xs text-stealth-500 text-right">
-                Live synthesis
-              </div>
+            <div className="dashboard-current-read-heading">
+              <p className="dashboard-current-read-read text-lg font-semibold text-stealth-100">Reading signals…</p>
             </div>
             <div className="dashboard-direction-strip mt-3 grid grid-cols-2 gap-2 md:grid-cols-4" aria-hidden="true">
               {["System", "Dow", "Sectors", "Alts"].map((label) => (
@@ -337,7 +255,6 @@ export default function Dashboard() {
                 </div>
               ))}
             </div>
-            <p className="text-sm text-stealth-300">Calculating the current read from available indicators…</p>
           </div>
         )}
         {overallInsight && (
@@ -357,7 +274,7 @@ export default function Dashboard() {
                   key={insight.id}
                   className={`direction-card direction-card-${insight.primaryDirection}`}
                 >
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
                     <span className="text-xs font-semibold text-stealth-100">
                       {insight.label}
                     </span>
@@ -365,15 +282,23 @@ export default function Dashboard() {
                       {directionLabel[insight.primaryDirection]}
                     </span>
                   </div>
-                  <div className="mt-1 text-xs text-stealth-200">
-                    {formatInsightSummary(insight)}
-                  </div>
+                  {insight.secondaryDirection !== insight.primaryDirection && (
+                    <p className="mt-1 text-xs text-stealth-300">Recent · {directionLabel[insight.secondaryDirection]}</p>
+                  )}
                 </div>
               ))}
             </div>
-            <p className="text-sm text-stealth-300 mt-3 leading-relaxed">
-              {overallInsight.summary}
-            </p>
+            <DetailsDisclosure label="How to read the market summary" className="mt-3">
+              <p>{overallInsight.summary}</p>
+              <dl className="grid gap-2 sm:grid-cols-2">
+                {insightList.map((insight) => (
+                  <div key={insight.id}>
+                    <dt className="font-semibold text-stealth-100">{insight.label}</dt>
+                    <dd>{formatInsightSummary(insight)}</dd>
+                  </div>
+                ))}
+              </dl>
+            </DetailsDisclosure>
           </div>
         )}
       </section>
@@ -415,9 +340,6 @@ export default function Dashboard() {
               The Treasury curve at a glance
             </h2>
           </div>
-          <p className="max-w-xl text-sm leading-6 text-stealth-300 sm:text-right">
-            Shape, benchmark yields, and session-to-session movement—the rates evidence transmitting through credit, equities, and financing conditions.
-          </p>
         </div>
         <YieldCurveCard />
       </section>
@@ -436,7 +358,7 @@ export default function Dashboard() {
       )}
       <div className="dashboard-indicator-array grid grid-cols-1 gap-3 md:gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
         {visibleIndicators.map((i) => (
-          <IndicatorCard key={i.code} indicator={i} />
+          <IndicatorCard key={i.code} indicator={i} compact />
         ))}
       </div>
       </section>

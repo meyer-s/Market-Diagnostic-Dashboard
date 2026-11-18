@@ -129,8 +129,7 @@ describe("Dashboard", () => {
         { code: "REAL_ESTATE_STABILITY", name: "Real Estate Stability", raw_value: 38, score: 38, state: "RED", timestamp: "2026-09-18T12:03:01" },
         { code: "AGRICULTURE_STABILITY", name: "Agriculture Stability", raw_value: 43, score: 43, state: "YELLOW", timestamp: "2026-09-18T12:03:01" },
         { code: "ENERGY_STABILITY", name: "Energy Stability", raw_value: 76, score: 76, state: "GREEN", timestamp: "2026-09-18T12:02:23" },
-      ])
-      .mockResolvedValueOnce([]);
+      ]);
 
     render(
       <MemoryRouter>
@@ -149,18 +148,14 @@ describe("Dashboard", () => {
     expect(screen.queryByText("AGRICULTURE_STABILITY:43")).toBeNull();
     expect(screen.queryByText("ENERGY_STABILITY:76")).toBeNull();
     expect(screen.queryByRole("button", { name: /refresh/i })).toBeNull();
-    expect(apiFetchMock).toHaveBeenCalledTimes(2);
-    expect(apiFetchMock).toHaveBeenNthCalledWith(1, "/indicators");
-    expect(apiFetchMock).toHaveBeenNthCalledWith(2, "/news?hours=24&limit=200");
+    expect(apiFetchMock.mock.calls).toEqual([["/indicators"]]);
     expect(
       apiFetchMock.mock.calls.some(([endpoint]) => String(endpoint).includes("/admin/ingest/run"))
     ).toBe(false);
   });
 
   it("shows a failed-load state when indicators cannot be fetched", async () => {
-    apiFetchMock
-      .mockRejectedValueOnce(new Error("Indicators failed"))
-      .mockResolvedValueOnce([]);
+    apiFetchMock.mockRejectedValueOnce(new Error("Indicators failed"));
 
     render(
       <MemoryRouter>
