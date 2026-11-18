@@ -1,6 +1,5 @@
-"""Demand-driven live news service for the dashboard's embedded News view."""
+"""Demand-driven live news service for the dashboard's News view."""
 
-from base64 import b64encode
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from contextlib import ExitStack
 from dataclasses import dataclass, replace
@@ -8,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime, parsedate_to_datetime
 from functools import lru_cache
 from hashlib import sha256
-from html import escape, unescape
+from html import unescape
 from html.parser import HTMLParser
 from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -937,22 +936,6 @@ def display_time(value, *, seconds=False):
     return value.astimezone(EASTERN or UTC).strftime("%b %d, %I:%M:%S %p %Z" if seconds else "%b %d, %I:%M %p %Z")
 
 
-def view_path(path, topic="", view="focused", *, search="", date_range="", page=1):
-    query = {}
-    if topic:
-        query["topic"] = topic
-    if view != "focused":
-        query["view"] = view
-    if search:
-        query["q"] = search
-    if date_range:
-        query["when"] = date_range
-    if page > 1:
-        query["page"] = page
-    url = PREFIX + path
-    return f"{url}?{urlencode(query)}" if query else url
-
-
 def rss_payload(stories, scores, statuses, updated, topic, view):
     focused = view == "focused"
     title = f"{FEED_TITLE} · {TOPICS[topic]}" if topic else FEED_TITLE
@@ -961,7 +944,7 @@ def rss_payload(stories, scores, statuses, updated, topic, view):
     root = ET.Element("rss", version="2.0")
     channel = ET.SubElement(root, "channel")
     ET.SubElement(channel, "title").text = title
-    ET.SubElement(channel, "link").text = PUBLIC_ORIGIN + view_path("/", topic, view)
+    ET.SubElement(channel, "link").text = PUBLIC_ORIGIN + "/news"
     failed = sum(bool(status.error) for status in statuses.values())
     description = {
         "focused": "Headlines selected by your relevance settings.",
@@ -998,542 +981,56 @@ def rss_payload(stories, scores, statuses, updated, topic, view):
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
 
-STYLE = """
-:root { color-scheme:dark; --bg:#121614; --panel:#191f1c; --hover:#222a25; --line:#303a34;
-  --text:#edf2ee; --muted:#afbbb2; --accent:#c2ef8a; --warn:#f8c18d; }
-* { box-sizing:border-box; }
-body { margin:0; background:var(--bg); color:var(--text); font:16px/1.46 'Geist', 'Segoe UI', sans-serif; }
-::selection { background:#3d5530; color:var(--text); }
-main { width:min(100%,1280px); margin:auto; padding:0 32px 56px; }
-header { display:flex; align-items:center; justify-content:space-between; gap:16px;
-  padding:24px 0 20px; border-bottom:1px solid var(--line); }
-h1 { margin:0; font-size:1.75rem; line-height:1.16; letter-spacing:-.03em; }
-p { margin:0; }
-.updated { margin-top:5px; }
-.updated,.meta { color:var(--muted); font-size:.82rem; }
-.key-release { padding:12px 0; border-bottom:1px solid var(--line); }
-.key-release h2 { color:var(--accent); font-size:.8rem; font-weight:650; margin:0 0 3px; }
-.key-release article + article { margin-top:8px; }
-.key-release .headline { font-size:1.03rem; font-weight:650; }
-.release-summary { max-width:80ch; margin-top:3px; font-size:.875rem; }
-.release-meta { margin-top:5px; }
-a { color:inherit; text-underline-offset:.19em; }
-a:hover { color:var(--accent); }
-:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
-.sr-only { position:absolute; width:1px; height:1px; padding:0; overflow:hidden;
-  clip-path:inset(50%); white-space:nowrap; }
-.actions,.mode,.topics,.filters,.results,.pagination { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
-.control,.mode a,.topics a,.pagination a { display:inline-flex; align-items:center; justify-content:center;
-  min-height:36px; padding:6px 10px; border:1px solid transparent; border-radius:5px; text-decoration:none;
-  font:inherit; font-size:.875rem; white-space:nowrap; }
-.control { background:var(--panel); border-color:#4a574e; color:var(--text); }
-.control:hover,.mode a:hover,.topics a:hover,.pagination a:hover { background:var(--hover); color:var(--text); }
-.primary { background:var(--accent); border-color:var(--accent); color:#182311; font-weight:650; }
-.primary:hover { background:#d5f6aa; color:#182311; }
-button { cursor:pointer; }
-.tools { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:16px 0 12px; }
-.mode { gap:2px; padding:2px; background:var(--panel); border:1px solid var(--line); border-radius:7px; }
-.mode a { min-height:32px; padding:4px 12px; color:var(--muted); }
-.mode a[aria-current] { background:#30402a; border-color:#51634a; color:var(--accent); font-weight:650; }
-.filters { justify-content:end; min-width:0; }
-.topic-filter { display:none; }
-input[type=search] { width:min(29vw,330px); min-width:160px; caret-color:var(--accent); }
-input,select { background:var(--panel); color:var(--text); border:1px solid #4a574e;
-  border-radius:5px; font:inherit; font-size:.875rem; min-height:36px; padding:6px 10px; }
-input::placeholder { color:var(--muted); opacity:1; }
-.topics { gap:4px; padding-bottom:10px; border-bottom:1px solid var(--line); }
-.topics a { color:var(--muted); }
-.topics a[aria-current] { color:var(--accent); border-color:#465743; background:#263324; font-weight:650; }
-.results { justify-content:space-between; gap:4px 12px; padding:16px 0 8px; }
-.result-count,.when { font-variant-numeric:tabular-nums; }
-.headline-table { width:100%; table-layout:fixed; border-collapse:collapse; }
-.headline-table th { position:sticky; top:0; z-index:1; background:var(--panel);
-  color:var(--muted); font-size:.78rem; font-weight:650; text-align:left; }
-.headline-table th,.headline-table td { padding:9px 12px; border-bottom:1px solid var(--line); }
-.headline-table td { vertical-align:middle; }
-.headline-table tbody tr:hover { background:var(--panel); }
-.time-col { width:112px; }
-.headline-table .headline-col { padding-left:74px; }
-.when { color:var(--text); font-size:.83rem; white-space:nowrap; }
-.when small { display:block; color:var(--muted); font-size:.77rem; }
-.headline-row { display:grid; grid-template-columns:18px 32px minmax(0,1fr); align-items:start; gap:6px; }
-.headline { font-weight:625; font-size:.96rem; line-height:1.35; overflow-wrap:anywhere;
-  text-decoration:none; }
-.headline:hover { color:var(--accent); }
-.byline { margin-top:3px; overflow-wrap:anywhere; }
-.headline-row[data-priority="high"] :is(.headline,.byline) { opacity:.89; }
-.headline-row[data-priority="standard"] :is(.headline,.byline) { opacity:.72; }
-.headline-row:is([data-priority="high"],[data-priority="standard"]):is(:hover,:focus-within) :is(.headline,.byline) {
-  opacity:1; }
-@media(prefers-reduced-motion:no-preference) { .headline,.byline { transition:opacity 120ms ease-out; } }
-.topic-releases { --topic-ink:#86dfc8; }
-.topic-markets { --topic-ink:#a9bcff; }
-.topic-metals { --topic-ink:#edc574; }
-.topic-crypto { --topic-ink:#d2b0fa; }
-.topic-world { --topic-ink:#f3aeb6; }
-.topic-tech { --topic-ink:#84d0eb; }
-.topic-energy { --topic-ink:#f2ac7e; }
-.topic-general { --topic-ink:#bac5be; }
-.topic-rail { position:relative; align-self:stretch; min-height:24px; pointer-events:none; }
-.topic-rail-face { position:absolute; top:0; left:0; display:flex; align-items:center; justify-content:center;
-  width:4px; height:100%; overflow:hidden; border-radius:3px; background:var(--topic-ink); color:#121614;
-  transition:width 140ms ease-out; }
-.topic-rail-label { display:none; writing-mode:vertical-rl; transform:rotate(180deg);
-  font-size:.625rem; font-weight:700; line-height:1; white-space:nowrap; }
-.headline-row:is(:hover,:focus-within) .topic-rail-face {
-  z-index:2; width:18px; height:auto; min-height:100%; padding-block:5px; }
-.headline-row:is(:hover,:focus-within) .topic-rail-label { display:block; }
-@media(prefers-reduced-motion:reduce) { .topic-rail-face { transition:none; } }
-.topic-mark { display:inline-flex; align-items:center; gap:6px; white-space:nowrap;
-  color:var(--topic-ink,var(--muted)); }
-.topic-link { font-weight:600; font-size:.81rem; text-decoration:none; }
-.topic-link:hover { text-decoration:underline; }
-.topics a .topic-mark { color:inherit; }
-.topic-dot { width:7px; height:7px; border-radius:50%; flex:none; background:var(--topic-ink,var(--muted)); }
-.why { position:relative; }
-.why summary { display:grid; place-items:center; width:32px; height:25px; border-radius:4px;
-  color:var(--priority-ink,var(--muted)); list-style:none; }
-.why summary::-webkit-details-marker { display:none; }
-.why summary:hover,.why[open] summary { background:var(--hover); }
-.why-top { --priority-ink:#ffe3ad; }
-.why-high { --priority-ink:#c6edae; }
-.priority-bars { display:inline-flex; align-items:flex-end; gap:2px; height:14px; }
-.priority-bars i { width:3px; height:5px; border-radius:1px; background:currentColor; }
-.priority-bars i:nth-child(2) { height:9px; opacity:.24; }
-.priority-bars i:nth-child(3) { height:14px; opacity:.24; }
-.why-high .priority-bars i:nth-child(2),.why-top .priority-bars i { opacity:1; }
-.why-detail { position:absolute; z-index:2; left:0; top:100%; width:min(240px,calc(100vw - 110px)); padding:9px 12px;
-  color:var(--text); background:#263029; border:1px solid #526257; border-radius:6px; font-size:.82rem; }
-.why-detail p { margin-top:4px; }
-.article-tooltip { position:fixed; z-index:12; width:min(360px,calc(100vw - 24px)); padding:12px 14px;
-  pointer-events:none; background:#1e1b15; border:1px solid #806940; border-radius:7px;
-  color:#f1e9dc; box-shadow:0 8px 24px #0007; font-size:.88rem; }
-.article-tooltip strong,.preview-inline strong { color:#ffe3ad; font-size:.8rem; }
-.article-tooltip p,.preview-inline p { margin-top:5px; overflow-wrap:anywhere; }
-.preview-origin { display:block; margin-top:6px; color:#c3b78f; font-size:.74rem; }
-.preview-inline { border-top:1px solid #526257; margin-top:8px; padding-top:7px; }
-.warn { color:var(--warn); }
-.empty { padding:32px 12px; border-block:1px solid var(--line); }
-.empty p + p { margin-top:5px; }
-.pagination { justify-content:end; padding-top:12px; }
-.pagination a { border-color:var(--line); }
-summary { cursor:pointer; }
-.source-status { margin-top:20px; padding-top:12px; border-top:1px solid var(--line); }
-.source-status summary { width:max-content; max-width:100%; color:var(--muted); font-size:.85rem; }
-.sources { list-style:none; padding:0; margin:8px 0 0; }
-.sources li { border-bottom:1px solid var(--line); font-size:.84rem; padding:7px 0; display:flex;
-  flex-wrap:wrap; gap:4px 12px; overflow-wrap:anywhere; }
-.weight-form { max-width:640px; margin-top:18px; }
-.weight-form fieldset { padding:0; border:0; margin:0 0 18px; }
-.weight-form legend { font-weight:650; padding:6px 0; }
-.field { display:flex; align-items:center; justify-content:space-between; gap:12px;
-  padding:8px 0; border-bottom:1px solid var(--line); }
-.field select { min-width:115px; }
-.notice { margin:14px 0; color:var(--accent); }
-@media(max-width:720px) {
-  main { padding:0 16px 40px; }
-  header { align-items:flex-start; flex-direction:column; padding:12px 0; gap:8px; }
-  h1 { font-size:1.5rem; }
-  .tools { align-items:flex-start; flex-direction:column; gap:8px; padding:12px 0;
-    border-bottom:1px solid var(--line); }
-  .filters { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto; gap:6px; width:100%; }
-  input[type=search] { grid-area:1 / 1 / 2 / 3; width:100%; min-width:0; }
-  .filters button { grid-area:1 / 3; }
-  .topic-filter { display:block; grid-area:2 / 2 / 3 / 4; min-width:0; }
-  #date-filter { grid-area:2 / 1; width:100%; min-width:0; }
-  .topics { display:none; }
-  .headline-table th,.headline-table td { padding-inline:6px; }
-  .headline-table .headline-col { padding-left:68px; }
-  .time-col { width:72px; }
-}
-@media(max-width:390px) {
-  .time-col { width:64px; }
-  .when { font-size:.75rem; }
-}
-"""
-
-
-NEWS_AUTO_REFRESH = """
-<script>
-(() => {
-  if (window.parent === window) return;
-  let checking = false;
-  let nextActivity = 0;
-  let retryAt = 0;
-  function readingDetails() {
-    return document.querySelector("#headline-results details[open], #featured-releases details[open]") ||
-      document.activeElement?.closest("#headline-results, #featured-releases") ||
-      !document.getElementById("article-tooltip").hidden;
-  }
-  function visibleStory() {
-    if (window.scrollY < 24) return null;
-    const tableHead = document.querySelector(".headline-table thead");
-    const boundary = Math.max(0, tableHead?.getBoundingClientRect().bottom || 0);
-    for (const row of document.querySelectorAll("tr[data-story]")) {
-      const box = row.getBoundingClientRect();
-      if (box.bottom > boundary && box.top < innerHeight) return [row.dataset.story, box.top];
-    }
-    return null;
-  }
-  function update(next, selector) {
-    const current = document.querySelector(selector);
-    const replacement = next.querySelector(selector);
-    if (current && replacement && current.outerHTML !== replacement.outerHTML) current.replaceWith(replacement);
-  }
-  async function refresh() {
-    if (checking || document.visibilityState !== "visible" || Date.now() < retryAt) return;
-    checking = true;
-    try {
-      if (Date.now() >= nextActivity) {
-        nextActivity = Date.now() + 20000;
-        const activity = await fetch(new URL("activity", location.href), {
-          method: "POST", headers: {"X-Live-News": "1"}
-        });
-        if (activity.status === 429) {
-          retryAt = Date.now() + 15000;
-          nextActivity = retryAt;
-          return;
-        }
-      }
-      const response = await fetch(window.location.href, {cache: "no-cache"});
-      if (response.status === 429) retryAt = Date.now() + 15000;
-      if (!response.ok || document.visibilityState !== "visible") return;
-      const next = new DOMParser().parseFromString(await response.text(), "text/html");
-      update(next, "header .updated");
-      if (!document.querySelector(".source-status[open]")) update(next, ".source-status");
-      if (readingDetails()) return;
-      const anchor = visibleStory();
-      const currentStyle = document.querySelector("head style");
-      const nextStyle = next.querySelector("head style");
-      if (currentStyle && nextStyle && currentStyle.textContent !== nextStyle.textContent) {
-        currentStyle.textContent = nextStyle.textContent;
-      }
-      update(next, "#featured-releases");
-      update(next, "#headline-results");
-      if (anchor) {
-        const row = document.querySelector(`tr[data-story="${CSS.escape(anchor[0])}"]`);
-        if (row) window.scrollBy(0, row.getBoundingClientRect().top - anchor[1]);
-      }
-    } catch {
-      // Keep the last rendered headlines visible during an interruption.
-    } finally {
-      checking = false;
-    }
-  }
-  setInterval(refresh, __VIEW_REFRESH_MS__);
-  document.addEventListener("visibilitychange", refresh);
-  refresh();
-})();
-</script>
-""".replace("__VIEW_REFRESH_MS__", str(VIEW_REFRESH_SECONDS * 1000))
-
-
-ARTICLE_TOOLTIPS = """
-<aside class="article-tooltip" id="article-tooltip" role="tooltip" hidden>
-<strong>Article preview</strong><p></p><small class="preview-origin"></small></aside>
-<script>
-(() => {
-  const tooltip = document.getElementById("article-tooltip");
-  const previews = new Map();
-  let active = null;
-  let timer;
-  const loading = {text: "Loading preview…", origin: ""};
-  const unavailable = {text: "A public preview is unavailable for this story.", origin: ""};
-  function preview(id) {
-    if (!previews.has(id)) {
-      if (previews.size >= 64) previews.delete(previews.keys().next().value);
-      const url = new URL("preview", location.href);
-      url.search = new URLSearchParams({id});
-      previews.set(id, fetch(url)
-        .then(r => r.ok ? r.json() : unavailable).catch(() => unavailable));
-    }
-    return previews.get(id);
-  }
-  function render(card, result) {
-    card.querySelector("p").textContent = result.text;
-    card.querySelector(".preview-origin").textContent = result.origin;
-  }
-  function position(anchor) {
-    const box = anchor.getBoundingClientRect();
-    const edge = 12;
-    tooltip.style.left = Math.max(edge, Math.min(box.left, innerWidth - tooltip.offsetWidth - edge)) + "px";
-    const below = box.bottom + 8;
-    const above = box.top - tooltip.offsetHeight - 8;
-    tooltip.style.top = (below + tooltip.offsetHeight <= innerHeight - edge ? below : Math.max(edge, above)) + "px";
-  }
-  function hide() {
-    clearTimeout(timer);
-    active = null;
-    tooltip.hidden = true;
-  }
-  function queue(anchor) {
-    if (anchor === active) return;
-    hide();
-    active = anchor;
-    timer = setTimeout(async () => {
-      if (active !== anchor || !anchor.isConnected) return;
-      render(tooltip, loading);
-      tooltip.hidden = false;
-      position(anchor);
-      const result = await preview(anchor.dataset.preview);
-      if (active !== anchor || !anchor.isConnected) return;
-      render(tooltip, result);
-      position(anchor);
-    }, 300);
-  }
-  document.addEventListener("pointerover", event => {
-    const anchor = event.target.closest("a[data-preview]");
-    if (anchor && event.pointerType !== "touch") queue(anchor);
-  });
-  document.addEventListener("pointerout", event => {
-    if (active && active.contains(event.target) && !active.contains(event.relatedTarget)) hide();
-  });
-  document.addEventListener("focusin", event => {
-    const anchor = event.target.closest("a[data-preview]");
-    if (anchor && anchor.matches(":focus-visible")) queue(anchor);
-  });
-  document.addEventListener("focusout", event => {
-    if (event.target === active) hide();
-  });
-  document.addEventListener("keydown", event => {
-    if (event.key === "Escape") hide();
-  });
-  window.addEventListener("scroll", hide, {passive: true});
-  window.addEventListener("resize", hide);
-  document.addEventListener("toggle", async event => {
-    const details = event.target;
-    if (!details.dataset.preview || !details.open) return;
-    const card = details.querySelector(".preview-inline");
-    render(card, loading);
-    render(card, await preview(details.dataset.preview));
-  }, true);
-})();
-</script>
-"""
-
-
-def article_link(story, score):
-    preview = f' data-preview="{story.guid}"' if priority_level(score.points) == "Top" else ""
-    described = "article-link-behavior article-tooltip" if preview else "article-link-behavior"
-    return (f'<a class="headline" href="{escape(story.url)}" target="_blank" '
-            f'rel="noopener noreferrer" title="{escape(TOPICS[story.topic])}" '
-            f'aria-describedby="{described}"{preview}>{escape(story.title)}</a>')
-
-
-def topic_mark(topic):
-    return (f'<span class="topic-mark topic-{topic}"><span class="topic-dot" aria-hidden="true"></span>'
-            f'{escape(TOPIC_TABS[topic])}</span>')
-
-
-def topic_rail(topic):
-    return (f'<div class="topic-rail topic-{topic}" aria-hidden="true"><span class="topic-rail-face">'
-            f'<span class="topic-rail-label">{escape(TOPIC_TABS[topic])}</span></span></div>')
-
-
-def priority_signal(story, score, topic_path):
-    level = priority_level(score.points)
-    label = escape(f"{level} priority · {TOPICS[story.topic]}")
-    explanation = escape(" · ".join(score.reasons))
-    data = f' data-preview="{story.guid}"' if level == "Top" else ""
-    preview = ('<div class="preview-inline"><strong>Article preview</strong><p></p>'
-               '<small class="preview-origin"></small></div>' if data else "")
-    return (
-        f'<details class="why why-{level.lower()}"{data}>'
-        f'<summary aria-label="{label}. Show relevance details" title="{label}">'
-        f'<span class="priority-bars" aria-hidden="true"><i></i><i></i><i></i></span></summary>'
-        f'<div class="why-detail"><a class="topic-link" href="{escape(topic_path)}">{topic_mark(story.topic)}</a>'
-        f'<p>{level} priority · Relevance {score.points}</p><p>{explanation}</p>{preview}</div></details>'
-    )
-
-
-def headline_table(stories, statuses, scores, view, search, date_range):
-    rows = []
+def snapshot_payload(stories, statuses, updated, topic, view, scores, params, archive_error, preferences):
     now = now_utc()
-    for story in stories:
-        path = view_path("/", story.topic, view, search=search, date_range=date_range)
-        state = source_state(story.source, statuses[story.source], now)
-        cached = (' · <strong class="warn">Cached</strong>' if state == "Cached"
-                  or view == "wire" and state in {"Checking", "Unavailable"} else "")
-        score = scores[story.guid]
-        priority = priority_signal(story, score, path)
-        stamp = story.published.astimezone(EASTERN or UTC)
-        rows.append(
-            f'<tr data-story="{story.guid}"><td><time class="when" title="Publisher feed timestamp" datetime="{stamp.isoformat()}">'
-            f'{stamp.strftime("%I:%M %p").lstrip("0")}<small>{stamp.strftime("%b %d")}</small></time></td>'
-            f'<td><div class="headline-row" data-priority="{priority_level(score.points).lower()}">'
-            f'{topic_rail(story.topic)}{priority}<div>{article_link(story, score)}'
-            f'<p class="meta byline">{escape(display_source(story.source))}{cached}</p></div></div></td></tr>'
-        )
-    zone = "ET" if EASTERN else "UTC"
-    return (f'<table class="headline-table"><caption class="sr-only">News headlines</caption>'
-            f'<thead><tr><th scope="col" class="time-col">Time ({zone})</th>'
-            f'<th scope="col" class="headline-col">Headline &amp; source</th></tr></thead>'
-            f'<tbody>{"".join(rows)}</tbody></table>')
-
-
-def release_panel(stories, statuses, scores, now):
-    if not stories:
-        return ""
-    releases = []
-    for story in stories:
-        cached = ' · <strong class="warn">Cached</strong>' if source_state(
-            story.source, statuses[story.source], now
-        ) == "Cached" else ""
-        summary = f'<p class="release-summary">{escape(story.summary)}</p>' if story.summary else ""
-        score = scores[story.guid]
-        priority = priority_signal(story, score, view_path("/", story.topic))
-        releases.append(
-            f'<article class="headline-row" data-priority="{priority_level(score.points).lower()}">'
-            f'{topic_rail(story.topic)}{priority}<div>{article_link(story, score)}{summary}'
-            f'<p class="meta release-meta">{escape(story.source.name)} · '
-            f'<time datetime="{story.published.isoformat()}">{display_time(story.published)}</time>{cached}</p>'
-            f'</div></article>'
-        )
-    heading = "Key release" if len(releases) == 1 else "Key releases"
-    return f'<section class="key-release" aria-labelledby="key-releases"><h2 id="key-releases">{heading}</h2>{"".join(releases)}</section>'
-
-
-def page_payload(stories, statuses, updated, topic, view, scores, params, archive_error, preferences):
-    now = now_utc()
-    focused = view == "focused"
-    search = params.get("q", "")[:120].strip()
-    date_range = params.get("when", "")
-    if date_range not in DATE_FILTERS:
-        date_range = ""
-    hours = DATE_FILTERS[date_range][1]
+    search = params.get("q", "")[:120].casefold().split()
+    hours = DATE_FILTERS.get(params.get("when", ""), ("", None))[1]
     if hours:
         cutoff = now - timedelta(hours=hours)
         stories = [story for story in stories if story.published >= cutoff]
     if search:
-        terms = search.casefold().split()
-        matches = []
-        for story in stories:
-            text = f"{story.title} {story.source.name} {TOPICS[story.topic]}".casefold()
-            if all(term in text for term in terms):
-                matches.append(story)
-        stories = matches
+        stories = [
+            story for story in stories
+            if all(term in f"{story.title} {story.source.name} {TOPICS[story.topic]}".casefold()
+                   for term in search)
+        ]
 
-    featured = key_releases(stories, now) if focused and topic in {"", "releases"} and not search else []
-    if featured:
-        featured_ids = {story.guid for story in featured}
-        stories = [story for story in stories if story.guid not in featured_ids]
-
-    def link(selected_topic=topic, selected_view=view, *, page=1):
-        return escape(view_path("/", selected_topic, selected_view, search=search, date_range=date_range, page=page))
-
+    featured = key_releases(stories, now) if view == "focused" and topic in {"", "releases"} and not search else []
+    featured_ids = {story.guid for story in featured}
+    stories = [story for story in stories if story.guid not in featured_ids]
     raw_page = params.get("page", "")
-    page = int(raw_page) if raw_page.isdecimal() and len(raw_page) < 7 else 1
-    num_pages = max(1, (len(stories) + PAGE_SIZE - 1) // PAGE_SIZE)
-    page = min(num_pages, max(1, page))
+    requested_page = int(raw_page) if raw_page.isdecimal() and len(raw_page) < 7 else 1
+    pages = max(1, (len(stories) + PAGE_SIZE - 1) // PAGE_SIZE)
+    page = min(pages, max(1, requested_page))
     start = (page - 1) * PAGE_SIZE
-    visible = stories[start:start + PAGE_SIZE]
-    featured_panel = release_panel(featured, statuses, scores, now) if page == 1 else ""
-    pagination = []
-    if page > 1:
-        pagination.append(f'<a rel="prev" href="{link(page=page - 1)}">Previous</a>')
-    if page < num_pages:
-        pagination.append(f'<a rel="next" href="{link(page=page + 1)}">Next</a>')
-    pager = f'<nav aria-label="Pages" class="pagination">{"".join(pagination)}</nav>' if pagination else ""
-    count_label = "other headlines" if featured else "headlines"
-    result_count = (f"{start + 1:,}–{start + len(visible):,} of {len(stories):,} {count_label}"
-                    if visible else f"0 {count_label}")
-    if visible:
-        visible_scores = scores if focused else {story.guid: relevance(story, preferences) for story in visible}
-        content = headline_table(visible, statuses, visible_scores, view, search, date_range)
-    elif featured:
-        content = ""
-    elif not updated:
-        content = '<div class="empty"><p>Fetching headlines. Check back in a moment.</p></div>'
-    else:
-        help_link = (f'<a href="{link(selected_view="all")}">Check All News</a>' if focused else
-                     f'<a href="{escape(view_path("/", topic, view))}">Clear search and date filters</a>')
-        content = f'<div class="empty"><p>No headlines match these filters.</p><p>{help_link}</p></div>'
 
-    tabs = {"": "All topics", **TOPIC_TABS}
-    tab_links = []
-    for key, name in tabs.items():
-        current = ' aria-current="page"' if key == topic else ""
-        label = topic_mark(key) if key else escape(name)
-        tab_links.append(f'<a href="{link(key)}"{current}>{label}</a>')
+    def display(story):
+        score = scores.get(story.guid) or relevance(story, preferences)
+        state = source_state(story.source, statuses[story.source], now)
+        return {
+            "id": story.guid, "title": story.title, "url": story.url,
+            "published_at": story.published.isoformat(), "source": display_source(story.source),
+            "topic": story.topic, "priority": priority_level(score.points),
+            "score": score.points, "reasons": score.reasons, "summary": story.summary,
+            "cached": state == "Cached" or (view == "wire" and state in {"Checking", "Unavailable"}),
+        }
 
-    source_items = []
-    online = 0
-    for source, status in statuses.items():
-        state = source_state(source, status, now)
-        online += state == "Online"
-        warning = ' class="warn"' if state in {"Unavailable", "Cached"} else ""
-        diagnostic = f' <span class="meta">{escape(status.error)}</span>' if status.error else ""
-        source_items.append(
-            f'<li><a href="{escape(source.home)}">{escape(display_source(source))}</a>'
-            f'<span{warning}>{state}</span><span class="meta">Latest item '
-            f'{display_time(status.latest)}</span>{diagnostic}</li>'
-        )
-    rss_path = escape(view_path("/rss.xml", topic, view))
-    modes = []
-    for key, label in VIEWS.items():
-        current = ' aria-current="page"' if key == view else ""
-        modes.append(f'<a href="{link(selected_view=key)}"{current}>{label}</a>')
-    view_input = f'<input type="hidden" name="view" value="{view}">' if not focused else ""
-    dates = "".join(option(value, label, date_range) for value, (label, _) in DATE_FILTERS.items())
-    topics = "".join(option(value, label, topic) for value, label in tabs.items())
-    updated_text = f"Last checked {display_time(updated, seconds=True)}" if updated else "Checking sources…"
-    ordering = "Relevance + recency" if focused else "Newest first"
-    scope = VIEWS[view]
-    archive_notice = ('<p class="warn">Wire headlines are being held in memory. Disk storage is unavailable.</p>'
-                      if archive_error and view == "wire" else "")
-    return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="alternate" type="application/rss+xml" title="{scope} RSS" href="{rss_path}">
-<title>{FEED_TITLE}</title><style>{STYLE}</style></head>
-<body><main><header><div><h1>{FEED_TITLE}</h1><p class="updated">{updated_text}</p></div>
-<div class="actions"><a class="control" href="{link()}">Refresh</a>
-<a class="control" href="{PREFIX}/weights">Weights</a><a class="control" href="{rss_path}">{scope} RSS</a></div></header>
-<span class="sr-only" id="article-link-behavior">Opens in a new tab.</span>
-<div id="featured-releases">{featured_panel}</div>
-{archive_notice}<div class="tools"><nav class="mode" aria-label="News view">{"".join(modes)}</nav>
-<form class="filters" method="get" action="{PREFIX}/" role="search">{view_input}
-<label class="sr-only" for="headline-search">Search headlines and sources</label>
-<input id="headline-search" type="search" name="q" value="{escape(search)}" placeholder="Search headlines or tickers">
-<label class="sr-only" for="date-filter">Date range</label><select id="date-filter" name="when">{dates}</select>
-<label class="sr-only" for="topic-filter">Topic</label><select id="topic-filter" class="topic-filter" name="topic">{topics}</select>
-<button class="control" type="submit">Search</button></form></div>
-<nav class="topics" aria-label="Headline topics">{''.join(tab_links)}</nav>
-<div id="headline-results">
-<div class="results"><p class="meta result-count">{result_count}</p><p class="meta">{ordering}</p></div>
-{content}{pager}</div>
-<details class="source-status"><summary>Source status · {online} of {len(statuses)} current</summary>
-<ul class="sources">{''.join(source_items)}</ul></details>
-</main>{ARTICLE_TOOLTIPS}{NEWS_AUTO_REFRESH}</body></html>""".encode()
-
-
-def option(value, label, selected):
-    marker = " selected" if value == selected else ""
-    return f'<option value="{value}"{marker}>{escape(label)}</option>'
-
-
-def weights_payload(preferences, token, saved):
-    fields = []
-    for topic, label in TOPICS.items():
-        options = "".join(option(weight, name, preferences.weights[topic])
-                          for weight, name in enumerate(WEIGHT_LEVELS))
-        fields.append(f'<label class="field">{escape(label)}<select name="{topic}">{options}</select></label>')
-    focus_options = "".join(option(key, label, preferences.focus)
-                            for key, (label, _) in FOCUS_LEVELS.items())
-    confirmation = '<p class="notice" role="status">Weights saved.</p>' if saved else ""
-    return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Relevance weights · {FEED_TITLE}</title><style>{STYLE}</style></head>
-<body><main><header><div><h1>Relevance weights</h1>
-<p class="updated">Changes apply to the Focused view and its RSS feed.</p></div>
-<a class="control" href="{PREFIX}/">Back to news</a></header>{confirmation}
-<form action="{PREFIX}/weights" method="post" class="weight-form">
-<input type="hidden" name="token" value="{token}">
-<fieldset><legend>Topic priority</legend>{''.join(fields)}</fieldset>
-<fieldset><legend>Relevance filter</legend><label class="field">Filter strength
-<select name="focus">{focus_options}</select></label></fieldset>
-<div class="actions"><button class="control primary" type="submit">Save weights</button>
-<button class="control" type="submit" name="reset" value="1">Reset defaults</button></div>
-</form></main></body></html>""".encode()
+    source_list = [
+        {"name": display_source(source), "url": source.home, "state": source_state(source, status, now),
+         "last_item": status.latest.isoformat() if status.latest else None, "error": status.error}
+        for source, status in statuses.items()
+    ]
+    result = {
+        "updated_at": updated.isoformat() if updated else None,
+        "checked_label": display_time(updated, seconds=True) if updated else None,
+        "archive_error": archive_error or None, "read_interval": VIEW_REFRESH_SECONDS,
+        "topics": TOPIC_TABS, "page": page, "pages": pages, "total": len(stories),
+        "first": start + 1 if stories else 0,
+        "last": min(start + PAGE_SIZE, len(stories)), "sources": source_list,
+        "articles": [display(story) for story in stories[start:start + PAGE_SIZE]],
+        "featured": [display(story) for story in featured] if page == 1 else [],
+    }
+    return json.dumps(result, ensure_ascii=False).encode()
 
 
 def status_payload(statuses, updated, stories, all_count, wire_count, archive_error):
@@ -1557,11 +1054,6 @@ def status_payload(statuses, updated, stories, all_count, wire_count, archive_er
 
 def main():
     news = News()
-    hashes = [b64encode(sha256(script.encode()).digest()).decode()
-              for script in re.findall(r"<script>(.*?)</script>", ARTICLE_TOOLTIPS + NEWS_AUTO_REFRESH, re.S)]
-    csp = ("default-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'self'; "
-           "connect-src 'self'; style-src 'unsafe-inline'; script-src " +
-           " ".join(f"'sha256-{digest}'" for digest in hashes))
 
     class Handler(BaseHTTPRequestHandler):
         def do_HEAD(self):
@@ -1613,8 +1105,7 @@ def main():
                 preferences = Preferences(weights, focus)
             encoded = "".join(str(preferences.weights[topic]) for topic in TOPICS)
             secure = "; Secure" if origin.startswith("https:") else ""
-            self.send_response(303)
-            self.send_header("Location", PREFIX + "/weights?saved=1")
+            self.send_response(204)
             self.send_header("Set-Cookie", f"market_live_weights={encoded}.{preferences.focus}; "
                              f"Path={PREFIX}/; Max-Age=31536000; HttpOnly; SameSite=Lax{secure}")
             self.end_headers()
@@ -1637,13 +1128,23 @@ def main():
             if topic and topic not in TOPICS:
                 self.send_error(404, "Unknown topic")
                 return
-            if path not in {"/", "/rss.xml", "/status.json", "/weights", "/preview"}:
+            if path not in {"/", "/snapshot", "/rss.xml", "/status.json", "/weights", "/preview"}:
                 self.send_error(404)
+                return
+            if path == "/":
+                self.send_response(302)
+                self.send_header("Location", "/news")
+                self.send_header("Cache-Control", "private, no-store")
+                self.end_headers()
                 return
             preferences = load_preferences(self.headers.get("Cookie"))
             if path == "/weights":
-                body = weights_payload(preferences, news.preference_token, params.get("saved") == "1")
-                self.send_payload(body, "text/html")
+                body = json.dumps({
+                    "weights": preferences.weights, "focus": preferences.focus, "token": news.preference_token,
+                    "topics": TOPICS, "weight_levels": WEIGHT_LEVELS,
+                    "focus_levels": {key: label for key, (label, _) in FOCUS_LEVELS.items()},
+                }).encode()
+                self.send_payload(body, "application/json")
                 return
             statuses, updated = news.snapshot
             if path == "/preview":
@@ -1686,11 +1187,11 @@ def main():
                 selected = groups[topic] if topic else stories
                 body = rss_payload(selected, scores, statuses, updated, topic, view)
                 content_type = "application/rss+xml"
-            elif path == "/":
+            elif path == "/snapshot":
                 selected = groups[topic] if topic else stories
-                body = page_payload(selected, statuses, updated, topic, view, scores, params, news.archive_error,
-                                    preferences)
-                content_type = "text/html"
+                body = snapshot_payload(selected, statuses, updated, topic, view, scores, params, news.archive_error,
+                                        preferences)
+                content_type = "application/json"
             else:
                 wire_count = len(available_stories(statuses, wire_only=True))
                 info = json.loads(status_payload(statuses, updated, stories, all_count, wire_count, news.archive_error))
@@ -1705,7 +1206,7 @@ def main():
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "private, no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
-            self.send_header("Content-Security-Policy", csp)
+            self.send_header("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
             self.end_headers()
             if self.command != "HEAD":
                 self.wfile.write(body)

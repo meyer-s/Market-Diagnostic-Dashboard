@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { useSearchParams } from "react-router-dom";
+import LiveNewsPanel from "../components/news/LiveNewsPanel";
 import { useApi } from "../hooks/useApi";
 import { apiFetch } from "../utils/apiUtils";
 import { EmptyState, ErrorState, LoadingState } from "../utils/componentUtils";
@@ -401,20 +402,13 @@ export default function MarketNews() {
             aria-controls="live-news-panel"
             aria-expanded={liveNewsEnabled}
             onClick={() => setLiveNewsEnabled((enabled) => !enabled)}
-            className="min-h-11 rounded-xl border border-stealth-600 px-4 text-sm font-semibold text-stealth-100 transition hover:border-stealth-400"
+            className="field-button field-button-secondary"
           >
             {liveNewsEnabled ? "Turn off live news" : "Turn on live news"}
           </button>
         </div>
         <div id="live-news-panel" hidden={!liveNewsEnabled}>
-          {liveNewsEnabled && (
-            <iframe
-              title="Live market news"
-              src="/live-news/?view=wire"
-              sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
-              className="mt-4 h-[min(75vh,50rem)] min-h-[24rem] w-full rounded-xl border border-stealth-700"
-            />
-          )}
+          {liveNewsEnabled && <LiveNewsPanel />}
         </div>
       </section>
 

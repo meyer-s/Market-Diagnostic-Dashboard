@@ -1,4 +1,5 @@
 from datetime import timedelta
+import json
 import sqlite3
 from threading import Thread
 from unittest.mock import patch
@@ -58,3 +59,34 @@ def test_weights_are_isolated_by_cookie():
     assert set(custom.weights.values()) == {1}
     assert custom.focus == "tight"
     assert live.load_preferences(None) == live.DEFAULTS
+
+
+def test_native_snapshot_keeps_release_priority_and_bounds_headline_pages():
+    now = live.now_utc()
+    source = next(source for source in live.SOURCES if source.name == "U.S. Census Bureau")
+    release = live.Story(
+        "U.S. retail sales rose 0.5%", source.home, now, "releases", source, "retail", "Official summary",
+    )
+    stories = [
+        live.Story(f"Markets headline {index}", source.home, now, "markets", source, str(index))
+        for index in range(live.PAGE_SIZE + 2)
+    ]
+    statuses = {source: live.SourceStatus(success=now, latest=now)}
+    scores = {release.guid: live.Relevance(61, ("Economic release",))}
+
+    def snapshot(**params):
+        return json.loads(live.snapshot_payload(
+            [release, *stories], statuses, now, "", "focused", scores, params, "", live.DEFAULTS,
+        ))
+
+    first = snapshot()
+    assert first["total"] == live.PAGE_SIZE + 2
+    assert len(first["articles"]) == live.PAGE_SIZE
+    assert [(story["id"], story["priority"], story["summary"]) for story in first["featured"]] == [
+        ("retail", "Top", "Official summary"),
+    ]
+    last = snapshot(page="999")
+    assert (last["page"], last["pages"], len(last["articles"]), last["featured"]) == (2, 2, 2, [])
+    search = snapshot(q="retail sales")
+    assert [story["id"] for story in search["articles"]] == ["retail"]
+    assert search["featured"] == []

@@ -109,6 +109,7 @@ describe("site-polish route contracts", () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("keeps Market News filters and pagination in the URL while bounding the first view", async () => {
@@ -146,11 +147,30 @@ describe("site-polish route contracts", () => {
     expect(screen.getByRole("button", { name: "24h" }).getAttribute("aria-pressed")).toBe("true");
     expect((screen.getByLabelText("Sort") as HTMLSelectElement).value).toBe("oldest");
 
-    expect(screen.queryByTitle("Live market news")).toBeNull();
+    const liveFetch = vi.fn(async () => Response.json({
+      updated_at: "2026-07-29T12:00:00Z",
+      checked_label: "Jun 29 8:00:00 AM ET",
+      read_interval: 5,
+      topics: { markets: "Markets" },
+      page: 1, pages: 1, total: 1, first: 1, last: 1,
+      sources: [], featured: [],
+      articles: [{
+        id: "wire-1", title: "Fresh wire headline", url: "https://example.com/wire",
+        source: "Example wire", published_at: "2026-07-29T12:00:00Z",
+        topic: "markets", priority: "Top", score: 61, reasons: [], summary: "", cached: false,
+      }],
+    }));
+    vi.stubGlobal("fetch", liveFetch);
+    expect(screen.queryByRole("group", { name: "Live news view" })).toBeNull();
+    expect(liveFetch).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Turn on live news" }));
-    expect(screen.getByTitle("Live market news").getAttribute("src")).toBe("/live-news/?view=wire");
+    const view = screen.getByRole("group", { name: "Live news view" });
+    expect(view.classList.contains("segmented-control")).toBe(true);
+    expect(within(view).getByRole("button", { name: "Wires", pressed: true })).not.toBeNull();
+    expect(await screen.findByRole("link", { name: /Fresh wire headline/ })).toHaveProperty("target", "_blank");
+    expect(liveFetch).toHaveBeenCalledWith("/live-news/activity", expect.objectContaining({ method: "POST" }));
     fireEvent.click(screen.getByRole("button", { name: "Turn off live news" }));
-    expect(screen.queryByTitle("Live market news")).toBeNull();
+    expect(screen.queryByRole("group", { name: "Live news view" })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Previous" }));
     await waitFor(() => expect(screen.getByTestId("location-search").textContent).not.toContain("page="));

@@ -7,6 +7,10 @@ type SupportingContextTooltipProps = {
   align?: "start" | "end";
   placement?: "top" | "bottom";
   className?: string;
+  trigger?: ReactNode;
+  triggerLabel?: string;
+  openOnContentHover?: boolean;
+  lazy?: boolean;
 };
 
 const ALIGNMENT_CLASSES = {
@@ -26,6 +30,10 @@ export default function SupportingContextTooltip({
   align = "start",
   placement = "top",
   className = "",
+  trigger,
+  triggerLabel = "Show supporting context",
+  openOnContentHover = false,
+  lazy = false,
 }: SupportingContextTooltipProps) {
   const generatedId = useId();
   const tooltipId = id ?? generatedId;
@@ -72,29 +80,42 @@ export default function SupportingContextTooltip({
     return () => document.removeEventListener("keydown", handleEscape, true);
   }, [open]);
 
+  const customTrigger = trigger !== undefined;
+  const triggerEvents = {
+    onMouseEnter: showTooltip,
+    onMouseLeave: scheduleTooltipClose,
+    onFocus: showTooltip,
+    onBlur: scheduleTooltipClose,
+  };
+
   return (
     <div
       className={`relative inline-flex min-w-0 max-w-full items-start ${className}`.trim()}
     >
-      {children}
-      <span aria-hidden="true" className="ml-1 h-6 w-6 shrink-0" />
+      {!customTrigger && children}
+      {!customTrigger && <span aria-hidden="true" className="ml-1 h-6 w-6 shrink-0" />}
       <button
         type="button"
         aria-describedby={tooltipId}
-        aria-label="Show supporting context"
-        onMouseEnter={showTooltip}
-        onMouseLeave={scheduleTooltipClose}
-        onFocus={showTooltip}
-        onBlur={scheduleTooltipClose}
-        className="group/context-trigger absolute -right-2.5 -top-2.5 inline-flex h-11 w-11 items-center justify-center rounded-lg bg-transparent text-stealth-300 focus-visible:outline-none"
+        aria-label={triggerLabel}
+        {...triggerEvents}
+        onClick={customTrigger ? showTooltip : undefined}
+        className={customTrigger
+          ? "field-icon-button"
+          : "group/context-trigger absolute -right-2.5 -top-2.5 inline-flex h-11 w-11 items-center justify-center rounded-lg bg-transparent text-stealth-300 focus-visible:outline-none"}
       >
-        <span
+        {customTrigger ? trigger : <span
           aria-hidden="true"
           className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-stealth-600 bg-stealth-900 text-xs font-semibold leading-none transition-colors group-hover/context-trigger:border-stealth-400 group-hover/context-trigger:text-white group-focus-visible/context-trigger:border-sky-300 group-focus-visible/context-trigger:text-white group-focus-visible/context-trigger:ring-2 group-focus-visible/context-trigger:ring-sky-400 group-focus-visible/context-trigger:ring-offset-2 group-focus-visible/context-trigger:ring-offset-stealth-950"
         >
           i
-        </span>
+        </span>}
       </button>
+      {customTrigger && (
+        <div className="min-w-0 flex-1" {...(openOnContentHover ? triggerEvents : {})}>
+          {children}
+        </div>
+      )}
       <span
         id={tooltipId}
         role="tooltip"
@@ -103,7 +124,7 @@ export default function SupportingContextTooltip({
         onMouseLeave={scheduleTooltipClose}
         className={`pointer-events-auto absolute z-50 w-64 max-w-[calc(100vw-2rem)] select-text rounded-lg border border-stealth-600 bg-stealth-950/98 px-3 py-2 text-left text-xs font-normal leading-4 normal-case tracking-normal text-stealth-100 shadow-[0_14px_44px_rgba(2,6,23,0.9)] backdrop-blur-xl sm:w-[17rem] ${ALIGNMENT_CLASSES[align]} ${PLACEMENT_CLASSES[placement]} ${open ? "block" : "hidden"}`}
       >
-        {text}
+        {(!lazy || open) && text}
       </span>
     </div>
   );
