@@ -542,19 +542,21 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
         );
       })()}
 
-      <DetailsDisclosure label="System score details">
-        <dl className="grid grid-cols-3 gap-3">
-          {[
-            { label: "Avg", value: scoreAverage },
-            { label: "High", value: scoreHigh },
-            { label: "Low", value: scoreLow },
-          ].map(({ label, value }) => (
-            <div key={label}>
-              <dt className="mb-1 text-stealth-400">{periodLabel} {label}</dt>
-              <dd className="text-sm font-semibold text-stealth-200">{value.toFixed(1)}</dd>
-            </div>
-          ))}
-        </dl>
+      <DetailsDisclosure
+        label="System score details"
+        preview={scoreSeries.length > 0 && (
+          <span className="grid grid-cols-2 gap-3 tabular-nums">
+            <span>
+              <span className="block text-stealth-400">Average · {periodLabel}</span>
+              <span className="block font-semibold text-stealth-100">{scoreAverage.toFixed(1)}</span>
+            </span>
+            <span>
+              <span className="block text-stealth-400">Range · {periodLabel}</span>
+              <span className="block font-semibold text-stealth-100">{scoreLow.toFixed(1)}–{scoreHigh.toFixed(1)}</span>
+            </span>
+          </span>
+        )}
+      >
         <p>{systemSummary}</p>
       </DetailsDisclosure>
     </article>

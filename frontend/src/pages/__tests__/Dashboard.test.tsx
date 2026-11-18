@@ -101,8 +101,7 @@ describe("Dashboard", () => {
 
     fireEvent.change(live.getByRole("combobox", { name: "Topic" }), { target: { value: "markets" } });
     await waitFor(() => expect(liveFetch).toHaveBeenCalledWith(expect.stringContaining("view=focused&topic=markets"), expect.anything()));
-    fireEvent.click(views.getByRole("button", { name: "Wires" }));
-    await waitFor(() => expect(liveFetch).toHaveBeenCalledWith(expect.stringContaining("view=wire&topic=markets"), expect.anything()));
+    expect(views.queryByRole("button", { name: "Wires" })).toBeNull();
     fireEvent.click(views.getByRole("button", { name: "All News" }));
     await waitFor(() => expect(liveFetch).toHaveBeenCalledWith(expect.stringContaining("view=all&topic=markets"), expect.anything()));
     expect(within(await live.findByRole("list", { name: "Live headlines" })).getAllByRole("link")).toHaveLength(6);

@@ -12,9 +12,8 @@ const RETRY_MS = 15_000;
 const HOME_HEADLINE_LIMIT = 6;
 const HOVER_DELAY_MS = 180;
 const BUTTON = "field-button field-button-secondary disabled:cursor-not-allowed disabled:opacity-50";
-type View = "wire" | "focused" | "all";
+type View = "focused" | "all";
 const VIEWS: { value: View; label: string }[] = [
-  { value: "wire", label: "Wires" },
   { value: "focused", label: "Focused" },
   { value: "all", label: "All News" },
 ];
@@ -51,7 +50,6 @@ type Article = {
 type Snapshot = {
   updated_at: string | null;
   checked_label: string | null;
-  archive_error: string | null;
   read_interval: number;
   topics: Record<string, string>;
   page: number;
@@ -272,7 +270,7 @@ function WeightsEditor({ close, onSaved }: { close: () => void; onSaved: () => v
 }
 
 export default function LiveNewsPanel({ compact = false, inViewport }: { compact?: boolean; inViewport: boolean }) {
-  const [view, setView] = useState<View>(compact ? "focused" : "wire");
+  const [view, setView] = useState<View>(compact ? "focused" : "all");
   const [topic, setTopic] = useState("");
   const [when, setWhen] = useState("");
   const [search, setSearch] = useState("");
@@ -443,7 +441,6 @@ export default function LiveNewsPanel({ compact = false, inViewport }: { compact
               <span>{data.checked_label ? <>Feed snapshot <time dateTime={data.updated_at ?? undefined}>{data.checked_label}</time></> : "Waiting for the collector"} · {foreground ? `Updates every ${data.read_interval}s` : "Updates every minute"}</span>
             </div>
           )}
-          {data.archive_error && view === "wire" && <p className="text-sm text-stealth-300" role="status">{data.archive_error}</p>}
           {data.featured.length > 0 && (
             <section className="space-y-2" aria-labelledby="live-news-releases">
               <h3 id="live-news-releases" className="text-sm font-semibold text-stealth-100">Key releases</h3>

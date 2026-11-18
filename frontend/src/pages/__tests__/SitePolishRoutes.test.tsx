@@ -159,8 +159,8 @@ describe("site-polish route contracts", () => {
       page: 1, pages: 1, total: 1, first: 1, last: 1,
       sources: [], featured: [],
       articles: [{
-        id: "wire-1", title: "Fresh wire headline", url: "https://example.com/wire",
-        source: "Example wire", published_at: "2026-07-29T12:00:00Z",
+        id: "live-1", title: "Fresh live headline", url: "https://example.com/live",
+        source: "Example publisher", published_at: "2026-07-29T12:00:00Z",
         topic: "markets", priority: "Top", score: 61, reasons: [], summary: "", cached: false,
       }],
     }));
@@ -170,8 +170,9 @@ describe("site-polish route contracts", () => {
     fireEvent.click(screen.getByRole("button", { name: "Turn on live news" }));
     const view = await screen.findByRole("group", { name: "Live news view" });
     expect(view.classList.contains("segmented-control")).toBe(true);
-    expect(within(view).getByRole("button", { name: "Wires", pressed: true })).not.toBeNull();
-    expect(await screen.findByRole("link", { name: /Fresh wire headline/ })).toHaveProperty("target", "_blank");
+    expect(within(view).getByRole("button", { name: "All News", pressed: true })).not.toBeNull();
+    expect(within(view).queryByRole("button", { name: "Wires" })).toBeNull();
+    expect(await screen.findByRole("link", { name: /Fresh live headline/ })).toHaveProperty("target", "_blank");
     expect(liveFetch).toHaveBeenCalledWith("/live-news/activity", expect.objectContaining({ method: "POST" }));
     const details = screen.getByRole("button", { name: /Top priority.*Article preview/ });
     expect(details.getAttribute("aria-expanded")).toBe("false");

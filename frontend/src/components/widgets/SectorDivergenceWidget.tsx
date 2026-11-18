@@ -330,6 +330,69 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
         </div>
       </div>
 
+      <DetailsDisclosure
+        label="Sector ranks and rotation details"
+        className="mt-4"
+        preview={(
+          <span className="grid gap-2 sm:grid-cols-2">
+            <span>
+              <span className="block text-stealth-400">3-month leaders</span>
+              <span className="block font-semibold text-stealth-100">
+                {leaders.map((sector) => sector.sector_symbol).join(" · ") || "Unavailable"}
+              </span>
+            </span>
+            <span>
+              <span className="block text-stealth-400">Rank persistence</span>
+              <span className="block text-stealth-100">
+                {Object.keys(analytics.sectors ?? {}).length > 0
+                  ? `${persistenceCounts.improving} improving · ${persistenceCounts.stable} stable · ${persistenceCounts.weakening} weakening`
+                  : "Unavailable"}
+              </span>
+            </span>
+          </span>
+        )}
+      >
+        <p>{interpretation.description} {narrative}</p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="secondary-card p-4">
+            <div className="text-xs text-stealth-400">3M leadership</div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {leaders.map((sector) => (
+                <span key={sector.sector_symbol} className="rounded-md border border-stealth-700 bg-stealth-950/30 px-2 py-1 text-xs text-stealth-200">
+                  <strong>#{sector.horizons["3m"].stable_rank} {sector.sector_symbol}</strong>
+                  <span className="ml-1 text-stealth-500">{sector.horizons["3m"].stable_score.toFixed(0)}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="secondary-card p-4">
+            <div className="text-xs text-stealth-400">Rank persistence</div>
+            <div className="mt-3 grid grid-cols-3 gap-2 text-center tabular-nums">
+              <div><div className="text-xl font-semibold text-green-400">{persistenceCounts.improving}</div><div className="text-xs text-stealth-500">Improving</div></div>
+              <div><div className="text-xl font-semibold text-stealth-300">{persistenceCounts.stable}</div><div className="text-xs text-stealth-500">Stable</div></div>
+              <div><div className="text-xl font-semibold text-red-400">{persistenceCounts.weakening}</div><div className="text-xs text-stealth-500">Weakening</div></div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div className="text-xs uppercase tracking-wide text-stealth-500">Other rotation lenses</div>
+          <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+            {analytics.leadership_comparisons
+              .filter((comparison) => comparison.key !== PRIMARY_COMPARISON)
+              .map((comparison) => {
+                const value = latestComparisonValue(comparison);
+                return (
+                  <div key={comparison.key} className="rounded-lg border border-stealth-700 bg-stealth-950/20 px-3 py-2">
+                    <div className="truncate text-xs text-stealth-500">{comparison.title}</div>
+                    <div className="mt-1 text-xs font-semibold text-stealth-200">{formatLeadershipValue(value, comparison)}</div>
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+        <p className="text-stealth-400">{analytics.analytics_version.replace("sector_stability_", "Analytics ")}</p>
+      </DetailsDisclosure>
+
       <div className="secondary-card mt-4 p-3 sm:p-4">
         <div className="flex items-center justify-between gap-3">
           <div>
@@ -399,48 +462,6 @@ export default function SectorDivergenceWidget({ trendPeriod = 90, onInsight }: 
           <div className="flex h-44 items-center justify-center text-xs text-stealth-400">No oscillator history available.</div>
         )}
       </div>
-
-      <DetailsDisclosure label="Sector ranks and rotation details" className="mt-4">
-        <p>{interpretation.description} {narrative}</p>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="secondary-card p-4">
-            <div className="text-xs text-stealth-400">3M leadership</div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {leaders.map((sector) => (
-                <span key={sector.sector_symbol} className="rounded-md border border-stealth-700 bg-stealth-950/30 px-2 py-1 text-xs text-stealth-200">
-                  <strong>#{sector.horizons["3m"].stable_rank} {sector.sector_symbol}</strong>
-                  <span className="ml-1 text-stealth-500">{sector.horizons["3m"].stable_score.toFixed(0)}</span>
-                </span>
-              ))}
-            </div>
-          </div>
-          <div className="secondary-card p-4">
-            <div className="text-xs text-stealth-400">Rank persistence</div>
-            <div className="mt-3 grid grid-cols-3 gap-2 text-center tabular-nums">
-              <div><div className="text-xl font-semibold text-green-400">{persistenceCounts.improving}</div><div className="text-xs text-stealth-500">Improving</div></div>
-              <div><div className="text-xl font-semibold text-stealth-300">{persistenceCounts.stable}</div><div className="text-xs text-stealth-500">Stable</div></div>
-              <div><div className="text-xl font-semibold text-red-400">{persistenceCounts.weakening}</div><div className="text-xs text-stealth-500">Weakening</div></div>
-            </div>
-          </div>
-        </div>
-        <div>
-          <div className="text-xs uppercase tracking-wide text-stealth-500">Other rotation lenses</div>
-          <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
-            {analytics.leadership_comparisons
-              .filter((comparison) => comparison.key !== PRIMARY_COMPARISON)
-              .map((comparison) => {
-                const value = latestComparisonValue(comparison);
-                return (
-                  <div key={comparison.key} className="rounded-lg border border-stealth-700 bg-stealth-950/20 px-3 py-2">
-                    <div className="truncate text-xs text-stealth-500">{comparison.title}</div>
-                    <div className="mt-1 text-xs font-semibold text-stealth-200">{formatLeadershipValue(value, comparison)}</div>
-                  </div>
-                );
-              })}
-          </div>
-        </div>
-        <p className="text-stealth-400">{analytics.analytics_version.replace("sector_stability_", "Analytics ")}</p>
-      </DetailsDisclosure>
     </article>
   );
 }

@@ -252,6 +252,14 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
     BEAR: "text-red-400",
     MIXED: "text-orange-400",
   }[data.confirmation_state];
+  const confirmationLabel = data.direction_state === "UNKNOWN" ? "Unavailable" : {
+    BULL: "Bullish",
+    BEAR: "Bearish",
+    MIXED: "Mixed",
+  }[data.confirmation_state];
+  const gapConfidence = spreadAbsSeries.filter(Number.isFinite).length >= 4
+    ? getConfidenceFromSignal(primaryGapSignal)
+    : null;
 
   const signalColor = {
     STRONG: "text-cyan-400",
@@ -422,11 +430,77 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
           </span>
         </div>
       </div>
+      <DetailsDisclosure
+        label="Classic and modern signals"
+        preview={(
+          <span className="grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-3">
+            <span>
+              <span className="block text-stealth-400">Classic confirmation</span>
+              <span className={`block font-semibold ${confirmationLabel === "Unavailable" ? "text-stealth-300" : confirmColor}`}>{confirmationLabel}</span>
+            </span>
+            <span>
+              <span className="block text-stealth-400">Gap trend</span>
+              <span className="block font-semibold capitalize text-stealth-100">{gapConfidence ? spreadTrendPhrase : "Unavailable"}</span>
+            </span>
+            <span>
+              <span className="block text-stealth-400">Gap trend confidence</span>
+              <span className="block font-semibold capitalize text-stealth-100">{gapConfidence ?? "Unavailable"}</span>
+            </span>
+          </span>
+        )}
+      >
+        <p>{dowSummary}</p>
+        <p>A higher alignment score means the classic indexes and modern ETF proxies agree more closely.</p>
+        <p>Gap trend confidence reflects the strength and steadiness of the direction gap.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="secondary-card p-3 text-xs text-stealth-300">
+            <div className="text-xs uppercase tracking-wide text-stealth-500">Classic snapshot</div>
+            <div className="mt-2 space-y-1">
+              <div>
+                Direction: <span className={`font-semibold ${directionColor}`}>{data.direction_state}</span>
+              </div>
+              <div>
+                Stability: <span className={`font-semibold ${stabilityColor}`}>{stabilityLevel}</span>{" "}
+                ({stabilityScore.toFixed(1)})
+              </div>
+              <div>
+                Signal: <span className={`font-semibold ${signalColor}`}>{data.signal_strength}</span>
+              </div>
+              <div>
+                DJI/DJT/DJU: {data.components.dji_roc}% / {data.components.djt_roc}% / {data.components.dju_roc}%
+              </div>
+            </div>
+          </div>
+          <div className="secondary-card p-3 text-xs text-stealth-300">
+            <div className="text-xs uppercase tracking-wide text-stealth-500">Modern snapshot</div>
+            <div className="mt-2 space-y-1">
+              <div>
+                Direction: <span className={`font-semibold ${modernDirectionColor}`}>{data.modern_direction_state}</span>
+              </div>
+              <div>
+                Stability: <span className={`font-semibold ${modernStabilityColor}`}>{modernStabilityLevel}</span>{" "}
+                ({modernStabilityScore.toFixed(1)})
+              </div>
+              <div>
+                Signal: <span className={`font-semibold ${modernSignalColor}`}>{data.modern_signal_strength}</span>
+              </div>
+              <div>
+                DIA/IYT/XLU: {data.modern_components.dia_roc}% / {data.modern_components.iyt_roc}% / {data.modern_components.xlu_roc}%
+              </div>
+            </div>
+          </div>
+        </div>
+      </DetailsDisclosure>
+
       {chartHistory.length > 0 && (
         <div className="pt-2 border-t border-stealth-700">
-          <h4 className="text-sm font-semibold text-stealth-200 mb-3">
-            Market Direction Trends
-          </h4>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+            <h4 className="text-sm font-semibold text-stealth-200">Market Direction Trends</h4>
+            <div className="flex gap-3 text-xs text-stealth-300">
+              <span className="flex items-center gap-1.5"><span aria-hidden="true" className="w-4 border-t-2 border-blue-400" />Classic</span>
+              <span className="flex items-center gap-1.5"><span aria-hidden="true" className="w-4 border-t-2 border-dashed border-amber-400" />Modern</span>
+            </div>
+          </div>
           <div className="h-44">
             <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <LineChart
@@ -474,6 +548,7 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
                   yAxisId="primary"
                   stroke="#fbbf24"
                   strokeWidth={2}
+                  strokeDasharray="5 3"
                   dot={false}
                   connectNulls={false}
                   animationDuration={300}
@@ -483,55 +558,6 @@ const DowTheoryWidget = ({ trendPeriod = 90, onInsight }: DowTheoryWidgetProps) 
           </div>
         </div>
       )}
-
-      <DetailsDisclosure label="Classic and modern signals">
-        <p>{dowSummary}</p>
-        <p>A higher alignment score means the classic indexes and modern ETF proxies agree more closely.</p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="secondary-card p-3 text-xs text-stealth-300">
-            <div className="text-xs uppercase tracking-wide text-stealth-500">Classic snapshot</div>
-            <div className="mt-2 space-y-1">
-              <div>
-                Direction: <span className={`font-semibold ${directionColor}`}>{data.direction_state}</span>
-              </div>
-              <div>
-                Stability: <span className={`font-semibold ${stabilityColor}`}>{stabilityLevel}</span>{" "}
-                ({stabilityScore.toFixed(1)})
-              </div>
-              <div>
-                Confirmation: <span className={`font-semibold ${confirmColor}`}>{data.confirmation_state}</span>
-              </div>
-              <div>
-                Signal: <span className={`font-semibold ${signalColor}`}>{data.signal_strength}</span>
-              </div>
-              <div>
-                DJI/DJT/DJU: {data.components.dji_roc}% / {data.components.djt_roc}% / {data.components.dju_roc}%
-              </div>
-            </div>
-          </div>
-          <div className="secondary-card p-3 text-xs text-stealth-300">
-            <div className="text-xs uppercase tracking-wide text-stealth-500">Modern snapshot</div>
-            <div className="mt-2 space-y-1">
-              <div>
-                Direction: <span className={`font-semibold ${modernDirectionColor}`}>{data.modern_direction_state}</span>
-              </div>
-              <div>
-                Stability: <span className={`font-semibold ${modernStabilityColor}`}>{modernStabilityLevel}</span>{" "}
-                ({modernStabilityScore.toFixed(1)})
-              </div>
-              <div>
-                Confirmation: <span className={`font-semibold ${confirmColor}`}>{data.confirmation_state}</span>
-              </div>
-              <div>
-                Signal: <span className={`font-semibold ${modernSignalColor}`}>{data.modern_signal_strength}</span>
-              </div>
-              <div>
-                DIA/IYT/XLU: {data.modern_components.dia_roc}% / {data.modern_components.iyt_roc}% / {data.modern_components.xlu_roc}%
-              </div>
-            </div>
-          </div>
-        </div>
-      </DetailsDisclosure>
     </div>
   );
 };

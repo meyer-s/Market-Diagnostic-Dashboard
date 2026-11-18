@@ -84,8 +84,8 @@ interface AASWidgetProps {
 export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetProps) {
   const { data: aasData, loading } = useApi<AASData>('/aas/current');
   const { data: historyData } = useApi<{ data: AASHistoryPoint[] }>(`/aas/history?days=${parseInt(timeframe)}`);
-  const { data: metalsProjectionData } = useApi<MetalsProjectionResponse>('/precious-metals/projections/latest');
-  const { data: cryptoMarketData } = useApi<CryptoMarketOverviewResponse>('/crypto/market-overview?days=365');
+  const { data: metalsProjectionData, loading: metalsLoading } = useApi<MetalsProjectionResponse>('/precious-metals/projections/latest');
+  const { data: cryptoMarketData, loading: cryptoLoading } = useApi<CryptoMarketOverviewResponse>('/crypto/market-overview?days=365');
   const [metalsPercent, setMetalsPercent] = useState(50);
   const [cryptoPercent, setCryptoPercent] = useState(50);
   const [chartData, setChartData] = useState<HistoricalData[]>([]);
@@ -434,87 +434,25 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
           </div>
         </div>
 
-        {/* Historical Chart */}
-        <div className="mb-4">
-          <p className="text-xs text-stealth-400 mb-2">{parseInt(timeframe)}-Day Contribution Trend</p>
-          {chartData.length > 0 ? (
-            <div className="h-48">
-              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                <AreaChart
-                  accessibilityLayer
-                  aria-label={`${parseInt(timeframe)}-day Metals and Crypto contribution trend`}
-                  data={chartData}
-                  margin={{ top: 5, right: 5, left: -20, bottom: 20 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
-                  <XAxis 
-                    dataKey="date" 
-                    stroke={CHART_NEUTRAL.tick}
-                    tick={{ fontSize: 12 }}
-                    interval={Math.floor(Math.max(0, chartData.length / 4))}
-                  />
-                  <YAxis
-                    stroke={CHART_NEUTRAL.tick}
-                    tick={{ fontSize: 12 }}
-                    domain={[0, 100]}
-                  />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: CHART_NEUTRAL.tooltipBg,
-                      border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`,
-                      borderRadius: '0.5rem',
-                      fontSize: '12px'
-                    }}
-                    formatter={(value) => (value as number).toFixed(3)}
-                  />
-                  <Area 
-                    type="monotone" 
-                    dataKey="metals_component_score" 
-                    stackId="1" 
-                    fill={metalsFill}
-                    stroke={metalsColor}
-                    strokeWidth={1.5}
-                    fillOpacity={0.3}
-                    name="Metals Component"
-                  />
-                  <Area 
-                    type="monotone" 
-                    dataKey="crypto_component_score" 
-                    stackId="1" 
-                    fill={cryptoFill}
-                    stroke={cryptoColor}
-                    strokeWidth={1.5}
-                    fillOpacity={0.3}
-                    name="Crypto Component"
-                  />
-                  <Line 
-                    type="monotone" 
-                    dataKey="stability_score" 
-                    stroke="#34d399"
-                    strokeWidth={2}
-                    dot={false}
-                    name="Derived Stability"
-                  />
-                  <Line 
-                    type="monotone" 
-                    dataKey="sma20" 
-                    stroke={benchmarkColor}
-                    strokeWidth={3}
-                    dot={false}
-                    name="20-Day SMA"
-                    strokeDasharray="4 3"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <div className="h-48 flex items-center justify-center text-stealth-400 text-sm">
-              Loading chart data...
-            </div>
+        <DetailsDisclosure
+          label="Metals and crypto rankings"
+          preview={(
+            <span className="grid grid-cols-2 gap-3">
+              <span>
+                <span className="block text-stealth-400">Top metals</span>
+                <span className="block font-semibold text-stealth-100">
+                  {metalsRankings.slice(0, 2).map((metal) => metal.metal_name).join(" · ") || (metalsLoading ? "Loading…" : "Unavailable")}
+                </span>
+              </span>
+              <span>
+                <span className="block text-stealth-400">Top crypto</span>
+                <span className="block font-semibold text-stealth-100">
+                  {cryptoRankings.slice(0, 2).map((asset) => asset.name).join(" · ") || (cryptoLoading ? "Loading…" : "Unavailable")}
+                </span>
+              </span>
+            </span>
           )}
-        </div>
-
-        <DetailsDisclosure label="Metals and crypto rankings">
+        >
           <p>{aasSummary}</p>
           <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
             <Link
@@ -545,7 +483,7 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
                   ))
                 ) : (
                   <div className="rounded border border-stealth-700/80 bg-stealth-800/60 px-2.5 py-2 text-xs text-stealth-400">
-                    Loading metals ranking...
+                    {metalsLoading ? "Loading metals rankings…" : "Metals rankings unavailable."}
                   </div>
                 )}
               </div>
@@ -583,7 +521,7 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
                   ))
                 ) : (
                   <div className="rounded border border-stealth-700/80 bg-stealth-800/60 px-2.5 py-2 text-xs text-stealth-400">
-                    Loading crypto ranking...
+                    {cryptoLoading ? "Loading crypto rankings…" : "Crypto rankings unavailable."}
                   </div>
                 )}
               </div>
@@ -594,6 +532,86 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
             </Link>
           </div>
         </DetailsDisclosure>
+
+        {/* Historical Chart */}
+        <div className="my-4">
+          <p className="text-xs text-stealth-400 mb-2">{parseInt(timeframe)}-Day Contribution Trend</p>
+          {chartData.length > 0 ? (
+            <div className="h-48">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                <AreaChart
+                  accessibilityLayer
+                  aria-label={`${parseInt(timeframe)}-day Metals and Crypto contribution trend`}
+                  data={chartData}
+                  margin={{ top: 5, right: 5, left: -20, bottom: 20 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
+                  <XAxis
+                    dataKey="date"
+                    stroke={CHART_NEUTRAL.tick}
+                    tick={{ fontSize: 12 }}
+                    interval={Math.floor(Math.max(0, chartData.length / 4))}
+                  />
+                  <YAxis
+                    stroke={CHART_NEUTRAL.tick}
+                    tick={{ fontSize: 12 }}
+                    domain={[0, 100]}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: CHART_NEUTRAL.tooltipBg,
+                      border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`,
+                      borderRadius: '0.5rem',
+                      fontSize: '12px'
+                    }}
+                    formatter={(value) => (value as number).toFixed(3)}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="metals_component_score"
+                    stackId="1"
+                    fill={metalsFill}
+                    stroke={metalsColor}
+                    strokeWidth={1.5}
+                    fillOpacity={0.3}
+                    name="Metals Component"
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="crypto_component_score"
+                    stackId="1"
+                    fill={cryptoFill}
+                    stroke={cryptoColor}
+                    strokeWidth={1.5}
+                    fillOpacity={0.3}
+                    name="Crypto Component"
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="stability_score"
+                    stroke="#34d399"
+                    strokeWidth={2}
+                    dot={false}
+                    name="Derived Stability"
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="sma20"
+                    stroke={benchmarkColor}
+                    strokeWidth={3}
+                    dot={false}
+                    name="20-Day SMA"
+                    strokeDasharray="4 3"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="h-48 flex items-center justify-center text-stealth-400 text-sm">
+              Loading chart data...
+            </div>
+          )}
+        </div>
       </div>
   );
 }
