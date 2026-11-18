@@ -25,6 +25,7 @@ def test_corporate_par_workbook_keeps_last_completed_month_and_observed_tenors(m
         ("2Y", 5.03), ("5Y", 5.37), ("10Y", 5.79), ("30Y", 6.35),
     ]
     assert data["data_quality"] == {"partial": False, "stale": False}
+    assert [entry["period_label"] for entry in data["history"]] == ["Sep 2026 month-end"]
 
 
 def test_usda_schedule_preserves_effective_quarter_and_excludes_open_ended_bucket():
@@ -54,3 +55,26 @@ def test_usda_published_copy_becomes_stale_after_its_effective_quarter():
     assert active["data_quality"]["published_snapshot"]
     assert not active["data_quality"]["stale"]
     assert expired["data_quality"]["stale"]
+
+
+def test_municipal_offerings_keep_issue_dates_yield_basis_and_unquoted_maturities():
+    data = comparison.municipal_offering_curves(today=date(2026, 11, 18))
+    assert data["period_start"] == "2026-10-07"
+    assert [entry["period_start"] for entry in data["history"]] == ["2026-09-10", "2026-08-06"]
+    assert {"maturity": "25Y", "yield": 5.43, "basis": "Yield to first call"} in data["curve"]
+    assert not any(point["maturity"] == "20Y" for point in data["curve"])
+
+
+def test_wifia_estimate_uses_exact_slgs_terms_and_preserves_daily_history():
+    rows = [
+        {"record_date": day, "from": term, "rate": rate}
+        for day, rate in (("2026-11-16", "3.99"), ("2026-11-17", "4.03"), ("2026-11-19", "4.05"))
+        for term in ("02-00", "10-00", "10-03")
+    ]
+    data = comparison.parse_infrastructure_rates(rows, today=date(2026, 11, 18))
+    assert data["period_start"] == "2026-11-17"
+    assert data["curve"] == [{"maturity": "2Y", "yield": 4.04}, {"maturity": "10Y", "yield": 4.04}]
+    assert data["history"] == [{
+        "period_label": "Nov 16, 2026",
+        "curve": [{"maturity": "2Y", "yield": 4.0}, {"maturity": "10Y", "yield": 4.0}],
+    }]

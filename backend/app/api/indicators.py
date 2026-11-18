@@ -309,7 +309,7 @@ async def get_treasury_yield_curve(months: int = Query(12, ge=1, le=24)):
 @router.get("/indicators/BOND_MARKET_STABILITY/yield-curve/{comparison}")
 async def get_yield_curve_comparison(comparison: Comparison):
     """Return one dated source series for the optional Treasury chart overlays."""
-    cache_key = f"yield-curve-comparison:{comparison}"
+    cache_key = f"yield-curve-comparison-v2:{comparison}"
     snapshot = load_response_snapshot(cache_key)
     if snapshot is not None and snapshot.is_fresh(_COMPARISON_CACHE_TTL_SECONDS):
         return snapshot.payload

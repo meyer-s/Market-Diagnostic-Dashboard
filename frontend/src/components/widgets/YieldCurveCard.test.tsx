@@ -142,37 +142,53 @@ describe("YieldCurveCard", () => {
       source: { name: "U.S. Treasury HQM", url: "https://home.treasury.gov/hqm" },
       data_quality: { stale: false, partial: false },
       curve: [{ maturity: "2Y", yield: 4.75 }, { maturity: "10Y", yield: 5.63 }],
+      history: [{ period_label: "Jul 2026 month-end", curve: [{ maturity: "2Y", yield: 4.59 }] }],
     };
-    const publicLending = {
-      period_label: "Q3 2026",
-      source: { name: "USDA Rural Utilities Service", url: "https://www.rd.usda.gov/rates" },
-      data_quality: { stale: false, partial: false, published_snapshot: true },
-      curve: [{ maturity: "1Y", yield: 2.625 }, { maturity: "20Y", yield: 4.25 }],
+    const municipal = {
+      period_label: "Series D · Oct 07, 2026",
+      source: { name: "NYC official statement", url: "https://www.nyc.gov/official-statement.pdf" },
+      data_quality: { stale: false, partial: false },
+      curve: [{ maturity: "3Y", yield: 3.71 }, { maturity: "25Y", yield: 5.43, basis: "Yield to first call" }],
+    };
+    const infrastructure = {
+      period_label: "Sep 17, 2026",
+      state: "estimate",
+      source: { name: "EPA WIFIA methodology", url: "https://www.epa.gov/wifia" },
+      data_quality: { stale: false, partial: false },
+      curve: [{ maturity: "2Y", yield: 4.41 }, { maturity: "20Y", yield: 5.28 }],
     };
     useApiMock.mockImplementation((path: string) => ({
-      data: path.endsWith("/corporate") ? corporate : path.endsWith("/public-lending")
-        ? publicLending : path ? payload : null,
+      data: path.endsWith("/corporate") ? corporate : path.endsWith("/municipal")
+        ? municipal : path.endsWith("/infrastructure") ? infrastructure : path ? payload : null,
       loading: false, error: null, refetch: vi.fn(),
     }));
 
     render(<MemoryRouter><YieldCurveCard /></MemoryRouter>);
     const controls = within(screen.getByRole("group", { name: "Compare lending curves" }));
     const corporateToggle = controls.getByRole("button", { name: "Corporate bonds", pressed: false });
-    const publicToggle = controls.getByRole("button", { name: "Public lending", pressed: false });
+    const municipalToggle = controls.getByRole("button", { name: "Muni bonds", pressed: false });
+    const infrastructureToggle = controls.getByRole("button", { name: "Infrastructure loans", pressed: false });
     expect(screen.getAllByTestId("curve-series")).toHaveLength(11);
-    expect(useApiMock.mock.calls.every(([path]) => !/corporate|public-lending/.test(path))).toBe(true);
+    expect(useApiMock.mock.calls.every(([path]) => !/corporate|municipal|infrastructure/.test(path))).toBe(true);
 
     fireEvent.click(corporateToggle);
-    fireEvent.click(publicToggle);
-    const chart = screen.getByLabelText(/Onion-skinned Treasury yield curves.*HQM corporate.*USDA public lending/);
-    expect(screen.getAllByTestId("curve-series")).toHaveLength(13);
+    fireEvent.click(municipalToggle);
+    fireEvent.click(infrastructureToggle);
+    const chart = screen.getByLabelText(/Onion-skinned Treasury yield curves.*HQM corporate.*NYC tax-exempt GO.*EPA WIFIA/);
+    expect(screen.getAllByTestId("curve-series")).toHaveLength(15);
+    expect(screen.getByText("corporate_history_1:HQM corporate · Jul 2026 month-end")).toBeTruthy();
     expect(JSON.parse(chart.getAttribute("data-points") ?? "[]")).toContainEqual(
-      expect.objectContaining({ maturity: "2Y", corporate: 4.75, "public-lending": null }),
+      expect.objectContaining({ maturity: "2Y", corporate: 4.75, corporate_history_1: 4.59, municipal: null, infrastructure: 4.41 }),
     );
-    expect(screen.getByRole("link", { name: "USDA Rural Utilities Service" })).toBeTruthy();
-    expect(screen.getByText("2.625%")).toBeTruthy();
+    expect(JSON.parse(chart.getAttribute("data-points") ?? "[]")).toContainEqual(
+      expect.objectContaining({ maturity: "25Y", municipal: 5.43 }),
+    );
+    expect(screen.getByRole("link", { name: "NYC official statement" })).toBeTruthy();
+    expect(screen.getByText("Yield to first call")).toBeTruthy();
+    expect(screen.getByText("HQM corporate history")).toBeTruthy();
     fireEvent.click(corporateToggle);
-    expect(screen.getAllByTestId("curve-series")).toHaveLength(12);
-    expect(publicToggle.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getAllByTestId("curve-series")).toHaveLength(13);
+    expect(municipalToggle.getAttribute("aria-pressed")).toBe("true");
+    expect(infrastructureToggle.getAttribute("aria-pressed")).toBe("true");
   });
 });

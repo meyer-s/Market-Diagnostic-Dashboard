@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import calendar
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from math import isfinite
 import re
 from typing import Literal
@@ -13,13 +13,22 @@ from lxml import etree, html
 import xlrd
 
 
-Comparison = Literal["corporate", "public-lending"]
+Comparison = Literal["corporate", "public-lending", "municipal", "infrastructure"]
 CORPORATE_SOURCE = (
     "https://home.treasury.gov/data/treasury-coupon-issues-and-corporate-bond-yield-curve/"
     "corporate-bond-yield-curve"
 )
 CORPORATE_WORKBOOK = "https://home.treasury.gov/system/files/226/hqmeom_qh_pars.xls"
 PUBLIC_LENDING_SOURCE = "https://www.rd.usda.gov/programs-services/services/rural-utilities-loan-interest-rates"
+WIFIA_SOURCE = "https://www.epa.gov/wifia/wifia-frequent-questions"
+SLGS_SOURCE = "https://fiscaldata.treasury.gov/datasets/slgs-daily-rate-table/"
+_SLGS_API = (
+    "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/"
+    "v1/accounting/od/slgs_time_deposit_rates"
+)
+_WIFIA_TENORS = {f"{years:02d}-00": years for years in (1, 2, 3, 5, 7, 10, 20, 30)}
+_NYC_STATEMENTS = "https://www.nyc.gov/assets/investorrelations/downloads/pdf/go-bonds-statements/2027"
+_HISTORY_LIMIT = 4
 _EASTERN = ZoneInfo("America/New_York")
 _CORPORATE_TENORS = (2, 5, 10, 30)
 _PUBLIC_TENORS = (1, 2, 3, 5, 7, 10, 20)
@@ -30,6 +39,17 @@ _QUARTER = re.compile(r"([1-4])(?:st|nd|rd|th)\s+Quarter\s+of\s+(?:CY\s+)?(20\d{
 _PUBLIC_SNAPSHOT_PERIOD = date(2026, 10, 1)
 _PUBLIC_SNAPSHOT_VALUES = {1: 2.500, 2: 2.625, 3: 2.625, 5: 2.875, 7: 3.125, 10: 3.500, 20: 4.375}
 
+# Tax-exempt NYC GO offering yields from the inside covers of the official statements.
+# Maturity buckets use maturity year minus issue year. Keep the stated yield basis,
+# including yield to first call where disclosed. Price-only rows are omitted.
+_NYC_GO_ISSUES = (
+    (date(2026, 10, 7), "Series D", "nycgo-2027def.pdf",
+     {2: 3.55, 3: 3.71, 5: 3.96, 7: 4.17, 10: 4.37, 15: 4.91, 25: 5.43}, (15, 25)),
+    (date(2026, 9, 10), "Series B-1", "nycgo-2027bc.pdf",
+     {2: 2.95, 3: 3.11, 5: 3.38, 7: 3.63, 10: 3.96, 15: 4.52}, (15,)),
+    (date(2026, 8, 6), "Series A", "nycgo-2027a.pdf",
+     {2: 2.70, 3: 2.82, 5: 3.08, 7: 3.30, 10: 3.61, 15: 4.17, 20: 4.48}, (15, 20)),
+)
 
 class ComparisonUnavailable(RuntimeError):
     """The publisher did not return a recognizable comparison series."""
@@ -69,31 +89,37 @@ def parse_corporate_par_workbook(content: bytes, *, today: date) -> dict:
         if not first_data_row:
             raise ComparisonUnavailable("Treasury HQM maturity headers were not found.")
 
-        latest: tuple[date, dict[int, float]] | None = None
+        months = {}
         for index in range(first_data_row, sheet.nrows):
             row = sheet.row_values(index)
             try:
                 period = datetime.strptime(str(row[0]).strip(), "%b %Y").date()
             except ValueError:
                 continue
-            if _month_end(period) > today or latest and period <= latest[0]:
+            if _month_end(period) > today:
                 continue
             values = {
                 tenor: value for tenor, column in columns.items()
                 if (value := _rate(row[column])) is not None
             }
             if len(values) >= 2:
-                latest = period, values
+                months[period] = values
 
-    if latest is None:
+    if not months:
         raise ComparisonUnavailable("Treasury HQM returned no usable end-of-month par yields.")
-    period, values = latest
+    periods = sorted(months, reverse=True)
+    period = periods[0]
+    values = months[period]
     end = _month_end(period)
     return {
         "period_start": period.isoformat(),
         "period_end": end.isoformat(),
         "period_label": f"{period:%b %Y} month-end",
         "curve": _curve(values),
+        "history": [
+            {"period_label": f"{month:%b %Y} month-end", "curve": _curve(months[month])}
+            for month in periods[1:_HISTORY_LIMIT + 1]
+        ],
         "source": {"name": "U.S. Treasury HQM", "url": CORPORATE_SOURCE},
         "data_quality": {
             "stale": (today - end).days > 62,
@@ -163,13 +189,88 @@ def published_public_lending_snapshot(*, today: date | None = None) -> dict | No
     return _public_payload(_PUBLIC_SNAPSHOT_PERIOD, _PUBLIC_SNAPSHOT_VALUES, today=today, published_snapshot=True)
 
 
+def municipal_offering_curves(*, today: date) -> dict:
+    issues = []
+    for period, label, filename, values, to_call in _NYC_GO_ISSUES:
+        if period > today:
+            continue
+        issues.append({
+            "period_start": period.isoformat(),
+            "period_end": period.isoformat(),
+            "period_label": f"{label} · {period:%b %d, %Y}",
+            "curve": [
+                {**point, "basis": "Yield to first call"} if int(point["maturity"][:-1]) in to_call else point
+                for point in _curve(values)
+            ],
+            "source": {"name": "NYC official statement", "url": f"{_NYC_STATEMENTS}/{filename}"},
+        })
+    if not issues:
+        raise ComparisonUnavailable("No reviewed municipal offerings for this date.")
+    latest, *history = issues
+    return {**latest, "history": history, "data_quality": {"stale": False, "partial": False}}
+
+
+def parse_infrastructure_rates(rows: list[dict], *, today: date) -> dict:
+    rates_by_day: dict[date, dict[int, float]] = {}
+    for row in rows:
+        try:
+            day = date.fromisoformat(row["record_date"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        term = _WIFIA_TENORS.get(row.get("from"))
+        rate = _rate(row.get("rate"))
+        if term is None or rate is None or day > today:
+            continue
+        # EPA's estimate adds 1 basis point to the matching SLGS time-deposit rate.
+        rates_by_day.setdefault(day, {})[term] = round(rate + 0.01, 2)
+    days = sorted((day for day, rates in rates_by_day.items() if len(rates) >= 2), reverse=True)
+    if not days:
+        raise ComparisonUnavailable("Treasury did not return usable WIFIA input rates.")
+    latest = days[0]
+    return {
+        "period_start": latest.isoformat(),
+        "period_end": latest.isoformat(),
+        "period_label": f"{latest:%b %d, %Y}",
+        "curve": _curve(rates_by_day[latest]),
+        "history": [
+            {"period_label": f"{day:%b %d, %Y}", "curve": _curve(rates_by_day[day])}
+            for day in days[1:_HISTORY_LIMIT + 1]
+        ],
+        "source": {"name": "EPA WIFIA methodology", "url": WIFIA_SOURCE},
+        "input_source": {"name": "Treasury SLGS rates", "url": SLGS_SOURCE},
+        "data_quality": {
+            "stale": (today - latest).days > 7,
+            "partial": len(rates_by_day[latest]) != len(_WIFIA_TENORS),
+        },
+    }
+
+
 async def fetch_curve_comparison(comparison: Comparison) -> dict:
+    today = datetime.now(_EASTERN).date()
+    if comparison == "municipal":
+        return municipal_offering_curves(today=today)
+    if comparison == "infrastructure":
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.get(_SLGS_API, params={
+                    "fields": "record_date,from,rate",
+                    "filter": f"record_date:gte:{today - timedelta(days=21)},from:in:({','.join(_WIFIA_TENORS)})",
+                    "page[size]": "250",
+                })
+                response.raise_for_status()
+            rows = response.json()["data"]
+            if not isinstance(rows, list):
+                raise ValueError("SLGS data is not a table.")
+        except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
+            raise ComparisonUnavailable("Could not read Treasury SLGS time-deposit rates.") from exc
+        return parse_infrastructure_rates(rows, today=today)
+
     url = CORPORATE_WORKBOOK if comparison == "corporate" else PUBLIC_LENDING_SOURCE
     parse = parse_corporate_par_workbook if comparison == "corporate" else parse_public_lending_schedule
     try:
         async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
             response = await client.get(url)
             response.raise_for_status()
-        return await asyncio.to_thread(parse, response.content, today=datetime.now(_EASTERN).date())
+        return await asyncio.to_thread(parse, response.content, today=today)
     except (httpx.HTTPError, xlrd.XLRDError, etree.LxmlError, ValueError) as exc:
         raise ComparisonUnavailable(f"Could not read the {comparison} publisher data.") from exc

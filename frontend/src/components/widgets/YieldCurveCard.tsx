@@ -16,6 +16,7 @@ import { useApi } from "../../hooks/useApi";
 interface CurvePoint {
   maturity: string;
   yield: number;
+  basis?: string;
 }
 
 interface CurveEntry {
@@ -23,13 +24,19 @@ interface CurveEntry {
   curve: CurvePoint[];
 }
 
-interface ComparisonCurve {
+interface ComparisonObservation {
+  period_label: string;
+  curve: CurvePoint[];
+  source?: { name: string; url: string };
+}
+
+interface ComparisonCurve extends ComparisonObservation {
   period_start: string;
   period_end: string;
-  period_label: string;
   source: { name: string; url: string };
+  input_source?: { name: string; url: string };
   data_quality: { stale: boolean; partial: boolean; published_snapshot?: boolean };
-  curve: CurvePoint[];
+  history?: ComparisonObservation[];
 }
 
 interface YieldCurveResponse {
@@ -91,16 +98,29 @@ const COMPARISONS = [
     color: "#f0abfc",
     dash: "6 3",
     description: "Treasury HQM month-end investment-grade corporate par yields at 2Y, 5Y, 10Y and 30Y.",
+    historyLabel: "earlier month-ends",
   },
   {
-    key: "public-lending",
-    label: "Public lending",
-    lineName: "USDA public lending",
+    key: "municipal",
+    label: "Muni bonds",
+    lineName: "NYC tax-exempt GO",
     color: "#6ee7b7",
     dash: "2 4",
-    description: "USDA municipal-rate schedule for eligible rural electric loans. Tenors are approximate calendar-year terms through 20Y.",
+    description: "Selected NYC general-obligation offerings. Yields are tax-exempt, quoted at issuance, and may be to first call. Terms are approximate calendar-year buckets.",
+    historyLabel: "earlier offerings",
+  },
+  {
+    key: "infrastructure",
+    label: "Infrastructure loans",
+    lineName: "EPA WIFIA benchmark",
+    color: "#fb923c",
+    dash: "8 3 2 3",
+    description: "Estimated federal water infrastructure loan rates using SLGS plus 1 bp by weighted-average loan life. Actual rates are set at closing.",
+    historyLabel: "earlier rate dates",
   },
 ] as const;
+const HISTORY_OPACITY = [0.48, 0.34, 0.26, 0.2];
+const maturityMonths = (label: string) => parseInt(label, 10) * (label.endsWith("Y") ? 12 : 1);
 
 const formatObservationDate = (value?: string) => {
   if (!value) return "Date unavailable";
@@ -115,15 +135,16 @@ const formatObservationDate = (value?: string) => {
 };
 
 const formatRate = (value: number | null) => value === null ? "—" : `${value.toFixed(2)}%`;
-const formatCurveValue = (value: number, key?: string) => `${value.toFixed(key === "public-lending" ? 3 : 2)}%`;
+const formatCurveValue = (value: number) => `${value.toFixed(2)}%`;
 
-function CurveValues({ points, series }: { points: CurvePoint[]; series?: string }) {
+function CurveValues({ points }: { points: CurvePoint[] }) {
   return (
     <dl className="grid grid-cols-2 gap-x-5 gap-y-2 pb-2 sm:grid-cols-4">
       {points.map((point) => (
-        <div key={point.maturity} className="flex items-baseline justify-between gap-2 border-b border-stealth-800 py-1">
+        <div key={point.maturity} className="grid grid-cols-[auto_1fr] items-baseline gap-x-2 border-b border-stealth-800 py-1">
           <dt className="text-stealth-400">{point.maturity}</dt>
-          <dd className="font-mono font-semibold tabular-nums text-stealth-100">{formatCurveValue(point.yield, series)}</dd>
+          <dd className="text-right font-mono font-semibold tabular-nums text-stealth-100">{formatCurveValue(point.yield)}</dd>
+          {point.basis && <dd className="col-span-2 text-xs text-stealth-300">{point.basis}</dd>}
         </div>
       ))}
     </dl>
@@ -163,7 +184,7 @@ const renderCurveTooltip = ({ active, payload, label }: CurveTooltipProps) => {
   if (!active || !payload?.length) return null;
 
   const visibleItems = payload
-    .filter((item) => typeof item.value === "number")
+    .filter((item) => typeof item.value === "number" && !String(item.dataKey).includes("_history_"))
     .sort((left, right) => getTooltipOrder(left.dataKey) - getTooltipOrder(right.dataKey));
   if (!visibleItems.length) return null;
 
@@ -195,7 +216,7 @@ const renderCurveTooltip = ({ active, payload, label }: CurveTooltipProps) => {
                   {item.name ?? "Curve"}
                 </span>
                 <span className="font-mono font-semibold tabular-nums text-stealth-100">
-                  {formatCurveValue(Number(item.value), String(item.dataKey))}
+                  {formatCurveValue(Number(item.value))}
                 </span>
               </div>
             </Fragment>
@@ -215,21 +236,24 @@ const describeSlope = (spread: number | null) => {
 
 export default function YieldCurveCard() {
   const [showCorporate, setShowCorporate] = useState(false);
-  const [showPublicLending, setShowPublicLending] = useState(false);
+  const [showMunicipal, setShowMunicipal] = useState(false);
+  const [showInfrastructure, setShowInfrastructure] = useState(false);
   const { data, loading, error, refetch } = useApi<YieldCurveResponse>(
     "/indicators/BOND_MARKET_STABILITY/yield-curve?months=12",
     { timeoutMs: 50_000 },
   );
   const corporate = useApi<ComparisonCurve>(showCorporate ? `${COMPARISON_PATH}/corporate` : "");
-  const publicLending = useApi<ComparisonCurve>(showPublicLending ? `${COMPARISON_PATH}/public-lending` : "");
+  const municipal = useApi<ComparisonCurve>(showMunicipal ? `${COMPARISON_PATH}/municipal` : "");
+  const infrastructure = useApi<ComparisonCurve>(showInfrastructure ? `${COMPARISON_PATH}/infrastructure` : "");
   const comparisons = [
     { ...COMPARISONS[0], enabled: showCorporate, toggle: setShowCorporate, request: corporate },
-    { ...COMPARISONS[1], enabled: showPublicLending, toggle: setShowPublicLending, request: publicLending },
+    { ...COMPARISONS[1], enabled: showMunicipal, toggle: setShowMunicipal, request: municipal },
+    { ...COMPARISONS[2], enabled: showInfrastructure, toggle: setShowInfrastructure, request: infrastructure },
   ];
   const loadedComparisons = comparisons.flatMap((item) => {
     const series = item.request.data;
     return item.enabled && series?.curve?.length
-      ? [{ ...item, series, values: new Map(series.curve.map((point) => [point.maturity, point.yield])) }]
+      ? [{ ...item, series }]
       : [];
   });
 
@@ -359,9 +383,21 @@ export default function YieldCurveCard() {
     { label: "10Y", value: y10, prior: previousMap.get("10Y") ?? null, context: "Growth + inflation" },
     { label: "30Y", value: y30, prior: previousMap.get("30Y") ?? null, context: "Long-duration" },
   ];
-  const chartData = onionSkin.chartData.map((row) => ({
-    ...row,
-    ...Object.fromEntries(loadedComparisons.map(({ key, values }) => [key, values.get(String(row.maturity)) ?? null])),
+  const comparisonLines = loadedComparisons.flatMap(({ key, lineName, color, dash, series }) =>
+    [series, ...(series.history ?? [])].map((observation, age) => ({
+      key: age === 0 ? key : `${key}_history_${age}`,
+      name: `${lineName} · ${observation.period_label}`,
+      values: new Map(observation.curve.map((point) => [point.maturity, point.yield])),
+      age, color, dash,
+    })),
+  );
+  const treasuryRows = new Map(onionSkin.chartData.map((row) => [String(row.maturity), row]));
+  const maturities = [...new Set([...MATURITY_ORDER, ...comparisonLines.flatMap(({ values }) => [...values.keys()])])]
+    .sort((left, right) => maturityMonths(left) - maturityMonths(right));
+  const chartData = maturities.map((maturity) => ({
+    ...treasuryRows.get(maturity),
+    maturity,
+    ...Object.fromEntries(comparisonLines.map(({ key, values }) => [key, values.get(maturity) ?? null])),
   }));
   const chartComparisons = loadedComparisons.map(({ lineName, series }) => `${lineName} (${series.period_label})`);
 
@@ -482,16 +518,18 @@ export default function YieldCurveCard() {
                   />
                 );
               })}
-              {loadedComparisons.map(({ key, color, dash, lineName, series }) => (
+              {[...comparisonLines].sort((left, right) => right.age - left.age).map(({ key, name, color, dash, age }) => (
                 <Line
                   key={key}
                   type="linear"
                   dataKey={key}
                   stroke={color}
-                  strokeWidth={2.4}
+                  strokeWidth={age === 0 ? 2.4 : 1.6}
+                  strokeOpacity={age === 0 ? 1 : HISTORY_OPACITY[age - 1]}
                   strokeDasharray={dash}
-                  dot={{ r: 3, fill: color }}
-                  name={`${lineName} · ${series.period_label}`}
+                  dot={age === 0 ? { r: 3, fill: color } : false}
+                  activeDot={age === 0}
+                  name={name}
                   connectNulls
                   isAnimationActive={false}
                 />
@@ -517,7 +555,7 @@ export default function YieldCurveCard() {
 
         {comparisons.some(({ enabled }) => enabled) && (
           <ul className="mt-3 space-y-2 text-xs leading-relaxed text-stealth-300" aria-label="Comparison sources and dates">
-            {comparisons.filter(({ enabled }) => enabled).map(({ key, label, description, request }) => (
+            {comparisons.filter(({ enabled }) => enabled).map(({ key, label, description, historyLabel, request }) => (
               <li key={key}>
                 {request.loading ? <span role="status">Loading {label.toLowerCase()} curve…</span> : request.error || !request.data?.curve?.length ? (
                   <div className="flex flex-wrap items-center gap-2">
@@ -531,6 +569,11 @@ export default function YieldCurveCard() {
                     <a href={request.data.source.url} target="_blank" rel="noreferrer" className="font-semibold text-stealth-200 underline underline-offset-4">
                       {request.data.source.name}
                     </a>
+                    {request.data.input_source && (
+                      <>{" · "}<a href={request.data.input_source.url} target="_blank" rel="noreferrer" className="font-semibold text-stealth-200 underline underline-offset-4">{request.data.input_source.name}</a></>
+                    )}
+                    {!!request.data.history?.length && <span className="block">{request.data.history.length} {historyLabel} shown as faded curves.</span>}
+                    {key === "municipal" && <span className="block">Issuer examples from reviewed statements, with updates added as offerings are reviewed.</span>}
                     {request.data.data_quality.published_snapshot && <span className="block">Verified published schedule. Automatic refresh unavailable.</span>}
                     {request.data.data_quality.stale && <span className="block text-amber-200">Older data. Check the reporting period above.</span>}
                     {request.data.data_quality.partial && <span className="block text-amber-200">Some maturity points are missing.</span>}
@@ -540,7 +583,7 @@ export default function YieldCurveCard() {
             ))}
           </ul>
         )}
-        {loadedComparisons.length > 0 && <p className="mt-2 text-xs text-stealth-300">Dates and rate types differ by series. Dots mark reported tenors.</p>}
+        {loadedComparisons.length > 0 && <p className="mt-2 text-xs text-stealth-300">Dates, rate types, and tax treatment differ by series. Dots mark the latest plotted points.</p>}
 
         <details className="mt-3 border-t border-stealth-700 pt-3 text-sm text-stealth-300">
           <summary className="min-h-11 cursor-pointer py-3 font-semibold text-stealth-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">
@@ -550,7 +593,21 @@ export default function YieldCurveCard() {
           {loadedComparisons.map(({ key, lineName, series }) => (
             <div key={key} className="mt-3">
               <p className="mb-1 font-semibold text-stealth-200">{lineName} · {series.period_label}</p>
-              <CurveValues points={series.curve} series={key} />
+              <CurveValues points={series.curve} />
+              {!!series.history?.length && (
+                <details className="mt-2 border-b border-stealth-700 pb-2">
+                  <summary className="cursor-pointer py-2 text-xs font-semibold text-stealth-200">{lineName} history</summary>
+                  {series.history.map((entry) => (
+                    <div key={entry.period_label} className="mt-2">
+                      <p className="mb-1 text-xs text-stealth-300">
+                        {entry.period_label}
+                        {entry.source && <>{" · "}<a href={entry.source.url} target="_blank" rel="noreferrer" className="underline underline-offset-4">{entry.source.name}</a></>}
+                      </p>
+                      <CurveValues points={entry.curve} />
+                    </div>
+                  ))}
+                </details>
+              )}
             </div>
           ))}
         </details>
