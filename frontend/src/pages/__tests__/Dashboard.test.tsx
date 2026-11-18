@@ -50,12 +50,15 @@ describe("Dashboard", () => {
     cleanup();
     localStorage.removeItem("live-news:dashboard");
     vi.clearAllMocks();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it("starts enabled, loads in view, and remembers when the compact feed is turned off", async () => {
     apiFetchMock.mockResolvedValue([]);
     localStorage.removeItem("live-news:dashboard");
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
     let setIntersection = (_visible: boolean) => {};
     vi.stubGlobal("IntersectionObserver", class {
       constructor(callback: IntersectionObserverCallback) {
@@ -103,8 +106,17 @@ describe("Dashboard", () => {
     fireEvent.click(views.getByRole("button", { name: "All News" }));
     await waitFor(() => expect(liveFetch).toHaveBeenCalledWith(expect.stringContaining("view=all&topic=markets"), expect.anything()));
     expect(within(await live.findByRole("list", { name: "Live headlines" })).getAllByRole("link")).toHaveLength(6);
-    act(() => setIntersection(false));
+    vi.useFakeTimers();
+    await act(async () => setIntersection(false));
     expect(live.getByRole("list", { name: "Live headlines" })).toBeTruthy();
+    const requests = liveFetch.mock.calls.length;
+    await act(async () => vi.advanceTimersByTimeAsync(59_000));
+    expect(liveFetch.mock.calls).toHaveLength(requests);
+    await act(async () => vi.advanceTimersByTimeAsync(1_000));
+    expect(liveFetch.mock.calls.length).toBeGreaterThan(requests);
+    expect(liveFetch).toHaveBeenCalledWith("/live-news/activity", expect.objectContaining({
+      headers: { "X-Live-News": "1", "X-Live-News-Mode": "background" },
+    }));
     fireEvent.click(live.getByRole("button", { name: "Turn off live news" }));
     expect(live.queryByRole("list", { name: "Live headlines" })).toBeNull();
     expect(localStorage.getItem("live-news:dashboard")).toBe("off");

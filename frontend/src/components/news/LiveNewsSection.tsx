@@ -14,22 +14,18 @@ export default function LiveNewsSection({ compact = false }: { compact?: boolean
       return true;
     }
   });
-  const [viewport, setViewport] = useState({ seen: false, visible: false });
+  const [inViewport, setInViewport] = useState(false);
   const sectionRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     if (!enabled || !sectionRef.current) return;
     if (typeof IntersectionObserver === "undefined") {
-      setViewport({ seen: true, visible: true });
+      setInViewport(true);
       return;
     }
 
     const observer = new IntersectionObserver(([entry]) => {
-      if (!entry) return;
-      setViewport(({ seen }) => ({
-        seen: seen || entry.isIntersecting,
-        visible: entry.isIntersecting,
-      }));
+      if (entry) setInViewport(entry.isIntersecting);
     });
     observer.observe(sectionRef.current);
     return () => observer.disconnect();
@@ -38,7 +34,7 @@ export default function LiveNewsSection({ compact = false }: { compact?: boolean
   function toggle() {
     const next = !enabled;
     setEnabled(next);
-    setViewport({ seen: false, visible: false });
+    setInViewport(false);
     try {
       window.localStorage.setItem(storageKey, next ? "on" : "off");
     } catch {
@@ -64,9 +60,9 @@ export default function LiveNewsSection({ compact = false }: { compact?: boolean
         </div>
       </div>
       <div id={`${id}-panel`} hidden={!enabled}>
-        {enabled && viewport.seen && (
+        {enabled && (
           <Suspense fallback={<div className="mt-4"><LoadingState message="Loading live news." /></div>}>
-            <LiveNewsPanel compact={compact} inViewport={viewport.visible} />
+            <LiveNewsPanel compact={compact} inViewport={inViewport} />
           </Suspense>
         )}
       </div>

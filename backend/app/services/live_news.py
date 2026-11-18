@@ -39,6 +39,8 @@ VIEW_REFRESH_SECONDS = 5
 FEED_WORKERS = 4
 MIN_SOURCE_INTERVAL = 20
 ACTIVE_SECONDS = 45
+BACKGROUND_ACTIVE_SECONDS = 135
+BACKGROUND_SOURCE_INTERVAL = 120
 JANITOR_SECONDS = 300
 MAX_FEED_STORIES = 250
 MAX_ARCHIVE_STORIES = 5000
@@ -829,16 +831,30 @@ class News:
         self.wakeup = Event()
         self.activity_lock = Lock()
         self.active_until = 0.0
+        self.foreground_until = 0.0
         self.preview_slots = BoundedSemaphore(2)
         self.archive_error = ""
 
-    def renew(self):
+    def renew(self, *, background=False):
         with self.activity_lock:
-            self.active_until = monotonic() + ACTIVE_SECONDS
+            now = monotonic()
+            lease = BACKGROUND_ACTIVE_SECONDS if background else ACTIVE_SECONDS
+            self.active_until = max(self.active_until, now + lease)
+            if not background:
+                self.foreground_until = now + ACTIVE_SECONDS
         self.wakeup.set()
 
     def active(self):
-        return monotonic() < self.active_until
+        return self.activity_mode() != "idle"
+
+    def activity_mode(self):
+        with self.activity_lock:
+            now = monotonic()
+            if now < self.foreground_until:
+                return "foreground"
+            if now < self.active_until:
+                return "background"
+            return "idle"
 
     def refresh(self):
         with ThreadPoolExecutor(max_workers=FEED_WORKERS) as pool, ExitStack() as cleanup:
@@ -854,6 +870,7 @@ class News:
                 self.archive_error = "Archive storage is unavailable."
                 archive = None
             next_poll = dict.fromkeys(SOURCES, 0.0)
+            last_requested = {}
             pending = {}
             next_log = 0.0
             next_cleanup = monotonic() + JANITOR_SECONDS
@@ -876,13 +893,20 @@ class News:
                         except sqlite3.Error:
                             self.archive_error = "Archive cleanup is delayed."
                     next_cleanup = started + JANITOR_SECONDS
-                active = self.active()
-                due = sorted((source for source, deadline in next_poll.items()
-                              if active and source not in pending and deadline <= started),
+                mode = self.activity_mode()
+                deadlines = {}
+                if mode != "idle":
+                    deadlines = {
+                        source: max(deadline, last_requested[source] + BACKGROUND_SOURCE_INTERVAL)
+                        if mode == "background" and source in last_requested else deadline
+                        for source, deadline in next_poll.items() if source not in pending
+                    }
+                due = sorted((source for source, deadline in deadlines.items() if deadline <= started),
                              key=lambda source: source.interval)
                 for source in due[:FEED_WORKERS - len(pending)]:
                     pending[source] = pool.submit(fetch, source, previous[source]), started
-                idle = [deadline for source, deadline in next_poll.items() if active and source not in pending]
+                    last_requested[source] = started
+                idle = [deadline for source, deadline in deadlines.items() if source not in pending]
                 timeout = min(5, max(0, min(idle, default=started + 5) - started))
                 if len(pending) == FEED_WORKERS:
                     timeout = 5
@@ -1033,15 +1057,17 @@ def snapshot_payload(stories, statuses, updated, topic, view, scores, params, ar
     return json.dumps(result, ensure_ascii=False).encode()
 
 
-def status_payload(statuses, updated, stories, all_count, wire_count, archive_error):
+def status_payload(statuses, updated, stories, all_count, wire_count, archive_error, mode):
     now = now_utc()
     result = {"last_update": updated.isoformat() if updated else None,
               "stories": len(stories), "all_stories": all_count, "wire_stories": wire_count,
-              "wire_archive_error": archive_error or None, "sources": []}
+              "wire_archive_error": archive_error or None,
+              "activity_mode": mode, "active": mode != "idle", "sources": []}
+    cadence_floor = BACKGROUND_SOURCE_INTERVAL if mode == "background" else MIN_SOURCE_INTERVAL
     for source, status in statuses.items():
         result["sources"].append({
             "name": display_source(source), "url": source.url, "wire": source.wire,
-            "poll_seconds": max(MIN_SOURCE_INTERVAL, source.interval, status.cache_seconds),
+            "poll_seconds": max(cadence_floor, source.interval, status.cache_seconds),
             "last_checked": status.checked.isoformat() if status.checked else None,
             "state": source_state(source, status, now), "items_read": status.read_count,
             "items_matched": status.matched_count,
@@ -1072,7 +1098,7 @@ def main():
                 if self.headers.get("X-Live-News") != "1":
                     self.send_error(403)
                     return
-                news.renew()
+                news.renew(background=self.headers.get("X-Live-News-Mode") == "background")
                 self.send_response(204)
                 self.end_headers()
                 return
@@ -1194,9 +1220,8 @@ def main():
                 content_type = "application/json"
             else:
                 wire_count = len(available_stories(statuses, wire_only=True))
-                info = json.loads(status_payload(statuses, updated, stories, all_count, wire_count, news.archive_error))
-                info["active"] = news.active()
-                body = json.dumps(info, ensure_ascii=False).encode()
+                body = status_payload(statuses, updated, stories, all_count, wire_count, news.archive_error,
+                                      news.activity_mode())
                 content_type = "application/json"
             self.send_payload(body, content_type)
 

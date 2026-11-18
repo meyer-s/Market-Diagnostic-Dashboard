@@ -6,6 +6,7 @@ import { Dialog, FormField, SegmentedControl } from "../ui";
 const LIVE_PATH = "/live-news";
 const REFRESH_MS = 5_000;
 const ACTIVITY_MS = 20_000;
+const BACKGROUND_MS = 60_000;
 const RETRY_MS = 15_000;
 const HOME_HEADLINE_LIMIT = 6;
 const HOVER_DELAY_MS = 180;
@@ -277,7 +278,10 @@ export default function LiveNewsPanel({ compact = false, inViewport }: { compact
   const [showWeights, setShowWeights] = useState(false);
   const [result, setResult] = useState<{ query: string; data: Snapshot }>();
   const [failedQuery, setFailedQuery] = useState<string>();
-  const nextActivity = useRef(0);
+  const [windowFocused, setWindowFocused] = useState(() => !document.hidden && document.hasFocus());
+  const foreground = inViewport && windowFocused;
+  const nextActivity = useRef({ foreground: 0, background: 0 });
+  const previousTarget = useRef<string>();
   const closeWeights = useCallback(() => setShowWeights(false), []);
   const feedQuery = new URLSearchParams({ view, topic }).toString();
   const query = new URLSearchParams({ view, topic, when, q: search, page: String(page) }).toString();
@@ -288,62 +292,84 @@ export default function LiveNewsPanel({ compact = false, inViewport }: { compact
   const articles = data?.articles.slice(0, compact ? HOME_HEADLINE_LIMIT - data.featured.length : undefined) ?? [];
 
   useEffect(() => {
-    if (!inViewport) return;
-    const controller = new AbortController();
-    const renew = () => {
-      if (document.hidden || Date.now() < nextActivity.current) return;
-      nextActivity.current = Date.now() + ACTIVITY_MS;
-      void request("/activity", {
-        method: "POST",
-        headers: { "X-Live-News": "1" },
-        signal: controller.signal,
-      }).catch(() => undefined);
-    };
-    queueMicrotask(() => {
-      if (!controller.signal.aborted) renew();
-    });
-    const timer = window.setInterval(renew, ACTIVITY_MS);
-    document.addEventListener("visibilitychange", renew);
+    const updateFocus = () => setWindowFocused(!document.hidden && document.hasFocus());
+    window.addEventListener("focus", updateFocus);
+    window.addEventListener("blur", updateFocus);
+    document.addEventListener("visibilitychange", updateFocus);
+    updateFocus();
     return () => {
-      controller.abort();
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", renew);
+      window.removeEventListener("focus", updateFocus);
+      window.removeEventListener("blur", updateFocus);
+      document.removeEventListener("visibilitychange", updateFocus);
     };
-  }, [inViewport]);
+  }, []);
 
   useEffect(() => {
-    if (!inViewport) return;
     const controller = new AbortController();
+    const mode = foreground ? "foreground" : "background";
+    const interval = foreground ? ACTIVITY_MS : BACKGROUND_MS;
     let timer: number | undefined;
-    let inFlight = false;
-    const refresh = async () => {
+    const renew = () => {
+      if (controller.signal.aborted) return;
+      const now = Date.now();
+      const remaining = nextActivity.current[mode] - now;
+      if (remaining > 0) {
+        timer = window.setTimeout(renew, remaining);
+        return;
+      }
+      nextActivity.current[mode] = now + interval;
+      void request("/activity", {
+        method: "POST",
+        headers: { "X-Live-News": "1", "X-Live-News-Mode": mode },
+        signal: controller.signal,
+      }).catch(() => undefined);
+      timer = window.setTimeout(renew, interval);
+    };
+    if (foreground || nextActivity.current.foreground || nextActivity.current.background) {
+      queueMicrotask(renew);
+    } else {
+      timer = window.setTimeout(renew, BACKGROUND_MS);
+    }
+    return () => {
+      controller.abort();
       window.clearTimeout(timer);
-      if (document.hidden || inFlight) return;
-      inFlight = true;
-      let delay = REFRESH_MS;
+    };
+  }, [foreground]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const interval = foreground ? REFRESH_MS : BACKGROUND_MS;
+    const target = `${query}#${revision}`;
+    const viewChanged = previousTarget.current !== undefined && previousTarget.current !== target;
+    previousTarget.current = target;
+    let timer: number | undefined;
+    const refresh = async () => {
+      if (controller.signal.aborted) return;
+      let delay = interval;
       try {
         const response = await request(`/snapshot?${query}`, { signal: controller.signal });
         const snapshot = await response.json() as Snapshot;
         if (controller.signal.aborted) return;
         setResult({ query, data: snapshot });
         setFailedQuery(undefined);
-        delay = Math.max(REFRESH_MS, snapshot.read_interval * 1000);
+        delay = Math.max(interval, snapshot.read_interval * 1000);
       } catch {
         if (!controller.signal.aborted) setFailedQuery(query);
-        delay = RETRY_MS;
+        delay = Math.max(interval, RETRY_MS);
       } finally {
-        inFlight = false;
-        if (!controller.signal.aborted && !document.hidden) timer = window.setTimeout(refresh, delay);
+        if (!controller.signal.aborted) timer = window.setTimeout(refresh, delay);
       }
     };
-    void refresh();
-    document.addEventListener("visibilitychange", refresh);
+    if (foreground || viewChanged) {
+      void refresh();
+    } else {
+      timer = window.setTimeout(refresh, interval);
+    }
     return () => {
       controller.abort();
       window.clearTimeout(timer);
-      document.removeEventListener("visibilitychange", refresh);
     };
-  }, [inViewport, query, revision]);
+  }, [foreground, query, revision]);
 
   const topicField = (
     <FormField label="Topic">
@@ -410,7 +436,7 @@ export default function LiveNewsPanel({ compact = false, inViewport }: { compact
                 ? `${data.first}–${data.last} of ${data.total.toLocaleString()} ${data.featured.length ? "other headlines" : "headlines"}`
                 : "0 matching headlines"}
               </span>
-              <span>{data.checked_label ? <>Feed snapshot <time dateTime={data.updated_at ?? undefined}>{data.checked_label}</time></> : "Waiting for the collector"} · Updates every {data.read_interval}s</span>
+              <span>{data.checked_label ? <>Feed snapshot <time dateTime={data.updated_at ?? undefined}>{data.checked_label}</time></> : "Waiting for the collector"} · {foreground ? `Updates every ${data.read_interval}s` : "Updates every minute"}</span>
             </div>
           )}
           {data.archive_error && view === "wire" && <p className="text-sm text-stealth-300" role="status">{data.archive_error}</p>}

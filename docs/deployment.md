@@ -36,12 +36,16 @@ Key production properties:
 
 The home page offers a compact Focused feed and the News page offers the full reader.
 Both start enabled and remember the visitor's choice separately in the browser.
-The panel loads as it enters the viewport and pauses polling when off-screen or
-in a background tab. Its internal `live-news` service is shared across readers and is independent of
-the API worker count. A visible reader renews demand every 20 seconds. Feed
-polling goes idle within 45 seconds of the last renewal. The reader checks its
-snapshot every five seconds. Upstream polls have a 20-second minimum per feed,
-honor publisher cache and retry headers, and use at most four workers.
+A focused reader in the viewport checks snapshots every five seconds and renews
+demand every 20 seconds. Off-screen or unfocused readers aim for a one-minute
+cadence for both actions, subject to browser background timer limits.
+
+The internal `live-news` service is shared across readers and API workers.
+Upstream polls have a 20-second minimum per feed with foreground demand and
+a two-minute minimum per feed with only background demand. Both modes honor
+publisher cache and retry headers and use at most four workers. Demand expires
+45 seconds after the last foreground renewal or 135 seconds after the last
+background renewal, and the collector goes idle once both expire.
 
 Nginx bounds traffic under `/live-news/`. Reader weights are browser-local.
 The separate SQLite volume keeps up to 250 wire entries per feed and 5,000 total.

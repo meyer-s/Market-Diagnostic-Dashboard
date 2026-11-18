@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import timedelta
 import json
 import sqlite3
@@ -32,6 +33,55 @@ def test_poller_waits_for_demand(tmp_path):
             news.wakeup.set()
             worker.join(timeout=2)
         assert not worker.is_alive()
+
+
+def test_background_demand_slows_polling_until_a_foreground_reader_arrives(tmp_path):
+    source = replace(live.SOURCES[0], interval=0.01)
+    with (
+        patch.object(live, "SOURCES", (source,)),
+        patch.object(live, "MIN_SOURCE_INTERVAL", 0.01),
+        patch.object(live, "WIRE_HISTORY_FILE", tmp_path / "background.sqlite3"),
+        patch.object(live, "fetch", return_value=live.SourceStatus()) as fetch,
+    ):
+        news = live.News()
+        worker = Thread(target=news.refresh)
+        worker.start()
+        try:
+            news.renew(background=True)
+            for _ in range(40):
+                if fetch.called:
+                    break
+                news.stop.wait(0.025)
+            news.stop.wait(0.07)
+            fetch.assert_called_once()
+            assert news.activity_mode() == "background"
+
+            news.renew()
+            for _ in range(40):
+                if fetch.call_count >= 2:
+                    break
+                news.stop.wait(0.025)
+            assert fetch.call_count >= 2
+            assert news.activity_mode() == "foreground"
+        finally:
+            news.stop.set()
+            news.wakeup.set()
+            worker.join(timeout=2)
+        assert not worker.is_alive()
+
+
+def test_demand_uses_separate_foreground_and_background_expiration():
+    with patch.object(live, "monotonic", return_value=200.0) as clock:
+        news = live.News()
+        news.renew(background=True)
+        assert news.activity_mode() == "background"
+        news.renew()
+        assert news.activity_mode() == "foreground"
+
+        clock.return_value = 200.0 + live.ACTIVE_SECONDS
+        assert news.activity_mode() == "background"
+        clock.return_value = 200.0 + live.BACKGROUND_ACTIVE_SECONDS
+        assert news.activity_mode() == "idle"
 
 
 def test_prune_wire_archive_keeps_newest_unexpired_entries():
