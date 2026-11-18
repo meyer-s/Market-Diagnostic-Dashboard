@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import DetailsDisclosure from "../ui/DetailsDisclosure";
 import { EmptyState, ErrorState, LoadingState } from "../../utils/componentUtils";
 import type { UpdatePostDetail } from "../../types/updates";
 import { UPDATE_STATUS_STYLES, formatUpdateDate } from "./updateStyles";
@@ -13,6 +14,7 @@ interface UpdatesViewerProps {
   onOpenChart: (index: number) => void;
   overlayLoading?: boolean;
   pendingTitle?: string | null;
+  compact?: boolean;
 }
 
 // We normalize `(Source: https://...)` into a stable token that does NOT contain `http`
@@ -263,7 +265,11 @@ export default function UpdatesViewer({
   onOpenChart,
   overlayLoading = false,
   pendingTitle = null,
+  compact = false,
 }: UpdatesViewerProps) {
+  const Heading = compact ? "h3" : "h1";
+  const Subheading = compact ? "h4" : "h2";
+  const shellClass = compact ? "surface-card p-4" : "min-h-[68vh] rounded-2xl border border-stealth-700 bg-stealth-800/90 p-5";
   const [fadeIn, setFadeIn] = useState(true);
   const postKey = post?.id ?? "empty";
 
@@ -293,8 +299,8 @@ export default function UpdatesViewer({
 
   if (loading) {
     return (
-      <section className="min-h-[68vh] rounded-2xl border border-stealth-700 bg-stealth-800/90 p-5">
-        <h1 className="text-2xl font-semibold text-stealth-100">Loading recap</h1>
+      <section className={shellClass}>
+        <Heading className={`${compact ? "text-base" : "text-2xl"} font-semibold text-stealth-100`}>Loading recap</Heading>
         <LoadingState message="Loading the selected recap…" />
       </section>
     );
@@ -302,8 +308,8 @@ export default function UpdatesViewer({
 
   if (error) {
     return (
-      <section className="min-h-[50vh] rounded-2xl border border-stealth-700 bg-stealth-800/90 p-5">
-        <h1 className="mb-4 text-2xl font-semibold text-stealth-100">Recap unavailable</h1>
+      <section className={compact ? shellClass : "min-h-[50vh] rounded-2xl border border-stealth-700 bg-stealth-800/90 p-5"}>
+        <Heading className={`mb-4 ${compact ? "text-base" : "text-2xl"} font-semibold text-stealth-100`}>Recap unavailable</Heading>
         <ErrorState message={error} />
       </section>
     );
@@ -311,15 +317,15 @@ export default function UpdatesViewer({
 
   if (!post) {
     return (
-      <section className="min-h-[68vh] rounded-2xl border border-stealth-700 bg-stealth-800/90 p-6">
-        <h1 className="text-2xl font-semibold text-stealth-100">Recap</h1>
+      <section className={shellClass}>
+        <Heading className={`${compact ? "text-base" : "text-2xl"} font-semibold text-stealth-100`}>Recap</Heading>
         <EmptyState message="No update selected yet." />
       </section>
     );
   }
 
   return (
-    <article className="relative rounded-2xl border border-stealth-700 bg-stealth-800/90 shadow-[0_16px_40px_-28px_rgba(0,0,0,0.8)] min-h-[68vh] overflow-hidden">
+    <article className={compact ? "surface-card relative overflow-hidden" : "relative rounded-2xl border border-stealth-700 bg-stealth-800/90 shadow-[0_16px_40px_-28px_rgba(0,0,0,0.8)] min-h-[68vh] overflow-hidden"}>
       <div
         key={postKey}
         className={[
@@ -328,7 +334,7 @@ export default function UpdatesViewer({
           overlayLoading ? "pointer-events-none opacity-90" : "",
         ].join(" ")}
       >
-        <header className="border-b border-stealth-700 px-5 py-5 md:px-6">
+        <header className={compact ? "border-b border-stealth-700 p-4" : "border-b border-stealth-700 px-5 py-5 md:px-6"}>
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <span
               className={`rounded-full px-2.5 py-1 text-xs font-semibold ${UPDATE_STATUS_STYLES[post.status].pill}`}
@@ -338,19 +344,23 @@ export default function UpdatesViewer({
             <span className="text-xs text-stealth-500">{formatUpdateDate(post.created_at)}</span>
             {post.pinned && <span className="ml-auto text-xs font-semibold text-stealth-300">PINNED</span>}
           </div>
-          <h1 className="text-2xl font-semibold text-stealth-100">{post.title}</h1>
+          <Heading className={`${compact ? "text-base" : "text-2xl"} font-semibold text-stealth-100`}>{post.title}</Heading>
           {summaryParts.lead && (
-            <div className="mt-4 rounded-2xl border border-pulse-500/20 bg-gradient-to-r from-pulse-500/10 via-stealth-850/90 to-stealth-850/90 px-4 py-3">
+            <div className={compact ? "mt-3" : "mt-4 rounded-2xl border border-pulse-500/20 bg-gradient-to-r from-pulse-500/10 via-stealth-850/90 to-stealth-850/90 px-4 py-3"}>
               <div className="text-xs font-semibold uppercase tracking-[0.18em] text-pulse-300/85">
                 AI Summary
               </div>
-              <p className="mt-2 text-[15px] font-medium leading-7 text-stealth-100">{summaryParts.lead}</p>
-              {summaryParts.remainder && (
+              <p className={compact ? "mt-2 text-sm leading-6 text-stealth-100" : "mt-2 text-[15px] font-medium leading-7 text-stealth-100"}>{summaryParts.lead}</p>
+              {summaryParts.remainder && (compact ? (
+                <DetailsDisclosure label="More summary" className="mt-2">
+                  <p>{summaryParts.remainder}</p>
+                </DetailsDisclosure>
+              ) : (
                 <p className="mt-2 text-sm leading-7 text-stealth-300">{summaryParts.remainder}</p>
-              )}
+              ))}
             </div>
           )}
-          {post.tags.length > 0 && (
+          {!compact && post.tags.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-2">
               {post.tags.map((tag) => (
                 <span
@@ -364,13 +374,13 @@ export default function UpdatesViewer({
           )}
         </header>
 
-        <section
+        {(!compact || post.chart_urls.length > 0) && <section
           className="border-b border-stealth-700 px-5 py-5 md:px-6"
           data-evidence-panel="recap-gallery"
           data-evidence-state={post.chart_urls.length > 0 ? "complete" : "empty"}
           aria-label={`Recap chart gallery: ${post.chart_urls.length > 0 ? "complete" : "no data"}`}
         >
-          <h2 className="mb-3 text-sm font-semibold text-stealth-200">Charts</h2>
+          <Subheading className="mb-3 text-sm font-semibold text-stealth-200">Charts</Subheading>
           {post.chart_urls.length > 0 ? (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {post.chart_urls.map((url, index) => (
@@ -398,19 +408,21 @@ export default function UpdatesViewer({
               This recap does not include chart snapshots. The written analysis is shown below.
             </p>
           )}
-        </section>
+        </section>}
 
-        <section className="px-5 py-5 md:px-6">
+        <section className={compact ? "p-4" : "px-5 py-5 md:px-6"}>
           <div className="text-sm leading-7 text-stealth-200 [&_h2]:mt-7 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:text-stealth-100 [&_h3]:mt-6 [&_h3]:text-lg [&_h3]:font-semibold [&_h3]:text-stealth-100 [&_hr]:my-6 [&_hr]:border-stealth-700 [&_p]:mt-3 [&_ul]:mt-3 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5 [&_ol]:mt-3 [&_ol]:list-decimal [&_ol]:space-y-1 [&_ol]:pl-5 [&_li]:text-stealth-200 [&_table]:w-full [&_table]:min-w-[640px] [&_table]:border-collapse [&_th]:border [&_th]:border-stealth-700 [&_th]:bg-stealth-850 [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_td]:border [&_td]:border-stealth-700 [&_td]:px-3 [&_td]:py-2 [&_a]:text-pulse-400 [&_a]:underline-offset-2 hover:[&_a]:text-blue-300 [&_img]:mt-4 [&_img]:max-w-full [&_img]:rounded-xl [&_img]:border [&_img]:border-stealth-700">
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               components={{
                 a: ({ node: _node, children, ...props }) => (
-                  <a {...props} target="_blank" rel="noreferrer noopener">
+                  <a {...props} className="underline underline-offset-2" target="_blank" rel="noreferrer noopener">
                     {children}
                   </a>
                 ),
-                h1: ({ node: _node, children, ...props }) => <h2 {...props}>{children}</h2>,
+                h1: ({ node: _node, children, ...props }) => compact ? <h4 {...props}>{children}</h4> : <h2 {...props}>{children}</h2>,
+                h2: ({ node: _node, children, ...props }) => compact ? <h4 {...props}>{children}</h4> : <h2 {...props}>{children}</h2>,
+                h3: ({ node: _node, children, ...props }) => compact ? <h5 {...props}>{children}</h5> : <h3 {...props}>{children}</h3>,
                 img: ({ node: _node, alt, title, ...props }) => {
                   const decorative = isDecorativeMarkdownImage(alt);
                   return (

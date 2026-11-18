@@ -34,6 +34,9 @@ vi.mock("../../components/widgets/YieldCurveCard", () => ({
 vi.mock("../../components/widgets/EconomicDriverSnapshots", () => ({
   default: () => <div>Real Economy Snapshot Widgets</div>,
 }));
+vi.mock("../../components/widgets/DashboardRecaps", () => ({
+  default: () => <div>Dashboard Recap Viewer</div>,
+}));
 vi.mock("../../components/widgets/IndicatorCard", () => ({
   default: ({ indicator }: { indicator: { code: string; score: number | null } }) => (
     <div>{`${indicator.code}:${indicator.score ?? "N/A"}`}</div>

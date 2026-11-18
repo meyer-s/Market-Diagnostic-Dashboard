@@ -70,6 +70,7 @@ interface UpdatesListProps {
   selectedId: string | null;
   onSelect: (id: string) => void;
   onPrefetch?: (id: string) => void;
+  compact?: boolean;
 }
 
 export default function UpdatesList({
@@ -77,10 +78,12 @@ export default function UpdatesList({
   selectedId,
   onSelect,
   onPrefetch,
+  compact = false,
 }: UpdatesListProps) {
   const scrollRegionRef = useRef<HTMLDivElement | null>(null);
   const [isScrollable, setIsScrollable] = useState(false);
   const [focusedPostId, setFocusedPostId] = useState<string | null>(null);
+  const Heading = compact ? "h3" : "h2";
 
   useEffect(() => {
     const updateScrollableState = () => {
@@ -96,14 +99,14 @@ export default function UpdatesList({
   }, [posts]);
 
   return (
-    <div className="rounded-2xl border border-stealth-700 bg-stealth-800/90 shadow-[0_16px_40px_-28px_rgba(0,0,0,0.8)]">
+    <div className="surface-card min-w-0 overflow-hidden">
       <div className="border-b border-stealth-700 px-4 py-3">
-        <h2 className="text-sm font-semibold text-stealth-100">Recent posts</h2>
-        <p className="mt-1 text-xs text-stealth-400">{posts.length} available</p>
+        <Heading className="text-sm font-semibold text-stealth-100">{compact ? "History" : "Recent posts"}</Heading>
+        {!compact && <p className="mt-1 text-xs text-stealth-400">{posts.length} available</p>}
       </div>
       <div
         ref={scrollRegionRef}
-        className="max-h-[68vh] overflow-y-auto p-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pulse-400"
+        className={`${compact ? "max-h-40 sm:max-h-80" : "max-h-[68vh]"} data-scroller overflow-y-auto p-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pulse-400`}
         role="region"
         aria-label="Recent recap posts"
         tabIndex={isScrollable ? 0 : undefined}
@@ -121,7 +124,8 @@ export default function UpdatesList({
             <div key={post.id}>
               <button
                 type="button"
-                aria-current={isActive ? "page" : undefined}
+                aria-current={!compact && isActive ? "page" : undefined}
+                aria-pressed={compact ? isActive : undefined}
                 onClick={() => onSelect(post.id)}
                 onMouseEnter={() => onPrefetch?.(post.id)}
                 onFocus={() => {
@@ -131,7 +135,7 @@ export default function UpdatesList({
                 onBlur={() => {
                   setFocusedPostId((current) => current === post.id ? null : current);
                 }}
-                className={`mb-2 w-full rounded-2xl border px-3 py-3 text-left transition ${
+                className={`mb-2 w-full ${compact ? "rounded-lg px-3 py-2" : "rounded-2xl px-3 py-3"} border text-left transition ${
                   isActive
                     ? "border-stealth-500 bg-stealth-700/70"
                     : "border-stealth-700 bg-stealth-850/70 hover:border-stealth-600 hover:bg-stealth-750/70"

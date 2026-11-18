@@ -7,6 +7,7 @@ import SectorDivergenceWidget from "../components/widgets/SectorDivergenceWidget
 import AASWidget from "../components/widgets/AASWidget";
 import YieldCurveCard from "../components/widgets/YieldCurveCard";
 import EconomicDriverSnapshots from "../components/widgets/EconomicDriverSnapshots";
+import DashboardRecaps from "../components/widgets/DashboardRecaps";
 import DetailsDisclosure from "../components/ui/DetailsDisclosure";
 import MarketLoading from "../components/ui/MarketLoading";
 import SegmentedControl from "../components/ui/SegmentedControl";
@@ -331,6 +332,7 @@ export default function Dashboard() {
       </section>
 
       <LiveNewsSection compact />
+      <DashboardRecaps />
 
       <section id="rates-pulse" aria-labelledby="rates-pulse-title" className="scroll-mt-32">
         <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
