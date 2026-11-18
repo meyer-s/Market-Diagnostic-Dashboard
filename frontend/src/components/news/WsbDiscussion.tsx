@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { formatDateTimeWithWeekday } from "../../utils/styleUtils";
-import { clearWsbKey, readWsbKey } from "../../utils/wsbAccess";
+import { clearWsbKey, readWsbKey, WSB_UNLOCK_EVENT } from "../../utils/wsbAccess";
 
 type Discussion = {
   title: string;
@@ -28,7 +28,19 @@ export default function WsbDiscussion() {
   const panel = useRef<HTMLDetailsElement>(null);
 
   useEffect(() => {
-    if (hash !== "#wsb-discussion" || !key) return;
+    const unlock = () => {
+      const unlockedKey = readWsbKey();
+      if (!unlockedKey) return;
+      setKey(unlockedKey);
+      setOpen(true);
+    };
+    window.addEventListener(WSB_UNLOCK_EVENT, unlock);
+    if (window.location.hash === "#wsb-discussion") unlock();
+    return () => window.removeEventListener(WSB_UNLOCK_EVENT, unlock);
+  }, []);
+
+  useEffect(() => {
+    if (window.location.hash !== "#wsb-discussion" || !key) return;
     setOpen(true);
     const frame = window.requestAnimationFrame(() => panel.current?.scrollIntoView({ block: "start" }));
     return () => window.cancelAnimationFrame(frame);

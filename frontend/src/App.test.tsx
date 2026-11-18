@@ -40,6 +40,7 @@ vi.mock("./routes/registry", async () => {
 });
 
 import { AppWithAnalytics } from "./App";
+import { trackPageView } from "./utils/analytics";
 
 describe("application route lifecycle", () => {
   afterEach(() => {
@@ -68,6 +69,12 @@ describe("application route lifecycle", () => {
 
     expect(routeLifecycle.mounts).toBe(1);
     expect(routeLifecycle.unmounts).toBe(0);
+  });
+
+  it("records the discussion anchor without private unlock data", () => {
+    const placeholder = "x".repeat(43);
+    render(<MemoryRouter initialEntries={[`/news#wsb-unlock=${placeholder}`]}><AppWithAnalytics /></MemoryRouter>);
+    expect(trackPageView).toHaveBeenCalledWith("/news#wsb-discussion", "Test route");
   });
 
   it("keeps alert checks across routes and batches new headlines inside the cooldown", async () => {

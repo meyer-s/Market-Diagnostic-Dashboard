@@ -6,6 +6,7 @@ import RouteErrorBoundary from "./components/layout/RouteErrorBoundary";
 import RouteExperience from "./components/layout/RouteExperience";
 import LiveNewsAlertProvider from "./components/news/LiveNewsAlertProvider";
 import { trackPageView } from "./utils/analytics";
+import { redactWsbUnlockPath } from "./utils/wsbAccess";
 import { trackSubsequentOptionsOpen } from "./utils/marketWeatherPairTelemetry";
 import { AppRoutes, getAnalyticsNameForPath, getPageNameForPath } from "./routes/registry";
 import { SiteThemeProvider } from "./theme/SiteThemeProvider";
@@ -16,7 +17,7 @@ export function AppWithAnalytics() {
 
   useEffect(() => {
     trackPageView(
-      `${location.pathname}${location.search}${location.hash}`,
+      redactWsbUnlockPath(`${location.pathname}${location.search}${location.hash}`),
       getAnalyticsNameForPath(location.pathname)
     );
     if (location.pathname === "/secret/options") {

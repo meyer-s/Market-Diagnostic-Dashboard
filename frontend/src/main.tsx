@@ -6,6 +6,8 @@ import { initializeAnalytics } from "./utils/analytics";
 import { captureWsbUnlock } from "./utils/wsbAccess";
 
 captureWsbUnlock();
+window.addEventListener("popstate", captureWsbUnlock, true);
+window.addEventListener("hashchange", captureWsbUnlock, true);
 // Initialize Google Analytics
 initializeAnalytics();
 
