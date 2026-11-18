@@ -378,8 +378,6 @@ export default function Dashboard() {
         )}
       </section>
 
-      <LiveNewsSection compact />
-
       <section id="drivers" aria-labelledby="drivers-title" className="dashboard-drivers scroll-mt-32">
         <div className="mb-3">
           <div className="page-kicker">Drivers</div>
@@ -406,6 +404,8 @@ export default function Dashboard() {
           <EconomicDriverSnapshots />
         </div>
       </section>
+
+      <LiveNewsSection compact />
 
       <section id="rates-pulse" aria-labelledby="rates-pulse-title" className="scroll-mt-32">
         <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">

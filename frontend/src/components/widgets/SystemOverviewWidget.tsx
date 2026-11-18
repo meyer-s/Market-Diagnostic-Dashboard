@@ -14,7 +14,7 @@ import {
 } from "recharts";
 import { apiFetch, getErrorMessage } from "../../utils/apiUtils";
 import { calculateMovingAverage } from "../../utils/componentUtils";
-import { formatDateTime, formatTime } from "../../utils/styleUtils";
+import { formatTime } from "../../utils/styleUtils";
 import { CHART_MARGIN } from "../../utils/chartUtils";
 import { STABILITY_THRESHOLDS } from "../../utils/stabilityConstants";
 import type { SystemStatus } from "../../types";
@@ -40,16 +40,6 @@ interface SystemHistoryPoint {
   confidence?: "HIGH" | "MEDIUM" | "LOW";
 }
 
-interface NewsArticle {
-  id: number;
-  symbol: string;
-  sector?: string | null;
-  title: string;
-  link: string;
-  source: string;
-  published_at: string;
-}
-
 interface Props {
   trendPeriod?: 90 | 180 | 365;
   onInsight?: (insight: InsightSignal) => void;
@@ -58,21 +48,18 @@ interface Props {
 const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
   const [data, setData] = useState<SystemStatus | null>(null);
   const [history, setHistory] = useState<SystemHistoryPoint[]>([]);
-  const [news, setNews] = useState<NewsArticle[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [statusData, historyData, newsData] = await Promise.all([
+        const [statusData, historyData] = await Promise.all([
           apiFetch<SystemStatus>("/system"),
           apiFetch<SystemHistoryPoint[]>(`/system/history?days=${trendPeriod}`),
-          apiFetch<NewsArticle[]>("/news?hours=24&limit=50"),
         ]);
 
         setData(statusData);
-        setNews(newsData);
         
         // Use real historical data from backend
         if (Array.isArray(historyData) && historyData.length > 0) {
@@ -178,9 +165,6 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
 
   const compositeScore = data.composite_score ?? 0;
   const compositePercentage = Math.min(100, compositeScore);
-
-  // Get recent news (last 3)
-  const recentNews = news.slice(0, 3);
 
   // Calculate trend (last 7 days vs previous 7 days average)
   const averageScore = (points: SystemHistoryPoint[]) =>
@@ -334,12 +318,6 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
             {data.yellow_count}
           </span>
         </div>
-        <div className="flex items-center gap-1 px-2 sm:px-3 py-1 bg-stealth-900 rounded-full border border-stealth-700 text-xs whitespace-nowrap">
-          <span className="text-stealth-400 flex-shrink-0">News:</span>
-          <span className="font-semibold text-cyan-400 flex-shrink-0">
-            {news.length}
-            </span>
-          </div>
         </div>
         {(data.confidence || coverageText || coreCoverageText) && (
           <div className="flex flex-wrap gap-1.5 sm:gap-2">
@@ -361,33 +339,6 @@ const SystemOverviewWidget = ({ trendPeriod = 90, onInsight }: Props) => {
             )}
           </div>
         )}
-
-      {/* Recent News */}
-      {recentNews.length > 0 && (
-        <div className="pt-3 border-t border-stealth-700">
-          <h4 className="text-sm font-semibold text-stealth-200 mb-2">
-            Recent Market News
-          </h4>
-          <div className="space-y-2">
-            {recentNews.map((item) => (
-              <div
-                key={item.id}
-                className="secondary-card p-2 flex items-start gap-2"
-              >
-                <span className="text-xs text-sky-400 mt-0.5">{item.symbol}</span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs text-stealth-200 truncate">
-                    {item.title}
-                  </p>
-                  <p className="text-xs text-stealth-400 mt-0.5">
-                    {formatDateTime(item.published_at)}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Composite Score Chart */}
       {history.length > 0 && (() => {

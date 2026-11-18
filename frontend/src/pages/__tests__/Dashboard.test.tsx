@@ -68,7 +68,10 @@ describe("Dashboard", () => {
     }));
     vi.stubGlobal("fetch", liveFetch);
     render(<MemoryRouter><Dashboard /></MemoryRouter>);
-    const live = within(screen.getByRole("region", { name: "Live news" }));
+    const drivers = screen.getByRole("region", { name: "What is moving the read" });
+    const liveSection = screen.getByRole("region", { name: "Live news" });
+    expect(drivers.nextElementSibling).toBe(liveSection);
+    const live = within(liveSection);
     expect(liveFetch).not.toHaveBeenCalled();
     expect(live.getByRole("link", { name: "Open News tab" }).getAttribute("href")).toBe("/news");
     fireEvent.click(live.getByRole("button", { name: "Turn on live news" }));
