@@ -85,6 +85,9 @@ export default function WsbDiscussion() {
 
   if (!key) return null;
 
+  const liveUrl = discussion ? new URL(discussion.url) : null;
+  liveUrl?.searchParams.set("sort", "live");
+
   return (
     <details
       id="wsb-discussion"
@@ -100,11 +103,12 @@ export default function WsbDiscussion() {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <a
             className="text-sm font-semibold text-sky-200 underline underline-offset-4"
-            href={discussion?.url ?? REDDIT_DISCUSSION}
+            href={liveUrl?.href ?? REDDIT_DISCUSSION}
             target="_blank"
             rel="noopener noreferrer"
           >
-            {discussion?.title ?? "Open the pinned discussion on Reddit"}
+            {liveUrl ? "Open Live view on Reddit" : "Open the pinned discussion on Reddit"}
+            <span className="sr-only"> (opens in a new tab)</span>
           </a>
           <button
             type="button"
@@ -116,10 +120,13 @@ export default function WsbDiscussion() {
         </div>
         {discussion ? (
           <>
-            <p className="text-xs text-stealth-300">
-              r/wallstreetbets on Reddit · {discussion.replies.length} newest top-level replies · Checked{" "}
-              <time dateTime={discussion.checked_at}>{formatDateTimeWithWeekday(discussion.checked_at)} ET</time>
-            </p>
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-stealth-100">{discussion.title}</p>
+              <p className="text-xs text-stealth-300">
+                r/wallstreetbets on Reddit · {discussion.replies.length} newest top-level replies · Checked{" "}
+                <time dateTime={discussion.checked_at}>{formatDateTimeWithWeekday(discussion.checked_at)} ET</time>
+              </p>
+            </div>
             {discussion.replies.length > 0 && (
               <div className="data-scroller max-h-[28rem] overflow-y-auto rounded-lg border border-stealth-700" role="region" aria-label="Newest WSB replies" tabIndex={0}>
                 <ol className="divide-y divide-stealth-800">
