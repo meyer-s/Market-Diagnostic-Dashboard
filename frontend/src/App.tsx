@@ -4,6 +4,7 @@ import Topbar from "./components/layout/Topbar";
 import Footer from "./components/layout/Footer";
 import RouteErrorBoundary from "./components/layout/RouteErrorBoundary";
 import RouteExperience from "./components/layout/RouteExperience";
+import LiveNewsAlertProvider from "./components/news/LiveNewsAlertProvider";
 import { trackPageView } from "./utils/analytics";
 import { trackSubsequentOptionsOpen } from "./utils/marketWeatherPairTelemetry";
 import { AppRoutes, getAnalyticsNameForPath, getPageNameForPath } from "./routes/registry";
@@ -24,26 +25,28 @@ export function AppWithAnalytics() {
   }, [location.pathname, location.search, location.hash]);
 
   return (
-    <div className="app-shell flex min-h-screen flex-col">
-      <a className="skip-link" href="#main-content">Skip to main content</a>
-      <Topbar />
-      <RouteExperience />
+    <LiveNewsAlertProvider>
+      <div className="app-shell flex min-h-screen flex-col">
+        <a className="skip-link" href="#main-content">Skip to main content</a>
+        <Topbar />
+        <RouteExperience />
 
-      <main
-        id="main-content"
-        className="flex-1"
-        tabIndex={-1}
-        aria-label={`${getPageNameForPath(location.pathname)} content`}
-      >
-        <RouteErrorBoundary key={location.pathname}>
-          <AppRoutes />
-        </RouteErrorBoundary>
-      </main>
+        <main
+          id="main-content"
+          className="flex-1"
+          tabIndex={-1}
+          aria-label={`${getPageNameForPath(location.pathname)} content`}
+        >
+          <RouteErrorBoundary key={location.pathname}>
+            <AppRoutes />
+          </RouteErrorBoundary>
+        </main>
 
-      <div className={hideOptionsWorkflowFooter ? "hidden xl:block" : undefined}>
-        <Footer />
+        <div className={hideOptionsWorkflowFooter ? "hidden xl:block" : undefined}>
+          <Footer />
+        </div>
       </div>
-    </div>
+    </LiveNewsAlertProvider>
   );
 }
 

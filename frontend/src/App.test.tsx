@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -30,6 +30,7 @@ vi.mock("./routes/registry", async () => {
         React.Fragment,
         null,
         React.createElement(Link, { to: "?position=SPY" }, "Select SPY"),
+        React.createElement(Link, { to: "/sectors" }, "Open sectors"),
         React.createElement("output", { "data-testid": "route-search" }, location.search),
       );
     },
@@ -43,6 +44,10 @@ import { AppWithAnalytics } from "./App";
 describe("application route lifecycle", () => {
   afterEach(() => {
     cleanup();
+    localStorage.clear();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
     routeLifecycle.mounts = 0;
     routeLifecycle.unmounts = 0;
   });
@@ -63,5 +68,45 @@ describe("application route lifecycle", () => {
 
     expect(routeLifecycle.mounts).toBe(1);
     expect(routeLifecycle.unmounts).toBe(0);
+  });
+
+  it("keeps alert checks across routes and batches new headlines inside the cooldown", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    const headline = (id: string) => ({
+      id, title: `Headline ${id}`, source: "Publisher", score: 61,
+      url: `https://example.com/${id}`, published_at: new Date().toISOString(),
+    });
+    let headlines = [headline("baseline")];
+    const fetchAlert = vi.fn(async () => Response.json({
+      updated_at: new Date().toISOString(),
+      alerts: { threshold: 60, window_minutes: 120, headlines },
+    }));
+    vi.stubGlobal("fetch", fetchAlert);
+    const advance = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms));
+    const notice = () => screen.queryByRole("complementary", { name: "Live news alert" });
+
+    render(<MemoryRouter initialEntries={["/"]}><AppWithAnalytics /></MemoryRouter>);
+    await advance(2_000);
+    expect(notice()).toBeNull();
+    expect(fetchAlert).toHaveBeenCalledWith("/live-news/alerts", expect.objectContaining({ method: "POST" }));
+
+    fireEvent.click(screen.getByRole("link", { name: "Open sectors" }));
+    headlines = [headline("one"), ...headlines];
+    await advance(60_000);
+    expect(fetchAlert).toHaveBeenCalledTimes(2);
+    expect(notice()?.textContent).toContain("Headline one");
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+
+    headlines = [headline("two"), ...headlines];
+    await advance(60_000);
+    expect(notice()).toBeNull();
+    headlines = [headline("three"), ...headlines];
+    await advance(239_000);
+    expect(notice()).toBeNull();
+    await advance(1_000);
+    expect(notice()?.textContent).toContain("2 high-relevance headlines");
+    expect(notice()?.textContent).toContain("Headline three");
+    expect(screen.getByRole("link", { name: "Review alerts" }).getAttribute("href")).toBe("/news#live-news-alerts");
   });
 });

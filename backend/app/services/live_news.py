@@ -1128,9 +1128,19 @@ def main():
             if origin not in {f"https://{host}", f"http://{host}"}:
                 self.send_error(403)
                 return
-            if self.path == PREFIX + "/activity":
+            if self.path in {PREFIX + "/activity", PREFIX + "/alerts"}:
                 if self.headers.get("X-Live-News") != "1":
                     self.send_error(403)
+                    return
+                if self.path == PREFIX + "/alerts":
+                    news.renew(background=True)
+                    statuses, updated = news.snapshot
+                    preferences = load_preferences(self.headers.get("Cookie"))
+                    payload = {
+                        "updated_at": updated.isoformat() if updated else None,
+                        "alerts": alert_payload(statuses, updated, preferences, now_utc()),
+                    }
+                    self.send_payload(json.dumps(payload, ensure_ascii=False).encode(), "application/json")
                     return
                 news.renew(background=self.headers.get("X-Live-News-Mode") == "background")
                 self.send_response(204)

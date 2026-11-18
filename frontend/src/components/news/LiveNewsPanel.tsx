@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 
 import { EmptyState, ErrorState, LoadingState } from "../../utils/componentUtils";
 import { formatDateTimeWithWeekday } from "../../utils/styleUtils";
 import { Dialog, FormField, SegmentedControl } from "../ui";
-import LiveNewsAlerts, { type AlertSnapshot } from "./LiveNewsAlerts";
+import { useLiveNewsAlerts, type AlertSnapshot } from "./LiveNewsAlertProvider";
 
 const LIVE_PATH = "/live-news";
 const REFRESH_MS = 5_000;
@@ -280,6 +280,7 @@ export default function LiveNewsPanel({ compact = false, inViewport }: { compact
   const [result, setResult] = useState<{ query: string; data: Snapshot }>();
   const [failedQuery, setFailedQuery] = useState<string>();
   const [windowFocused, setWindowFocused] = useState(() => !document.hidden && document.hasFocus());
+  const publishFeed = useLiveNewsAlerts()?.publishFeed;
   const foreground = inViewport && windowFocused;
   const nextActivity = useRef({ foreground: 0, background: 0 });
   const previousTarget = useRef<string>();
@@ -352,6 +353,7 @@ export default function LiveNewsPanel({ compact = false, inViewport }: { compact
         const snapshot = await response.json() as Snapshot;
         if (controller.signal.aborted) return;
         setResult({ query, data: snapshot });
+        publishFeed?.(snapshot.alerts, snapshot.updated_at);
         setFailedQuery(undefined);
         delay = Math.max(interval, snapshot.read_interval * 1000);
       } catch {
@@ -370,7 +372,7 @@ export default function LiveNewsPanel({ compact = false, inViewport }: { compact
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [foreground, query, revision]);
+  }, [foreground, publishFeed, query, revision]);
 
   const topicField = (
     <FormField label="Topic">
@@ -403,7 +405,6 @@ export default function LiveNewsPanel({ compact = false, inViewport }: { compact
           </div>
         )}
       </div>
-      <LiveNewsAlerts alerts={latestSnapshot?.alerts} ready={Boolean(latestSnapshot?.updated_at)} compact={compact} />
       {!compact && <form
         className="surface-card-muted grid gap-3 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,2fr)_auto] sm:items-end"
         onSubmit={(event) => {

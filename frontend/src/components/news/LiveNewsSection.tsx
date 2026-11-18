@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { LoadingState } from "../../utils/componentUtils";
+import LiveNewsAlerts from "./LiveNewsAlerts";
 
 const LiveNewsPanel = lazy(() => import("./LiveNewsPanel"));
 
@@ -59,6 +60,7 @@ export default function LiveNewsSection({ compact = false }: { compact?: boolean
           </button>
         </div>
       </div>
+      <LiveNewsAlerts compact={compact} />
       <div id={`${id}-panel`} hidden={!enabled}>
         {enabled && (
           <Suspense fallback={<div className="mt-4"><LoadingState message="Loading live news." /></div>}>
