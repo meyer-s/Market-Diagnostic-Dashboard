@@ -80,7 +80,7 @@ async function request(path: string, options?: RequestInit) {
   return response;
 }
 
-function HeadlineDetails({ article, expanded, featured }: { article: Article; expanded: boolean; featured: boolean }) {
+function HeadlineDetails({ article, topic, expanded, featured }: { article: Article; topic: string; expanded: boolean; featured: boolean }) {
   const { id, priority, summary } = article;
   const hasExcerpt = priority === "Top" && !(featured && summary);
   const [preview, setPreview] = useState<Preview>();
@@ -103,7 +103,13 @@ function HeadlineDetails({ article, expanded, featured }: { article: Article; ex
 
   return (
     <div className="mb-0.5 mt-2 min-h-11 max-w-3xl space-y-1.5 border-t border-stealth-700 pt-2.5 text-xs text-stealth-300">
-      <p className="flex flex-wrap items-baseline gap-x-2">
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 overflow-hidden">
+        <span
+          aria-hidden="true"
+          className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-md bg-[var(--live-news-topic)] px-2 py-1 text-xs font-bold text-slate-950 transition-[transform,opacity] duration-200 ease-out motion-reduce:transition-none ${expanded ? "translate-x-0 opacity-100" : "-translate-x-4 opacity-0"}`}
+        >
+          {topic}
+        </span>
         <span className="font-semibold text-stealth-100">{priority} priority · Relevance {article.score}</span>
         {article.reasons.length > 0 && <span>{article.reasons.join(" · ")}</span>}
       </p>
@@ -137,7 +143,7 @@ function Headline({ article, topic, featured = false }: { article: Article; topi
 
   return (
     <article
-      className={`group/row relative py-2.5 pl-6 pr-3 ${topicColor} ${featured ? "surface-card-muted" : ""}`}
+      className={`group/row relative px-3 py-2.5 ${topicColor} ${featured ? "surface-card-muted" : ""}`}
       onPointerEnter={(event) => {
         if (event.pointerType !== "mouse") return;
         hoverTimer.current = window.setTimeout(() => {
@@ -147,13 +153,6 @@ function Headline({ article, topic, featured = false }: { article: Article; topi
       onPointerLeave={closeHover}
     >
       <div className="flex min-w-0 flex-1 items-start gap-2.5">
-        <div aria-hidden="true" className="pointer-events-none absolute inset-y-2.5 left-1 w-5 overflow-hidden">
-          <span
-            className={`flex min-h-11 w-full items-center justify-center rounded-l-md bg-[var(--live-news-topic)] py-1 transition-transform motion-reduce:transition-none ${expanded ? "duration-200 ease-out" : "translate-x-full duration-150 ease-in"}`}
-          >
-            <span className="rotate-180 whitespace-nowrap text-xs font-bold leading-none text-slate-950 [writing-mode:vertical-rl]">{topic}</span>
-          </span>
-        </div>
         <button
           type="button"
           className="field-icon-button !border-[var(--live-news-topic)]"
@@ -198,7 +197,7 @@ function Headline({ article, topic, featured = false }: { article: Article; topi
             className={`collapsible-panel ${expanded ? "collapsible-panel-open" : ""}`}
           >
             <div className="collapsible-panel-inner">
-              <HeadlineDetails article={article} expanded={expanded} featured={featured} />
+              <HeadlineDetails article={article} topic={topic} expanded={expanded} featured={featured} />
             </div>
           </div>
         </div>
