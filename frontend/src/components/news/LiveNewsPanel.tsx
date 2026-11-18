@@ -18,14 +18,14 @@ const VIEWS: { value: View; label: string }[] = [
   { value: "all", label: "All News" },
 ];
 const TOPIC_COLORS: Record<string, string> = {
-  releases: "bg-emerald-400",
-  markets: "bg-sky-400",
-  metals: "bg-amber-400",
-  crypto: "bg-violet-400",
-  world: "bg-rose-400",
-  tech: "bg-cyan-400",
-  energy: "bg-orange-400",
-  general: "bg-slate-400",
+  releases: "[--live-news-topic:theme(colors.emerald.400)]",
+  markets: "[--live-news-topic:theme(colors.sky.400)]",
+  metals: "[--live-news-topic:theme(colors.amber.400)]",
+  crypto: "[--live-news-topic:theme(colors.violet.400)]",
+  world: "[--live-news-topic:theme(colors.rose.400)]",
+  tech: "[--live-news-topic:theme(colors.cyan.400)]",
+  energy: "[--live-news-topic:theme(colors.orange.400)]",
+  general: "[--live-news-topic:theme(colors.slate.400)]",
 };
 const PRIORITY = {
   Top: { bars: 3, fade: "", color: "text-emerald-400" },
@@ -102,7 +102,7 @@ function HeadlineDetails({ article, expanded, featured }: { article: Article; ex
   }, [expanded, hasExcerpt, id, preview, summary]);
 
   return (
-    <div className="mb-0.5 mt-2 max-w-3xl space-y-1.5 border-t border-stealth-700 pt-2.5 text-xs text-stealth-300">
+    <div className="mb-0.5 mt-2 min-h-11 max-w-3xl space-y-1.5 border-t border-stealth-700 pt-2.5 text-xs text-stealth-300">
       <p className="flex flex-wrap items-baseline gap-x-2">
         <span className="font-semibold text-stealth-100">{priority} priority · Relevance {article.score}</span>
         {article.reasons.length > 0 && <span>{article.reasons.join(" · ")}</span>}
@@ -121,6 +121,7 @@ function HeadlineDetails({ article, expanded, featured }: { article: Article; ex
 
 function Headline({ article, topic, featured = false }: { article: Article; topic: string; featured?: boolean }) {
   const { bars, fade, color } = PRIORITY[article.priority];
+  const topicColor = TOPIC_COLORS[article.topic] ?? TOPIC_COLORS.general;
   const Title = featured ? "h4" : "h3";
   const detailsId = useId();
   const [disclosure, setDisclosure] = useState<"closed" | "hover" | "open">("closed");
@@ -136,7 +137,7 @@ function Headline({ article, topic, featured = false }: { article: Article; topi
 
   return (
     <article
-      className={`group/row relative flex gap-1.5 py-2.5 pl-1.5 pr-3 ${featured ? "surface-card-muted" : ""}`}
+      className={`group/row relative py-2.5 pl-6 pr-3 ${topicColor} ${featured ? "surface-card-muted" : ""}`}
       onPointerEnter={(event) => {
         if (event.pointerType !== "mouse") return;
         hoverTimer.current = window.setTimeout(() => {
@@ -145,17 +146,17 @@ function Headline({ article, topic, featured = false }: { article: Article; topi
       }}
       onPointerLeave={closeHover}
     >
-      <div aria-hidden="true" className="relative w-4 shrink-0 self-stretch">
-        <div className={`pointer-events-none absolute left-0 top-0 z-10 flex min-h-full w-1 items-center justify-center overflow-hidden rounded transition-[width] group-hover/row:w-4 group-focus-within/row:w-4 motion-reduce:transition-none ${TOPIC_COLORS[article.topic] ?? TOPIC_COLORS.general}`}>
-          <span className="hidden rotate-180 whitespace-nowrap py-1 text-[10px] font-bold leading-none text-slate-950 [writing-mode:vertical-rl] group-hover/row:block group-focus-within/row:block">
-            {topic}
+      <div className="flex min-w-0 flex-1 items-start gap-2.5">
+        <div aria-hidden="true" className="pointer-events-none absolute inset-y-2.5 left-1 w-5 overflow-hidden">
+          <span
+            className={`flex min-h-11 w-full items-center justify-center rounded-l-md bg-[var(--live-news-topic)] py-1 transition-transform motion-reduce:transition-none ${expanded ? "duration-200 ease-out" : "translate-x-full duration-150 ease-in"}`}
+          >
+            <span className="rotate-180 whitespace-nowrap text-xs font-bold leading-none text-slate-950 [writing-mode:vertical-rl]">{topic}</span>
           </span>
         </div>
-      </div>
-      <div className="flex min-w-0 flex-1 items-start gap-2.5">
         <button
           type="button"
-          className="field-icon-button"
+          className="field-icon-button !border-[var(--live-news-topic)]"
           aria-expanded={expanded}
           aria-controls={detailsId}
           aria-label={`${article.priority} priority · ${topic} · ${article.priority === "Top" && !featured ? "Article preview" : "Headline details"}`}
