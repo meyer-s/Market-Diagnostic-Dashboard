@@ -1086,7 +1086,7 @@ export default function SectorProjections() {
             <div>
               <h3 className="font-semibold text-stealth-100 mb-3 text-sm sm:text-base">Transparent Rule-Based Scoring</h3>
               <p className="text-stealth-400 mb-2 text-xs sm:text-sm">
-                Ranks 11 sector ETFs (XLE, XLF, XLK, XLY, XLP, XLV, XLI, XLU, XLB, XLRE, XLC) using 8000 days of historical data. Each sector receives a composite score (0-100) from four weighted components.
+                Ranks 11 sector ETFs (XLE, XLF, XLK, XLY, XLP, XLV, XLI, XLU, XLB, XLRE, XLC) from daily adjusted prices. Each sector receives a composite score (0-100) from four weighted components.
               </p>
               <p className="text-stealth-400 text-xs sm:text-sm">
                 Raw evidence is computed independently from trailing 3-month (63 trading days), 6-month (126), and 12-month (252) windows. The forward chart then converts those inputs into separate +3M, +6M, and +12M score scenarios.
@@ -1212,8 +1212,8 @@ export default function SectorProjections() {
               <h4 className="font-semibold text-stealth-100 mb-2 text-xs sm:text-sm">Data Sources & Frequency</h4>
               <div className="text-xs sm:text-sm text-stealth-400 space-y-1">
                 <p><strong>Price Data:</strong> Yahoo Finance API (adjusted close prices)</p>
-                <p><strong>Lookback:</strong> 8000 trading days for 12-month calculation reliability</p>
-                <p><strong>Updates:</strong> Every 4 hours during market hours (Monday-Friday, 8am-8pm ET)</p>
+                <p><strong>History request:</strong> Up to 8000 calendar days, limited by each ETF's available history. Scored inputs use 21, 63, 126 or 252 completed sessions.</p>
+                <p><strong>Updates:</strong> Scheduled weekdays at 8am, noon, 4pm and 8pm ET; the run date and latest price session are shown separately.</p>
                 <p><strong>System State:</strong> Market Diagnostic Dashboard composite indicator model</p>
               </div>
             </div>
