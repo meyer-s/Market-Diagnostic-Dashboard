@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
+from time import monotonic
 from typing import Optional
 
 from fastapi import APIRouter, Query
@@ -8,7 +9,7 @@ from fastapi import APIRouter, Query
 from app.services.institutional_flow import build_institutional_flow_overview
 
 
-router = APIRouter(prefix="/flow-signals", tags=["InstitutionalFlow"])
+router = APIRouter(prefix="/flow-signals", tags=["PriceVolumeActivity"])
 
 _CACHE_TTL_SECONDS = 300
 _cached_payload: tuple[float, dict] | None = None
@@ -35,7 +36,7 @@ def get_flow_signal_overview(
     stock_symbols = _parse_stock_symbols(stocks)
     cache_key = f"{','.join(stock_symbols or [])}|{lookback_days}"
 
-    now_ts = datetime.utcnow().timestamp()
+    now_ts = monotonic()
 
     if not refresh and _cached_payload:
         cached_at, payload = _cached_payload
@@ -47,7 +48,7 @@ def get_flow_signal_overview(
         lookback_days=lookback_days,
     )
     payload["cache_key"] = cache_key
-    payload["cached_at"] = datetime.utcnow().isoformat()
+    payload["cached_at"] = datetime.now(timezone.utc).isoformat()
 
     _cached_payload = (now_ts, payload)
     return payload

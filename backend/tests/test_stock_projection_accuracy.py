@@ -958,7 +958,7 @@ def test_projection_cache_rejects_pre_accuracy_payloads() -> None:
     )
     assert _cache_matches_accuracy_contract(
         {
-            "schema_version": 4,
+            "schema_version": 5,
             "optionality": {
                 "mispricing_usable": False,
                 "iv30_chain_percentile": None,

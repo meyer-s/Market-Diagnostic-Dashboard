@@ -32,7 +32,13 @@ from app.models.news_article import NewsArticle
 from app.models.news_collection_observation import NewsCollectionObservation
 from app.models.stock_projection_snapshot import StockProjectionSnapshot
 from app.models.system_status import SystemStatus
-from app.services.institutional_flow import detect_flow_events_from_frame, summarize_flow_events
+from app.services.institutional_flow import (
+    build_price_volume_signal,
+    detect_flow_events_from_frame,
+    prepare_price_volume_frame,
+    price_volume_method,
+    summarize_flow_events,
+)
 from app.services.market_data.date_utils import parse_option_expiry
 from app.services.market_data.factory import get_market_data_provider
 from app.services.market_data.provider import MarketDataProvider
@@ -51,7 +57,7 @@ HORIZONS = {
 }
 
 _STOCK_PROJECTION_CACHE_TTL_SECONDS = 5 * 60
-_STOCK_PROJECTION_PAYLOAD_SCHEMA_VERSION = 4
+_STOCK_PROJECTION_PAYLOAD_SCHEMA_VERSION = 5
 _stock_projection_cache: dict[str, dict[str, Any]] = {}
 _stock_projection_cache_lock = threading.Lock()
 _MARKET_TIMEZONE = ZoneInfo("America/New_York")
@@ -360,20 +366,27 @@ def _insert_institutional_flow_events(db, event_rows: list[dict[str, Any]]) -> N
 
 
 def _sync_institutional_flow_history(db, symbol: str, df: pd.DataFrame, latest_price: Optional[float]) -> dict:
-    analysis_frame = df.tail(365) if df is not None else pd.DataFrame()
-    detected_events = detect_flow_events_from_frame(analysis_frame, lookback_days=365)
+    analysis_frame = prepare_price_volume_frame(df) if df is not None and not df.empty else pd.DataFrame()
+    detected_events = detect_flow_events_from_frame(analysis_frame, lookback_days=365, symbol=symbol)
+    signal = build_price_volume_signal(symbol, analysis_frame, lookback_days=365)
 
     valid_index = pd.to_datetime(analysis_frame.index, errors="coerce") if not analysis_frame.empty else []
     valid_dates = [value for value in valid_index if not pd.isna(value)]
     if valid_dates:
-        min_date = pd.Timestamp(min(valid_dates)).normalize().to_pydatetime().replace(tzinfo=None)
-        max_date = pd.Timestamp(max(valid_dates)).normalize().to_pydatetime().replace(tzinfo=None)
+        min_date = datetime.fromisoformat(signal["window_start"])
+        max_date = datetime.fromisoformat(signal["window_end"])
         existing_rows = (
             db.query(InstitutionalFlowEvent)
             .filter(
                 InstitutionalFlowEvent.symbol == symbol,
                 InstitutionalFlowEvent.event_date >= min_date,
                 InstitutionalFlowEvent.event_date <= max_date,
+                # A missing provider bar is not evidence that an archived
+                # event was superseded. Reconcile only observed session dates.
+                InstitutionalFlowEvent.event_date.in_([
+                    pd.Timestamp(value).normalize().to_pydatetime().replace(tzinfo=None)
+                    for value in valid_dates
+                ]),
             )
             .all()
         )
@@ -386,6 +399,7 @@ def _sync_institutional_flow_history(db, symbol: str, df: pd.DataFrame, latest_p
             )
             for row in existing_rows
         }
+        events_by_key = {(event["date"], event["side"], round(float(event["price"]), 4), int(event["volume"])): event for event in detected_events}
         detected_keys = {
             (
                 event["date"],
@@ -411,6 +425,12 @@ def _sync_institutional_flow_history(db, symbol: str, df: pd.DataFrame, latest_p
                 db.delete(row)
                 existing_keys.discard(key)
                 removed = True
+            else:
+                # Source revisions and formula changes can alter derived values
+                # without changing the event's identity or unique key.
+                event = events_by_key[key]
+                for field in ("notional", "volume_z", "clv", "price_change_pct", "strength"):
+                    setattr(row, field, float(event[field]))
 
         rows_to_insert: list[dict[str, Any]] = []
         for event in detected_events:
@@ -438,44 +458,18 @@ def _sync_institutional_flow_history(db, symbol: str, df: pd.DataFrame, latest_p
             )
             existing_keys.add(key)
 
-        if rows_to_insert or removed:
+        if rows_to_insert or removed or db.dirty:
             _insert_institutional_flow_events(db, rows_to_insert)
             db.commit()
 
-    newest_rows = (
-        db.query(InstitutionalFlowEvent)
-        .filter(InstitutionalFlowEvent.symbol == symbol)
-        .order_by(InstitutionalFlowEvent.event_date.desc())
-        .limit(250)
-        .all()
-    )
-    rows = list(reversed(newest_rows))
-
-    history = [
-        {
-            "date": row.event_date.date().isoformat(),
-            "price": round(float(row.price), 4),
-            "volume": int(row.volume),
-            "notional": round(float(row.notional), 2),
-            "volume_z": round(float(row.volume_z), 2),
-            "clv": round(float(row.clv), 3),
-            "price_change_pct": round(float(row.price_change_pct), 2),
-            "side": row.side,
-            "strength": round(float(row.strength), 2),
-        }
-        for row in rows
-    ]
-
-    summary = summarize_flow_events(history, latest_price=latest_price)
-    summary["signal_strength"] = summary.get("confidence")
+    # Stored rows are an archive of derived events. Only bars recomputed using
+    # the current method enter the response; old formula versions never leak in.
+    summary = summarize_flow_events(detected_events, latest_price=latest_price)
     return {
         "summary": summary,
-        "event_history": history,
-        "method": {
-            "name": "high_volume_accumulation_proxy",
-            "description": "High-volume daily bars classified by close location and price direction.",
-            "direct_institutional_tape": False,
-        },
+        "event_history": detected_events,
+        "signal": {**signal, **summary},
+        "method": price_volume_method(),
     }
 
 

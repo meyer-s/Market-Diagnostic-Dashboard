@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import CryptoDiagnostic from "../CryptoDiagnostic";
 import InstitutionalFlow from "../InstitutionalFlow";
+import { activityOverview } from "../../features/price-volume/__tests__/fixtures";
 import PreciousMetalsDiagnostic from "../PreciousMetalsDiagnostic";
 
 const { apiFetchMock, useApiMock } = vi.hoisted(() => ({
@@ -125,37 +126,6 @@ const cryptoOverview = {
   market_structure_history: [],
 };
 
-const flowRow = {
-  symbol: "AAPL",
-  name: "Apple",
-  category: "stocks",
-  status: "ok",
-  signal: "accumulation",
-  confidence: 82,
-  latest_price: 210,
-  buy_cluster_level: 205,
-  sell_cluster_level: 216,
-  distance_to_buy_pct: -2.4,
-  distance_to_sell_pct: 2.9,
-  buy_notional_usd: 15_000_000,
-  sell_notional_usd: 4_000_000,
-  net_flow_usd: 11_000_000,
-  event_count: 1,
-  flow_timeline: [],
-  recent_events: [
-    {
-      date: "2026-07-29T14:00:00Z",
-      price: 210,
-      volume: 120_000,
-      volume_z: 2.4,
-      clv: 0.8,
-      price_change_pct: 1,
-      notional: 15_000_000,
-      side: "buy",
-      strength: 0.82,
-    },
-  ],
-};
 
 describe("asset and flow route polish", () => {
   beforeEach(() => {
@@ -222,26 +192,17 @@ describe("asset and flow route polish", () => {
   it("puts selected flow evidence before mobile groups and exposes provenance", () => {
     useApiMock.mockReturnValue({
       ...idle,
-      data: {
-        as_of: "2026-07-29T15:00:00Z",
-        groups: { stocks: [flowRow], sectors: [], metals: [], crypto: [] },
-        leaders: { accumulation: [flowRow], distribution: [] },
-        stock_selection: { mode: "close dollar volume", symbols: ["AAPL"], count: 1 },
-        method: {
-          description: "Clusters unusually large volume with close-location evidence.",
-          note: "Signals are observational and do not establish investor identity.",
-        },
-      },
+      data: activityOverview,
     });
 
     render(<InstitutionalFlow />);
 
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
-    expect(screen.getByRole("heading", { level: 1, name: "Institutional Flow" })).not.toBeNull();
-    expect(screen.getByText("1/1 signals usable")).not.toBeNull();
-    const signalButton = screen.getByRole("button", { name: /AAPL, accumulation/i });
+    expect(screen.getByRole("heading", { level: 1, name: "Unusual Volume & Price Pressure" })).not.toBeNull();
+    expect(screen.getByText("1/1 symbols with baseline history")).not.toBeNull();
+    const signalButton = screen.getByRole("button", { name: /NVDA, positive-bar balance/i });
     expect(signalButton.getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByRole("heading", { name: "How to read institutional flow" })).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "How to read price & volume evidence" })).not.toBeNull();
     expect(screen.getByText(/do not establish investor identity/)).not.toBeNull();
   });
 });

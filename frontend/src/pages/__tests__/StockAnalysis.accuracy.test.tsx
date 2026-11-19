@@ -3,6 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import StockAnalysis from "../StockAnalysis";
+import { activitySignal } from "../../features/price-volume/__tests__/fixtures";
 
 const { apiFetchMock } = vi.hoisted(() => ({ apiFetchMock: vi.fn() }));
 
@@ -115,21 +116,7 @@ const payload = {
     put_volume_total: 0,
     put_call_oi_ratio: null,
   },
-  institutional_flow: {
-    summary: {
-      signal: "accumulation",
-      confidence: 62,
-      buy_cluster_level: 18.8,
-      sell_cluster_level: 20.1,
-      distance_to_buy_pct: -2,
-      distance_to_sell_pct: 4,
-      buy_notional_usd: 2_000_000,
-      sell_notional_usd: 1_000_000,
-      net_flow_usd: 1_000_000,
-      event_count: 1,
-    },
-    event_history: [],
-  },
+  institutional_flow: { summary: activitySignal, signal: activitySignal, event_history: [] },
   fundamentals: {
     eps: series([0.2, 0.25]),
     roe: series([8, 9]),
@@ -230,10 +217,10 @@ describe("StockAnalysis accuracy pass", () => {
     expect(screen.getByText("EPS TTM")).not.toBeNull();
     expect(screen.getByText("$1.25")).not.toBeNull();
     expect(screen.getByText(/TTM through Mar 31, 2026 · price metrics at Aug 1, 2026 close/)).not.toBeNull();
-    expect(screen.getAllByText("High-Volume Bar Proxy").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Signed Notional").length).toBeGreaterThan(0);
-    expect(screen.getByText(/Proxy strength 62\/100/)).not.toBeNull();
-    expect(screen.getByText(/1 bar/)).not.toBeNull();
+    expect(screen.getAllByText("Price & volume evidence").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Signed flagged turnover · full window").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Proxy strength|confidence.*100/i)).toBeNull();
+    expect(screen.getByText("2 / 85 baseline-ready bars")).not.toBeNull();
     expect(screen.getAllByText("Signal Quality").length).toBeGreaterThan(0);
     expect(screen.getByText("Options Pricing Context")).not.toBeNull();
     expect(screen.getByText("Unavailable")).not.toBeNull();
