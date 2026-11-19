@@ -47,7 +47,7 @@ const linearSlope = (values: number[]): number | null => {
   return (n * sumXY - sumX * sumY) / denom;
 };
 
-const seriesStats = (values?: number[]) => {
+const seriesStats = (values?: number[], dates?: string[]) => {
   const series = (values || []).filter((value) => isNumber(value)) as number[];
   if (!series.length) {
     return {
@@ -62,8 +62,16 @@ const seriesStats = (values?: number[]) => {
   const percentChange = (prior: number) => prior === 0
     ? null
     : ((latest - prior) / Math.abs(prior)) * 100;
-  const qoq = series.length >= 2 ? percentChange(series[series.length - 2]) : null;
-  const yoy = series.length >= 5 ? percentChange(series[series.length - 5]) : null;
+  let qoq = series.length >= 2 ? percentChange(series[series.length - 2]) : null;
+  let yoy = series.length >= 5 ? percentChange(series[series.length - 5]) : null;
+  if (dates && values && dates.length === values.length && dates.length > 0) {
+    const latestDate = Date.parse(dates[dates.length - 1]);
+    const previousYear = dates.findIndex((date, index) => index < dates.length - 1 && Math.abs((latestDate - Date.parse(date)) / 86400000 - 365.25) <= 10);
+    const prior = previousYear >= 0 ? values?.[previousYear] : undefined;
+    yoy = isNumber(prior) && prior !== 0 ? ((latest - prior) / Math.abs(prior)) * 100 : null;
+    const gap = dates.length >= 2 ? (latestDate - Date.parse(dates[dates.length - 2])) / 86400000 : NaN;
+    if (!(gap >= 65 && gap <= 115)) qoq = null;
+  }
   const slope6 = linearSlope(series.slice(-6));
   const slope3 = linearSlope(series.slice(-3));
   return { latest, qoq, yoy, slope6, slope3 };
@@ -241,12 +249,12 @@ const buildTechnicalAxis = (input: SummaryInput["technicals"]): AxisScore => {
 };
 
 const buildFundamentalAxis = (input: SummaryInput["fundamentals"]): AxisScore => {
-  const epsStats = seriesStats(input.eps_series);
-  const roeStats = seriesStats(input.roe_series);
-  const fcfStats = seriesStats(input.fcf_series);
-  const peStats = seriesStats(input.pe_series);
-  const mcapStats = seriesStats(input.marketcap_series);
-  const revenueStats = seriesStats(input.revenue_yoy_series);
+  const epsStats = seriesStats(input.eps_series, input.eps_dates);
+  const roeStats = seriesStats(input.roe_series, input.roe_dates);
+  const fcfStats = seriesStats(input.fcf_series, input.fcf_dates);
+  const peStats = seriesStats(input.pe_series, input.pe_dates);
+  const mcapStats = seriesStats(input.marketcap_series, input.marketcap_dates);
+  const revenueStats = seriesStats(input.revenue_yoy_series, input.revenue_yoy_dates);
 
   let score = 0;
   const rules: string[] = [];
@@ -323,7 +331,7 @@ const buildFundamentalAxis = (input: SummaryInput["fundamentals"]): AxisScore =>
 
   const facts: string[] = [];
   if (isNumber(epsStats.yoy)) {
-    facts.push(`EPS trend YoY ${formatPct(epsStats.yoy)} over the last year.`);
+    facts.push(`Quarterly EPS YoY ${formatPct(epsStats.yoy)}, computed from the provider's reported EPS series.`);
   }
   if (isNumber(roeStats.latest) && isNumber(roeStats.slope6)) {
     facts.push(`ROE ${formatPct(roeStats.latest)} and ${roeStats.slope6 > 0 ? "improving" : "softening"}.`);
@@ -442,6 +450,15 @@ const resolveRegime = (
   const techBias = technical.bias as TechBias;
   const fundBias = fundamental.bias as AxisBias;
   const optBias = options.bias as OptBias;
+
+  if (optBias === "UNKNOWN") {
+    const disagree = (techBias === "BULLISH" && fundBias === "NEGATIVE") || (techBias === "BEARISH" && fundBias === "POSITIVE");
+    rationale.push("Options pricing evidence is unavailable; missing evidence is not a conflicting vote.");
+    return { key: disagree ? "Mixed evidence · options unavailable" : "Partial evidence · options unavailable", rationale };
+  }
+  if (techBias === "NEUTRAL" && fundBias === "NEUTRAL") {
+    return { key: "Neutral evidence", rationale: ["Available technical and fundamental measures are neutral."] };
+  }
 
   if (
     fundBias === "POSITIVE"

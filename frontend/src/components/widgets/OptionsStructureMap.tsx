@@ -131,10 +131,10 @@ function buildInterpretation(
     putCallRatio === null || putCallRatio === undefined
       ? null
       : putCallRatio < 0.7
-      ? "options skew is call-heavy"
+      ? "open-interest counts are call-heavy"
       : putCallRatio > 1.1
-      ? "options skew is put-heavy"
-      : "options positioning is balanced";
+      ? "open-interest counts are put-heavy"
+      : "put and call open-interest counts are similar";
 
   if (setup === "breakout-risk" && resistance !== null) {
     return `Price is pressing into ${fmtPrice(resistance)} resistance. ${maRead ? `${maRead[0].toUpperCase()}${maRead.slice(1)}.` : ""}`.trim();
@@ -992,6 +992,7 @@ export function OptionsStructureMap({
       </div>
 
       <p className="mt-3 text-xs leading-relaxed text-stealth-300">{interpretation}</p>
+      <details className="mt-2 text-xs text-stealth-300"><summary className="cursor-pointer">Open-interest interpretation</summary><p className="mt-1">Open interest counts outstanding contracts. It does not identify bullish/bearish intent or trade direction. Strike concentrations are reference levels, not guaranteed support or resistance; open-interest publication timing may differ from quote and trade timestamps.</p></details>
     </div>
   );
 }

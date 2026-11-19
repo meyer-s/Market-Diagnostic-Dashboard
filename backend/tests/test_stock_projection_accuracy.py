@@ -705,7 +705,8 @@ def test_options_flow_as_of_uses_frozen_chain_retrieval_time_not_compute_time() 
 
     assert flow is not None
     assert flow["as_of"] == "2026-07-01T14:30:00+00:00"
-    assert flow["observed_at"] == "2026-06-30T19:00:00+00:00"
+    assert flow["observed_at"] is None
+    assert flow["latest_contract_trade_at"] == "2026-06-30T19:00:00+00:00"
     assert flow["retrieved_at"] == "2026-07-01T14:30:00+00:00"
 
 
@@ -958,7 +959,7 @@ def test_projection_cache_rejects_pre_accuracy_payloads() -> None:
     )
     assert _cache_matches_accuracy_contract(
         {
-            "schema_version": 5,
+            "schema_version": 6,
             "optionality": {
                 "mispricing_usable": False,
                 "iv30_chain_percentile": None,

@@ -45,6 +45,16 @@ class FallbackMarketDataProvider:
         self._primary_slow_seconds = float(os.getenv("MARKET_DATA_PRIMARY_SLOW_SECONDS", "5"))
         self._state_lock = threading.Lock()
         self._source_local = threading.local()
+        self._stock_options_failure: Optional[str] = None
+
+    def stock_options_fallback_reason(self) -> Optional[str]:
+        if not self._primary_available("stock_options_snapshot"):
+            return self._stock_options_failure or "Primary options provider is cooling down after a failed request."
+        return None
+
+    def note_stock_options_failure(self, reason: str) -> None:
+        self._stock_options_failure = reason
+        self._disable_primary("stock_options_snapshot", "exception", RuntimeError(reason))
 
     def _primary_available(self, method: str) -> bool:
         with self._state_lock:

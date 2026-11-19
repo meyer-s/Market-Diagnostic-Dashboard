@@ -52,6 +52,22 @@ const makeAxis = (bias: AxisScore["bias"]): AxisScore => ({
 });
 
 describe("holistic summary options voting", () => {
+  it("treats unavailable options as incomplete evidence instead of a conflicting vote", () => {
+    const result = _testHelpers.resolveRegime(makeAxis("BULLISH"), makeAxis("POSITIVE"), makeAxis("UNKNOWN"));
+    expect(result.key).toBe("Partial evidence · options unavailable");
+  });
+
+  it("does not infer year-over-year growth from five arbitrarily spaced points", () => {
+    const summary = buildHolisticSummary({ ...baseInput, fundamentals: { eps_series: [1, 2, 3, 4, 5], eps_dates: ["2023-03-31", "2023-06-30", "2023-09-30", "2023-12-31", "2026-03-31"] } });
+    expect((summary.debug?.fundamental.debug?.eps as { yoy: number | null }).yoy).toBeNull();
+  });
+
+  it("uses supplied warmed-up daily averages for summary slopes", () => {
+    const candles = Array.from({ length: 220 }, (_, index) => ({ close: 100, high: 101, low: 99, ema50: index, ema200: index * 2 }));
+    const input = buildSummaryInputFromSnapshot({ symbol: "TEST", technicalData: { candles } });
+    expect(input?.technicals.ma50_slope).toBe(1);
+    expect(input?.technicals.ma200_slope).toBe(2);
+  });
   it("resolves tie as FAIR", () => {
     const input: SummaryInput = {
       ...baseInput,

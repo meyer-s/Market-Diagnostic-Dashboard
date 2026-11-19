@@ -25,6 +25,8 @@ interface Candle {
   low: number;
   close: number;
   volume: number;
+  ema50?: number;
+  ema200?: number | null;
 }
 
 export interface TechnicalData {
@@ -180,6 +182,7 @@ function TechnicalIndicatorsComponent({
   const chartIdBase = `technical-${useId().replace(/:/g, "")}`;
   const priceChartRef = useRef<SVGSVGElement | null>(null);
   const [activeProxyClusterId, setActiveProxyClusterId] = useState<string | null>(null);
+  const [candleBasis, setCandleBasis] = useState<"daily" | "2h">("daily");
 
   if (!technicalData && !optionsFlow) {
     return (
@@ -360,9 +363,10 @@ function TechnicalIndicatorsComponent({
   const maxVolume = Math.max(...volumes, 0);
 
   const isShortView = historyWindow === "252d";
+  const dailyPriceHistory = priceHistory.length ? priceHistory : candles;
 
   const unifiedChartData: CandleChartPoint[] = (() => {
-    if (isShortView && intradayHistory2h.length > 0) {
+    if (isShortView && candleBasis === "2h" && intradayHistory2h.length > 0) {
       return intradayHistory2h.map((point) => ({
         x: point.timestamp,
         open: point.open,
@@ -373,7 +377,7 @@ function TechnicalIndicatorsComponent({
     }
 
     if (isShortView) {
-      return priceHistory.map((point) => ({
+      return dailyPriceHistory.map((point) => ({
         x: point.date,
         open: point.open,
         high: point.high,
@@ -383,7 +387,7 @@ function TechnicalIndicatorsComponent({
     }
 
     if (historyWindow === "1y") {
-      return priceHistory.map((point) => ({
+      return dailyPriceHistory.map((point) => ({
         x: point.date,
         open: point.open,
         high: point.high,
@@ -420,7 +424,7 @@ function TechnicalIndicatorsComponent({
   const priceRange = Math.max(maxPrice - minPrice, maxPrice * 0.02 || 1);
   const pricePadding = priceRange * 0.08;
   const priceChartHeight = 300;
-  const pricePaddingBox = { top: 20, right: 50, bottom: 40, left: 50 };
+  const pricePaddingBox = { top: 20, right: 120, bottom: 40, left: 50 };
   const pricePlotWidth = chartWidth - pricePaddingBox.left - pricePaddingBox.right;
   const pricePlotHeight = priceChartHeight - pricePaddingBox.top - pricePaddingBox.bottom;
 
@@ -481,14 +485,17 @@ function TechnicalIndicatorsComponent({
   );
 
   const shortViewCloses = isShortView ? unifiedChartData.map((point) => point.close) : [];
-  const ema50Series = isShortView ? calcEmaSeries(shortViewCloses, 50) : [];
-  const ema200Series = isShortView ? calcEmaSeries(shortViewCloses, 200) : [];
+  const dailyIndicators = new Map(candles.map(candle => [candle.date, candle]));
+  const usesIntradayCandles = isShortView && candleBasis === "2h" && intradayHistory2h.length > 0;
+  const fallback50 = calcEmaSeries(shortViewCloses, 50);
+  const fallback200 = calcEmaSeries(shortViewCloses, 200);
+  const ema50Series = isShortView ? unifiedChartData.map((point, index) => usesIntradayCandles ? fallback50[index] : dailyIndicators.get(point.x)?.ema50 ?? fallback50[index]) : [];
+  const ema200Series = isShortView ? unifiedChartData.map((point, index) => usesIntradayCandles ? fallback200[index] : dailyIndicators.get(point.x)?.ema200 ?? fallback200[index]) : [];
 
   const candleIntervalLabel =
     historyWindow === "252d"
-      ? intradayHistory2h.length > 0 ? "2H candles" : "Daily candles"
+      ? usesIntradayCandles ? "2H candles · EMA periods are 2H bars" : "Daily candles · daily EMA50/200"
       : historyWindow === "1y" ? "Daily candles" : historyWindow === "5y" ? "Weekly candles" : "Monthly candles";
-  const usesIntradayCandles = isShortView && intradayHistory2h.length > 0;
   const dailyDateOptions = { timeZone: "UTC" } as const;
   const proxyOverlayLabel =
     proxyEventCount === 0
@@ -706,6 +713,13 @@ function TechnicalIndicatorsComponent({
           </div>
         </div>
 
+        {isShortView && <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-stealth-300">
+          <div role="group" aria-label="Candle interval" className="flex gap-1">
+            <button type="button" aria-pressed={!usesIntradayCandles} onClick={() => setCandleBasis("daily")} className="page-badge min-h-11">Daily</button>
+            {intradayHistory2h.length > 0 && <button type="button" aria-pressed={usesIntradayCandles} onClick={() => setCandleBasis("2h")} className="page-badge min-h-11">2H</button>}
+          </div>
+          <span>{candleIntervalLabel}. {unifiedChartData.length} available bars. RSI, MACD, volume and headline averages use daily bars.</span>
+        </div>}
         <DataScroller
           label="Price history chart"
           className="secondary-card mb-4 min-w-0 p-3 sm:p-4"
@@ -968,12 +982,12 @@ function TechnicalIndicatorsComponent({
 
               {isShortView && ema50Series.some((value) => value !== null) && (
                 <text x={chartWidth - pricePaddingBox.right + 6} y={scalePrice(ema50Series.filter((value): value is number => value !== null).slice(-1)[0]) + 4} fill="#f59e0b" fontSize="12">
-                  EMA50
+                  {usesIntradayCandles ? "EMA50 (2H)" : "EMA50 (daily)"}
                 </text>
               )}
               {isShortView && ema200Series.some((value) => value !== null) && (
                 <text x={chartWidth - pricePaddingBox.right + 6} y={scalePrice(ema200Series.filter((value): value is number => value !== null).slice(-1)[0]) - 4} fill="#a78bfa" fontSize="12">
-                  EMA200
+                  {usesIntradayCandles ? "EMA200 (2H)" : "EMA200 (daily)"}
                 </text>
               )}
 

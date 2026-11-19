@@ -14,7 +14,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useParams, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   Line,
   ResponsiveContainer,
@@ -211,6 +211,7 @@ interface FundamentalSnapshotMetric {
   period_end?: string | null;
   change_pct?: number | null;
   derived?: boolean;
+  definition?: string;
 }
 
 interface FundamentalSnapshot {
@@ -284,6 +285,7 @@ export default function StockAnalysis() {
   const NEWS_CACHE_TTL_MS = 10 * 60 * 1000;
 
   type ProjectionsPayload = {
+    ticker?: string;
     projections?: Record<string, StockProjection>;
     historical?: { score_3m_ago?: number; cutoff_date?: string | null };
     technical?: TechnicalData;
@@ -313,6 +315,9 @@ export default function StockAnalysis() {
   const resultTickerRef = useRef("");
 
   const location = useLocation();
+  const navigate = useNavigate();
+  const projectionAbortRef = useRef<AbortController | null>(null);
+  useEffect(() => () => projectionAbortRef.current?.abort(), []);
   const [searchParams] = useSearchParams();
   const { symbol: symbolFromPath } = useParams<{ symbol?: string }>();
   const autoLoadedSymbolRef = useRef<string | null>(null);
@@ -348,6 +353,7 @@ export default function StockAnalysis() {
   const applyProjectionsPayload = useCallback((payload: ProjectionsPayload | null) => {
     if (payload) {
       setProjections(payload.projections ?? {});
+      setSelectedHorizon(current => payload.projections?.[current] ? current : HORIZON_OPTIONS.find(option => payload.projections?.[option.value])?.value ?? "T");
       setTechnicalData(payload.technical || null);
       setOptionsFlow(payload.options_flow || null);
       setOptionalityMetrics(payload.optionality || null);
@@ -391,6 +397,9 @@ export default function StockAnalysis() {
     const normalizedTicker = rawTicker.trim().toUpperCase();
     if (!normalizedTicker) return;
 
+    projectionAbortRef.current?.abort();
+    const controller = new AbortController();
+    projectionAbortRef.current = controller;
     const generation = ++requestGenerationRef.current;
     const tickerChanged = Boolean(resultTickerRef.current && resultTickerRef.current !== normalizedTicker);
     lastRequestedWindowRef.current = window;
@@ -445,16 +454,20 @@ export default function StockAnalysis() {
       try {
         const parsedPayload = await apiFetch<ProjectionsPayload>(
           `/stocks/${normalizedTicker}/projections?history_window=${window}`,
-          { timeoutMs: 55_000 },
+          { timeoutMs: 55_000, signal: controller.signal },
         );
         if (generation !== requestGenerationRef.current) return;
+        const responseSymbols = [parsedPayload.ticker, ...Object.values(parsedPayload.projections ?? {}).map(item => item.ticker)].filter(Boolean);
+        if (responseSymbols.some(symbol => symbol?.toUpperCase() !== normalizedTicker)) {
+          throw new Error("The response belongs to another symbol. Retry the lookup.");
+        }
         projectionsPayload = parsedPayload;
         projectionCacheRef.current.set(cacheKey, {
           payload: parsedPayload,
           fetchedAt: now,
         });
       } catch (err: unknown) {
-        if (generation !== requestGenerationRef.current) return;
+        if (controller.signal.aborted || generation !== requestGenerationRef.current) return;
         if (err instanceof ApiError && err.status === 404) {
           setProjectionUnavailable(true);
         } else {
@@ -470,10 +483,10 @@ export default function StockAnalysis() {
 
     if (generation !== requestGenerationRef.current) return;
     if (projectionsPayload) {
-      const hasAllRequiredWindows = (["T", "3m", "6m", "12m"] as const).every(
+      const hasAnyWindow = (["T", "3m", "6m", "12m"] as const).some(
         (horizon) => Boolean(projectionsPayload?.projections?.[horizon])
       );
-      setProjectionUnavailable(!hasAllRequiredWindows);
+      setProjectionUnavailable(!hasAnyWindow);
       applyProjectionsPayload(projectionsPayload);
       resultTickerRef.current = normalizedTicker;
     } else if (tickerChanged || !resultTickerRef.current) {
@@ -492,7 +505,11 @@ export default function StockAnalysis() {
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    await runSearch(ticker, historyWindow, { includeNews: true });
+    const symbol = ticker.trim().toUpperCase();
+    if (!symbol) return;
+    autoLoadedSymbolRef.current = symbol;
+    navigate(`/stock-analysis/${encodeURIComponent(symbol)}`);
+    await runSearch(symbol, historyWindow, { includeNews: true });
   };
 
   useEffect(() => {
@@ -512,9 +529,9 @@ export default function StockAnalysis() {
     })();
 
     const symbolFromQuery = (
+      symbolFromPath ||
       searchParams.get("symbol") ||
       searchParams.get("ticker") ||
-      symbolFromPath ||
       symbolFromHash ||
       ""
     )
@@ -530,28 +547,16 @@ export default function StockAnalysis() {
 
   // Prepare data for line chart
   const getChartData = () => {
-    const tScore = projections["T"]?.score_total;
-    const score3m = projections["3m"]?.score_total;
-    const score6m = projections["6m"]?.score_total;
-    const score12m = projections["12m"]?.score_total;
-
-    if (
-      tScore === undefined ||
-      score3m === undefined ||
-      score6m === undefined ||
-      score12m === undefined
-    ) {
-      return null;
-    }
-
+    const available = HORIZON_OPTIONS.filter(option => projections[option.value]);
+    if (!available.length) return null;
     return {
       ticker: searchTicker,
-      name: projections["3m"].name,
+      name: projections[available[0].value].name,
       scores: {
-        "T": tScore,
-        "3m": score3m,
-        "6m": score6m,
-        "12m": score12m,
+        T: projections.T?.score_total ?? null,
+        "3m": projections["3m"]?.score_total ?? null,
+        "6m": projections["6m"]?.score_total ?? null,
+        "12m": projections["12m"]?.score_total ?? null,
       },
     };
   };
@@ -659,7 +664,7 @@ export default function StockAnalysis() {
       <div className="flex flex-col">
         <span className="page-kicker">Single Name Lens</span>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-4xl">Stock Analysis</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-stealth-300 md:text-[15px]">Compare trailing stock evidence across four lookback windows with quantified signal quality.</p>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-stealth-300 md:text-[15px]">Compare price, fundamentals and options evidence across four trailing windows.</p>
         {searchTicker && <div className="mt-4"><span className="page-badge">Tracking {searchTicker}</span></div>}
       </div>
       
@@ -715,6 +720,7 @@ export default function StockAnalysis() {
         </div>
       )}
 
+      {Object.keys(projections).length > 0 && Object.keys(projections).length < 4 && <p className="mb-3 text-sm text-amber-300" role="status">Some lookbacks lack usable aligned history. Available evidence is shown; missing scores are marked unavailable.</p>}
       {/* Results */}
       {chartData && (
         <div className="space-y-5 md:space-y-6">
@@ -810,6 +816,7 @@ export default function StockAnalysis() {
                     <button
                       key={option.value}
                       type="button"
+                      disabled={!projections[option.value]}
                       aria-pressed={selectedHorizon === option.value}
                       onClick={() => setSelectedHorizon(option.value)}
                       className={`min-h-11 rounded-lg px-3 text-xs font-semibold transition-colors ${
@@ -880,9 +887,7 @@ export default function StockAnalysis() {
                       {[
                         optionsFlow?.expiry ? `expiry ${formatObservedDate(optionsFlow.expiry)}` : null,
                         optionsFlow?.quote_source || optionsFlow?.data_source,
-                        optionsFlow?.observed_at || optionsFlow?.as_of
-                          ? `observed ${formatObservedDate(optionsFlow.observed_at || optionsFlow.as_of)}`
-                          : null,
+                        optionsFlow?.observed_at ? `quote observed ${formatObservedDate(optionsFlow.observed_at)}` : "quote time unavailable",
                       ].filter(Boolean).join(" · ") || "Options chain unavailable"}
                     </p>
                   </div>
@@ -1073,12 +1078,19 @@ export default function StockAnalysis() {
 
                 {/* ── Snapshot Strip ── */}
                 <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-                  {snapMetrics.map((m) => (
+                  {snapMetrics.map((m, index) => (
                     <div key={m.label} className="secondary-card px-3 py-2 text-center">
                       <div className="mb-1 text-xs uppercase tracking-wider text-stealth-400">{m.label}</div>
                       <div className="text-sm font-semibold text-stealth-100">
                         {m.value !== null ? m.fmt(m.value) : "—"}
                       </div>
+                      <details className="mt-1 text-xs text-stealth-300">
+                        <summary className="cursor-pointer">{(() => {
+                          const metric = [snapshot?.eps_ttm, snapshot?.roe_ttm, snapshot?.free_cash_flow_ttm, snapshot?.revenue_ttm, snapshot?.pe_ratio, snapshot?.market_cap][index];
+                          return metric?.period_end ? "Through " + formatObservedDate(metric.period_end) : "Period unavailable";
+                        })()}</summary>
+                        <p className="mt-1">{[snapshot?.eps_ttm, snapshot?.roe_ttm, snapshot?.free_cash_flow_ttm, snapshot?.revenue_ttm, snapshot?.pe_ratio, snapshot?.market_cap][index]?.definition ?? "Latest available provider value."}</p>
+                      </details>
                       {m.delta !== null && (
                         <div className={`mt-0.5 text-xs ${m.delta >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
                           {m.delta >= 0 ? "▲" : "▼"} {Math.abs(m.delta).toFixed(1)}% {m.deltaLabel}
@@ -1092,6 +1104,7 @@ export default function StockAnalysis() {
                   {[snapshotPeriodLabel, priceMetricPeriodLabel, "Yahoo Finance via yfinance"].filter(Boolean).join(" · ")}
                 </div>
 
+                {ttmPeriodEnds.length > 1 && <p role="status" className="mb-4 text-xs text-amber-300">Statement coverage differs by metric. Earlier revenue, cash-flow or ROE periods do not include the latest EPS quarter; expand each period above to inspect its basis.</p>}
                 {/* ── Dual-Axis Charts ── */}
                 <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
 
@@ -1318,23 +1331,24 @@ export default function StockAnalysis() {
             <div
               className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-stealth-800 bg-stealth-800 sm:grid-cols-4"
               role="img"
-              aria-label={`Trailing scores: 21 days ${Math.round(chartData.scores.T)}, 3 months ${Math.round(chartData.scores["3m"])}, 6 months ${Math.round(chartData.scores["6m"])}, 12 months ${Math.round(chartData.scores["12m"])}`}
+              aria-label={"Trailing scores: " + HORIZON_OPTIONS.map(option => option.label + " " + (chartData.scores[option.value] == null ? "unavailable" : Math.round(chartData.scores[option.value]!))).join(", ")}
             >
               {HORIZON_OPTIONS.map((option) => {
-                const score = Math.max(0, Math.min(100, chartData.scores[option.value]));
+                const value = chartData.scores[option.value];
+                const score = value == null ? null : Math.max(0, Math.min(100, value));
                 const active = selectedHorizon === option.value;
                 return (
                   <div key={option.value} className={`min-w-0 bg-stealth-950/65 px-3 py-3 ${active ? "bg-stealth-900" : ""}`}>
                     <div className="mb-2 flex items-center justify-between gap-2">
                       <span className={`text-xs font-semibold ${active ? "text-sky-300" : "text-stealth-400"}`}>{option.label}</span>
                       <span className={`text-sm font-semibold tabular-nums ${active ? "text-white" : "text-stealth-300"}`}>
-                        {Math.round(score)}
+                        {score == null ? "Unavailable" : Math.round(score)}
                       </span>
                     </div>
                     <div className="h-2 overflow-hidden rounded-full bg-stealth-800">
                       <div
                         className={`h-full rounded-full transition-[width] ${active ? "bg-sky-400" : "bg-sky-700/65"}`}
-                        style={{ width: `${score}%` }}
+                        style={{ width: `${score ?? 0}%` }}
                       />
                     </div>
                   </div>

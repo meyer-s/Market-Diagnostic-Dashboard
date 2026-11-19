@@ -25,11 +25,11 @@ export function ConvictionSnapshot({
   
   // Determine signal type based on score
   const getSignalType = (s: number) => {
-    if (s >= 65) return { label: "Strong Bullish", icon: "↑↑", color: "text-green-400" };
-    if (s >= 55) return { label: "Bullish", icon: "↑", color: "text-lime-400" };
-    if (s <= 35) return { label: "Strong Bearish", icon: "↓↓", color: "text-red-400" };
-    if (s <= 45) return { label: "Bearish", icon: "↓", color: "text-orange-400" };
-    return { label: "Balanced", icon: "→", color: "text-stealth-400" };
+    if (s >= 65) return { label: "High composite", icon: "↑↑", color: "text-green-400" };
+    if (s >= 55) return { label: "Above midpoint", icon: "↑", color: "text-lime-400" };
+    if (s <= 35) return { label: "Low composite", icon: "↓↓", color: "text-red-400" };
+    if (s <= 45) return { label: "Below midpoint", icon: "↓", color: "text-orange-400" };
+    return { label: "Near midpoint", icon: "→", color: "text-stealth-400" };
   };
   
   const signal = getSignalType(score);
@@ -46,16 +46,16 @@ export function ConvictionSnapshot({
   const volStatus = getVolatilityStatus(volatility);
   const directionDistance = Math.abs(score - 50);
   const directionLabel = directionDistance >= 15
-    ? "strong direction"
+    ? "large score offset"
     : directionDistance >= 5
-      ? "moderate direction"
-      : "near-neutral direction";
+      ? "moderate score offset"
+      : "near-midpoint score";
   
   return (
     <div className={`secondary-card stock-conviction-panel flex h-full min-w-0 flex-col p-3 sm:p-4 ${qualityLevel.border} ${qualityLevel.bg}`}>
       {/* Header */}
       <div className="mb-3">
-        <p className="text-xs text-stealth-400 mb-1">Signal Quality</p>
+        <p className="text-xs text-stealth-400 mb-1">Model Strength</p>
         <p className="text-xs text-stealth-300">{horizon} trailing window</p>
       </div>
       
@@ -64,7 +64,7 @@ export function ConvictionSnapshot({
         {/* Quality gauge */}
         <div className="col-span-2">
           <div className="flex items-end justify-between mb-1.5">
-            <span className="text-xs text-stealth-400">Composite</span>
+            <span className="text-xs text-stealth-400">Heuristic</span>
             <span className={`text-lg font-bold ${qualityLevel.color}`}>
               {signalQuality.toFixed(0)}/100
             </span>
@@ -116,16 +116,17 @@ export function ConvictionSnapshot({
         </div>
       </div>
       
+      <details className="mb-3 text-xs text-stealth-300"><summary className="cursor-pointer">What this score measures</summary><p className="mt-1">A heuristic of component agreement, realized volatility and distance from the score midpoint. It is not a calibrated forecast probability or a measure of source-data completeness.</p></details>
       {/* The weighted composition answers the quality basis without explanatory prose. */}
       <div className="mt-auto rounded border border-stealth-700/30 bg-stealth-800/20 p-2 text-xs text-stealth-300">
         <div className="mb-1.5 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-          <span className="font-semibold">Quality drivers</span>
+          <span className="font-semibold">Model inputs</span>
           <span className="text-right text-stealth-400">{volStatus.label} volatility · {directionLabel}</span>
         </div>
         <div
           className="flex h-2 overflow-hidden rounded-full bg-stealth-800"
           role="img"
-          aria-label="Signal quality weighting: component consistency 40 percent, realized volatility 35 percent, directional strength 25 percent"
+          aria-label="Model strength weighting: component consistency 40 percent, realized volatility 35 percent, distance from the score midpoint 25 percent"
         >
           <span className="h-full w-[40%] bg-sky-400/80" />
           <span className="h-full w-[35%] bg-violet-400/75" />
@@ -134,7 +135,7 @@ export function ConvictionSnapshot({
         <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-stealth-400">
           <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-sky-400/80" />Components 40%</span>
           <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-violet-400/75" />Volatility 35%</span>
-          <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-amber-300/75" />Direction 25%</span>
+          <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-amber-300/75" />Score offset 25%</span>
         </div>
       </div>
     </div>

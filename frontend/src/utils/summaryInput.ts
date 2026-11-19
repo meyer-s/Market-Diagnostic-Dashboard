@@ -40,7 +40,7 @@ export type OptionalityLike = {
 };
 
 export type TechnicalDataLike = {
-  candles?: Array<{ close: number | string; high: number | string; low: number | string; volume?: number | string }>;
+  candles?: Array<{ close: number | string; high: number | string; low: number | string; volume?: number | string; ema50?: number; ema200?: number | null }>;
   current_price?: number | null;
   sma_50?: number | null;
   sma_200?: number | null;
@@ -126,8 +126,10 @@ export const buildSummaryInputFromSnapshot = ({
 
   const closes = candles.map((c: CandleLike) => c.close).filter((v: number) => Number.isFinite(v));
   // The API's historical `sma_*` field names contain EMA levels; keep slope basis consistent.
-  const ma50Series = calcEmaSeries(closes, 50);
-  const ma200Series = calcEmaSeries(closes, 200);
+  const supplied50 = technicalData.candles?.map(candle => candle.ema50);
+  const supplied200 = technicalData.candles?.map(candle => candle.ema200);
+  const ma50Series = supplied50?.every(value => typeof value === "number" && Number.isFinite(value)) ? supplied50 as number[] : calcEmaSeries(closes, 50);
+  const ma200Series = supplied200?.every(value => typeof value === "number" && Number.isFinite(value)) ? supplied200 as number[] : calcEmaSeries(closes, 200);
   const ma50Slope = calcSlopeFromSeries(ma50Series);
   const ma200Slope = calcSlopeFromSeries(ma200Series);
 
