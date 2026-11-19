@@ -106,6 +106,8 @@ def get_latest_projections():
             "run_id": run.id,
             "as_of_date": str(run.as_of_date),
             "created_at": run.created_at.isoformat(),
+            "price_as_of_date": config.get("price_as_of_date"),
+            "price_observations": config.get("price_observations", {}),
             "model_version": run.model_version,
             "system_state": run.system_state,
             "data_warnings": data_warnings,
@@ -151,14 +153,17 @@ def get_projection_analytics(
     """Return compact stability, uncertainty, scanner, and leadership analytics."""
     global _analytics_cache_key, _analytics_cache_payload, _analytics_cache_expires_at
     cutoff = datetime.utcnow().date() - timedelta(days=days)
-    scanner_cutoff = datetime.utcnow() - timedelta(days=scanner_days)
     with get_db_session() as db:
         run = get_latest_sector_projection_run(db)
         if not run:
             raise HTTPException(status_code=404, detail="No sector projections available.")
+        # Keep scanner evidence inside the selected run's dated snapshot, even
+        # when latest returns an older eligible run after a blocked refresh.
+        scanner_cutoff = datetime.combine(run.as_of_date - timedelta(days=scanner_days), datetime.min.time())
+        scanner_end = datetime.combine(run.as_of_date + timedelta(days=1), datetime.min.time())
         latest_scanner_event_id = (
             db.query(func.max(OptionAlertEvent.id))
-            .filter(OptionAlertEvent.triggered_at >= scanner_cutoff)
+            .filter(OptionAlertEvent.triggered_at >= scanner_cutoff, OptionAlertEvent.triggered_at < scanner_end)
             .scalar()
         )
         cache_key = (run.id, latest_scanner_event_id, days, scanner_days)
@@ -182,7 +187,7 @@ def get_projection_analytics(
         history = build_sector_projection_history(db, cutoff)
         scanner_events = (
             db.query(OptionAlertEvent)
-            .filter(OptionAlertEvent.triggered_at >= scanner_cutoff)
+            .filter(OptionAlertEvent.triggered_at >= scanner_cutoff, OptionAlertEvent.triggered_at < scanner_end)
             .order_by(OptionAlertEvent.triggered_at.asc(), OptionAlertEvent.id.asc())
             .all()
         )
@@ -193,6 +198,8 @@ def get_projection_analytics(
             as_of=run.as_of_date,
             scanner_lookback_days=scanner_days,
         )
+        payload["run_id"] = run.id
+        payload["price_as_of_date"] = (run.config_json or {}).get("price_as_of_date")
         _analytics_cache_key = cache_key
         _analytics_cache_payload = payload
         _analytics_cache_expires_at = time.monotonic() + 300.0

@@ -1,0 +1,4542 @@
+{
+  "latest": {
+    "run_id": 2054,
+    "as_of_date": "2026-11-19",
+    "created_at": "2026-11-19T14:42:26.732840",
+    "model_version": "option_b_v2",
+    "system_state": "RED",
+    "data_warnings": [],
+    "quality_status": "valid",
+    "excluded_from_latest": false,
+    "projections": {
+      "T": [
+        {
+          "sector_symbol": "XLE",
+          "sector_name": "Energy",
+          "score_total": 13.077023851386903,
+          "score_trend": 14.140770630010769,
+          "score_rel": 9.500012500677794,
+          "score_risk": 8.068366588393598,
+          "score_regime": 45,
+          "rank": 10,
+          "metrics": {
+            "return": -0.09827865507145384,
+            "sma_dist": -0.024665799828713753,
+            "vol": 0.32634332578513003,
+            "drawdown": -0.12467860819875565,
+            "rel_ret": -0.04776181455055384
+          },
+          "classification": "Loser"
+        },
+        {
+          "sector_symbol": "XLF",
+          "sector_name": "Financials",
+          "score_total": 56.38895394638727,
+          "score_trend": 56.71512780987277,
+          "score_rel": 56.749888531551576,
+          "score_risk": 56.71089936239524,
+          "score_regime": 50,
+          "rank": 5,
+          "metrics": {
+            "return": 0.01256275902560633,
+            "sma_dist": -0.024094960221621275,
+            "vol": 0.2309622349273881,
+            "drawdown": -0.046959502671737874,
+            "rel_ret": 0.06307959954650633
+          },
+          "classification": "Neutral"
+        },
+        {
+          "sector_symbol": "XLK",
+          "sector_name": "Technology",
+          "score_total": 6.278764535482274,
+          "score_trend": 7.053467049199206,
+          "score_rel": 2.7519358199902566,
+          "score_risk": 0.1456180867277709,
+          "score_regime": 45,
+          "rank": 11,
+          "metrics": {
+            "return": -0.11664152608953382,
+            "sma_dist": -0.02328356638116369,
+            "vol": 0.4486103248317354,
+            "drawdown": -0.14984290637270947,
+            "rel_ret": -0.06612468556863382
+          },
+          "classification": "Loser"
+        },
+        {
+          "sector_symbol": "XLY",
+          "sector_name": "Consumer Discretionary",
+          "score_total": 61.27470518167878,
+          "score_trend": 72.42729392547989,
+          "score_rel": 72.42729392547989,
+          "score_risk": 23.521173687844335,
+          "score_regime": 45,
+          "rank": 4,
+          "metrics": {
+            "return": 0.0320346056124865,
+            "sma_dist": -0.0009722368970860318,
+            "vol": 0.2819661376436339,
+            "drawdown": -0.04275323533597708,
+            "rel_ret": 0.0825514461333865
+          },
+          "classification": "Neutral"
+        },
+        {
+          "sector_symbol": "XLP",
+          "sector_name": "Consumer Staples",
+          "score_total": 72.10484337618418,
+          "score_trend": 78.88881585383461,
+          "score_rel": 79.516254139862,
+          "score_risk": 50,
+          "score_regime": 55,
+          "rank": 2,
+          "metrics": {
+            "return": 0.03908832256610584,
+            "sma_dist": -0.0016970359758095022,
+            "vol": 0.24190611340952556,
+            "drawdown": -0.03500390710807111,
+            "rel_ret": 0.08960516308700583
+          },
+          "classification": "Winner"
+        },
+        {
+          "sector_symbol": "XLV",
+          "sector_name": "Health Care",
+          "score_total": 54.41442144192474,
+          "score_trend": 50,
+          "score_rel": 50,
+          "score_risk": 70.8221072096237,
+          "score_regime": 55,
+          "rank": 6,
+          "metrics": {
+            "return": 0.007507456288178727,
+            "sma_dist": -0.029536566804223896,
+            "vol": 0.21909464154796718,
+            "drawdown": -0.04476434318903377,
+            "rel_ret": 0.058024296809078724
+          },
+          "classification": "Neutral"
+        },
+        {
+          "sector_symbol": "XLI",
+          "sector_name": "Industrials",
+          "score_total": 39.93293961777197,
+          "score_trend": 42.67494701557882,
+          "score_rel": 39.5489074861916,
+          "score_risk": 33.072706074520106,
+          "score_regime": 45,
+          "rank": 8,
+          "metrics": {
+            "return": -0.012829732317117482,
+            "sma_dist": -0.01224938369007711,
+            "vol": 0.25845083175177724,
+            "drawdown": -0.05165774997176609,
+            "rel_ret": 0.037687108203782516
+          },
+          "classification": "Neutral"
+        },
+        {
+          "sector_symbol": "XLU",
+          "sector_name": "Utilities",
+          "score_total": 85.55123137247399,
+          "score_trend": 84.42432327583793,
+          "score_rel": 85.1888978423466,
+          "score_risk": 96.26808272821468,
+          "score_regime": 55,
+          "rank": 1,
+          "metrics": {
+            "return": 0.039875790982649706,
+            "sma_dist": -0.0027707327892739775,
+            "vol": 0.14070507833755852,
+            "drawdown": -0.01586583816604703,
+            "rel_ret": 0.0903926315035497
+          },
+          "classification": "Winner"
+        },
+        {
+          "sector_symbol": "XLB",
+          "sector_name": "Materials",
+          "score_total": 41.2279250246457,
+          "score_trend": 35.436119474136774,
+          "score_rel": 33.53349795425306,
+          "score_risk": 63.60810937504115,
+          "score_regime": 50,
+          "rank": 7,
+          "metrics": {
+            "return": -0.015030264779308578,
+            "sma_dist": -0.03041717320517001,
+            "vol": 0.21676293419622336,
+            "drawdown": -0.0638219358816643,
+            "rel_ret": 0.03548657574159142
+          },
+          "classification": "Neutral"
+        },
+        {
+          "sector_symbol": "XLRE",
+          "sector_name": "Real Estate",
+          "score_total": 68.55313465643911,
+          "score_trend": 65.56927860731284,
+          "score_rel": 66.28303711520543,
+          "score_risk": 83.31024074293353,
+          "score_regime": 50,
+          "rank": 3,
+          "metrics": {
+            "return": 0.029259033329813944,
+            "sma_dist": -0.013791566648733933,
+            "vol": 0.19148487402855188,
+            "drawdown": -0.03390954821622738,
+            "rel_ret": 0.07977587385071394
+          },
+          "classification": "Winner"
+        },
+        {
+          "sector_symbol": "XLC",
+          "sector_name": "Communication Services",
+          "score_total": 29.51222968264996,
+          "score_trend": 27.44137638683442,
+          "score_rel": 22.360445778738967,
+          "score_risk": 39.777382874763894,
+          "score_regime": 50,
+          "rank": 9,
+          "metrics": {
+            "return": -0.04183683191043519,
+            "sma_dist": -0.010274085833491764,
+            "vol": 0.2323573432299868,
+            "drawdown": -0.0933841608815561,
+            "rel_ret": 0.008680008610464807
+          },
+          "classification": "Loser"
+        }
+      ],
+      "3m": [
+        {
+          "sector_symbol": "XLE",
+          "sector_name": "Energy",
+          "score_total": 32.41275372954487,
+          "score_trend": 33.46433941935988,
+          "score_rel": 42.53023385045916,
+          "score_risk": 11.723654178475869,
+          "score_regime": 45,
+          "rank": 8,
+          "metrics": {
+            "return": -0.032873546945235144,
+            "sma_dist": -0.05005120514642314,
+            "vol": 0.32634332578513003,
+            "drawdown": -0.12467860819875565,
+            "rel_ret": 0.00723496520573641
+          },
+          "classification": "Neutral"
+        },
+        {
+          "sector_symbol": "XLF",
+          "sector_name": "Financials",
+          "score_total": 57.35478110612031,
+          "score_trend": 56.93393535915382,
+          "score_rel": 59.670691899558776,
+          "score_risk": 56.666513123167306,
+          "score_regime": 50,
+          "rank": 5,
+          "metrics": {
+            "return": -0.005800240931119971,
+            "sma_dist": 0.0025743096692252276,
+            "vol": 0.2309622349273881,
+            "drawdown": -0.0848874165899306,
+            "rel_ret": 0.03430827121985158
+          },
+          "classification": "Neutral"
+        },
+        {
+          "sector_symbol": "XLK",
+          "sector_name": "Technology",
+          "score_total": 7.591685714462371,
+          "score_trend": 6.724371724121087,
+          "score_rel": 7.382578651191468,
+          "score_risk": 0.5047242162522053,
+          "score_regime": 45,
+          "rank": 11,
+          "metrics": {
+            "return": -0.10430827518395946,
+            "sma_dist": -0.11677974952340398,
+            "vol": 0.4486103248317354,
+            "drawdown": -0.19613858968904707,
+            "rel_ret": -0.06419976303298791
+          },
+          "classification": "Loser"
+        },
+        {
+          "sector_symbol": "XLY",
+          "sector_name": "Consumer Discretionary",
+          "score_total": 63.82891295966078,
+          "score_trend": 74.16187191141381,
+          "score_rel": 76.70223156422949,
+          "score_risk": 25.977005651278553,
+          "score_regime": 45,
+          "rank": 4,
+          "metrics": {
+            "return": 0.023847513268787646,
+            "sma_dist": 0.0418729795085675,
+            "vol": 0.28196613764363393,
+            "drawdown": -0.07819403917154255,
+            "rel_ret": 0.0639560254197592
+          },
+          "classification": "Neutral"
+        },
+        {
+          "sector_symbol": "XLP",
+          "sector_name": "Consumer Staples",
+          "score_total": 82.32531850617337,
+          "score_trend": 91.41920393612102,
+          "score_rel": 94.78892244972968,
+          "score_risk": 50,
+          "score_regime": 55,
+          "rank": 1,
+          "metrics": {
+            "return": 0.07571110518051549,
+            "sma_dist": 0.06291557644319568,
+            "vol": 0.2419061134095255,
+            "drawdown": -0.07537659758360016,
+            "rel_ret": 0.11581961733148705
+          },
+          "classification": "Winner"
+        },
+        {
+          "sector_symbol": "XLV",
+          "sector_name": "Health Care",
+          "score_total": 80.56886075251221,
+          "score_trend": 82.73590773530574,
+          "score_rel": 87.00747828842881,
+          "score_risk": 72.42729392547989,
+          "score_regime": 55,
+          "rank": 2,
+          "metrics": {
+            "return": 0.054953060407414656,
+            "sma_dist": 0.035454838245175146,
+            "vol": 0.21909464154796715,
+            "drawdown": -0.056648951717698126,
+            "rel_ret": 0.09506157255838621
+          },
+          "classification": "Winner"
+        },
+        {
+          "sector_symbol": "XLI",
+          "sector_name": "Industrials",
+          "score_total": 21.96588531418176,
+          "score_trend": 17.928741421032655,
+          "score_rel": 16.188487059935646,
+          "score_risk": 33.95702778368187,
+          "score_regime": 45,
+          "rank": 10,
+          "metrics": {
+            "return": -0.08159013051084663,
+            "sma_dist": -0.030757682913186257,
+            "vol": 0.25845083175177724,
+            "drawdown": -0.09666929468469854,
+            "rel_ret": -0.04148161835987507
+          },
+          "classification": "Loser"
+        },
+        {
+          "sector_symbol": "XLU",
+          "sector_name": "Utilities",
+          "score_total": 70.75361546740609,
+          "score_trend": 65.64985046397038,
+          "score_rel": 66.92729392547989,
+          "score_risk": 91.91497290487722,
+          "score_regime": 55,
+          "rank": 3,
+          "metrics": {
+            "return": 0.002289669333294553,
+            "sma_dist": 0.03583621963831396,
+            "vol": 0.14070507833755858,
+            "drawdown": -0.09667347392617098,
+            "rel_ret": 0.042398181484266106
+          },
+          "classification": "Winner"
+        },
+        {
+          "sector_symbol": "XLB",
+          "sector_name": "Materials",
+          "score_total": 44.997303508210805,
+          "score_trend": 41.22785284748038,
+          "score_rel": 37.01052281391924,
+          "score_risk": 64.20806441334432,
+          "score_regime": 50,
+          "rank": 7,
+          "metrics": {
+            "return": -0.032960369814569956,
+            "sma_dist": -0.014383430087798854,
+            "vol": 0.2167629341962234,
+            "drawdown": -0.09142196635472166,
+            "rel_ret": 0.007148142336401597
+          },
+          "classification": "Neutral"
+        },
+        {
+          "sector_symbol": "XLRE",
+          "sector_name": "Real Estate",
+          "score_total": 55.823804123528284,
+          "score_trend": 50,
+          "score_rel": 50,
+          "score_risk": 79.11902061764143,
+          "score_regime": 50,
+          "rank": 6,
+          "metrics": {
+            "return": -0.024242220477828313,
+            "sma_dist": 0.017826851998596016,
+            "vol": 0.1914848740285519,
+            "drawdown": -0.09807126243014197,
+            "rel_ret": 0.01586629167314324
+          },
+          "classification": "Neutral"
+        },
+        {
+          "sector_symbol": "XLC",
+          "sector_name": "Communication Services",
+          "score_total": 31.93542110249456,
+          "score_trend": 27.57270607452011,
+          "score_rel": 29.27395553951609,
+          "score_risk": 41.227583535528424,
+          "score_regime": 50,
+          "rank": 9,
+          "metrics": {
+            "return": -0.04293485605275016,
+            "sma_dist": -0.03623812625617784,
+            "vol": 0.23235734322998683,
+            "drawdown": -0.12941175140846273,
+            "rel_ret": -0.002826343901778605
+          },
+          "classification": "Loser"
+        }
+      ],
+      "6m": [
+        {
+          "sector_symbol": "XLE",
+          "sector_name": "Energy",
+          "score_total": 52.24528663243277,
+          "score_trend": 63.0746040040228,
+          "score_rel": 64.11660093569036,
+          "score_risk": 11.88367274957703,
+          "score_regime": 45,
+          "rank": 5,
+          "metrics": {
+            "return": 0.038443893686156416,
+            "sma_dist": 0.008447914199373407,
+            "vol": 0.32634332578513,
+            "drawdown": -0.12467860819875565,
+            "rel_ret": 0.048360782330412744
+          },
+          "classification": "Neutral"
+        },
+        {
+          "sector_symbol": "XLF",
+          "sector_name": "Financials",
+          "score_total": 71.66971084928197,
+          "score_trend": 73.56165448328089,
+          "score_rel": 82.45807296662684,
+          "score_risk": 56.647722209087604,
+          "score_regime": 50,
+          "rank": 2,
+          "metrics": {
+            "return": 0.09984545074684181,
+            "sma_dist": 0.016162528858042258,
+            "vol": 0.2309622349273881,
+            "drawdown": -0.0848874165899306,
+            "rel_ret": 0.10976233939109814
+          },
+          "classification": "Winner"
+        },
+        {
+          "sector_symbol": "XLK",
+          "sector_name": "Technology",
+          "score_total": 12.819687307926996,
+          "score_trend": 11.76539684994842,
+          "score_rel": 17.22279562846309,
+          "score_risk": 0.5421001845564029,
+          "score_regime": 45,
+          "rank": 11,
+          "metrics": {
+            "return": -0.07306808453504898,
+            "sma_dist": -0.11213547521883649,
+            "vol": 0.4486103248317356,
+            "drawdown": -0.19613858968904707,
+            "rel_ret": -0.06315119589079266
+          },
+          "classification": "Loser"
+        },
+        {
+          "sector_symbol": "XLY",
+          "sector_name": "Consumer Discretionary",
+          "score_total": 47.528005765354266,
+          "score_trend": 56.710319470819194,
+          "score_rel": 50,
+          "score_risk": 23.791810017428155,
+          "score_regime": 45,
+          "rank": 8,
+          "metrics": {
+            "return": 0.014927713649194763,
+            "sma_dist": 0.03378393470405405,
+            "vol": 0.28196613764363393,
+            "drawdown": -0.10718721154284316,
+            "rel_ret": 0.02484460229345109
+          },
+          "classification": "Neutral"
+        },
+        {
+          "sector_symbol": "XLP",
+          "sector_name": "Consumer Staples",
+          "score_total": 71.12160074344938,
+          "score_trend": 79.8164115916716,
+          "score_rel": 74.84738509065718,
+          "score_risk": 50,
+          "score_regime": 55,
+          "rank": 3,
+          "metrics": {
+            "return": 0.08064198632445208,
+            "sma_dist": 0.07572890182935854,
+            "vol": 0.24190611340952556,
+            "drawdown": -0.07537659758360016,
+            "rel_ret": 0.0905588749687084
+          },
+          "classification": "Winner"
+        },
+        {
+          "sector_symbol": "XLV",
+          "sector_name": "Health Care",
+          "score_total": 88.71623861535605,
+          "score_trend": 94.2137495769979,
+          "score_rel": 97.13061293951057,
+          "score_risk": 72.15433711926907,
+          "score_regime": 55,
+          "rank": 1,
+          "metrics": {
+            "return": 0.24152385967546608,
+            "sma_dist": 0.08780403601447162,
+            "vol": 0.21909464154796715,
+            "drawdown": -0.058743172853076286,
+            "rel_ret": 0.2514407483197224
+          },
+          "classification": "Winner"
+        },
+        {
+          "sector_symbol": "XLI",
+          "sector_name": "Industrials",
+          "score_total": 29.225463083977573,
+          "score_trend": 27.572706074520106,
+          "score_rel": 27.572706074520106,
+          "score_risk": 31.479667640437476,
+          "score_regime": 45,
+          "rank": 9,
+          "metrics": {
+            "return": -0.03058190375977976,
+            "sma_dist": -0.056999182490892863,
+            "vol": 0.2584508317517772,
+            "drawdown": -0.1265526617926499,
+            "rel_ret": -0.020665015115523433
+          },
+          "classification": "Loser"
+        },
+        {
+          "sector_symbol": "XLU",
+          "sector_name": "Utilities",
+          "score_total": 48.07782838368942,
+          "score_trend": 37.35584684576052,
+          "score_rel": 35.94993358382618,
+          "score_risk": 88.66358613974666,
+          "score_regime": 55,
+          "rank": 7,
+          "metrics": {
+            "return": -0.008080113521437449,
+            "sma_dist": 0.008431432802858074,
+            "vol": 0.14070507833755855,
+            "drawdown": -0.14585003310622746,
+            "rel_ret": 0.0018367751228188789
+          },
+          "classification": "Neutral"
+        },
+        {
+          "sector_symbol": "XLB",
+          "sector_name": "Materials",
+          "score_total": 54.81878297969697,
+          "score_trend": 50,
+          "score_rel": 56.62462056767927,
+          "score_risk": 64.15698404696595,
+          "score_regime": 50,
+          "rank": 4,
+          "metrics": {
+            "return": 0.023365970736118236,
+            "sma_dist": -0.01333899260944893,
+            "vol": 0.21676293419622333,
+            "drawdown": -0.09142196635472166,
+            "rel_ret": 0.03328285938037456
+          },
+          "classification": "Neutral"
+        },
+        {
+          "sector_symbol": "XLRE",
+          "sector_name": "Real Estate",
+          "score_total": 50.194969329406135,
+          "score_trend": 43.12568202050846,
+          "score_rel": 42.3431787836045,
+          "score_risk": 77.9272939254799,
+          "score_regime": 50,
+          "rank": 6,
+          "metrics": {
+            "return": -0.0012916709972741192,
+            "sma_dist": 0.001621868793723058,
+            "vol": 0.19148487402855188,
+            "drawdown": -0.11081303907865925,
+            "rel_ret": 0.008625217646982208
+          },
+          "classification": "Neutral"
+        },
+        {
+          "sector_symbol": "XLC",
+          "sector_name": "Communication Services",
+          "score_total": 22.204882216500238,
+          "score_trend": 18.804141041146558,
+          "score_rel": 10.515452304988658,
+          "score_risk": 40.441915282438444,
+          "score_regime": 50,
+          "rank": 10,
+          "metrics": {
+            "return": -0.08524082478220185,
+            "sma_dist": -0.03995255907110418,
+            "vol": 0.23235734322998675,
+            "drawdown": -0.1386817741187617,
+            "rel_ret": -0.07532393613794552
+          },
+          "classification": "Loser"
+        }
+      ],
+      "12m": [
+        {
+          "sector_symbol": "XLE",
+          "sector_name": "Energy",
+          "score_total": 75.69556487868803,
+          "score_trend": 95.16914834072114,
+          "score_rel": 93.15129814702195,
+          "score_risk": 13.370293406284679,
+          "score_regime": 45,
+          "rank": 2,
+          "metrics": {
+            "return": 0.3955613369512223,
+            "sma_dist": 0.0364697265964149,
+            "vol": 0.32634332578512987,
+            "drawdown": -0.14976262032318477,
+            "rel_ret": 0.28678683910471214
+          },
+          "classification": "Winner"
+        },
+        {
+          "sector_symbol": "XLF",
+          "sector_name": "Financials",
+          "score_total": 50,
+          "score_trend": 50,
+          "score_rel": 50,
+          "score_risk": 50,
+          "score_regime": 50,
+          "rank": 6,
+          "metrics": {
+            "return": 0.11389079472478025,
+            "sma_dist": 0.05011470079015301,
+            "vol": 0.23096223492738815,
+            "drawdown": -0.14794749104323002,
+            "rel_ret": 0.005116296878270088
+          },
+          "classification": "Neutral"
+        },
+        {
+          "sector_symbol": "XLK",
+          "sector_name": "Technology",
+          "score_total": 45.07263909466428,
+          "score_trend": 55.62376584044411,
+          "score_rel": 58.70821391950035,
+          "score_risk": 0.8974014530716332,
+          "score_regime": 45,
+          "rank": 7,
+          "metrics": {
+            "return": 0.16098037339060678,
+            "sma_dist": -0.04120927529854379,
+            "vol": 0.44861032483173546,
+            "drawdown": -0.19613858968904707,
+            "rel_ret": 0.052205875544096614
+          },
+          "classification": "Neutral"
+        },
+        {
+          "sector_symbol": "XLY",
+          "sector_name": "Consumer Discretionary",
+          "score_total": 28.34755657918845,
+          "score_trend": 27.572706074520106,
+          "score_rel": 29.23007515797727,
+          "score_risk": 24.60408149130612,
+          "score_regime": 45,
+          "rank": 10,
+          "metrics": {
+            "return": 0.05088085815062837,
+            "sma_dist": 0.036096212699610275,
+            "vol": 0.28196613764363393,
+            "drawdown": -0.1497569149074558,
+            "rel_ret": -0.05789363969588179
+          },
+          "classification": "Loser"
+        },
+        {
+          "sector_symbol": "XLP",
+          "sector_name": "Consumer Staples",
+          "score_total": 72.47784116311247,
+          "score_trend": 76.41173569861007,
+          "score_rel": 79.05354721275582,
+          "score_risk": 58.13247967455598,
+          "score_regime": 55,
+          "rank": 3,
+          "metrics": {
+            "return": 0.22029815920087614,
+            "sma_dist": 0.0827482262715935,
+            "vol": 0.24190611340952556,
+            "drawdown": -0.096878129106446,
+            "rel_ret": 0.11152366135436598
+          },
+          "classification": "Winner"
+        },
+        {
+          "sector_symbol": "XLV",
+          "sector_name": "Health Care",
+          "score_total": 76.64061639936946,
+          "score_trend": 83.227777299611,
+          "score_rel": 73.17552609816177,
+          "score_risk": 72.42729392547989,
+          "score_regime": 55,
+          "rank": 1,
+          "metrics": {
+            "return": 0.2142216372600454,
+            "sma_dist": 0.1338884798486737,
+            "vol": 0.2190946415479672,
+            "drawdown": -0.10469897494600677,
+            "rel_ret": 0.10544713941353523
+          },
+          "classification": "Winner"
+        },
+        {
+          "sector_symbol": "XLI",
+          "sector_name": "Industrials",
+          "score_total": 36.390237510620864,
+          "score_trend": 34.21869747672716,
+          "score_rel": 38.48940232956301,
+          "score_risk": 35.97501473612368,
+          "score_regime": 45,
+          "rank": 8,
+          "metrics": {
+            "return": 0.10644612575220513,
+            "sma_dist": -0.0470025287529362,
+            "vol": 0.2584508317517773,
+            "drawdown": -0.1265526617926499,
+            "rel_ret": -0.0023283720943050312
+          },
+          "classification": "Neutral"
+        },
+        {
+          "sector_symbol": "XLU",
+          "sector_name": "Utilities",
+          "score_total": 34.58832813245486,
+          "score_trend": 16.74600753355496,
+          "score_rel": 20.503398318875625,
+          "score_risk": 90.75802623346222,
+          "score_regime": 55,
+          "rank": 9,
+          "metrics": {
+            "return": 0.0002702113773183079,
+            "sma_dist": -0.007885504878543448,
+            "vol": 0.14070507833755852,
+            "drawdown": -0.16050130932609785,
+            "rel_ret": -0.10850428646919186
+          },
+          "classification": "Loser"
+        },
+        {
+          "sector_symbol": "XLB",
+          "sector_name": "Materials",
+          "score_total": 65.41583894123252,
+          "score_trend": 65.99958834412503,
+          "score_rel": 66.92729392547989,
+          "score_risk": 65.68918004366147,
+          "score_regime": 50,
+          "rank": 4,
+          "metrics": {
+            "return": 0.20238411867399653,
+            "sma_dist": -0.009580003629272693,
+            "vol": 0.21676293419622322,
+            "drawdown": -0.12383430038423593,
+            "rel_ret": 0.09360962082748636
+          },
+          "classification": "Neutral"
+        },
+        {
+          "sector_symbol": "XLRE",
+          "sector_name": "Real Estate",
+          "score_total": 51.308496718855096,
+          "score_trend": 42.60734950699095,
+          "score_rel": 44.24030139285082,
+          "score_risk": 81.8154951142696,
+          "score_regime": 50,
+          "rank": 5,
+          "metrics": {
+            "return": 0.11010479217768165,
+            "sma_dist": 0.013921758516592275,
+            "vol": 0.19148487402855194,
+            "drawdown": -0.11081303907865925,
+            "rel_ret": 0.0013302943311714888
+          },
+          "classification": "Neutral"
+        },
+        {
+          "sector_symbol": "XLC",
+          "sector_name": "Communication Services",
+          "score_total": 18.40502102868416,
+          "score_trend": 7.69425539389868,
+          "score_rel": 12.732708380455103,
+          "score_risk": 43.1139679364661,
+          "score_regime": 50,
+          "rank": 11,
+          "metrics": {
+            "return": -0.03860974838450437,
+            "sma_dist": -0.05459113387538084,
+            "vol": 0.23235734322998677,
+            "drawdown": -0.1604707639257863,
+            "rel_ret": -0.14738424623101454
+          },
+          "classification": "Loser"
+        }
+      ]
+    },
+    "historical": {},
+    "price_as_of_date": "2026-11-18"
+  },
+  "analytics": {
+    "as_of_date": "2026-11-19",
+    "analytics_version": "sector_stability_v4",
+    "leadership_method": "25% EWMA of the positive-basket mean minus the negative-basket mean, expressed in native sector score points.",
+    "leadership_band": 15,
+    "forward_scenario_method": "Current stabilized score blended toward trailing-window anchors, with bounded recent-rank persistence and reliability-gated scanner confirmation.",
+    "score_method": "55% EWMA + 30% five-run median + 15% latest raw score",
+    "scanner_method": "Directional scanner evidence is deduplicated by symbol/day/side and capped at +/-4 score points before horizon decay.",
+    "uncertainty_method": "Observed 20-run score variability with asymmetric scenario width from persistent rank direction and reliable scanner breadth; not a probability confidence interval.",
+    "scanner_coverage": {
+      "lookback_days": 45,
+      "total_events": 1931,
+      "classified_events": 1918,
+      "deduplicated_events": 932,
+      "classification_coverage_pct": 99.3,
+      "max_overlay_points": 4
+    },
+    "sectors": {
+      "XLE": {
+        "sector_symbol": "XLE",
+        "sector_name": "Energy",
+        "horizons": {
+          "T": {
+            "raw_score": 13.08,
+            "stable_core_score": 14.13,
+            "stable_score": 10.13,
+            "scanner_overlay": -4,
+            "uncertainty_low": 0,
+            "uncertainty_high": 18.05,
+            "observed_score_std": 26.88,
+            "sample_count": 20,
+            "raw_rank": 10,
+            "stable_rank": 10
+          },
+          "3m": {
+            "raw_score": 32.41,
+            "stable_core_score": 44.7,
+            "stable_score": 40.7,
+            "scanner_overlay": -4,
+            "uncertainty_low": 15.5,
+            "uncertainty_high": 55.1,
+            "observed_score_std": 15.32,
+            "sample_count": 20,
+            "raw_rank": 8,
+            "stable_rank": 8
+          },
+          "6m": {
+            "raw_score": 52.25,
+            "stable_core_score": 54.74,
+            "stable_score": 52.74,
+            "scanner_overlay": -2,
+            "uncertainty_low": 36.13,
+            "uncertainty_high": 62.23,
+            "observed_score_std": 6.76,
+            "sample_count": 20,
+            "raw_rank": 5,
+            "stable_rank": 5
+          },
+          "12m": {
+            "raw_score": 75.7,
+            "stable_core_score": 75.59,
+            "stable_score": 74.59,
+            "scanner_overlay": -1,
+            "uncertainty_low": 65.07,
+            "uncertainty_high": 80.03,
+            "observed_score_std": 1.73,
+            "sample_count": 20,
+            "raw_rank": 2,
+            "stable_rank": 2
+          }
+        },
+        "persistence": {
+          "sample_count": 20,
+          "rank_slope_per_run": 0.3797,
+          "rank_signal": -1,
+          "top3_rate": 0.45,
+          "direction": "weakening"
+        },
+        "scanner": {
+          "hits": 22,
+          "recent_hits": 20,
+          "prior_hits": 0,
+          "unique_symbols": 10,
+          "distinct_days": 9,
+          "directional_balance": -1,
+          "scanner_score": 25,
+          "reliability": 1,
+          "overlay_points": -4,
+          "evidence_status": "usable"
+        },
+        "history_3m": [
+          {
+            "as_of_date": "2026-10-23",
+            "raw_score": 74.56,
+            "stable_score": 74.56,
+            "rank": 1
+          },
+          {
+            "as_of_date": "2026-10-26",
+            "raw_score": 80.58,
+            "stable_score": 77.19,
+            "rank": 1
+          },
+          {
+            "as_of_date": "2026-10-27",
+            "raw_score": 82.25,
+            "stable_score": 79.2,
+            "rank": 1
+          },
+          {
+            "as_of_date": "2026-10-28",
+            "raw_score": 75.37,
+            "stable_score": 77.08,
+            "rank": 1
+          },
+          {
+            "as_of_date": "2026-10-29",
+            "raw_score": 74.51,
+            "stable_score": 75.81,
+            "rank": 1
+          },
+          {
+            "as_of_date": "2026-10-30",
+            "raw_score": 77.11,
+            "stable_score": 76.83,
+            "rank": 2
+          },
+          {
+            "as_of_date": "2026-11-02",
+            "raw_score": 78.12,
+            "stable_score": 77.19,
+            "rank": 1
+          },
+          {
+            "as_of_date": "2026-11-03",
+            "raw_score": 68.09,
+            "stable_score": 73.94,
+            "rank": 3
+          },
+          {
+            "as_of_date": "2026-11-04",
+            "raw_score": 74.66,
+            "stable_score": 74.7,
+            "rank": 2
+          },
+          {
+            "as_of_date": "2026-11-05",
+            "raw_score": 60.82,
+            "stable_score": 70.71,
+            "rank": 4
+          },
+          {
+            "as_of_date": "2026-11-06",
+            "raw_score": 59.14,
+            "stable_score": 66.82,
+            "rank": 5
+          },
+          {
+            "as_of_date": "2026-11-09",
+            "raw_score": 51.78,
+            "stable_score": 61.27,
+            "rank": 6
+          },
+          {
+            "as_of_date": "2026-11-10",
+            "raw_score": 42.44,
+            "stable_score": 56.39,
+            "rank": 8
+          },
+          {
+            "as_of_date": "2026-11-11",
+            "raw_score": 41.32,
+            "stable_score": 51.63,
+            "rank": 8
+          },
+          {
+            "as_of_date": "2026-11-12",
+            "raw_score": 54.61,
+            "stable_score": 53.66,
+            "rank": 5
+          },
+          {
+            "as_of_date": "2026-11-13",
+            "raw_score": 56.64,
+            "stable_score": 54.26,
+            "rank": 4
+          },
+          {
+            "as_of_date": "2026-11-16",
+            "raw_score": 57.52,
+            "stable_score": 55.6,
+            "rank": 5
+          },
+          {
+            "as_of_date": "2026-11-17",
+            "raw_score": 35.6,
+            "stable_score": 49.56,
+            "rank": 8
+          },
+          {
+            "as_of_date": "2026-11-18",
+            "raw_score": 48.92,
+            "stable_score": 51.32,
+            "rank": 5
+          },
+          {
+            "as_of_date": "2026-11-19",
+            "raw_score": 32.41,
+            "stable_score": 44.7,
+            "rank": 8
+          }
+        ],
+        "forward_scenarios": {
+          "T": {
+            "months_forward": 0,
+            "projected_score": 10.13,
+            "projected_low": 0,
+            "projected_high": 18.05,
+            "current_core_score": 14.13,
+            "anchor_score": 14.13,
+            "momentum_points": 0,
+            "scanner_points": -4,
+            "projected_rank": 10
+          },
+          "3m": {
+            "months_forward": 3,
+            "projected_score": 17.83,
+            "projected_low": 0,
+            "projected_high": 32.23,
+            "current_core_score": 14.13,
+            "anchor_score": 44.7,
+            "momentum_points": -3,
+            "scanner_points": -4,
+            "projected_rank": 10
+          },
+          "6m": {
+            "months_forward": 6,
+            "projected_score": 27.44,
+            "projected_low": 0,
+            "projected_high": 46.88,
+            "current_core_score": 14.13,
+            "anchor_score": 54.74,
+            "momentum_points": -5,
+            "scanner_points": -2,
+            "projected_rank": 9
+          },
+          "12m": {
+            "months_forward": 12,
+            "projected_score": 46.08,
+            "projected_low": 3.24,
+            "projected_high": 70.56,
+            "current_core_score": 14.13,
+            "anchor_score": 75.59,
+            "momentum_points": -7,
+            "scanner_points": -1,
+            "projected_rank": 7
+          }
+        }
+      },
+      "XLF": {
+        "sector_symbol": "XLF",
+        "sector_name": "Financials",
+        "horizons": {
+          "T": {
+            "raw_score": 56.39,
+            "stable_core_score": 58.75,
+            "stable_score": 60,
+            "scanner_overlay": 1.25,
+            "uncertainty_low": 56.26,
+            "uncertainty_high": 64.57,
+            "observed_score_std": 5.61,
+            "sample_count": 20,
+            "raw_rank": 5,
+            "stable_rank": 5
+          },
+          "3m": {
+            "raw_score": 57.35,
+            "stable_core_score": 57.47,
+            "stable_score": 58.72,
+            "scanner_overlay": 1.25,
+            "uncertainty_low": 54.94,
+            "uncertainty_high": 63.34,
+            "observed_score_std": 3.12,
+            "sample_count": 20,
+            "raw_rank": 5,
+            "stable_rank": 5
+          },
+          "6m": {
+            "raw_score": 71.67,
+            "stable_core_score": 74.29,
+            "stable_score": 74.91,
+            "scanner_overlay": 0.62,
+            "uncertainty_low": 69.88,
+            "uncertainty_high": 81.06,
+            "observed_score_std": 3.06,
+            "sample_count": 20,
+            "raw_rank": 2,
+            "stable_rank": 2
+          },
+          "12m": {
+            "raw_score": 50,
+            "stable_core_score": 50.62,
+            "stable_score": 50.93,
+            "scanner_overlay": 0.31,
+            "uncertainty_low": 44.6,
+            "uncertainty_high": 58.67,
+            "observed_score_std": 2.26,
+            "sample_count": 20,
+            "raw_rank": 6,
+            "stable_rank": 6
+          }
+        },
+        "persistence": {
+          "sample_count": 20,
+          "rank_slope_per_run": -0.1083,
+          "rank_signal": 0.3609,
+          "top3_rate": 0,
+          "direction": "improving"
+        },
+        "scanner": {
+          "hits": 5,
+          "recent_hits": 2,
+          "prior_hits": 3,
+          "unique_symbols": 5,
+          "distinct_days": 2,
+          "directional_balance": 1,
+          "scanner_score": 75,
+          "reliability": 0.3125,
+          "overlay_points": 1.25,
+          "evidence_status": "thin"
+        },
+        "history_3m": [
+          {
+            "as_of_date": "2026-10-23",
+            "raw_score": 51.75,
+            "stable_score": 51.75,
+            "rank": 6
+          },
+          {
+            "as_of_date": "2026-10-26",
+            "raw_score": 50.02,
+            "stable_score": 50.99,
+            "rank": 7
+          },
+          {
+            "as_of_date": "2026-10-27",
+            "raw_score": 52.68,
+            "stable_score": 51.84,
+            "rank": 7
+          },
+          {
+            "as_of_date": "2026-10-28",
+            "raw_score": 51.09,
+            "stable_score": 51.42,
+            "rank": 6
+          },
+          {
+            "as_of_date": "2026-10-29",
+            "raw_score": 52.77,
+            "stable_score": 51.95,
+            "rank": 7
+          },
+          {
+            "as_of_date": "2026-10-30",
+            "raw_score": 54.75,
+            "stable_score": 52.92,
+            "rank": 6
+          },
+          {
+            "as_of_date": "2026-11-02",
+            "raw_score": 56.59,
+            "stable_score": 53.78,
+            "rank": 5
+          },
+          {
+            "as_of_date": "2026-11-03",
+            "raw_score": 54.38,
+            "stable_score": 54.04,
+            "rank": 6
+          },
+          {
+            "as_of_date": "2026-11-04",
+            "raw_score": 52.56,
+            "stable_score": 53.6,
+            "rank": 6
+          },
+          {
+            "as_of_date": "2026-11-05",
+            "raw_score": 52.7,
+            "stable_score": 53.52,
+            "rank": 6
+          },
+          {
+            "as_of_date": "2026-11-06",
+            "raw_score": 59.15,
+            "stable_score": 55.29,
+            "rank": 4
+          },
+          {
+            "as_of_date": "2026-11-09",
+            "raw_score": 52.75,
+            "stable_score": 53.57,
+            "rank": 5
+          },
+          {
+            "as_of_date": "2026-11-10",
+            "raw_score": 50.73,
+            "stable_score": 52.77,
+            "rank": 6
+          },
+          {
+            "as_of_date": "2026-11-11",
+            "raw_score": 54.63,
+            "stable_score": 53.55,
+            "rank": 5
+          },
+          {
+            "as_of_date": "2026-11-12",
+            "raw_score": 51.73,
+            "stable_score": 52.84,
+            "rank": 7
+          },
+          {
+            "as_of_date": "2026-11-13",
+            "raw_score": 56.36,
+            "stable_score": 53.97,
+            "rank": 5
+          },
+          {
+            "as_of_date": "2026-11-16",
+            "raw_score": 58.77,
+            "stable_score": 55.55,
+            "rank": 4
+          },
+          {
+            "as_of_date": "2026-11-17",
+            "raw_score": 57.82,
+            "stable_score": 56.3,
+            "rank": 5
+          },
+          {
+            "as_of_date": "2026-11-18",
+            "raw_score": 61.6,
+            "stable_score": 58.09,
+            "rank": 4
+          },
+          {
+            "as_of_date": "2026-11-19",
+            "raw_score": 57.35,
+            "stable_score": 57.47,
+            "rank": 5
+          }
+        ],
+        "forward_scenarios": {
+          "T": {
+            "months_forward": 0,
+            "projected_score": 60,
+            "projected_low": 57.92,
+            "projected_high": 62.54,
+            "current_core_score": 58.75,
+            "anchor_score": 58.75,
+            "momentum_points": 0,
+            "scanner_points": 1.25,
+            "projected_rank": 5
+          },
+          "3m": {
+            "months_forward": 3,
+            "projected_score": 60.63,
+            "projected_low": 56.86,
+            "projected_high": 65.25,
+            "current_core_score": 58.75,
+            "anchor_score": 57.47,
+            "momentum_points": 1.08,
+            "scanner_points": 1.25,
+            "projected_rank": 5
+          },
+          "6m": {
+            "months_forward": 6,
+            "projected_score": 68.95,
+            "projected_low": 63.85,
+            "projected_high": 75.18,
+            "current_core_score": 58.75,
+            "anchor_score": 74.29,
+            "momentum_points": 1.8,
+            "scanner_points": 0.62,
+            "projected_rank": 3
+          },
+          "12m": {
+            "months_forward": 12,
+            "projected_score": 56.3,
+            "projected_low": 49.89,
+            "projected_high": 64.15,
+            "current_core_score": 58.75,
+            "anchor_score": 50.62,
+            "momentum_points": 2.53,
+            "scanner_points": 0.31,
+            "projected_rank": 4
+          }
+        }
+      },
+      "XLK": {
+        "sector_symbol": "XLK",
+        "sector_name": "Technology",
+        "horizons": {
+          "T": {
+            "raw_score": 6.28,
+            "stable_core_score": 4.88,
+            "stable_score": 1.85,
+            "scanner_overlay": -3.03,
+            "uncertainty_low": 0,
+            "uncertainty_high": 4.47,
+            "observed_score_std": 4.49,
+            "sample_count": 20,
+            "raw_rank": 11,
+            "stable_rank": 11
+          },
+          "3m": {
+            "raw_score": 7.59,
+            "stable_core_score": 6.34,
+            "stable_score": 3.31,
+            "scanner_overlay": -3.03,
+            "uncertainty_low": 0,
+            "uncertainty_high": 17.97,
+            "observed_score_std": 23.32,
+            "sample_count": 20,
+            "raw_rank": 11,
+            "stable_rank": 11
+          },
+          "6m": {
+            "raw_score": 12.82,
+            "stable_core_score": 15.5,
+            "stable_score": 13.99,
+            "scanner_overlay": -1.51,
+            "uncertainty_low": 0,
+            "uncertainty_high": 33.78,
+            "observed_score_std": 20.42,
+            "sample_count": 20,
+            "raw_rank": 11,
+            "stable_rank": 11
+          },
+          "12m": {
+            "raw_score": 45.07,
+            "stable_core_score": 44.75,
+            "stable_score": 43.99,
+            "scanner_overlay": -0.76,
+            "uncertainty_low": 16,
+            "uncertainty_high": 60.62,
+            "observed_score_std": 9.24,
+            "sample_count": 20,
+            "raw_rank": 7,
+            "stable_rank": 7
+          }
+        },
+        "persistence": {
+          "sample_count": 20,
+          "rank_slope_per_run": 0.4023,
+          "rank_signal": -1,
+          "top3_rate": 0.1,
+          "direction": "weakening"
+        },
+        "scanner": {
+          "hits": 85,
+          "recent_hits": 44,
+          "prior_hits": 26,
+          "unique_symbols": 30,
+          "distinct_days": 8,
+          "directional_balance": -0.7579,
+          "scanner_score": 31.05,
+          "reliability": 1,
+          "overlay_points": -3.03,
+          "evidence_status": "usable"
+        },
+        "history_3m": [
+          {
+            "as_of_date": "2026-10-23",
+            "raw_score": 45.93,
+            "stable_score": 45.93,
+            "rank": 8
+          },
+          {
+            "as_of_date": "2026-10-26",
+            "raw_score": 54.97,
+            "stable_score": 49.88,
+            "rank": 6
+          },
+          {
+            "as_of_date": "2026-10-27",
+            "raw_score": 63.44,
+            "stable_score": 54.61,
+            "rank": 3
+          },
+          {
+            "as_of_date": "2026-10-28",
+            "raw_score": 66.07,
+            "stable_score": 58.21,
+            "rank": 3
+          },
+          {
+            "as_of_date": "2026-10-29",
+            "raw_score": 58.29,
+            "stable_score": 57.15,
+            "rank": 4
+          },
+          {
+            "as_of_date": "2026-10-30",
+            "raw_score": 59.15,
+            "stable_score": 57.94,
+            "rank": 4
+          },
+          {
+            "as_of_date": "2026-11-02",
+            "raw_score": 39.99,
+            "stable_score": 52.73,
+            "rank": 8
+          },
+          {
+            "as_of_date": "2026-11-03",
+            "raw_score": 19.87,
+            "stable_score": 44.94,
+            "rank": 10
+          },
+          {
+            "as_of_date": "2026-11-04",
+            "raw_score": 22.76,
+            "stable_score": 36.9,
+            "rank": 10
+          },
+          {
+            "as_of_date": "2026-11-05",
+            "raw_score": 16.39,
+            "stable_score": 27.66,
+            "rank": 11
+          },
+          {
+            "as_of_date": "2026-11-06",
+            "raw_score": 7.03,
+            "stable_score": 21.76,
+            "rank": 11
+          },
+          {
+            "as_of_date": "2026-11-09",
+            "raw_score": 6.73,
+            "stable_score": 17.91,
+            "rank": 11
+          },
+          {
+            "as_of_date": "2026-11-10",
+            "raw_score": 5.29,
+            "stable_score": 12.61,
+            "rank": 11
+          },
+          {
+            "as_of_date": "2026-11-11",
+            "raw_score": 4.21,
+            "stable_score": 10.51,
+            "rank": 11
+          },
+          {
+            "as_of_date": "2026-11-12",
+            "raw_score": 5.53,
+            "stable_score": 9.15,
+            "rank": 11
+          },
+          {
+            "as_of_date": "2026-11-13",
+            "raw_score": 9.58,
+            "stable_score": 9.41,
+            "rank": 11
+          },
+          {
+            "as_of_date": "2026-11-16",
+            "raw_score": 4.44,
+            "stable_score": 7.59,
+            "rank": 11
+          },
+          {
+            "as_of_date": "2026-11-17",
+            "raw_score": 2.81,
+            "stable_score": 6.15,
+            "rank": 11
+          },
+          {
+            "as_of_date": "2026-11-18",
+            "raw_score": 3.47,
+            "stable_score": 5.62,
+            "rank": 11
+          },
+          {
+            "as_of_date": "2026-11-19",
+            "raw_score": 7.59,
+            "stable_score": 6.34,
+            "rank": 11
+          }
+        ],
+        "forward_scenarios": {
+          "T": {
+            "months_forward": 0,
+            "projected_score": 1.85,
+            "projected_low": 0,
+            "projected_high": 9.91,
+            "current_core_score": 4.88,
+            "anchor_score": 4.88,
+            "momentum_points": 0,
+            "scanner_points": -3.03,
+            "projected_rank": 11
+          },
+          "3m": {
+            "months_forward": 3,
+            "projected_score": 0,
+            "projected_low": 0,
+            "projected_high": 14.66,
+            "current_core_score": 4.88,
+            "anchor_score": 6.34,
+            "momentum_points": -3,
+            "scanner_points": -3.03,
+            "projected_rank": 11
+          },
+          "6m": {
+            "months_forward": 6,
+            "projected_score": 3.67,
+            "projected_low": 0,
+            "projected_high": 23.47,
+            "current_core_score": 4.88,
+            "anchor_score": 15.5,
+            "momentum_points": -5,
+            "scanner_points": -1.51,
+            "projected_rank": 11
+          },
+          "12m": {
+            "months_forward": 12,
+            "projected_score": 23.04,
+            "projected_low": 0,
+            "projected_high": 47.96,
+            "current_core_score": 4.88,
+            "anchor_score": 44.75,
+            "momentum_points": -7,
+            "scanner_points": -0.76,
+            "projected_rank": 10
+          }
+        }
+      },
+      "XLY": {
+        "sector_symbol": "XLY",
+        "sector_name": "Consumer Discretionary",
+        "horizons": {
+          "T": {
+            "raw_score": 61.27,
+            "stable_core_score": 55.36,
+            "stable_score": 58.15,
+            "scanner_overlay": 2.79,
+            "uncertainty_low": 53.27,
+            "uncertainty_high": 63.78,
+            "observed_score_std": 7.18,
+            "sample_count": 20,
+            "raw_rank": 4,
+            "stable_rank": 6
+          },
+          "3m": {
+            "raw_score": 63.83,
+            "stable_core_score": 59.74,
+            "stable_score": 62.53,
+            "scanner_overlay": 2.79,
+            "uncertainty_low": 52.35,
+            "uncertainty_high": 74.25,
+            "observed_score_std": 8.23,
+            "sample_count": 20,
+            "raw_rank": 4,
+            "stable_rank": 4
+          },
+          "6m": {
+            "raw_score": 47.53,
+            "stable_core_score": 45.3,
+            "stable_score": 46.69,
+            "scanner_overlay": 1.4,
+            "uncertainty_low": 41.23,
+            "uncertainty_high": 52.98,
+            "observed_score_std": 3.27,
+            "sample_count": 20,
+            "raw_rank": 8,
+            "stable_rank": 8
+          },
+          "12m": {
+            "raw_score": 28.35,
+            "stable_core_score": 28.02,
+            "stable_score": 28.72,
+            "scanner_overlay": 0.7,
+            "uncertainty_low": 22.25,
+            "uncertainty_high": 36.17,
+            "observed_score_std": 2.84,
+            "sample_count": 20,
+            "raw_rank": 10,
+            "stable_rank": 10
+          }
+        },
+        "persistence": {
+          "sample_count": 20,
+          "rank_slope_per_run": -0.0135,
+          "rank_signal": 0.0451,
+          "top3_rate": 0.3,
+          "direction": "stable"
+        },
+        "scanner": {
+          "hits": 363,
+          "recent_hits": 221,
+          "prior_hits": 95,
+          "unique_symbols": 35,
+          "distinct_days": 33,
+          "directional_balance": 0.6969,
+          "scanner_score": 67.42,
+          "reliability": 1,
+          "overlay_points": 2.79,
+          "evidence_status": "usable"
+        },
+        "history_3m": [
+          {
+            "as_of_date": "2026-10-23",
+            "raw_score": 65.62,
+            "stable_score": 65.62,
+            "rank": 3
+          },
+          {
+            "as_of_date": "2026-10-26",
+            "raw_score": 58.16,
+            "stable_score": 62.36,
+            "rank": 4
+          },
+          {
+            "as_of_date": "2026-10-27",
+            "raw_score": 63.35,
+            "stable_score": 63.52,
+            "rank": 4
+          },
+          {
+            "as_of_date": "2026-10-28",
+            "raw_score": 64.97,
+            "stable_score": 64.19,
+            "rank": 4
+          },
+          {
+            "as_of_date": "2026-10-29",
+            "raw_score": 61.88,
+            "stable_score": 63.19,
+            "rank": 3
+          },
+          {
+            "as_of_date": "2026-10-30",
+            "raw_score": 53.26,
+            "stable_score": 60.05,
+            "rank": 7
+          },
+          {
+            "as_of_date": "2026-11-02",
+            "raw_score": 45.56,
+            "stable_score": 56.79,
+            "rank": 7
+          },
+          {
+            "as_of_date": "2026-11-03",
+            "raw_score": 58.03,
+            "stable_score": 57.63,
+            "rank": 5
+          },
+          {
+            "as_of_date": "2026-11-04",
+            "raw_score": 52.41,
+            "stable_score": 54.69,
+            "rank": 7
+          },
+          {
+            "as_of_date": "2026-11-05",
+            "raw_score": 57.8,
+            "stable_score": 55.73,
+            "rank": 5
+          },
+          {
+            "as_of_date": "2026-11-06",
+            "raw_score": 34.91,
+            "stable_score": 49.07,
+            "rank": 8
+          },
+          {
+            "as_of_date": "2026-11-09",
+            "raw_score": 39.74,
+            "stable_score": 48.23,
+            "rank": 8
+          },
+          {
+            "as_of_date": "2026-11-10",
+            "raw_score": 58.03,
+            "stable_score": 52.32,
+            "rank": 5
+          },
+          {
+            "as_of_date": "2026-11-11",
+            "raw_score": 62.22,
+            "stable_score": 56.15,
+            "rank": 3
+          },
+          {
+            "as_of_date": "2026-11-12",
+            "raw_score": 59.19,
+            "stable_score": 56.53,
+            "rank": 3
+          },
+          {
+            "as_of_date": "2026-11-13",
+            "raw_score": 60.72,
+            "stable_score": 57.89,
+            "rank": 3
+          },
+          {
+            "as_of_date": "2026-11-16",
+            "raw_score": 61.79,
+            "stable_score": 59.25,
+            "rank": 3
+          },
+          {
+            "as_of_date": "2026-11-17",
+            "raw_score": 60.87,
+            "stable_score": 59.58,
+            "rank": 4
+          },
+          {
+            "as_of_date": "2026-11-18",
+            "raw_score": 48.67,
+            "stable_score": 56.35,
+            "rank": 6
+          },
+          {
+            "as_of_date": "2026-11-19",
+            "raw_score": 63.83,
+            "stable_score": 59.74,
+            "rank": 4
+          }
+        ],
+        "forward_scenarios": {
+          "T": {
+            "months_forward": 0,
+            "projected_score": 58.15,
+            "projected_low": 52.55,
+            "projected_high": 64.6,
+            "current_core_score": 55.36,
+            "anchor_score": 55.36,
+            "momentum_points": 0,
+            "scanner_points": 2.79,
+            "projected_rank": 6
+          },
+          "3m": {
+            "months_forward": 3,
+            "projected_score": 59.82,
+            "projected_low": 49.63,
+            "projected_high": 71.55,
+            "current_core_score": 55.36,
+            "anchor_score": 59.74,
+            "momentum_points": 0.14,
+            "scanner_points": 2.79,
+            "projected_rank": 6
+          },
+          "6m": {
+            "months_forward": 6,
+            "projected_score": 51.95,
+            "projected_low": 38.2,
+            "projected_high": 67.78,
+            "current_core_score": 55.36,
+            "anchor_score": 45.3,
+            "momentum_points": 0.23,
+            "scanner_points": 1.4,
+            "projected_rank": 6
+          },
+          "12m": {
+            "months_forward": 12,
+            "projected_score": 38.6,
+            "projected_low": 21.29,
+            "projected_high": 58.54,
+            "current_core_score": 55.36,
+            "anchor_score": 28.02,
+            "momentum_points": 0.32,
+            "scanner_points": 0.7,
+            "projected_rank": 8
+          }
+        }
+      },
+      "XLP": {
+        "sector_symbol": "XLP",
+        "sector_name": "Consumer Staples",
+        "horizons": {
+          "T": {
+            "raw_score": 72.1,
+            "stable_core_score": 71.16,
+            "stable_score": 74.68,
+            "scanner_overlay": 3.52,
+            "uncertainty_low": 70.73,
+            "uncertainty_high": 80.85,
+            "observed_score_std": 6.56,
+            "sample_count": 20,
+            "raw_rank": 2,
+            "stable_rank": 1
+          },
+          "3m": {
+            "raw_score": 82.33,
+            "stable_core_score": 80.97,
+            "stable_score": 84.49,
+            "scanner_overlay": 3.52,
+            "uncertainty_low": 72.7,
+            "uncertainty_high": 100,
+            "observed_score_std": 10.77,
+            "sample_count": 20,
+            "raw_rank": 1,
+            "stable_rank": 2
+          },
+          "6m": {
+            "raw_score": 71.12,
+            "stable_core_score": 67.73,
+            "stable_score": 69.49,
+            "scanner_overlay": 1.76,
+            "uncertainty_low": 61.94,
+            "uncertainty_high": 81.29,
+            "observed_score_std": 5.11,
+            "sample_count": 20,
+            "raw_rank": 3,
+            "stable_rank": 3
+          },
+          "12m": {
+            "raw_score": 72.48,
+            "stable_core_score": 69.33,
+            "stable_score": 70.21,
+            "scanner_overlay": 0.88,
+            "uncertainty_low": 58.48,
+            "uncertainty_high": 88.54,
+            "observed_score_std": 6.3,
+            "sample_count": 20,
+            "raw_rank": 3,
+            "stable_rank": 3
+          }
+        },
+        "persistence": {
+          "sample_count": 20,
+          "rank_slope_per_run": -0.2256,
+          "rank_signal": 0.7519,
+          "top3_rate": 0.6,
+          "direction": "improving"
+        },
+        "scanner": {
+          "hits": 245,
+          "recent_hits": 130,
+          "prior_hits": 86,
+          "unique_symbols": 29,
+          "distinct_days": 32,
+          "directional_balance": 0.881,
+          "scanner_score": 72.03,
+          "reliability": 1,
+          "overlay_points": 3.52,
+          "evidence_status": "usable"
+        },
+        "history_3m": [
+          {
+            "as_of_date": "2026-10-23",
+            "raw_score": 64.49,
+            "stable_score": 64.49,
+            "rank": 4
+          },
+          {
+            "as_of_date": "2026-10-26",
+            "raw_score": 60.24,
+            "stable_score": 62.63,
+            "rank": 3
+          },
+          {
+            "as_of_date": "2026-10-27",
+            "raw_score": 54.64,
+            "stable_score": 59.94,
+            "rank": 6
+          },
+          {
+            "as_of_date": "2026-10-28",
+            "raw_score": 48.21,
+            "stable_score": 56.35,
+            "rank": 7
+          },
+          {
+            "as_of_date": "2026-10-29",
+            "raw_score": 53.36,
+            "stable_score": 55.65,
+            "rank": 6
+          },
+          {
+            "as_of_date": "2026-10-30",
+            "raw_score": 56.54,
+            "stable_score": 56.08,
+            "rank": 5
+          },
+          {
+            "as_of_date": "2026-11-02",
+            "raw_score": 65.67,
+            "stable_score": 58.68,
+            "rank": 4
+          },
+          {
+            "as_of_date": "2026-11-03",
+            "raw_score": 61.93,
+            "stable_score": 59.09,
+            "rank": 4
+          },
+          {
+            "as_of_date": "2026-11-04",
+            "raw_score": 62.19,
+            "stable_score": 61.09,
+            "rank": 4
+          },
+          {
+            "as_of_date": "2026-11-05",
+            "raw_score": 68.22,
+            "stable_score": 63.16,
+            "rank": 2
+          },
+          {
+            "as_of_date": "2026-11-06",
+            "raw_score": 72.93,
+            "stable_score": 66.37,
+            "rank": 2
+          },
+          {
+            "as_of_date": "2026-11-09",
+            "raw_score": 75.22,
+            "stable_score": 68.89,
+            "rank": 2
+          },
+          {
+            "as_of_date": "2026-11-10",
+            "raw_score": 80.41,
+            "stable_score": 72.85,
+            "rank": 2
+          },
+          {
+            "as_of_date": "2026-11-11",
+            "raw_score": 77.56,
+            "stable_score": 74.05,
+            "rank": 2
+          },
+          {
+            "as_of_date": "2026-11-12",
+            "raw_score": 76.87,
+            "stable_score": 75.05,
+            "rank": 2
+          },
+          {
+            "as_of_date": "2026-11-13",
+            "raw_score": 75.11,
+            "stable_score": 75,
+            "rank": 2
+          },
+          {
+            "as_of_date": "2026-11-16",
+            "raw_score": 79.77,
+            "stable_score": 76.7,
+            "rank": 2
+          },
+          {
+            "as_of_date": "2026-11-17",
+            "raw_score": 82.4,
+            "stable_score": 78.06,
+            "rank": 2
+          },
+          {
+            "as_of_date": "2026-11-18",
+            "raw_score": 84.71,
+            "stable_score": 80.11,
+            "rank": 2
+          },
+          {
+            "as_of_date": "2026-11-19",
+            "raw_score": 82.33,
+            "stable_score": 80.97,
+            "rank": 1
+          }
+        ],
+        "forward_scenarios": {
+          "T": {
+            "months_forward": 0,
+            "projected_score": 74.68,
+            "projected_low": 68.2,
+            "projected_high": 84.82,
+            "current_core_score": 71.16,
+            "anchor_score": 71.16,
+            "momentum_points": 0,
+            "scanner_points": 3.52,
+            "projected_rank": 1
+          },
+          "3m": {
+            "months_forward": 3,
+            "projected_score": 80.37,
+            "projected_low": 68.58,
+            "projected_high": 98.8,
+            "current_core_score": 71.16,
+            "anchor_score": 80.97,
+            "momentum_points": 2.26,
+            "scanner_points": 3.52,
+            "projected_rank": 1
+          },
+          "6m": {
+            "months_forward": 6,
+            "projected_score": 74.96,
+            "projected_low": 59.05,
+            "projected_high": 99.84,
+            "current_core_score": 71.16,
+            "anchor_score": 67.73,
+            "momentum_points": 3.76,
+            "scanner_points": 1.76,
+            "projected_rank": 2
+          },
+          "12m": {
+            "months_forward": 12,
+            "projected_score": 76.11,
+            "projected_low": 56.08,
+            "projected_high": 100,
+            "current_core_score": 71.16,
+            "anchor_score": 69.33,
+            "momentum_points": 5.26,
+            "scanner_points": 0.88,
+            "projected_rank": 2
+          }
+        }
+      },
+      "XLV": {
+        "sector_symbol": "XLV",
+        "sector_name": "Health Care",
+        "horizons": {
+          "T": {
+            "raw_score": 54.41,
+            "stable_core_score": 69.95,
+            "stable_score": 72.65,
+            "scanner_overlay": 2.7,
+            "uncertainty_low": 65.46,
+            "uncertainty_high": 81.27,
+            "observed_score_std": 10.72,
+            "sample_count": 20,
+            "raw_rank": 6,
+            "stable_rank": 2
+          },
+          "3m": {
+            "raw_score": 80.57,
+            "stable_core_score": 86.33,
+            "stable_score": 89.03,
+            "scanner_overlay": 2.7,
+            "uncertainty_low": 79.95,
+            "uncertainty_high": 99.92,
+            "observed_score_std": 7.45,
+            "sample_count": 20,
+            "raw_rank": 2,
+            "stable_rank": 1
+          },
+          "6m": {
+            "raw_score": 88.72,
+            "stable_core_score": 89.27,
+            "stable_score": 90.62,
+            "scanner_overlay": 1.35,
+            "uncertainty_low": 84.48,
+            "uncertainty_high": 97.98,
+            "observed_score_std": 3.73,
+            "sample_count": 20,
+            "raw_rank": 1,
+            "stable_rank": 1
+          },
+          "12m": {
+            "raw_score": 76.64,
+            "stable_core_score": 77.69,
+            "stable_score": 78.36,
+            "scanner_overlay": 0.68,
+            "uncertainty_low": 69.29,
+            "uncertainty_high": 89.26,
+            "observed_score_std": 4.38,
+            "sample_count": 20,
+            "raw_rank": 1,
+            "stable_rank": 1
+          }
+        },
+        "persistence": {
+          "sample_count": 20,
+          "rank_slope_per_run": -0.0474,
+          "rank_signal": 0.1579,
+          "top3_rate": 1,
+          "direction": "improving"
+        },
+        "scanner": {
+          "hits": 17,
+          "recent_hits": 11,
+          "prior_hits": 6,
+          "unique_symbols": 8,
+          "distinct_days": 4,
+          "directional_balance": 0.6761,
+          "scanner_score": 66.9,
+          "reliability": 1,
+          "overlay_points": 2.7,
+          "evidence_status": "usable"
+        },
+        "history_3m": [
+          {
+            "as_of_date": "2026-10-23",
+            "raw_score": 72.16,
+            "stable_score": 72.16,
+            "rank": 2
+          },
+          {
+            "as_of_date": "2026-10-26",
+            "raw_score": 73.25,
+            "stable_score": 72.64,
+            "rank": 2
+          },
+          {
+            "as_of_date": "2026-10-27",
+            "raw_score": 71.89,
+            "stable_score": 72.2,
+            "rank": 2
+          },
+          {
+            "as_of_date": "2026-10-28",
+            "raw_score": 66.86,
+            "stable_score": 70.65,
+            "rank": 2
+          },
+          {
+            "as_of_date": "2026-10-29",
+            "raw_score": 73.47,
+            "stable_score": 72.03,
+            "rank": 2
+          },
+          {
+            "as_of_date": "2026-10-30",
+            "raw_score": 77.94,
+            "stable_score": 73.91,
+            "rank": 1
+          },
+          {
+            "as_of_date": "2026-11-02",
+            "raw_score": 77.99,
+            "stable_score": 74.64,
+            "rank": 2
+          },
+          {
+            "as_of_date": "2026-11-03",
+            "raw_score": 77.21,
+            "stable_score": 76.04,
+            "rank": 1
+          },
+          {
+            "as_of_date": "2026-11-04",
+            "raw_score": 75.62,
+            "stable_score": 75.88,
+            "rank": 1
+          },
+          {
+            "as_of_date": "2026-11-05",
+            "raw_score": 82.46,
+            "stable_score": 78.12,
+            "rank": 1
+          },
+          {
+            "as_of_date": "2026-11-06",
+            "raw_score": 82.79,
+            "stable_score": 78.97,
+            "rank": 1
+          },
+          {
+            "as_of_date": "2026-11-09",
+            "raw_score": 86.2,
+            "stable_score": 81.89,
+            "rank": 1
+          },
+          {
+            "as_of_date": "2026-11-10",
+            "raw_score": 88.42,
+            "stable_score": 83.42,
+            "rank": 1
+          },
+          {
+            "as_of_date": "2026-11-11",
+            "raw_score": 88.43,
+            "stable_score": 85.28,
+            "rank": 1
+          },
+          {
+            "as_of_date": "2026-11-12",
+            "raw_score": 90.59,
+            "stable_score": 87.19,
+            "rank": 1
+          },
+          {
+            "as_of_date": "2026-11-13",
+            "raw_score": 89.24,
+            "stable_score": 87.49,
+            "rank": 1
+          },
+          {
+            "as_of_date": "2026-11-16",
+            "raw_score": 91.42,
+            "stable_score": 88.74,
+            "rank": 1
+          },
+          {
+            "as_of_date": "2026-11-17",
+            "raw_score": 92.57,
+            "stable_score": 89.98,
+            "rank": 1
+          },
+          {
+            "as_of_date": "2026-11-18",
+            "raw_score": 86.05,
+            "stable_score": 88.6,
+            "rank": 1
+          },
+          {
+            "as_of_date": "2026-11-19",
+            "raw_score": 80.57,
+            "stable_score": 86.33,
+            "rank": 2
+          }
+        ],
+        "forward_scenarios": {
+          "T": {
+            "months_forward": 0,
+            "projected_score": 72.65,
+            "projected_low": 67.66,
+            "projected_high": 78.64,
+            "current_core_score": 69.95,
+            "anchor_score": 69.95,
+            "momentum_points": 0,
+            "scanner_points": 2.7,
+            "projected_rank": 2
+          },
+          "3m": {
+            "months_forward": 3,
+            "projected_score": 78.86,
+            "projected_low": 69.78,
+            "projected_high": 89.76,
+            "current_core_score": 69.95,
+            "anchor_score": 86.33,
+            "momentum_points": 0.47,
+            "scanner_points": 2.7,
+            "projected_rank": 2
+          },
+          "6m": {
+            "months_forward": 6,
+            "projected_score": 81.75,
+            "projected_low": 69.49,
+            "projected_high": 96.46,
+            "current_core_score": 69.95,
+            "anchor_score": 89.27,
+            "momentum_points": 0.79,
+            "scanner_points": 1.35,
+            "projected_rank": 1
+          },
+          "12m": {
+            "months_forward": 12,
+            "projected_score": 76.76,
+            "projected_low": 61.33,
+            "projected_high": 95.29,
+            "current_core_score": 69.95,
+            "anchor_score": 77.69,
+            "momentum_points": 1.11,
+            "scanner_points": 0.68,
+            "projected_rank": 1
+          }
+        }
+      },
+      "XLI": {
+        "sector_symbol": "XLI",
+        "sector_name": "Industrials",
+        "horizons": {
+          "T": {
+            "raw_score": 39.93,
+            "stable_core_score": 34.21,
+            "stable_score": 35.08,
+            "scanner_overlay": 0.87,
+            "uncertainty_low": 32.59,
+            "uncertainty_high": 37.69,
+            "observed_score_std": 3.54,
+            "sample_count": 20,
+            "raw_rank": 8,
+            "stable_rank": 8
+          },
+          "3m": {
+            "raw_score": 21.97,
+            "stable_core_score": 17.89,
+            "stable_score": 18.76,
+            "scanner_overlay": 0.87,
+            "uncertainty_low": 10.08,
+            "uncertainty_high": 27.87,
+            "observed_score_std": 6.79,
+            "sample_count": 20,
+            "raw_rank": 10,
+            "stable_rank": 10
+          },
+          "6m": {
+            "raw_score": 29.23,
+            "stable_core_score": 29.86,
+            "stable_score": 30.3,
+            "scanner_overlay": 0.43,
+            "uncertainty_low": 22.33,
+            "uncertainty_high": 38.67,
+            "observed_score_std": 4.62,
+            "sample_count": 20,
+            "raw_rank": 9,
+            "stable_rank": 9
+          },
+          "12m": {
+            "raw_score": 36.39,
+            "stable_core_score": 37.43,
+            "stable_score": 37.65,
+            "scanner_overlay": 0.22,
+            "uncertainty_low": 24.62,
+            "uncertainty_high": 51.34,
+            "observed_score_std": 5.99,
+            "sample_count": 20,
+            "raw_rank": 8,
+            "stable_rank": 8
+          }
+        },
+        "persistence": {
+          "sample_count": 20,
+          "rank_slope_per_run": -0.0075,
+          "rank_signal": 0.0251,
+          "top3_rate": 0,
+          "direction": "stable"
+        },
+        "scanner": {
+          "hits": 9,
+          "recent_hits": 5,
+          "prior_hits": 4,
+          "unique_symbols": 5,
+          "distinct_days": 5,
+          "directional_balance": 0.2165,
+          "scanner_score": 55.41,
+          "reliability": 1,
+          "overlay_points": 0.87,
+          "evidence_status": "usable"
+        },
+        "history_3m": [
+          {
+            "as_of_date": "2026-10-23",
+            "raw_score": 25.77,
+            "stable_score": 25.77,
+            "rank": 10
+          },
+          {
+            "as_of_date": "2026-10-26",
+            "raw_score": 24.34,
+            "stable_score": 25.15,
+            "rank": 11
+          },
+          {
+            "as_of_date": "2026-10-27",
+            "raw_score": 25.2,
+            "stable_score": 25.29,
+            "rank": 11
+          },
+          {
+            "as_of_date": "2026-10-28",
+            "raw_score": 35.87,
+            "stable_score": 28.42,
+            "rank": 9
+          },
+          {
+            "as_of_date": "2026-10-29",
+            "raw_score": 31.67,
+            "stable_score": 28.38,
+            "rank": 10
+          },
+          {
+            "as_of_date": "2026-10-30",
+            "raw_score": 31.08,
+            "stable_score": 30.18,
+            "rank": 10
+          },
+          {
+            "as_of_date": "2026-11-02",
+            "raw_score": 29.87,
+            "stable_score": 30.06,
+            "rank": 10
+          },
+          {
+            "as_of_date": "2026-11-03",
+            "raw_score": 31.56,
+            "stable_score": 30.74,
+            "rank": 9
+          },
+          {
+            "as_of_date": "2026-11-04",
+            "raw_score": 27.27,
+            "stable_score": 29.56,
+            "rank": 9
+          },
+          {
+            "as_of_date": "2026-11-05",
+            "raw_score": 24.2,
+            "stable_score": 28.03,
+            "rank": 9
+          },
+          {
+            "as_of_date": "2026-11-06",
+            "raw_score": 22.72,
+            "stable_score": 26.29,
+            "rank": 10
+          },
+          {
+            "as_of_date": "2026-11-09",
+            "raw_score": 17.73,
+            "stable_score": 23.38,
+            "rank": 10
+          },
+          {
+            "as_of_date": "2026-11-10",
+            "raw_score": 13.37,
+            "stable_score": 20.76,
+            "rank": 10
+          },
+          {
+            "as_of_date": "2026-11-11",
+            "raw_score": 16.61,
+            "stable_score": 19.05,
+            "rank": 10
+          },
+          {
+            "as_of_date": "2026-11-12",
+            "raw_score": 16.97,
+            "stable_score": 18.4,
+            "rank": 10
+          },
+          {
+            "as_of_date": "2026-11-13",
+            "raw_score": 16.36,
+            "stable_score": 17.76,
+            "rank": 10
+          },
+          {
+            "as_of_date": "2026-11-16",
+            "raw_score": 15.1,
+            "stable_score": 16.99,
+            "rank": 10
+          },
+          {
+            "as_of_date": "2026-11-17",
+            "raw_score": 12.66,
+            "stable_score": 15.91,
+            "rank": 10
+          },
+          {
+            "as_of_date": "2026-11-18",
+            "raw_score": 16,
+            "stable_score": 16.23,
+            "rank": 10
+          },
+          {
+            "as_of_date": "2026-11-19",
+            "raw_score": 21.97,
+            "stable_score": 17.89,
+            "rank": 10
+          }
+        ],
+        "forward_scenarios": {
+          "T": {
+            "months_forward": 0,
+            "projected_score": 35.08,
+            "projected_low": 30.31,
+            "projected_high": 40.1,
+            "current_core_score": 34.21,
+            "anchor_score": 34.21,
+            "momentum_points": 0,
+            "scanner_points": 0.87,
+            "projected_rank": 8
+          },
+          "3m": {
+            "months_forward": 3,
+            "projected_score": 29.44,
+            "projected_low": 20.76,
+            "projected_high": 38.56,
+            "current_core_score": 34.21,
+            "anchor_score": 17.89,
+            "momentum_points": 0.08,
+            "scanner_points": 0.87,
+            "projected_rank": 8
+          },
+          "6m": {
+            "months_forward": 6,
+            "projected_score": 32.6,
+            "projected_low": 20.88,
+            "projected_high": 44.9,
+            "current_core_score": 34.21,
+            "anchor_score": 29.86,
+            "momentum_points": 0.13,
+            "scanner_points": 0.43,
+            "projected_rank": 8
+          },
+          "12m": {
+            "months_forward": 12,
+            "projected_score": 36.7,
+            "projected_low": 21.94,
+            "projected_high": 52.2,
+            "current_core_score": 34.21,
+            "anchor_score": 37.43,
+            "momentum_points": 0.18,
+            "scanner_points": 0.22,
+            "projected_rank": 9
+          }
+        }
+      },
+      "XLU": {
+        "sector_symbol": "XLU",
+        "sector_name": "Utilities",
+        "horizons": {
+          "T": {
+            "raw_score": 85.55,
+            "stable_core_score": 71.33,
+            "stable_score": 72.41,
+            "scanner_overlay": 1.08,
+            "uncertainty_low": 66.4,
+            "uncertainty_high": 81.76,
+            "observed_score_std": 9.96,
+            "sample_count": 20,
+            "raw_rank": 1,
+            "stable_rank": 3
+          },
+          "3m": {
+            "raw_score": 70.75,
+            "stable_core_score": 66.9,
+            "stable_score": 67.98,
+            "scanner_overlay": 1.08,
+            "uncertainty_low": 52.79,
+            "uncertainty_high": 91.61,
+            "observed_score_std": 15.15,
+            "sample_count": 20,
+            "raw_rank": 3,
+            "stable_rank": 3
+          },
+          "6m": {
+            "raw_score": 48.08,
+            "stable_core_score": 46.8,
+            "stable_score": 47.34,
+            "scanner_overlay": 0.54,
+            "uncertainty_low": 30.5,
+            "uncertainty_high": 73.53,
+            "observed_score_std": 11.37,
+            "sample_count": 20,
+            "raw_rank": 7,
+            "stable_rank": 7
+          },
+          "12m": {
+            "raw_score": 34.59,
+            "stable_core_score": 35.28,
+            "stable_score": 35.55,
+            "scanner_overlay": 0.27,
+            "uncertainty_low": 26.54,
+            "uncertainty_high": 49.56,
+            "observed_score_std": 4.83,
+            "sample_count": 20,
+            "raw_rank": 9,
+            "stable_rank": 9
+          }
+        },
+        "persistence": {
+          "sample_count": 20,
+          "rank_slope_per_run": -0.3549,
+          "rank_signal": 1,
+          "top3_rate": 0.25,
+          "direction": "improving"
+        },
+        "scanner": {
+          "hits": 8,
+          "recent_hits": 2,
+          "prior_hits": 4,
+          "unique_symbols": 4,
+          "distinct_days": 5,
+          "directional_balance": 0.2711,
+          "scanner_score": 56.78,
+          "reliability": 1,
+          "overlay_points": 1.08,
+          "evidence_status": "usable"
+        },
+        "history_3m": [
+          {
+            "as_of_date": "2026-10-23",
+            "raw_score": 24.62,
+            "stable_score": 24.62,
+            "rank": 11
+          },
+          {
+            "as_of_date": "2026-10-26",
+            "raw_score": 26.76,
+            "stable_score": 25.56,
+            "rank": 10
+          },
+          {
+            "as_of_date": "2026-10-27",
+            "raw_score": 31.74,
+            "stable_score": 27.53,
+            "rank": 10
+          },
+          {
+            "as_of_date": "2026-10-28",
+            "raw_score": 35.88,
+            "stable_score": 30.15,
+            "rank": 8
+          },
+          {
+            "as_of_date": "2026-10-29",
+            "raw_score": 33.33,
+            "stable_score": 31.1,
+            "rank": 9
+          },
+          {
+            "as_of_date": "2026-10-30",
+            "raw_score": 37.85,
+            "stable_score": 33.31,
+            "rank": 8
+          },
+          {
+            "as_of_date": "2026-11-02",
+            "raw_score": 49.44,
+            "stable_score": 38.2,
+            "rank": 6
+          },
+          {
+            "as_of_date": "2026-11-03",
+            "raw_score": 46.21,
+            "stable_score": 39.66,
+            "rank": 7
+          },
+          {
+            "as_of_date": "2026-11-04",
+            "raw_score": 61.51,
+            "stable_score": 47.58,
+            "rank": 5
+          },
+          {
+            "as_of_date": "2026-11-05",
+            "raw_score": 44.35,
+            "stable_score": 44.98,
+            "rank": 8
+          },
+          {
+            "as_of_date": "2026-11-06",
+            "raw_score": 65.88,
+            "stable_score": 52.12,
+            "rank": 3
+          },
+          {
+            "as_of_date": "2026-11-09",
+            "raw_score": 72.68,
+            "stable_score": 59.9,
+            "rank": 3
+          },
+          {
+            "as_of_date": "2026-11-10",
+            "raw_score": 61.34,
+            "stable_score": 59,
+            "rank": 4
+          },
+          {
+            "as_of_date": "2026-11-11",
+            "raw_score": 51.52,
+            "stable_score": 56.72,
+            "rank": 7
+          },
+          {
+            "as_of_date": "2026-11-12",
+            "raw_score": 52.29,
+            "stable_score": 56.38,
+            "rank": 6
+          },
+          {
+            "as_of_date": "2026-11-13",
+            "raw_score": 55.67,
+            "stable_score": 55.31,
+            "rank": 6
+          },
+          {
+            "as_of_date": "2026-11-16",
+            "raw_score": 56.06,
+            "stable_score": 55.51,
+            "rank": 6
+          },
+          {
+            "as_of_date": "2026-11-17",
+            "raw_score": 72.16,
+            "stable_score": 60.25,
+            "rank": 3
+          },
+          {
+            "as_of_date": "2026-11-18",
+            "raw_score": 69.84,
+            "stable_score": 61.44,
+            "rank": 3
+          },
+          {
+            "as_of_date": "2026-11-19",
+            "raw_score": 70.75,
+            "stable_score": 66.9,
+            "rank": 3
+          }
+        ],
+        "forward_scenarios": {
+          "T": {
+            "months_forward": 0,
+            "projected_score": 72.41,
+            "projected_low": 64.06,
+            "projected_high": 85.4,
+            "current_core_score": 71.33,
+            "anchor_score": 71.33,
+            "momentum_points": 0,
+            "scanner_points": 1.08,
+            "projected_rank": 3
+          },
+          "3m": {
+            "months_forward": 3,
+            "projected_score": 73.86,
+            "projected_low": 58.67,
+            "projected_high": 97.49,
+            "current_core_score": 71.33,
+            "anchor_score": 66.9,
+            "momentum_points": 3,
+            "scanner_points": 1.08,
+            "projected_rank": 3
+          },
+          "6m": {
+            "months_forward": 6,
+            "projected_score": 64.61,
+            "projected_low": 44.1,
+            "projected_high": 96.5,
+            "current_core_score": 71.33,
+            "anchor_score": 46.8,
+            "momentum_points": 5,
+            "scanner_points": 0.54,
+            "projected_rank": 4
+          },
+          "12m": {
+            "months_forward": 12,
+            "projected_score": 55.17,
+            "projected_low": 29.35,
+            "projected_high": 95.33,
+            "current_core_score": 71.33,
+            "anchor_score": 35.28,
+            "momentum_points": 7,
+            "scanner_points": 0.27,
+            "projected_rank": 5
+          }
+        }
+      },
+      "XLB": {
+        "sector_symbol": "XLB",
+        "sector_name": "Materials",
+        "horizons": {
+          "T": {
+            "raw_score": 41.23,
+            "stable_core_score": 44.42,
+            "stable_score": 44.42,
+            "scanner_overlay": 0,
+            "uncertainty_low": 36.85,
+            "uncertainty_high": 50.3,
+            "observed_score_std": 9.01,
+            "sample_count": 20,
+            "raw_rank": 7,
+            "stable_rank": 7
+          },
+          "3m": {
+            "raw_score": 45,
+            "stable_core_score": 46.09,
+            "stable_score": 46.09,
+            "scanner_overlay": 0,
+            "uncertainty_low": 32.92,
+            "uncertainty_high": 56.3,
+            "observed_score_std": 8.61,
+            "sample_count": 20,
+            "raw_rank": 7,
+            "stable_rank": 7
+          },
+          "6m": {
+            "raw_score": 54.82,
+            "stable_core_score": 55.6,
+            "stable_score": 55.6,
+            "scanner_overlay": 0,
+            "uncertainty_low": 49.25,
+            "uncertainty_high": 60.52,
+            "observed_score_std": 2.4,
+            "sample_count": 20,
+            "raw_rank": 4,
+            "stable_rank": 4
+          },
+          "12m": {
+            "raw_score": 65.42,
+            "stable_core_score": 66.01,
+            "stable_score": 66.01,
+            "scanner_overlay": 0,
+            "uncertainty_low": 56.91,
+            "uncertainty_high": 73.06,
+            "observed_score_std": 3.5,
+            "sample_count": 20,
+            "raw_rank": 4,
+            "stable_rank": 4
+          }
+        },
+        "persistence": {
+          "sample_count": 20,
+          "rank_slope_per_run": 0.188,
+          "rank_signal": -0.6266,
+          "top3_rate": 0.25,
+          "direction": "weakening"
+        },
+        "scanner": {
+          "hits": 0,
+          "recent_hits": 0,
+          "prior_hits": 0,
+          "unique_symbols": 0,
+          "distinct_days": 0,
+          "directional_balance": 0,
+          "scanner_score": 50,
+          "reliability": 0,
+          "overlay_points": 0,
+          "evidence_status": "thin"
+        },
+        "history_3m": [
+          {
+            "as_of_date": "2026-10-23",
+            "raw_score": 55.02,
+            "stable_score": 55.02,
+            "rank": 5
+          },
+          {
+            "as_of_date": "2026-10-26",
+            "raw_score": 57.06,
+            "stable_score": 55.91,
+            "rank": 5
+          },
+          {
+            "as_of_date": "2026-10-27",
+            "raw_score": 56.85,
+            "stable_score": 56.31,
+            "rank": 5
+          },
+          {
+            "as_of_date": "2026-10-28",
+            "raw_score": 59.56,
+            "stable_score": 57.25,
+            "rank": 5
+          },
+          {
+            "as_of_date": "2026-10-29",
+            "raw_score": 57.54,
+            "stable_score": 57.08,
+            "rank": 5
+          },
+          {
+            "as_of_date": "2026-10-30",
+            "raw_score": 68.55,
+            "stable_score": 60.47,
+            "rank": 3
+          },
+          {
+            "as_of_date": "2026-11-02",
+            "raw_score": 70.8,
+            "stable_score": 62.92,
+            "rank": 3
+          },
+          {
+            "as_of_date": "2026-11-03",
+            "raw_score": 69.55,
+            "stable_score": 66.38,
+            "rank": 2
+          },
+          {
+            "as_of_date": "2026-11-04",
+            "raw_score": 62.39,
+            "stable_score": 65.04,
+            "rank": 3
+          },
+          {
+            "as_of_date": "2026-11-05",
+            "raw_score": 61.92,
+            "stable_score": 64.71,
+            "rank": 3
+          },
+          {
+            "as_of_date": "2026-11-06",
+            "raw_score": 53.55,
+            "stable_score": 60.25,
+            "rank": 6
+          },
+          {
+            "as_of_date": "2026-11-09",
+            "raw_score": 45.5,
+            "stable_score": 56.78,
+            "rank": 7
+          },
+          {
+            "as_of_date": "2026-11-10",
+            "raw_score": 47.33,
+            "stable_score": 53.21,
+            "rank": 7
+          },
+          {
+            "as_of_date": "2026-11-11",
+            "raw_score": 53.93,
+            "stable_score": 54.1,
+            "rank": 6
+          },
+          {
+            "as_of_date": "2026-11-12",
+            "raw_score": 58.29,
+            "stable_score": 55.28,
+            "rank": 4
+          },
+          {
+            "as_of_date": "2026-11-13",
+            "raw_score": 50.09,
+            "stable_score": 52.28,
+            "rank": 7
+          },
+          {
+            "as_of_date": "2026-11-16",
+            "raw_score": 46.76,
+            "stable_score": 50.78,
+            "rank": 8
+          },
+          {
+            "as_of_date": "2026-11-17",
+            "raw_score": 43.69,
+            "stable_score": 49.14,
+            "rank": 7
+          },
+          {
+            "as_of_date": "2026-11-18",
+            "raw_score": 40.21,
+            "stable_score": 46.26,
+            "rank": 8
+          },
+          {
+            "as_of_date": "2026-11-19",
+            "raw_score": 45,
+            "stable_score": 46.09,
+            "rank": 7
+          }
+        ],
+        "forward_scenarios": {
+          "T": {
+            "months_forward": 0,
+            "projected_score": 44.42,
+            "projected_low": 37.18,
+            "projected_high": 50.04,
+            "current_core_score": 44.42,
+            "anchor_score": 44.42,
+            "momentum_points": 0,
+            "scanner_points": 0,
+            "projected_rank": 7
+          },
+          "3m": {
+            "months_forward": 3,
+            "projected_score": 43.12,
+            "projected_low": 29.97,
+            "projected_high": 53.34,
+            "current_core_score": 44.42,
+            "anchor_score": 46.09,
+            "momentum_points": -1.88,
+            "scanner_points": 0,
+            "projected_rank": 7
+          },
+          "6m": {
+            "months_forward": 6,
+            "projected_score": 46.88,
+            "projected_low": 29.12,
+            "projected_high": 60.66,
+            "current_core_score": 44.42,
+            "anchor_score": 55.6,
+            "momentum_points": -3.13,
+            "scanner_points": 0,
+            "projected_rank": 7
+          },
+          "12m": {
+            "months_forward": 12,
+            "projected_score": 54.07,
+            "projected_low": 31.7,
+            "projected_high": 71.43,
+            "current_core_score": 44.42,
+            "anchor_score": 66.01,
+            "momentum_points": -4.39,
+            "scanner_points": 0,
+            "projected_rank": 6
+          }
+        }
+      },
+      "XLRE": {
+        "sector_symbol": "XLRE",
+        "sector_name": "Real Estate",
+        "horizons": {
+          "T": {
+            "raw_score": 68.55,
+            "stable_core_score": 66.26,
+            "stable_score": 66.38,
+            "scanner_overlay": 0.12,
+            "uncertainty_low": 58.87,
+            "uncertainty_high": 76.34,
+            "observed_score_std": 11.65,
+            "sample_count": 20,
+            "raw_rank": 3,
+            "stable_rank": 4
+          },
+          "3m": {
+            "raw_score": 55.82,
+            "stable_core_score": 50.93,
+            "stable_score": 51.05,
+            "scanner_overlay": 0.12,
+            "uncertainty_low": 37.28,
+            "uncertainty_high": 69.3,
+            "observed_score_std": 11.74,
+            "sample_count": 20,
+            "raw_rank": 6,
+            "stable_rank": 6
+          },
+          "6m": {
+            "raw_score": 50.19,
+            "stable_core_score": 50.68,
+            "stable_score": 50.74,
+            "scanner_overlay": 0.06,
+            "uncertainty_low": 41.61,
+            "uncertainty_high": 62.86,
+            "observed_score_std": 5.77,
+            "sample_count": 20,
+            "raw_rank": 6,
+            "stable_rank": 6
+          },
+          "12m": {
+            "raw_score": 51.31,
+            "stable_core_score": 51.27,
+            "stable_score": 51.3,
+            "scanner_overlay": 0.03,
+            "uncertainty_low": 42.65,
+            "uncertainty_high": 62.77,
+            "observed_score_std": 4.34,
+            "sample_count": 20,
+            "raw_rank": 5,
+            "stable_rank": 5
+          }
+        },
+        "persistence": {
+          "sample_count": 20,
+          "rank_slope_per_run": -0.206,
+          "rank_signal": 0.6867,
+          "top3_rate": 0.05,
+          "direction": "improving"
+        },
+        "scanner": {
+          "hits": 2,
+          "recent_hits": 2,
+          "prior_hits": 0,
+          "unique_symbols": 2,
+          "distinct_days": 1,
+          "directional_balance": 1,
+          "scanner_score": 75,
+          "reliability": 0.0312,
+          "overlay_points": 0.12,
+          "evidence_status": "thin"
+        },
+        "history_3m": [
+          {
+            "as_of_date": "2026-10-23",
+            "raw_score": 29.74,
+            "stable_score": 29.74,
+            "rank": 9
+          },
+          {
+            "as_of_date": "2026-10-26",
+            "raw_score": 29.12,
+            "stable_score": 29.47,
+            "rank": 9
+          },
+          {
+            "as_of_date": "2026-10-27",
+            "raw_score": 33.05,
+            "stable_score": 30.63,
+            "rank": 8
+          },
+          {
+            "as_of_date": "2026-10-28",
+            "raw_score": 27.72,
+            "stable_score": 29.36,
+            "rank": 10
+          },
+          {
+            "as_of_date": "2026-10-29",
+            "raw_score": 25.88,
+            "stable_score": 28.46,
+            "rank": 11
+          },
+          {
+            "as_of_date": "2026-10-30",
+            "raw_score": 34.83,
+            "stable_score": 30.63,
+            "rank": 9
+          },
+          {
+            "as_of_date": "2026-11-02",
+            "raw_score": 36.81,
+            "stable_score": 33,
+            "rank": 9
+          },
+          {
+            "as_of_date": "2026-11-03",
+            "raw_score": 42.39,
+            "stable_score": 35.81,
+            "rank": 8
+          },
+          {
+            "as_of_date": "2026-11-04",
+            "raw_score": 41.4,
+            "stable_score": 37.2,
+            "rank": 8
+          },
+          {
+            "as_of_date": "2026-11-05",
+            "raw_score": 45.84,
+            "stable_score": 40.55,
+            "rank": 7
+          },
+          {
+            "as_of_date": "2026-11-06",
+            "raw_score": 52.7,
+            "stable_score": 43.81,
+            "rank": 7
+          },
+          {
+            "as_of_date": "2026-11-09",
+            "raw_score": 63.04,
+            "stable_score": 49.27,
+            "rank": 4
+          },
+          {
+            "as_of_date": "2026-11-10",
+            "raw_score": 66.33,
+            "stable_score": 54.42,
+            "rank": 3
+          },
+          {
+            "as_of_date": "2026-11-11",
+            "raw_score": 61.5,
+            "stable_score": 57.63,
+            "rank": 4
+          },
+          {
+            "as_of_date": "2026-11-12",
+            "raw_score": 43.61,
+            "stable_score": 53.45,
+            "rank": 8
+          },
+          {
+            "as_of_date": "2026-11-13",
+            "raw_score": 44.47,
+            "stable_score": 52.58,
+            "rank": 8
+          },
+          {
+            "as_of_date": "2026-11-16",
+            "raw_score": 46.8,
+            "stable_score": 48.09,
+            "rank": 7
+          },
+          {
+            "as_of_date": "2026-11-17",
+            "raw_score": 51.78,
+            "stable_score": 49.2,
+            "rank": 6
+          },
+          {
+            "as_of_date": "2026-11-18",
+            "raw_score": 48.29,
+            "stable_score": 48.47,
+            "rank": 7
+          },
+          {
+            "as_of_date": "2026-11-19",
+            "raw_score": 55.82,
+            "stable_score": 50.93,
+            "rank": 6
+          }
+        ],
+        "forward_scenarios": {
+          "T": {
+            "months_forward": 0,
+            "projected_score": 66.38,
+            "projected_low": 58.81,
+            "projected_high": 76.42,
+            "current_core_score": 66.26,
+            "anchor_score": 66.26,
+            "momentum_points": 0,
+            "scanner_points": 0.12,
+            "projected_rank": 4
+          },
+          "3m": {
+            "months_forward": 3,
+            "projected_score": 63.07,
+            "projected_low": 49.31,
+            "projected_high": 81.33,
+            "current_core_score": 66.26,
+            "anchor_score": 50.93,
+            "momentum_points": 2.06,
+            "scanner_points": 0.12,
+            "projected_rank": 4
+          },
+          "6m": {
+            "months_forward": 6,
+            "projected_score": 61.96,
+            "projected_low": 43.38,
+            "projected_high": 86.61,
+            "current_core_score": 66.26,
+            "anchor_score": 50.68,
+            "momentum_points": 3.43,
+            "scanner_points": 0.06,
+            "projected_rank": 5
+          },
+          "12m": {
+            "months_forward": 12,
+            "projected_score": 61.35,
+            "projected_low": 37.95,
+            "projected_high": 92.38,
+            "current_core_score": 66.26,
+            "anchor_score": 51.27,
+            "momentum_points": 4.81,
+            "scanner_points": 0.03,
+            "projected_rank": 3
+          }
+        }
+      },
+      "XLC": {
+        "sector_symbol": "XLC",
+        "sector_name": "Communication Services",
+        "horizons": {
+          "T": {
+            "raw_score": 29.51,
+            "stable_core_score": 24.89,
+            "stable_score": 23.87,
+            "scanner_overlay": -1.02,
+            "uncertainty_low": 19.55,
+            "uncertainty_high": 28.03,
+            "observed_score_std": 5.89,
+            "sample_count": 20,
+            "raw_rank": 9,
+            "stable_rank": 9
+          },
+          "3m": {
+            "raw_score": 31.94,
+            "stable_core_score": 28.67,
+            "stable_score": 27.65,
+            "scanner_overlay": -1.02,
+            "uncertainty_low": 18.16,
+            "uncertainty_high": 36.79,
+            "observed_score_std": 7.12,
+            "sample_count": 20,
+            "raw_rank": 9,
+            "stable_rank": 9
+          },
+          "6m": {
+            "raw_score": 22.2,
+            "stable_core_score": 21.9,
+            "stable_score": 21.39,
+            "scanner_overlay": -0.51,
+            "uncertainty_low": 15.45,
+            "uncertainty_high": 27.11,
+            "observed_score_std": 3.3,
+            "sample_count": 20,
+            "raw_rank": 10,
+            "stable_rank": 10
+          },
+          "12m": {
+            "raw_score": 18.41,
+            "stable_core_score": 19.26,
+            "stable_score": 19.01,
+            "scanner_overlay": -0.26,
+            "uncertainty_low": 12.04,
+            "uncertainty_high": 25.72,
+            "observed_score_std": 2.19,
+            "sample_count": 20,
+            "raw_rank": 11,
+            "stable_rank": 11
+          }
+        },
+        "persistence": {
+          "sample_count": 20,
+          "rank_slope_per_run": -0.0068,
+          "rank_signal": 0.0226,
+          "top3_rate": 0,
+          "direction": "stable"
+        },
+        "scanner": {
+          "hits": 176,
+          "recent_hits": 70,
+          "prior_hits": 58,
+          "unique_symbols": 11,
+          "distinct_days": 33,
+          "directional_balance": -0.2558,
+          "scanner_score": 43.61,
+          "reliability": 1,
+          "overlay_points": -1.02,
+          "evidence_status": "usable"
+        },
+        "history_3m": [
+          {
+            "as_of_date": "2026-10-23",
+            "raw_score": 46.31,
+            "stable_score": 46.31,
+            "rank": 7
+          },
+          {
+            "as_of_date": "2026-10-26",
+            "raw_score": 38.89,
+            "stable_score": 43.06,
+            "rank": 8
+          },
+          {
+            "as_of_date": "2026-10-27",
+            "raw_score": 31.87,
+            "stable_score": 39.17,
+            "rank": 9
+          },
+          {
+            "as_of_date": "2026-10-28",
+            "raw_score": 25.78,
+            "stable_score": 35.07,
+            "rank": 11
+          },
+          {
+            "as_of_date": "2026-10-29",
+            "raw_score": 33.81,
+            "stable_score": 35.3,
+            "rank": 8
+          },
+          {
+            "as_of_date": "2026-10-30",
+            "raw_score": 18.12,
+            "stable_score": 29.84,
+            "rank": 11
+          },
+          {
+            "as_of_date": "2026-11-02",
+            "raw_score": 16.48,
+            "stable_score": 25.64,
+            "rank": 11
+          },
+          {
+            "as_of_date": "2026-11-03",
+            "raw_score": 18.72,
+            "stable_score": 22.57,
+            "rank": 11
+          },
+          {
+            "as_of_date": "2026-11-04",
+            "raw_score": 18.27,
+            "stable_score": 21.35,
+            "rank": 11
+          },
+          {
+            "as_of_date": "2026-11-05",
+            "raw_score": 21.18,
+            "stable_score": 21.41,
+            "rank": 10
+          },
+          {
+            "as_of_date": "2026-11-06",
+            "raw_score": 27.46,
+            "stable_score": 23.08,
+            "rank": 9
+          },
+          {
+            "as_of_date": "2026-11-09",
+            "raw_score": 24.86,
+            "stable_score": 23.51,
+            "rank": 9
+          },
+          {
+            "as_of_date": "2026-11-10",
+            "raw_score": 24.67,
+            "stable_score": 24.56,
+            "rank": 9
+          },
+          {
+            "as_of_date": "2026-11-11",
+            "raw_score": 29.11,
+            "stable_score": 25.92,
+            "rank": 9
+          },
+          {
+            "as_of_date": "2026-11-12",
+            "raw_score": 26.52,
+            "stable_score": 26.16,
+            "rank": 9
+          },
+          {
+            "as_of_date": "2026-11-13",
+            "raw_score": 28.58,
+            "stable_score": 26.84,
+            "rank": 9
+          },
+          {
+            "as_of_date": "2026-11-16",
+            "raw_score": 30.12,
+            "stable_score": 28.18,
+            "rank": 9
+          },
+          {
+            "as_of_date": "2026-11-17",
+            "raw_score": 24.25,
+            "stable_score": 26.86,
+            "rank": 9
+          },
+          {
+            "as_of_date": "2026-11-18",
+            "raw_score": 25.9,
+            "stable_score": 26.39,
+            "rank": 9
+          },
+          {
+            "as_of_date": "2026-11-19",
+            "raw_score": 31.94,
+            "stable_score": 28.67,
+            "rank": 9
+          }
+        ],
+        "forward_scenarios": {
+          "T": {
+            "months_forward": 0,
+            "projected_score": 23.87,
+            "projected_low": 18.66,
+            "projected_high": 28.9,
+            "current_core_score": 24.89,
+            "anchor_score": 24.89,
+            "momentum_points": 0,
+            "scanner_points": -1.02,
+            "projected_rank": 9
+          },
+          "3m": {
+            "months_forward": 3,
+            "projected_score": 25.26,
+            "projected_low": 15.78,
+            "projected_high": 34.4,
+            "current_core_score": 24.89,
+            "anchor_score": 28.67,
+            "momentum_points": 0.07,
+            "scanner_points": -1.02,
+            "projected_rank": 9
+          },
+          "6m": {
+            "months_forward": 6,
+            "projected_score": 23,
+            "projected_low": 10.2,
+            "projected_high": 35.34,
+            "current_core_score": 24.89,
+            "anchor_score": 21.9,
+            "momentum_points": 0.11,
+            "scanner_points": -0.51,
+            "projected_rank": 10
+          },
+          "12m": {
+            "months_forward": 12,
+            "projected_score": 21.13,
+            "projected_low": 5.01,
+            "projected_high": 36.68,
+            "current_core_score": 24.89,
+            "anchor_score": 19.26,
+            "momentum_points": 0.16,
+            "scanner_points": -0.26,
+            "projected_rank": 11
+          }
+        }
+      }
+    },
+    "leadership_comparisons": [
+      {
+        "key": "cyclical_defensive",
+        "title": "Cyclical vs defensive",
+        "positive_label": "Cyclical leadership",
+        "negative_label": "Defensive leadership",
+        "positive_axis_label": "Cyclical",
+        "negative_axis_label": "Defensive",
+        "positive_symbols": [
+          "XLY",
+          "XLI",
+          "XLB",
+          "XLE",
+          "XLF"
+        ],
+        "negative_symbols": [
+          "XLP",
+          "XLV",
+          "XLU"
+        ],
+        "description": "Consumer and real-economy cyclicals minus classic defensive sectors.",
+        "series": [
+          {
+            "as_of_date": "2026-10-09",
+            "positive_avg": 50.19,
+            "negative_avg": 51.55,
+            "raw_spread": -1.36,
+            "smoothed_spread": 0.4,
+            "oscillator": 0.4
+          },
+          {
+            "as_of_date": "2026-10-12",
+            "positive_avg": 50.98,
+            "negative_avg": 52.94,
+            "raw_spread": -1.96,
+            "smoothed_spread": -0.19,
+            "oscillator": -0.19
+          },
+          {
+            "as_of_date": "2026-10-13",
+            "positive_avg": 50.05,
+            "negative_avg": 55.86,
+            "raw_spread": -5.81,
+            "smoothed_spread": -1.59,
+            "oscillator": -1.59
+          },
+          {
+            "as_of_date": "2026-10-14",
+            "positive_avg": 49.02,
+            "negative_avg": 55.31,
+            "raw_spread": -6.29,
+            "smoothed_spread": -2.77,
+            "oscillator": -2.77
+          },
+          {
+            "as_of_date": "2026-10-15",
+            "positive_avg": 52.82,
+            "negative_avg": 54.61,
+            "raw_spread": -1.79,
+            "smoothed_spread": -2.52,
+            "oscillator": -2.52
+          },
+          {
+            "as_of_date": "2026-10-16",
+            "positive_avg": 51.6,
+            "negative_avg": 53.41,
+            "raw_spread": -1.81,
+            "smoothed_spread": -2.34,
+            "oscillator": -2.34
+          },
+          {
+            "as_of_date": "2026-10-19",
+            "positive_avg": 52.79,
+            "negative_avg": 57.37,
+            "raw_spread": -4.57,
+            "smoothed_spread": -2.9,
+            "oscillator": -2.9
+          },
+          {
+            "as_of_date": "2026-10-20",
+            "positive_avg": 52.36,
+            "negative_avg": 53.01,
+            "raw_spread": -0.65,
+            "smoothed_spread": -2.34,
+            "oscillator": -2.34
+          },
+          {
+            "as_of_date": "2026-10-21",
+            "positive_avg": 52.26,
+            "negative_avg": 52.32,
+            "raw_spread": -0.06,
+            "smoothed_spread": -1.77,
+            "oscillator": -1.77
+          },
+          {
+            "as_of_date": "2026-10-22",
+            "positive_avg": 53.5,
+            "negative_avg": 48.51,
+            "raw_spread": 5,
+            "smoothed_spread": -0.08,
+            "oscillator": -0.08
+          },
+          {
+            "as_of_date": "2026-10-23",
+            "positive_avg": 54.54,
+            "negative_avg": 53.76,
+            "raw_spread": 0.79,
+            "smoothed_spread": 0.14,
+            "oscillator": 0.14
+          },
+          {
+            "as_of_date": "2026-10-26",
+            "positive_avg": 54.03,
+            "negative_avg": 53.41,
+            "raw_spread": 0.62,
+            "smoothed_spread": 0.26,
+            "oscillator": 0.26
+          },
+          {
+            "as_of_date": "2026-10-27",
+            "positive_avg": 56.07,
+            "negative_avg": 52.76,
+            "raw_spread": 3.31,
+            "smoothed_spread": 1.02,
+            "oscillator": 1.02
+          },
+          {
+            "as_of_date": "2026-10-28",
+            "positive_avg": 57.37,
+            "negative_avg": 50.31,
+            "raw_spread": 7.06,
+            "smoothed_spread": 2.53,
+            "oscillator": 2.53
+          },
+          {
+            "as_of_date": "2026-10-29",
+            "positive_avg": 55.67,
+            "negative_avg": 53.39,
+            "raw_spread": 2.29,
+            "smoothed_spread": 2.47,
+            "oscillator": 2.47
+          },
+          {
+            "as_of_date": "2026-10-30",
+            "positive_avg": 56.95,
+            "negative_avg": 57.44,
+            "raw_spread": -0.49,
+            "smoothed_spread": 1.73,
+            "oscillator": 1.73
+          },
+          {
+            "as_of_date": "2026-11-02",
+            "positive_avg": 56.19,
+            "negative_avg": 64.37,
+            "raw_spread": -8.18,
+            "smoothed_spread": -0.75,
+            "oscillator": -0.75
+          },
+          {
+            "as_of_date": "2026-11-03",
+            "positive_avg": 56.32,
+            "negative_avg": 61.78,
+            "raw_spread": -5.46,
+            "smoothed_spread": -1.93,
+            "oscillator": -1.93
+          },
+          {
+            "as_of_date": "2026-11-04",
+            "positive_avg": 53.86,
+            "negative_avg": 66.44,
+            "raw_spread": -12.58,
+            "smoothed_spread": -4.59,
+            "oscillator": -4.59
+          },
+          {
+            "as_of_date": "2026-11-05",
+            "positive_avg": 51.49,
+            "negative_avg": 65.01,
+            "raw_spread": -13.52,
+            "smoothed_spread": -6.82,
+            "oscillator": -6.82
+          },
+          {
+            "as_of_date": "2026-11-06",
+            "positive_avg": 45.89,
+            "negative_avg": 73.87,
+            "raw_spread": -27.97,
+            "smoothed_spread": -12.11,
+            "oscillator": -12.11
+          },
+          {
+            "as_of_date": "2026-11-09",
+            "positive_avg": 41.5,
+            "negative_avg": 78.03,
+            "raw_spread": -36.53,
+            "smoothed_spread": -18.22,
+            "oscillator": -18.22
+          },
+          {
+            "as_of_date": "2026-11-10",
+            "positive_avg": 42.38,
+            "negative_avg": 76.72,
+            "raw_spread": -34.34,
+            "smoothed_spread": -22.25,
+            "oscillator": -22.25
+          },
+          {
+            "as_of_date": "2026-11-11",
+            "positive_avg": 45.74,
+            "negative_avg": 72.5,
+            "raw_spread": -26.76,
+            "smoothed_spread": -23.38,
+            "oscillator": -23.38
+          },
+          {
+            "as_of_date": "2026-11-12",
+            "positive_avg": 48.16,
+            "negative_avg": 73.25,
+            "raw_spread": -25.09,
+            "smoothed_spread": -23.81,
+            "oscillator": -23.81
+          },
+          {
+            "as_of_date": "2026-11-13",
+            "positive_avg": 48.03,
+            "negative_avg": 73.34,
+            "raw_spread": -25.31,
+            "smoothed_spread": -24.18,
+            "oscillator": -24.18
+          },
+          {
+            "as_of_date": "2026-11-16",
+            "positive_avg": 47.99,
+            "negative_avg": 75.75,
+            "raw_spread": -27.76,
+            "smoothed_spread": -25.08,
+            "oscillator": -25.08
+          },
+          {
+            "as_of_date": "2026-11-17",
+            "positive_avg": 42.13,
+            "negative_avg": 82.38,
+            "raw_spread": -40.25,
+            "smoothed_spread": -28.87,
+            "oscillator": -28.87
+          },
+          {
+            "as_of_date": "2026-11-18",
+            "positive_avg": 43.08,
+            "negative_avg": 80.2,
+            "raw_spread": -37.12,
+            "smoothed_spread": -30.93,
+            "oscillator": -30.93
+          },
+          {
+            "as_of_date": "2026-11-19",
+            "positive_avg": 44.11,
+            "negative_avg": 77.88,
+            "raw_spread": -33.77,
+            "smoothed_spread": -31.64,
+            "oscillator": -31.64
+          }
+        ],
+        "sample_count": 275
+      },
+      {
+        "key": "broad_risk_appetite",
+        "title": "Broad offense vs shelter",
+        "positive_label": "Broad offense",
+        "negative_label": "Capital shelter",
+        "positive_axis_label": "Offense",
+        "negative_axis_label": "Shelter",
+        "positive_symbols": [
+          "XLK",
+          "XLC",
+          "XLY",
+          "XLI",
+          "XLF",
+          "XLE",
+          "XLB"
+        ],
+        "negative_symbols": [
+          "XLP",
+          "XLV",
+          "XLU",
+          "XLRE"
+        ],
+        "description": "A complete 11-sector split that checks whether leadership is broadly offensive or sheltered.",
+        "series": [
+          {
+            "as_of_date": "2026-10-09",
+            "positive_avg": 53.83,
+            "negative_avg": 46.84,
+            "raw_spread": 6.99,
+            "smoothed_spread": 8.05,
+            "oscillator": 8.05
+          },
+          {
+            "as_of_date": "2026-10-12",
+            "positive_avg": 53.84,
+            "negative_avg": 46.6,
+            "raw_spread": 7.24,
+            "smoothed_spread": 7.85,
+            "oscillator": 7.85
+          },
+          {
+            "as_of_date": "2026-10-13",
+            "positive_avg": 52.65,
+            "negative_avg": 49.99,
+            "raw_spread": 2.65,
+            "smoothed_spread": 6.55,
+            "oscillator": 6.55
+          },
+          {
+            "as_of_date": "2026-10-14",
+            "positive_avg": 52.14,
+            "negative_avg": 49.36,
+            "raw_spread": 2.78,
+            "smoothed_spread": 5.61,
+            "oscillator": 5.61
+          },
+          {
+            "as_of_date": "2026-10-15",
+            "positive_avg": 53.36,
+            "negative_avg": 46.6,
+            "raw_spread": 6.76,
+            "smoothed_spread": 5.89,
+            "oscillator": 5.89
+          },
+          {
+            "as_of_date": "2026-10-16",
+            "positive_avg": 52.19,
+            "negative_avg": 46.26,
+            "raw_spread": 5.93,
+            "smoothed_spread": 5.9,
+            "oscillator": 5.9
+          },
+          {
+            "as_of_date": "2026-10-19",
+            "positive_avg": 51.62,
+            "negative_avg": 49.23,
+            "raw_spread": 2.39,
+            "smoothed_spread": 5.02,
+            "oscillator": 5.02
+          },
+          {
+            "as_of_date": "2026-10-20",
+            "positive_avg": 52.15,
+            "negative_avg": 45.54,
+            "raw_spread": 6.61,
+            "smoothed_spread": 5.42,
+            "oscillator": 5.42
+          },
+          {
+            "as_of_date": "2026-10-21",
+            "positive_avg": 51.92,
+            "negative_avg": 46.4,
+            "raw_spread": 5.51,
+            "smoothed_spread": 5.44,
+            "oscillator": 5.44
+          },
+          {
+            "as_of_date": "2026-10-22",
+            "positive_avg": 52.63,
+            "negative_avg": 42.71,
+            "raw_spread": 9.92,
+            "smoothed_spread": 6.56,
+            "oscillator": 6.56
+          },
+          {
+            "as_of_date": "2026-10-23",
+            "positive_avg": 52.14,
+            "negative_avg": 47.75,
+            "raw_spread": 4.38,
+            "smoothed_spread": 6.02,
+            "oscillator": 6.02
+          },
+          {
+            "as_of_date": "2026-10-26",
+            "positive_avg": 52,
+            "negative_avg": 47.34,
+            "raw_spread": 4.66,
+            "smoothed_spread": 5.68,
+            "oscillator": 5.68
+          },
+          {
+            "as_of_date": "2026-10-27",
+            "positive_avg": 53.66,
+            "negative_avg": 47.83,
+            "raw_spread": 5.83,
+            "smoothed_spread": 5.72,
+            "oscillator": 5.72
+          },
+          {
+            "as_of_date": "2026-10-28",
+            "positive_avg": 54.1,
+            "negative_avg": 44.67,
+            "raw_spread": 9.44,
+            "smoothed_spread": 6.65,
+            "oscillator": 6.65
+          },
+          {
+            "as_of_date": "2026-10-29",
+            "positive_avg": 52.92,
+            "negative_avg": 46.51,
+            "raw_spread": 6.41,
+            "smoothed_spread": 6.59,
+            "oscillator": 6.59
+          },
+          {
+            "as_of_date": "2026-10-30",
+            "positive_avg": 51.72,
+            "negative_avg": 51.79,
+            "raw_spread": -0.07,
+            "smoothed_spread": 4.92,
+            "oscillator": 4.92
+          },
+          {
+            "as_of_date": "2026-11-02",
+            "positive_avg": 48.2,
+            "negative_avg": 57.48,
+            "raw_spread": -9.28,
+            "smoothed_spread": 1.37,
+            "oscillator": 1.37
+          },
+          {
+            "as_of_date": "2026-11-03",
+            "positive_avg": 45.74,
+            "negative_avg": 56.94,
+            "raw_spread": -11.19,
+            "smoothed_spread": -1.77,
+            "oscillator": -1.77
+          },
+          {
+            "as_of_date": "2026-11-04",
+            "positive_avg": 44.33,
+            "negative_avg": 60.18,
+            "raw_spread": -15.85,
+            "smoothed_spread": -5.29,
+            "oscillator": -5.29
+          },
+          {
+            "as_of_date": "2026-11-05",
+            "positive_avg": 42.14,
+            "negative_avg": 60.22,
+            "raw_spread": -18.07,
+            "smoothed_spread": -8.48,
+            "oscillator": -8.48
+          },
+          {
+            "as_of_date": "2026-11-06",
+            "positive_avg": 37.71,
+            "negative_avg": 68.58,
+            "raw_spread": -30.87,
+            "smoothed_spread": -14.08,
+            "oscillator": -14.08
+          },
+          {
+            "as_of_date": "2026-11-09",
+            "positive_avg": 34.16,
+            "negative_avg": 74.28,
+            "raw_spread": -40.13,
+            "smoothed_spread": -20.59,
+            "oscillator": -20.59
+          },
+          {
+            "as_of_date": "2026-11-10",
+            "positive_avg": 34.55,
+            "negative_avg": 74.13,
+            "raw_spread": -39.58,
+            "smoothed_spread": -25.34,
+            "oscillator": -25.34
+          },
+          {
+            "as_of_date": "2026-11-11",
+            "positive_avg": 37.43,
+            "negative_avg": 69.75,
+            "raw_spread": -32.32,
+            "smoothed_spread": -27.08,
+            "oscillator": -27.08
+          },
+          {
+            "as_of_date": "2026-11-12",
+            "positive_avg": 38.98,
+            "negative_avg": 65.84,
+            "raw_spread": -26.86,
+            "smoothed_spread": -27.03,
+            "oscillator": -27.03
+          },
+          {
+            "as_of_date": "2026-11-13",
+            "positive_avg": 39.76,
+            "negative_avg": 66.12,
+            "raw_spread": -26.36,
+            "smoothed_spread": -26.86,
+            "oscillator": -26.86
+          },
+          {
+            "as_of_date": "2026-11-16",
+            "positive_avg": 39.21,
+            "negative_avg": 68.51,
+            "raw_spread": -29.3,
+            "smoothed_spread": -27.47,
+            "oscillator": -27.47
+          },
+          {
+            "as_of_date": "2026-11-17",
+            "positive_avg": 33.96,
+            "negative_avg": 74.73,
+            "raw_spread": -40.77,
+            "smoothed_spread": -30.8,
+            "oscillator": -30.8
+          },
+          {
+            "as_of_date": "2026-11-18",
+            "positive_avg": 34.97,
+            "negative_avg": 72.22,
+            "raw_spread": -37.25,
+            "smoothed_spread": -32.41,
+            "oscillator": -32.41
+          },
+          {
+            "as_of_date": "2026-11-19",
+            "positive_avg": 37.16,
+            "negative_avg": 72.37,
+            "raw_spread": -35.21,
+            "smoothed_spread": -33.11,
+            "oscillator": -33.11
+          }
+        ],
+        "sample_count": 275
+      },
+      {
+        "key": "growth_reflation",
+        "title": "Growth vs reflation",
+        "positive_label": "Growth leadership",
+        "negative_label": "Reflation leadership",
+        "positive_axis_label": "Growth",
+        "negative_axis_label": "Reflation",
+        "positive_symbols": [
+          "XLK",
+          "XLC",
+          "XLY"
+        ],
+        "negative_symbols": [
+          "XLE",
+          "XLB",
+          "XLI",
+          "XLF"
+        ],
+        "description": "Long-duration growth leadership compared with nominal-growth and real-economy leadership.",
+        "series": [
+          {
+            "as_of_date": "2026-10-09",
+            "positive_avg": 55.77,
+            "negative_avg": 52.36,
+            "raw_spread": 3.41,
+            "smoothed_spread": 1.2,
+            "oscillator": 1.2
+          },
+          {
+            "as_of_date": "2026-10-12",
+            "positive_avg": 56.91,
+            "negative_avg": 51.54,
+            "raw_spread": 5.36,
+            "smoothed_spread": 2.24,
+            "oscillator": 2.24
+          },
+          {
+            "as_of_date": "2026-10-13",
+            "positive_avg": 52.97,
+            "negative_avg": 52.4,
+            "raw_spread": 0.57,
+            "smoothed_spread": 1.82,
+            "oscillator": 1.82
+          },
+          {
+            "as_of_date": "2026-10-14",
+            "positive_avg": 54.19,
+            "negative_avg": 50.6,
+            "raw_spread": 3.59,
+            "smoothed_spread": 2.27,
+            "oscillator": 2.27
+          },
+          {
+            "as_of_date": "2026-10-15",
+            "positive_avg": 51.5,
+            "negative_avg": 54.75,
+            "raw_spread": -3.25,
+            "smoothed_spread": 0.89,
+            "oscillator": 0.89
+          },
+          {
+            "as_of_date": "2026-10-16",
+            "positive_avg": 51.99,
+            "negative_avg": 52.33,
+            "raw_spread": -0.34,
+            "smoothed_spread": 0.58,
+            "oscillator": 0.58
+          },
+          {
+            "as_of_date": "2026-10-19",
+            "positive_avg": 47.31,
+            "negative_avg": 54.86,
+            "raw_spread": -7.55,
+            "smoothed_spread": -1.45,
+            "oscillator": -1.45
+          },
+          {
+            "as_of_date": "2026-10-20",
+            "positive_avg": 50.46,
+            "negative_avg": 53.42,
+            "raw_spread": -2.96,
+            "smoothed_spread": -1.83,
+            "oscillator": -1.83
+          },
+          {
+            "as_of_date": "2026-10-21",
+            "positive_avg": 52.26,
+            "negative_avg": 51.66,
+            "raw_spread": 0.6,
+            "smoothed_spread": -1.22,
+            "oscillator": -1.22
+          },
+          {
+            "as_of_date": "2026-10-22",
+            "positive_avg": 57.17,
+            "negative_avg": 49.22,
+            "raw_spread": 7.95,
+            "smoothed_spread": 1.07,
+            "oscillator": 1.07
+          },
+          {
+            "as_of_date": "2026-10-23",
+            "positive_avg": 52.62,
+            "negative_avg": 51.78,
+            "raw_spread": 0.84,
+            "smoothed_spread": 1.01,
+            "oscillator": 1.01
+          },
+          {
+            "as_of_date": "2026-10-26",
+            "positive_avg": 50.67,
+            "negative_avg": 53,
+            "raw_spread": -2.33,
+            "smoothed_spread": 0.18,
+            "oscillator": 0.18
+          },
+          {
+            "as_of_date": "2026-10-27",
+            "positive_avg": 52.89,
+            "negative_avg": 54.25,
+            "raw_spread": -1.36,
+            "smoothed_spread": -0.21,
+            "oscillator": -0.21
+          },
+          {
+            "as_of_date": "2026-10-28",
+            "positive_avg": 52.28,
+            "negative_avg": 55.47,
+            "raw_spread": -3.2,
+            "smoothed_spread": -0.95,
+            "oscillator": -0.95
+          },
+          {
+            "as_of_date": "2026-10-29",
+            "positive_avg": 51.33,
+            "negative_avg": 54.12,
+            "raw_spread": -2.79,
+            "smoothed_spread": -1.41,
+            "oscillator": -1.41
+          },
+          {
+            "as_of_date": "2026-10-30",
+            "positive_avg": 43.51,
+            "negative_avg": 57.87,
+            "raw_spread": -14.37,
+            "smoothed_spread": -4.65,
+            "oscillator": -4.65
+          },
+          {
+            "as_of_date": "2026-11-02",
+            "positive_avg": 34.01,
+            "negative_avg": 58.85,
+            "raw_spread": -24.84,
+            "smoothed_spread": -9.7,
+            "oscillator": -9.7
+          },
+          {
+            "as_of_date": "2026-11-03",
+            "positive_avg": 32.2,
+            "negative_avg": 55.89,
+            "raw_spread": -23.69,
+            "smoothed_spread": -13.2,
+            "oscillator": -13.2
+          },
+          {
+            "as_of_date": "2026-11-04",
+            "positive_avg": 31.15,
+            "negative_avg": 54.22,
+            "raw_spread": -23.07,
+            "smoothed_spread": -15.66,
+            "oscillator": -15.66
+          },
+          {
+            "as_of_date": "2026-11-05",
+            "positive_avg": 31.79,
+            "negative_avg": 49.91,
+            "raw_spread": -18.12,
+            "smoothed_spread": -16.28,
+            "oscillator": -16.28
+          },
+          {
+            "as_of_date": "2026-11-06",
+            "positive_avg": 23.13,
+            "negative_avg": 48.64,
+            "raw_spread": -25.51,
+            "smoothed_spread": -18.58,
+            "oscillator": -18.58
+          },
+          {
+            "as_of_date": "2026-11-09",
+            "positive_avg": 23.78,
+            "negative_avg": 41.94,
+            "raw_spread": -18.16,
+            "smoothed_spread": -18.48,
+            "oscillator": -18.48
+          },
+          {
+            "as_of_date": "2026-11-10",
+            "positive_avg": 29.33,
+            "negative_avg": 38.47,
+            "raw_spread": -9.14,
+            "smoothed_spread": -16.14,
+            "oscillator": -16.14
+          },
+          {
+            "as_of_date": "2026-11-11",
+            "positive_avg": 31.84,
+            "negative_avg": 41.62,
+            "raw_spread": -9.78,
+            "smoothed_spread": -14.55,
+            "oscillator": -14.55
+          },
+          {
+            "as_of_date": "2026-11-12",
+            "positive_avg": 30.41,
+            "negative_avg": 45.4,
+            "raw_spread": -14.99,
+            "smoothed_spread": -14.66,
+            "oscillator": -14.66
+          },
+          {
+            "as_of_date": "2026-11-13",
+            "positive_avg": 32.96,
+            "negative_avg": 44.86,
+            "raw_spread": -11.9,
+            "smoothed_spread": -13.97,
+            "oscillator": -13.97
+          },
+          {
+            "as_of_date": "2026-11-16",
+            "positive_avg": 32.11,
+            "negative_avg": 44.54,
+            "raw_spread": -12.42,
+            "smoothed_spread": -13.58,
+            "oscillator": -13.58
+          },
+          {
+            "as_of_date": "2026-11-17",
+            "positive_avg": 29.31,
+            "negative_avg": 37.44,
+            "raw_spread": -8.13,
+            "smoothed_spread": -12.22,
+            "oscillator": -12.22
+          },
+          {
+            "as_of_date": "2026-11-18",
+            "positive_avg": 26.01,
+            "negative_avg": 41.68,
+            "raw_spread": -15.67,
+            "smoothed_spread": -13.08,
+            "oscillator": -13.08
+          },
+          {
+            "as_of_date": "2026-11-19",
+            "positive_avg": 34.45,
+            "negative_avg": 39.18,
+            "raw_spread": -4.73,
+            "smoothed_spread": -11,
+            "oscillator": -11
+          }
+        ],
+        "sample_count": 275
+      },
+      {
+        "key": "consumer_appetite",
+        "title": "Discretionary vs staples",
+        "positive_label": "Consumer risk appetite",
+        "negative_label": "Consumer defensiveness",
+        "positive_axis_label": "Discretionary",
+        "negative_axis_label": "Staples",
+        "positive_symbols": [
+          "XLY"
+        ],
+        "negative_symbols": [
+          "XLP"
+        ],
+        "description": "The cleanest sector-level consumer risk-appetite pair.",
+        "series": [
+          {
+            "as_of_date": "2026-10-09",
+            "positive_avg": 41.51,
+            "negative_avg": 59.75,
+            "raw_spread": -18.24,
+            "smoothed_spread": -18.93,
+            "oscillator": -18.93
+          },
+          {
+            "as_of_date": "2026-10-12",
+            "positive_avg": 48.74,
+            "negative_avg": 64.09,
+            "raw_spread": -15.35,
+            "smoothed_spread": -18.04,
+            "oscillator": -18.04
+          },
+          {
+            "as_of_date": "2026-10-13",
+            "positive_avg": 40.65,
+            "negative_avg": 67.04,
+            "raw_spread": -26.39,
+            "smoothed_spread": -20.13,
+            "oscillator": -20.13
+          },
+          {
+            "as_of_date": "2026-10-14",
+            "positive_avg": 42.72,
+            "negative_avg": 67.24,
+            "raw_spread": -24.52,
+            "smoothed_spread": -21.22,
+            "oscillator": -21.22
+          },
+          {
+            "as_of_date": "2026-10-15",
+            "positive_avg": 45.11,
+            "negative_avg": 61.95,
+            "raw_spread": -16.84,
+            "smoothed_spread": -20.13,
+            "oscillator": -20.13
+          },
+          {
+            "as_of_date": "2026-10-16",
+            "positive_avg": 48.66,
+            "negative_avg": 63.04,
+            "raw_spread": -14.38,
+            "smoothed_spread": -18.69,
+            "oscillator": -18.69
+          },
+          {
+            "as_of_date": "2026-10-19",
+            "positive_avg": 44.53,
+            "negative_avg": 67.47,
+            "raw_spread": -22.94,
+            "smoothed_spread": -19.75,
+            "oscillator": -19.75
+          },
+          {
+            "as_of_date": "2026-10-20",
+            "positive_avg": 48.12,
+            "negative_avg": 68.44,
+            "raw_spread": -20.32,
+            "smoothed_spread": -19.9,
+            "oscillator": -19.9
+          },
+          {
+            "as_of_date": "2026-10-21",
+            "positive_avg": 54.69,
+            "negative_avg": 68.41,
+            "raw_spread": -13.72,
+            "smoothed_spread": -18.35,
+            "oscillator": -18.35
+          },
+          {
+            "as_of_date": "2026-10-22",
+            "positive_avg": 70.64,
+            "negative_avg": 60.23,
+            "raw_spread": 10.41,
+            "smoothed_spread": -11.16,
+            "oscillator": -11.16
+          },
+          {
+            "as_of_date": "2026-10-23",
+            "positive_avg": 65.62,
+            "negative_avg": 64.49,
+            "raw_spread": 1.13,
+            "smoothed_spread": -8.09,
+            "oscillator": -8.09
+          },
+          {
+            "as_of_date": "2026-10-26",
+            "positive_avg": 58.16,
+            "negative_avg": 60.24,
+            "raw_spread": -2.08,
+            "smoothed_spread": -6.59,
+            "oscillator": -6.59
+          },
+          {
+            "as_of_date": "2026-10-27",
+            "positive_avg": 63.35,
+            "negative_avg": 54.64,
+            "raw_spread": 8.72,
+            "smoothed_spread": -2.76,
+            "oscillator": -2.76
+          },
+          {
+            "as_of_date": "2026-10-28",
+            "positive_avg": 64.97,
+            "negative_avg": 48.21,
+            "raw_spread": 16.77,
+            "smoothed_spread": 2.12,
+            "oscillator": 2.12
+          },
+          {
+            "as_of_date": "2026-10-29",
+            "positive_avg": 61.88,
+            "negative_avg": 53.36,
+            "raw_spread": 8.52,
+            "smoothed_spread": 3.72,
+            "oscillator": 3.72
+          },
+          {
+            "as_of_date": "2026-10-30",
+            "positive_avg": 53.26,
+            "negative_avg": 56.54,
+            "raw_spread": -3.27,
+            "smoothed_spread": 1.97,
+            "oscillator": 1.97
+          },
+          {
+            "as_of_date": "2026-11-02",
+            "positive_avg": 45.56,
+            "negative_avg": 65.67,
+            "raw_spread": -20.12,
+            "smoothed_spread": -3.55,
+            "oscillator": -3.55
+          },
+          {
+            "as_of_date": "2026-11-03",
+            "positive_avg": 58.03,
+            "negative_avg": 61.93,
+            "raw_spread": -3.9,
+            "smoothed_spread": -3.64,
+            "oscillator": -3.64
+          },
+          {
+            "as_of_date": "2026-11-04",
+            "positive_avg": 52.41,
+            "negative_avg": 62.19,
+            "raw_spread": -9.78,
+            "smoothed_spread": -5.17,
+            "oscillator": -5.17
+          },
+          {
+            "as_of_date": "2026-11-05",
+            "positive_avg": 57.8,
+            "negative_avg": 68.22,
+            "raw_spread": -10.42,
+            "smoothed_spread": -6.48,
+            "oscillator": -6.48
+          },
+          {
+            "as_of_date": "2026-11-06",
+            "positive_avg": 34.91,
+            "negative_avg": 72.93,
+            "raw_spread": -38.03,
+            "smoothed_spread": -14.37,
+            "oscillator": -14.37
+          },
+          {
+            "as_of_date": "2026-11-09",
+            "positive_avg": 39.74,
+            "negative_avg": 75.22,
+            "raw_spread": -35.48,
+            "smoothed_spread": -19.65,
+            "oscillator": -19.65
+          },
+          {
+            "as_of_date": "2026-11-10",
+            "positive_avg": 58.03,
+            "negative_avg": 80.41,
+            "raw_spread": -22.38,
+            "smoothed_spread": -20.33,
+            "oscillator": -20.33
+          },
+          {
+            "as_of_date": "2026-11-11",
+            "positive_avg": 62.22,
+            "negative_avg": 77.56,
+            "raw_spread": -15.33,
+            "smoothed_spread": -19.08,
+            "oscillator": -19.08
+          },
+          {
+            "as_of_date": "2026-11-12",
+            "positive_avg": 59.19,
+            "negative_avg": 76.87,
+            "raw_spread": -17.69,
+            "smoothed_spread": -18.73,
+            "oscillator": -18.73
+          },
+          {
+            "as_of_date": "2026-11-13",
+            "positive_avg": 60.72,
+            "negative_avg": 75.11,
+            "raw_spread": -14.39,
+            "smoothed_spread": -17.65,
+            "oscillator": -17.65
+          },
+          {
+            "as_of_date": "2026-11-16",
+            "positive_avg": 61.79,
+            "negative_avg": 79.77,
+            "raw_spread": -17.98,
+            "smoothed_spread": -17.73,
+            "oscillator": -17.73
+          },
+          {
+            "as_of_date": "2026-11-17",
+            "positive_avg": 60.87,
+            "negative_avg": 82.4,
+            "raw_spread": -21.53,
+            "smoothed_spread": -18.68,
+            "oscillator": -18.68
+          },
+          {
+            "as_of_date": "2026-11-18",
+            "positive_avg": 48.67,
+            "negative_avg": 84.71,
+            "raw_spread": -36.04,
+            "smoothed_spread": -23.02,
+            "oscillator": -23.02
+          },
+          {
+            "as_of_date": "2026-11-19",
+            "positive_avg": 63.83,
+            "negative_avg": 82.33,
+            "raw_spread": -18.5,
+            "smoothed_spread": -21.89,
+            "oscillator": -21.89
+          }
+        ],
+        "sample_count": 275
+      }
+    ],
+    "run_id": 2054
+  }
+}

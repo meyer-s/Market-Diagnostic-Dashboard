@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from app.services.sector_projection import HORIZONS, SECTOR_ETFS
@@ -134,3 +134,60 @@ def test_scanner_signal_deduplicates_repeated_hits_and_preserves_direction() -> 
     assert signals["XLE"]["hits"] == 1
     assert signals["XLE"]["directional_balance"] == -1.0
     assert -4.0 <= signals["XLE"]["overlay_points"] < 0.0
+
+
+def test_scanner_signal_requires_observed_timestamps_inside_inclusive_run_day_window() -> None:
+    as_of = date(2026, 6, 30)
+    timestamps = [
+        datetime(2026, 6, 16),  # inclusive 14-day cutoff
+        datetime(2026, 6, 30, 23, 59),
+        datetime(2026, 6, 15, 23, 59),
+        datetime(2026, 7, 1),
+        # Still June 30 locally, but after the declared UTC run-day.
+        datetime(2026, 6, 30, 23, tzinfo=timezone(timedelta(hours=-5))),
+        None,
+        "not-a-timestamp",
+    ]
+    events = [
+        SimpleNamespace(symbol="XOM", triggered_at=timestamp, selected_option_type="call", opportunity_score=85)
+        for timestamp in timestamps
+    ]
+
+    signals, coverage = build_scanner_sector_signals(events, as_of=as_of, lookback_days=14)
+
+    assert coverage["total_events"] == 2
+    assert coverage["deduplicated_events"] == 2
+    assert signals["XLE"]["hits"] == 2
+    assert signals["XLE"]["distinct_days"] == 2
+
+
+def test_scanner_unknown_sides_remain_activity_without_inflating_directional_coverage() -> None:
+    as_of = date(2026, 6, 30)
+    known = SimpleNamespace(symbol="NVDA", triggered_at=datetime(2026, 6, 30), selected_option_type="call", opportunity_score=90)
+    unknown = [
+        SimpleNamespace(
+            symbol=symbol,
+            triggered_at=datetime(2026, 6, 30) - timedelta(days=index // 2),
+            selected_option_type="null",
+            opportunity_score=90,
+        )
+        for index, symbol in enumerate(["NVDA", "AAPL", "MSFT", "AVGO", "NVDA", "AAPL", "MSFT", "AVGO"])
+    ]
+
+    baseline, _ = build_scanner_sector_signals([known], as_of=as_of)
+    signals, coverage = build_scanner_sector_signals([known, *unknown], as_of=as_of)
+    only_unknown, _ = build_scanner_sector_signals(unknown, as_of=as_of)
+
+    assert signals["XLK"]["hits"] == 9
+    assert signals["XLK"]["unknown_side_hits"] == 8
+    assert signals["XLK"]["directional_hits"] == 1
+    assert signals["XLK"]["unique_symbols"] == 4
+    assert signals["XLK"]["directional_unique_symbols"] == 1
+    assert signals["XLK"]["directional_distinct_days"] == 1
+    assert signals["XLK"]["reliability"] == baseline["XLK"]["reliability"]
+    assert signals["XLK"]["overlay_points"] == baseline["XLK"]["overlay_points"]
+    assert coverage["directional_deduplicated_events"] == 1
+    assert coverage["unknown_side_deduplicated_events"] == 8
+    assert only_unknown["XLK"]["reliability"] == 0
+    assert only_unknown["XLK"]["overlay_points"] == 0
+    assert only_unknown["XLK"]["evidence_status"] == "thin"

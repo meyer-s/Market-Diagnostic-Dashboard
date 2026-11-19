@@ -77,6 +77,7 @@ BLOCKING_DATA_WARNING_TYPES = {
     "empty_sector_projection_run",
     "missing_sector_projections",
     "partial_sector_metrics",
+    "invalid_sector_metrics",
 }
 QUALITY_STATUS_BLOCKED = "blocked"
 QUALITY_STATUS_WARNING = "warning"
@@ -389,11 +390,12 @@ def validate_sector_projection_quality(
 
     missing_details = []
     partial_details = []
+    invalid_details = []
     for horizon in HORIZONS:
         rows = by_horizon[horizon]
         present_symbols = {row.get("sector_symbol") for row in rows if row.get("sector_symbol")}
         missing_symbols = sorted(EXPECTED_SECTOR_SYMBOLS - present_symbols)
-        if missing_symbols:
+        if missing_symbols or len(rows) != len(EXPECTED_SECTOR_SYMBOLS) or present_symbols != EXPECTED_SECTOR_SYMBOLS:
             missing_details.append({
                 "horizon": horizon,
                 "present_count": len(present_symbols),
@@ -404,6 +406,11 @@ def validate_sector_projection_quality(
         affected_symbols = []
         for row in rows:
             metrics = row.get("metrics") or {}
+            required_values = {key: metrics.get(key) for key in ("return", "sma_dist", "rel_ret", "vol", "drawdown")}
+            required_values.update({key: row.get(key) for key in ("score_total", "score_trend", "score_rel", "score_risk", "score_regime")})
+            invalid_fields = [key for key, value in required_values.items() if value is None or not isinstance(value, (int, float, np.floating)) or not np.isfinite(value)]
+            if invalid_fields:
+                invalid_details.append({"horizon": horizon, "symbol": row.get("sector_symbol"), "fields": invalid_fields})
             core_values = [metrics.get("return"), metrics.get("sma_dist"), metrics.get("rel_ret")]
             missing_or_nonfinite = [
                 value is None
@@ -434,6 +441,8 @@ def validate_sector_projection_quality(
         warnings.append({"type": "missing_sector_projections", "details": missing_details})
     if partial_details:
         warnings.append({"type": "partial_sector_metrics", "details": partial_details})
+    if invalid_details:
+        warnings.append({"type": "invalid_sector_metrics", "details": invalid_details})
     return warnings
 
 
@@ -514,6 +523,32 @@ def save_sector_projection_run(
     prev_run = get_latest_sector_projection_run(db, include_excluded=False)
     prev_cache = _previous_run_cache(db, prev_run)
 
+    # Keep the run's business-day identity separate from the actual daily
+    # observations. Older saved rows have no retained source dates; do not
+    # infer them from when the calculation happened.
+    price_observations: Dict[str, str] = {}
+    observations_complete = bool(projections)
+    for projection in projections:
+        symbol = projection.get("sector_symbol")
+        source_date = projection.get("source_session_date")
+        try:
+            source_date = datetime.strptime(source_date, "%Y-%m-%d").date().isoformat()
+        except (TypeError, ValueError):
+            observations_complete = False
+            continue
+        if not symbol or (symbol in price_observations and price_observations[symbol] != source_date):
+            observations_complete = False
+            continue
+        price_observations[symbol] = source_date
+    unique_source_dates = set(price_observations.values())
+    price_as_of_date = (
+        next(iter(unique_source_dates))
+        if observations_complete
+        and set(price_observations) == EXPECTED_SECTOR_SYMBOLS
+        and len(unique_source_dates) == 1
+        else None
+    )
+
     run = SectorProjectionRun(
         as_of_date=as_of_date,
         created_at=created_at,
@@ -525,6 +560,8 @@ def save_sector_projection_run(
             "quality_status": quality_status,
             "excluded_from_latest": excluded_from_latest,
             "previous_run_cache": prev_cache,
+            "price_observations": price_observations,
+            "price_as_of_date": price_as_of_date,
         },
     )
     db.add(run)
@@ -760,6 +797,28 @@ def compute_sector_projections(price_data: Dict[str, pd.DataFrame], system_state
     """
     projections = []
     today = datetime.utcnow().date()
+
+    # A bad/missing close must not turn into a neutral zero-return observation
+    # in peer scoring. Reject ambiguous source frames and let the existing
+    # missing-sector quality gate retain/exclude the incomplete run.
+    valid_frames: Dict[str, pd.DataFrame] = {}
+    for symbol in EXPECTED_SECTOR_SYMBOLS | {BENCHMARK["symbol"]}:
+        source = price_data.get(symbol)
+        if not isinstance(source, pd.DataFrame) or source.empty or not {"date", "value"}.issubset(source.columns):
+            continue
+        dates = pd.to_datetime(source["date"], errors="coerce", utc=True, format="mixed")
+        values = pd.to_numeric(source["value"], errors="coerce")
+        sessions = dates.dt.strftime("%Y-%m-%d")
+        if dates.isna().any() or values.isna().any() or sessions.duplicated().any() or not (np.isfinite(values) & values.gt(0)).all():
+            logger.warning("Invalid sector price observations for %s; excluding the series from scoring.", symbol)
+            continue
+        valid_frames[symbol] = pd.DataFrame({"date": sessions.to_numpy(), "value": values.to_numpy()}).sort_values("date").reset_index(drop=True)
+    if not valid_frames:
+        return projections
+    peer_session = max(frame["date"].iloc[-1] for frame in valid_frames.values())
+    benchmark_frame = valid_frames.get(BENCHMARK["symbol"])
+    if benchmark_frame is None or benchmark_frame["date"].iloc[-1] != peer_session:
+        return projections
     
     # Process each time horizon independently
     for horizon, lookback in HORIZONS.items():
@@ -771,27 +830,23 @@ def compute_sector_projections(price_data: Dict[str, pd.DataFrame], system_state
         
         for etf in SECTOR_ETFS:
             sym = etf["symbol"]
-            df = price_data.get(sym)
-            spy = price_data.get(BENCHMARK["symbol"])
+            df = valid_frames.get(sym)
+            spy = benchmark_frame
             
             # Data validation
-            if df is None or len(df) < effective_lookback + 10 or spy is None:
+            if df is None or len(df) < effective_lookback + 1 or len(spy) < effective_lookback + 1:
                 continue
-                
-            df = df.sort_values("date").reset_index(drop=True)
-            spy = spy.sort_values("date").reset_index(drop=True)
-            
-            # Align dates between sector and benchmark
-            common_dates = set(df["date"]).intersection(set(spy["date"]))
-            df = df[df["date"].isin(common_dates)]
-            spy = spy[spy["date"].isin(common_dates)]
-            
-            if len(df) < effective_lookback:
+            if df["date"].iloc[-1] != peer_session:
                 continue
-                
-            # Use most recent lookback+1 days (need +1 to calculate returns)
-            df = df.iloc[-(effective_lookback + 1):]
+
+            # Every sector uses the same benchmark sessions, including the
+            # starting observation. Pairwise intersections could otherwise
+            # compare different return periods inside one peer ranking.
             spy = spy.iloc[-(effective_lookback + 1):]
+            common_dates = set(spy["date"])
+            df = df[df["date"].isin(common_dates)]
+            if len(df) != effective_lookback + 1:
+                continue
             # ------------------------------------------------------------------
             # STEP 2: Calculate raw financial metrics
             # ------------------------------------------------------------------
@@ -800,7 +855,7 @@ def compute_sector_projections(price_data: Dict[str, pd.DataFrame], system_state
             ret = (df["value"].iloc[-1] / df["value"].iloc[0]) - 1
             spy_ret = (spy["value"].iloc[-1] / spy["value"].iloc[0]) - 1
             
-            # Distance from 200-day SMA (momentum indicator)
+            # Horizon-adaptive SMA: 10 / 63 / 126 / 200 sessions.
             # For T horizon with limited data (21 days), use a shorter SMA window
             if horizon == "T":
                 sma_window = min(10, len(df) - 1)  # 10-day SMA, or shorter if less data
@@ -810,7 +865,7 @@ def compute_sector_projections(price_data: Dict[str, pd.DataFrame], system_state
             sma_dist = (df["value"].iloc[-1] / sma) - 1 if sma else 0
             
             # Realized volatility (annualized 20-day)
-            vol = df["value"].pct_change().rolling(20).std().iloc[-1] * np.sqrt(252)
+            vol = df["value"].pct_change(fill_method=None).rolling(20).std().iloc[-1] * np.sqrt(252)
             
             # Maximum drawdown over full period
             roll_max = df["value"].cummax()
@@ -818,6 +873,8 @@ def compute_sector_projections(price_data: Dict[str, pd.DataFrame], system_state
             
             # Relative return vs benchmark (alpha)
             rel_ret = ret - spy_ret
+            if not all(np.isfinite(value) for value in (ret, sma_dist, vol, drawdown, rel_ret)):
+                continue
             metrics[sym] = {
                 "sector_name": etf["name"],
                 "return": ret,
@@ -858,6 +915,7 @@ def compute_sector_projections(price_data: Dict[str, pd.DataFrame], system_state
                     "rel_ret": float(row["rel_ret"]),
                 },
                 "as_of_date": str(today),
+                "source_session_date": peer_session,
                 "model_version": MODEL_VERSION,
             })
     return projections
