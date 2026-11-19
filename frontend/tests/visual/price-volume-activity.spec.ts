@@ -10,7 +10,7 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
     page.on("pageerror", error => errors.push(error.message));
     await page.route("**/api/flow-signals/overview?**", route => route.fulfill({ json: {
       ...activityOverview,
-      groups: { ...activityOverview.groups, sectors: [{ ...activitySignal, symbol: "XLRE", category: "sectors", latest_event_date: "2026-11-10", latest_price: 43.62, positive_reference_price: 42.52, negative_reference_price: 43.7177, change_to_positive_reference_pct: -2.52, change_to_negative_reference_pct: 0.22, recent_events: [{ ...activitySignal.recent_events[0], date: "2026-11-10", price: 42.52 }] }] },
+      groups: { ...activityOverview.groups, stocks: [activitySignal, { ...activitySignal, symbol: "AVGO", total_turnover_usd: 1000, event_count: 13, pressure: "negative", latest_event_date: "2026-11-10" }], sectors: [{ ...activitySignal, symbol: "XLRE", category: "sectors", latest_event_date: "2026-11-10", latest_price: 43.62, positive_reference_price: 42.52, negative_reference_price: 43.7177, change_to_positive_reference_pct: -2.52, change_to_negative_reference_pct: 0.22, recent_events: [{ ...activitySignal.recent_events[0], date: "2026-11-10", price: 42.52 }] }] },
     } }));
     await page.goto("/institutional-flow");
     await expect(page.getByRole("heading", { level: 1, name: "Unusual Volume & Price Pressure" })).toBeVisible();
@@ -26,6 +26,11 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
     await expect(page.getByText("Within reference range")).toBeVisible();
     await page.getByText("Method, units & source coverage", { exact: true }).click();
     await expect(page.getByText("Selected from a fixed basket, not a market-wide ranking.", { exact: false })).toHaveCount(1);
+    const crowded = await page.getByRole("button", { name: /flagged days, .* turnover/ }).evaluateAll(buttons => buttons.flatMap(button => {
+      const outer = button.getBoundingClientRect();
+      return [...button.children].filter(child => { const box = child.getBoundingClientRect(); return box.top < outer.top || box.bottom > outer.bottom || box.left < outer.left || box.right > outer.right; }).map(() => button.getAttribute("aria-label"));
+    }));
+    expect(crowded).toEqual([]);
     const overflow = await page.evaluate(() => Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - innerWidth);
     expect(overflow).toBeLessThanOrEqual(1);
     const axe = await new AxeBuilder({ page }).include("main").withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze();

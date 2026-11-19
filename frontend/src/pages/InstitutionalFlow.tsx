@@ -73,7 +73,7 @@ export default function InstitutionalFlow() {
                 const active = selected?.symbol === row.symbol && selected.category === row.category;
                 const tone = row.pressure === "positive" ? "border-emerald-400" : row.pressure === "negative" ? "border-rose-400" : "border-stealth-400";
                 return <button key={row.symbol} type="button" aria-pressed={active} aria-label={`${row.symbol}, ${row.pressure}-bar balance, ${row.event_count} flagged days, ${money(row.total_turnover_usd, true)} turnover`} onClick={() => setSelection({ group, symbol: row.symbol })} style={{ width: size, height: size }} className={`flex shrink-0 flex-col items-center justify-center rounded-full border-2 bg-stealth-950 p-2 text-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-300 ${tone} ${active ? "ring-2 ring-white ring-offset-2 ring-offset-stealth-900" : ""}`}>
-                  <span className="text-sm font-semibold">{row.symbol.replace(/-USD$/, "")}</span><span className="mt-1 text-xs">{row.status !== "ok" ? "Limited history" : row.pressure}</span><span className="mt-1 text-xs">{money(row.total_turnover_usd, true)}</span><span className="mt-1 text-xs text-stealth-300">{row.event_count} flagged days</span>
+                  <span className="text-sm font-semibold">{row.symbol.replace(/-USD$/, "")}</span><span className="mt-1 text-xs capitalize">{row.status !== "ok" ? "Limited" : row.pressure}</span><span className="mt-1 text-xs">{money(row.total_turnover_usd, true)}</span>
                 </button>;
               })}</div>
               {!members.length && <p className="mt-3 text-sm text-stealth-300">No symbols available.</p>}
