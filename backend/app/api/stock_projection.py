@@ -578,11 +578,12 @@ def _build_price_history(df: pd.DataFrame, days: Optional[int] = 180) -> list[di
 
     history = []
     rows = df.tail(days) if days is not None else df
-    for idx, row in rows.iterrows():
-        open_price = row.get("Open")
-        high_price = row.get("High")
-        low_price = row.get("Low")
-        close_price = row.get("Close")
+    # iterrows constructs a Series and deep-copies DataFrame.attrs for every
+    # candle. Cached provider metadata can be large; tuple rows preserve the
+    # same values without copying that metadata hundreds of times per request.
+    for idx, open_price, high_price, low_price, close_price in rows[
+        ["Open", "High", "Low", "Close"]
+    ].itertuples(index=True, name=None):
         if pd.isna(open_price) or pd.isna(high_price) or pd.isna(low_price) or pd.isna(close_price):
             continue
         date = pd.to_datetime(idx, errors="coerce")
@@ -606,11 +607,9 @@ def _build_intraday_history(df: pd.DataFrame) -> list[dict]:
         return []
 
     history = []
-    for idx, row in df.iterrows():
-        open_price = row.get("Open")
-        high_price = row.get("High")
-        low_price = row.get("Low")
-        close_price = row.get("Close")
+    for idx, open_price, high_price, low_price, close_price in df[
+        ["Open", "High", "Low", "Close"]
+    ].itertuples(index=True, name=None):
         if pd.isna(open_price) or pd.isna(high_price) or pd.isna(low_price) or pd.isna(close_price):
             continue
         dt = pd.to_datetime(idx, errors="coerce")
