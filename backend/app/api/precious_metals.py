@@ -138,9 +138,12 @@ def _latest_report_rows(db, model) -> list:
     """Select each metal's latest attributable report, across mixed cadences."""
     output = []
     for metal in ("AU", "AG", "PT", "PD"):
-        query = db.query(model).filter(model.metal == metal)
-        latest = query.filter(model.source.notin_(["SEED", "ESTIMATED_FROM_PRICES", "SAMPLE", "PLACEHOLDER"])).order_by(model.period.desc(), model.id.desc()).first()
-        latest = latest or query.order_by(model.period.desc(), model.id.desc()).first()
+        rows = db.query(model).filter(model.metal == metal).all()
+        verified = [row for row in rows if str(row.source or "").startswith(("WGC_METALS_FOCUS_GDT|", "USGS_MCS_ANNUAL_ESTIMATE|"))]
+        attributable = [row for row in rows if row.source and row.source not in {"SEED", "ESTIMATED_FROM_PRICES", "SAMPLE", "PLACEHOLDER"}]
+        # An annual period sorts before every quarterly string in the same year,
+        # even though its coverage ends in December. Compare actual period ends.
+        latest = max(verified or attributable or rows, key=lambda row: (_reported_period_quality(row).get("as_of") or "", row.id), default=None)
         if latest is not None:
             output.append(latest)
     return output

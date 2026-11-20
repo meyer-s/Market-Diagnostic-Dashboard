@@ -102,6 +102,18 @@ def test_legacy_retrieval_clock_ratio_cannot_mask_a_stale_source_session(databas
     assert pm.get_regime_classification()["price_anchors"]["au_dxy_ratio_zscore"] is None
 
 
+def test_verified_annual_supply_supersedes_unverified_quarterly_archive(database):
+    database.add_all([
+        SupplyData(metal="PT", period="2025-Q3", production_tonnes=48.3, source="WPIC Q3 2025"),
+        SupplyData(metal="PT", period="2025", production_tonnes=170, source="USGS_MCS_ANNUAL_ESTIMATE|https://pubs.usgs.gov/periodicals/mcs2026/mcs2026-platinum-group.pdf"),
+    ])
+    database.commit()
+    row=pm.get_supply_data()[0]
+    assert row["period"] == "2025"
+    assert row["production_tonnes"] == 170
+    assert row["data_quality"]["estimated"] is True
+
+
 def test_partial_mhs_remains_visible_without_a_full_gold_bias(database, monkeypatch):
     monkeypatch.setattr(pm, "_compute_real_rate_signal", lambda db: 1.0)
     monkeypatch.setattr(pm, "_compute_m2_growth_signal", lambda db: None)
