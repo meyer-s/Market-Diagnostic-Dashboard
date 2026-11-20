@@ -1,5 +1,5 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
-import fixture from "../../../tests/visual/fixtures/metals-review.json";
+import fixture from "./fixtures/metals-review.json";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import PreciousMetalsDiagnostic from "../PreciousMetalsDiagnostic";
 const { useApiMock } = vi.hoisted(() => ({ useApiMock: vi.fn() }));

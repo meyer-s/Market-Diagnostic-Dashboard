@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { readFileSync } from "node:fs";
-const fixture=JSON.parse(readFileSync(new URL("./fixtures/metals-review.json",import.meta.url),"utf8"));
+const fixture=JSON.parse(readFileSync(new URL("../../src/pages/__tests__/fixtures/metals-review.json",import.meta.url),"utf8"));
 for(const width of [1050,1360,390]){
  test(`metals portrait rows and data labels at ${width}px`,async({browser},info)=>{
   const context=await browser.newContext({viewport:{width,height:1400},timezoneId:"America/New_York"});const page=await context.newPage();const errors:string[]=[];page.on("pageerror",e=>errors.push(e.message));
