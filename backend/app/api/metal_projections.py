@@ -12,7 +12,7 @@ router = APIRouter()
 
 
 @router.get("/projections/latest")
-async def get_metal_projections() -> Dict[str, Any]:
+def get_metal_projections() -> Dict[str, Any]:
     """
     Get latest technical projections for all precious metals
     

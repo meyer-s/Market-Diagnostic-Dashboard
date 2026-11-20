@@ -162,7 +162,7 @@ describe("asset and flow route polish", () => {
     expect(overview.getAttribute("aria-selected")).toBe("true");
     expect(deepDive.getAttribute("tabindex")).toBe("-1");
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Overview", "Deep Dive"]);
-    expect(screen.getByText(/3\/8 datasets/)).not.toBeNull();
+    expect(screen.getByText(/3\/8 responses loaded/)).not.toBeNull();
     expect(screen.getByRole("heading", { name: "Regime snapshot" })).not.toBeNull();
 
     fireEvent.click(deepDive);

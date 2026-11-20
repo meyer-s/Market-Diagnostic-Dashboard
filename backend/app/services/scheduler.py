@@ -76,9 +76,12 @@ async def scheduled_etl_job():
                     ingest_precious_metals_weekly,
                     ingest_precious_metals_monthly,
                 )
-                daily_results = ingest_precious_metals_daily()
-                weekly_results = ingest_precious_metals_weekly()
-                monthly_results = ingest_precious_metals_monthly()
+                def refresh_periodic_metals():
+                    with scheduler_job_lock("precious_metals_ingestion") as acquired:
+                        if not acquired:
+                            return {}, {}, {}
+                        return ingest_precious_metals_daily(), ingest_precious_metals_weekly(), ingest_precious_metals_monthly()
+                daily_results, weekly_results, monthly_results = await asyncio.to_thread(refresh_periodic_metals)
                 logger.info(
                     "? Precious metals ingestion completed (daily=%s, weekly=%s, monthly=%s)",
                     daily_results,
@@ -314,6 +317,28 @@ def scheduled_sp500_option_scanner_job():
         logger.error("Scheduled S&P 500 options scan failed: %s", exc, exc_info=True)
 
 
+def _refresh_metals_market_data():
+    # Share the lock with slower periodic ingestion; skip overlapping writers.
+    with scheduler_job_lock("precious_metals_ingestion") as acquired:
+        if not acquired:
+            return None
+        from app.services.ingestion.precious_metals_ingester import PreciousMetalsIngester
+        return PreciousMetalsIngester().ingest_market_data()
+
+
+async def scheduled_metals_market_refresh_job():
+    current = datetime.now(ZoneInfo("America/New_York"))
+    # Broad COMEX/NYMEX session, with a daily maintenance break. Holidays may
+    # return an older provider session, which never gets relabelled as today.
+    if current.weekday() == 5 or (current.weekday() == 6 and current.hour < 18) or (current.weekday() == 4 and current.hour >= 17) or current.hour == 17:
+        return
+    try:
+        result = await asyncio.to_thread(_refresh_metals_market_data)
+        logger.info("Metals market refresh completed: %s", result)
+    except Exception:
+        logger.exception("Metals market refresh failed")
+
+
 def start_scheduler():
     """
     Initialize and start the background scheduler.
@@ -322,6 +347,19 @@ def start_scheduler():
     - Run every 4 hours during weekdays (market data updates)
     - Skip weekends when markets are closed
     """
+    if scheduler.get_job("metals_market_refresh") is None:
+        scheduler.add_job(
+            scheduled_metals_market_refresh_job,
+            CronTrigger(minute="*/15", timezone="America/New_York"),
+            id="metals_market_refresh",
+            name="Metals market data refresh",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=60,
+        )
+    # Slow holdings/inventory/supply archives retain the periodic ETL cadence;
+    # they are never requested by the 15-minute market refresh.
     # Run every 4 hours on weekdays (Mon-Fri), 8 AM to 8 PM ET
     if scheduler.get_job("etl_job") is None:
         scheduler.add_job(

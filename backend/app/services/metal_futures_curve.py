@@ -1,6 +1,9 @@
 """Nearby precious-metals futures curves backed by contract-specific daily bars."""
 
 from datetime import datetime
+from functools import lru_cache
+import math
+import time
 from typing import List, Optional
 
 import yfinance as yf
@@ -78,8 +81,16 @@ def build_nearby_contract_candidates(config: dict, contracts: int, as_of: dateti
 
 
 def fetch_futures_contract_snapshot(symbol: str) -> Optional[dict]:
+    # Page checks share bounded provider snapshots with ingestion. A faster UI
+    # cadence must not multiply upstream contract-history requests per visitor.
+    value = _cached_contract_snapshot(symbol, int(time.monotonic() // 900), yf.Ticker)
+    return dict(value) if value is not None else None
+
+
+@lru_cache(maxsize=256)
+def _cached_contract_snapshot(symbol: str, refresh_bucket: int, ticker_factory) -> Optional[dict]:
     try:
-        history = yf.Ticker(symbol).history(period="5d")
+        history = ticker_factory(symbol).history(period="5d")
     except Exception:
         return None
 
@@ -90,7 +101,9 @@ def fetch_futures_contract_snapshot(symbol: str) -> Optional[dict]:
     if closes.empty:
         return None
 
-    latest_price = float(closes.iloc[-1])
+    latest_price = float(history["Close"].iloc[-1])
+    if not math.isfinite(latest_price) or latest_price <= 0:
+        return None
     previous_close = float(closes.iloc[-2]) if len(closes) > 1 else latest_price
     latest_row = history.iloc[-1]
     volume = None
@@ -108,6 +121,8 @@ def fetch_futures_contract_snapshot(symbol: str) -> Optional[dict]:
         "change_pct": ((latest_price / previous_close) - 1) * 100 if previous_close else 0.0,
         "volume": volume,
         "as_of": as_of_value,
+        "price_type": "daily provider bar (may be incomplete)",
+        "observation_kind": "source_session_label",
     }
 
 

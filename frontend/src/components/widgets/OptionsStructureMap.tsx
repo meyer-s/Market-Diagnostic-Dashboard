@@ -919,9 +919,9 @@ function StructureBand({
         <text x={CENTER_X} y="28" textAnchor="middle" fill="#f8fafc" fontSize="16" fontWeight="600">{fmtPrice(currentPrice)}</text>
         <text x={VW - 36} y="28" textAnchor="end" fill="#fdba74" fontSize="16" fontWeight="600">{primaryResistance !== null ? fmtPrice(primaryResistance) : "n/a"}</text>
 
-        <text x={36} y="47" fill="#94a3b8" fontSize="13">{primarySupport !== null ? formatDistance(primarySupport, currentPrice) : "No nearby support"}</text>
+        <text x={36} y="47" fill="#94a3b8" fontSize="13">{primarySupport !== null ? formatDistance(primarySupport, currentPrice) : "No support"}</text>
         <text x={CENTER_X} y="47" textAnchor="middle" fill="#94a3b8" fontSize="13">{describeRangePosition(currentPrice, primarySupport, primaryResistance)}</text>
-        <text x={VW - 36} y="47" textAnchor="end" fill="#94a3b8" fontSize="13">{primaryResistance !== null ? formatDistance(primaryResistance, currentPrice) : "No nearby resistance"}</text>
+        <text x={VW - 36} y="47" textAnchor="end" fill="#94a3b8" fontSize="13">{primaryResistance !== null ? formatDistance(primaryResistance, currentPrice) : "No resistance"}</text>
       </g>
       </svg>
     </>

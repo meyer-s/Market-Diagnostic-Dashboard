@@ -1,0 +1,374 @@
+{
+  "projections": {
+    "projections": [
+      {
+        "metal": "PD",
+        "metal_name": "Palladium",
+        "etf_symbol": "PALL",
+        "instrument": {
+          "symbol": "PA=F",
+          "venue": "NYMEX",
+          "market_type": "continuous futures series",
+          "quote_unit": "USD/troy oz",
+          "price_type": "stored daily close",
+          "source": "Yahoo Finance"
+        },
+        "current_price": 903,
+        "score_total": 51,
+        "score_trend": 25,
+        "score_momentum": 90,
+        "classification": "Neutral",
+        "technicals": {
+          "sma_20": 990.7,
+          "sma_50": 1085.56,
+          "sma_200": 1314.1830004882813,
+          "rsi": 44.801512287334596,
+          "momentum_5d": -9.699999999999998,
+          "momentum_20d": -12.795750845002418,
+          "momentum_60d": -29.918509895227007,
+          "volatility_30d": 38.24342577043038
+        },
+        "levels": {
+          "support": [],
+          "resistance": [
+            1034,
+            1325.5,
+            1386.5
+          ],
+          "take_profit": 993.3,
+          "stop_loss": 857.85
+        },
+        "as_of": "2026-11-20T01:01:18.186008",
+        "relative_confirmation": {
+          "metal_ratio_momentum_5d": -0.53,
+          "metal_ratio_momentum_20d": 1.51,
+          "ratio_momentum_confirmed": false,
+          "leadership_divergence_confirmed": false,
+          "rotation_confirmed": false
+        },
+        "rank": 1,
+        "relative_classification": "Winner"
+      },
+      {
+        "metal": "PT",
+        "metal_name": "Platinum",
+        "etf_symbol": "PPLT",
+        "instrument": {
+          "symbol": "PL=F",
+          "venue": "NYMEX",
+          "market_type": "continuous futures series",
+          "quote_unit": "USD/troy oz",
+          "price_type": "stored daily close",
+          "source": "Yahoo Finance"
+        },
+        "current_price": 1325.4000244140625,
+        "score_total": 45,
+        "score_trend": 25,
+        "score_momentum": 75,
+        "classification": "Neutral",
+        "technicals": {
+          "sma_20": 1480.025,
+          "sma_50": 1594.896005859375,
+          "sma_200": 1792.6969982910157,
+          "rsi": 38.36130918353582,
+          "momentum_5d": -11.1781217139713,
+          "momentum_20d": -14.291256887669658,
+          "momentum_60d": -25.447182584580965,
+          "volatility_30d": 33.5867049848775
+        },
+        "levels": {
+          "support": [],
+          "resistance": [
+            1571.4000244140625,
+            1659.800048828125,
+            1740.800048828125
+          ],
+          "take_profit": 1457.94,
+          "stop_loss": 1259.13
+        },
+        "as_of": "2026-11-20T01:01:18.070807",
+        "relative_confirmation": {
+          "metal_ratio_momentum_5d": -2.47,
+          "metal_ratio_momentum_20d": -1.83,
+          "ratio_momentum_confirmed": false,
+          "leadership_divergence_confirmed": false,
+          "rotation_confirmed": false
+        },
+        "rank": 2,
+        "relative_classification": "Neutral"
+      },
+      {
+        "metal": "AU",
+        "metal_name": "Gold",
+        "etf_symbol": "GLD",
+        "instrument": {
+          "symbol": "GC=F",
+          "venue": "COMEX",
+          "market_type": "continuous futures series",
+          "quote_unit": "USD/troy oz",
+          "price_type": "stored daily close",
+          "source": "Yahoo Finance"
+        },
+        "current_price": 3586.89990234375,
+        "score_total": 27,
+        "score_trend": 25,
+        "score_momentum": 30,
+        "classification": "Bearish",
+        "technicals": {
+          "sma_20": 3954.089990234375,
+          "sma_50": 4081.4779931640624,
+          "sma_200": 4366.094495849609,
+          "rsi": 28.166188365404793,
+          "momentum_5d": -7.734854094015109,
+          "momentum_20d": -11.982235342531066,
+          "momentum_60d": -17.5936834288163,
+          "volatility_30d": 25.945318805066677
+        },
+        "levels": {
+          "support": [],
+          "resistance": [
+            4132.7001953125,
+            4220.2998046875,
+            4415.89990234375
+          ],
+          "take_profit": 3945.59,
+          "stop_loss": 3407.55
+        },
+        "as_of": "2026-11-20T01:01:17.855119",
+        "relative_confirmation": {
+          "rotation_confirmed": false
+        },
+        "rank": 3,
+        "relative_classification": "Neutral"
+      },
+      {
+        "metal": "AG",
+        "metal_name": "Silver",
+        "etf_symbol": "SLV",
+        "instrument": {
+          "symbol": "SI=F",
+          "venue": "COMEX",
+          "market_type": "continuous futures series",
+          "quote_unit": "USD/troy oz",
+          "price_type": "stored daily close",
+          "source": "Yahoo Finance"
+        },
+        "current_price": 42.26499938964844,
+        "score_total": 27,
+        "score_trend": 25,
+        "score_momentum": 30,
+        "classification": "Bearish",
+        "technicals": {
+          "sma_20": 49.98650016784668,
+          "sma_50": 55.58460006713867,
+          "sma_200": 66.1203099822998,
+          "rsi": 27.272727272727266,
+          "momentum_5d": -13.124361636112237,
+          "momentum_20d": -22.50641972832138,
+          "momentum_60d": -33.867940086750195,
+          "volatility_30d": 42.56113377450908
+        },
+        "levels": {
+          "support": [],
+          "resistance": [
+            53.09000015258789,
+            57.95000076293945,
+            67.80500030517578
+          ],
+          "take_profit": 46.49,
+          "stop_loss": 40.15
+        },
+        "as_of": "2026-11-20T01:01:17.965336",
+        "relative_confirmation": {
+          "metal_ratio_momentum_5d": -4.24,
+          "metal_ratio_momentum_20d": -7.76,
+          "ratio_momentum_confirmed": false,
+          "leadership_divergence_confirmed": false,
+          "rotation_confirmed": false
+        },
+        "rank": 4,
+        "relative_classification": "Neutral"
+      },
+      {
+        "metal": "CU",
+        "metal_name": "Copper",
+        "etf_symbol": "HG=F",
+        "instrument": {
+          "symbol": "HG=F",
+          "venue": "COMEX",
+          "market_type": "continuous futures series",
+          "quote_unit": "USD/lb",
+          "price_type": "stored daily close",
+          "source": "Yahoo Finance"
+        },
+        "current_price": 5.553999900817871,
+        "score_total": 27,
+        "score_trend": 25,
+        "score_momentum": 30,
+        "classification": "Bearish",
+        "technicals": {
+          "sma_20": 6.2457750082015995,
+          "sma_50": 6.473619985580444,
+          "sma_200": 6.298992490768432,
+          "rsi": 14.433002360424823,
+          "momentum_5d": -8.402738233579987,
+          "momentum_20d": -16.619124928977314,
+          "momentum_60d": -14.79634843019001,
+          "volatility_30d": 22.750362081339492
+        },
+        "levels": {
+          "support": [],
+          "resistance": [
+            6.611000061035156,
+            6.680500030517578,
+            6.699999809265137
+          ],
+          "take_profit": 6.11,
+          "stop_loss": 5.28
+        },
+        "as_of": "2026-11-20T01:01:18.325359",
+        "rank": 5,
+        "relative_classification": "Neutral"
+      },
+      {
+        "metal": "AL",
+        "metal_name": "Aluminum",
+        "etf_symbol": "ALI=F",
+        "instrument": {
+          "symbol": "ALI=F",
+          "venue": "CME",
+          "market_type": "continuous futures series",
+          "quote_unit": "USD/metric tonne",
+          "price_type": "stored daily close",
+          "source": "Yahoo Finance"
+        },
+        "current_price": 2790,
+        "score_total": 27,
+        "score_trend": 25,
+        "score_momentum": 30,
+        "classification": "Bearish",
+        "technicals": {
+          "sma_20": 3116.5625,
+          "sma_50": 3174.61,
+          "sma_200": 3373.70375,
+          "rsi": 21.35811836115326,
+          "momentum_5d": -10.296599951772368,
+          "momentum_20d": -12.22965001966182,
+          "momentum_60d": -19.177288528389337,
+          "volatility_30d": 24.502608684101006
+        },
+        "levels": {
+          "support": [],
+          "resistance": [
+            3200.75,
+            3483.75,
+            3510.5
+          ],
+          "take_profit": 3069,
+          "stop_loss": 2650.5
+        },
+        "as_of": "2026-11-20T01:01:18.437487",
+        "rank": 6,
+        "relative_classification": "Loser"
+      }
+    ],
+    "as_of": "2026-11-20T01:01:18.437487",
+    "generated_at": "2026-11-20T14:16:30.483717",
+    "model_version": "1.1"
+  },
+  "regime": {
+    "regime": {
+      "overall_regime": "INDUSTRIAL_COMMODITY",
+      "gold_bias": "FINANCIAL_ASSET",
+      "silver_bias": "INDUSTRIAL_MONETARY",
+      "pgm_bias": "RECESSION",
+      "paper_physical_risk": "MODERATE"
+    },
+    "cb_context": {
+      "global_cb_gold_pct_reserves": 25.24163864163263,
+      "net_purchases_yoy": 1.4752466872440848,
+      "structural_monetary_bid": 4.153938511192685,
+      "em_accumulation_momentum": 3.342044426575524
+    },
+    "price_anchors": {
+      "au_dxy_ratio_zscore": -1.3996380618632025,
+      "ag_dxy_ratio_zscore": -2.285605315174665,
+      "real_rate_signal": 0.9124899633560875,
+      "monetary_hedge_strength": 37.821297537322124
+    },
+    "relative_value": {
+      "au_ag_ratio": 84.86691007080093,
+      "au_ag_ratio_zscore": 2.3107562344707255,
+      "pt_au_ratio": 0.3695112940140929,
+      "pt_au_ratio_zscore": -1.698205666173431,
+      "pd_au_ratio": 0.2517494283601174,
+      "pd_au_ratio_zscore": -1.4573991761830267
+    },
+    "physical_paper": {
+      "paper_credibility_index": 63.86280724799287,
+      "oi_registered_ratio": 7.3530447921600155,
+      "comex_registered_inventory_change_yoy": 60.48682360733696,
+      "etf_holdings_zscore": 0.5545122899197146,
+      "etf_holdings_change_yoy": -2.8209611454981927,
+      "backwardation_severity": -244.96963928250292,
+      "etf_flow_divergence": -0.5731737102218297
+    },
+    "data_quality": {
+      "central_bank": {
+        "status": "fresh",
+        "as_of": "2026-09-30T00:00:00",
+        "loaded_at": "2026-11-20T13:01:45.474796",
+        "source": "World Gold Council Goldhub / IMF IFS",
+        "source_url": "https://fsapi.gold.org/api/cbd/v11/charts/getPage?page=snapshot&periodicity=QTD_FULL",
+        "cadence": "quarterly",
+        "max_age_days": 150
+      },
+      "gld_holdings": {
+        "status": "fresh",
+        "as_of": "2026-11-19T00:00:00",
+        "loaded_at": "2026-11-20T13:01:42.540279",
+        "source": "SPDR_OFFICIAL_ARCHIVE",
+        "source_url": "https://api.spdrgoldshares.com/api/v1/historical-archive?exchange=NYSE&lang=en&product=gld",
+        "cadence": "business daily",
+        "max_age_days": 7
+      },
+      "comex_inventory": {
+        "status": "fresh",
+        "as_of": "2026-11-19T00:00:00",
+        "loaded_at": "2026-11-19T21:01:38.534029",
+        "source": "CME Group warehouse stocks",
+        "source_url": "https://www.cmegroup.com/clearing/operations-and-deliveries/registrar-reports.html",
+        "cadence": "business daily",
+        "max_age_days": 7
+      },
+      "futures_curve": {
+        "status": "fresh",
+        "as_of": "2026-11-20T00:00:00",
+        "loaded_at": "2026-11-20T13:01:43.672741",
+        "source": "Yahoo Finance month-specific futures history",
+        "source_url": null,
+        "cadence": "business daily",
+        "max_age_days": 7
+      },
+      "metal_ratios": {
+        "status": "fresh",
+        "as_of": "2026-11-20T13:01:38.409101",
+        "loaded_at": "2026-11-20T13:01:38.476890",
+        "source": "Derived from ingested metal prices",
+        "source_url": null,
+        "cadence": "business daily",
+        "max_age_days": 5
+      },
+      "macro_liquidity": {
+        "status": "fresh",
+        "as_of": "2026-11-20T00:00:00",
+        "loaded_at": "2026-11-20T01:01:12.937664",
+        "source": "FRED",
+        "source_url": null,
+        "cadence": "daily and weekly series",
+        "max_age_days": 14
+      }
+    },
+    "timestamp": "2026-11-20T14:16:30.484324"
+  }
+}
