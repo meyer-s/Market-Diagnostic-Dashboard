@@ -87,6 +87,10 @@ class AASCalculator:
         )
         for extra in rows[1:]:
             self.db.delete(extra)
+        if len(rows) > 1:
+            # Release a duplicate's canonical timestamp before the caller moves
+            # the retained intraday row to it; SQLAlchemy otherwise updates first.
+            self.db.flush()
         return rows[0] if rows else None
     
     def calculate_for_date(self, target_date: datetime) -> Optional[AASIndicator]:

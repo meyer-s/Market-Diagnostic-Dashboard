@@ -6,7 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.core.db import Base
-from app.models.alternative_assets import CryptoPrice, CryptoEcosystemMetric, BitcoinNetworkMetric, MacroLiquidityData, EquityPrice
+from app.models.alternative_assets import CryptoPrice, CryptoEcosystemMetric, BitcoinNetworkMetric, MacroLiquidityData, EquityPrice, AASIndicator
 from app.models.precious_metals import MetalPrice
 from app.services.aas_calculator import AASCalculator
 from app.services.ingestion import aas_data_ingestion as module
@@ -160,3 +160,18 @@ def test_network_rejects_negative_nonfinite_and_future_points(db, monkeypatch):
     monkeypatch.setattr(module.requests,'get',lambda *a,**k:response(data))
     rows=BitcoinNetworkIngestion(db)._fetch_chart_series('hash-rate')
     assert len(rows)==1 and rows[0][1]==100
+
+
+def test_daily_record_releases_unique_midnight_before_retained_intraday_update(db):
+    day = datetime(2026, 1, 9)
+    midnight = AASIndicator(date=day, stability_score=30, pressure_index=.7, regime='test')
+    intraday = AASIndicator(date=day+timedelta(hours=12), stability_score=60, pressure_index=.4, regime='test')
+    db.add_all([midnight, intraday]);db.commit()
+    retained_id = intraday.id
+    retained = AASCalculator(db)._get_latest_daily_record(AASIndicator, AASIndicator.date, day)
+    retained.date = day
+    retained.stability_score = 65
+    db.commit()  # Real unique date index must permit DELETE then canonical UPDATE.
+    db.expire_all()
+    row = db.query(AASIndicator).one()
+    assert row.id == retained_id and row.date == day and row.stability_score == 65
