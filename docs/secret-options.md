@@ -1,40 +1,5 @@
 # Secret Options
 
-## Fidelity OCO exit references
-
-Open **OCO exit plans** from the Positions view to collect the saved scanner's
-single-leg option-premium stop and target beside the current lot quantity and
-account. This includes personal ETF lots even when the position list hides them.
-The queue reads saved examples and proposes an exact-contract scanner association
-for unlinked imported lots when available. A proposed association stays a
-candidate; it does not rewrite the lot's provenance. Symbol-only matches never
-supply an exit. Missing, mismatched, expired, adjusted/index, and multi-leg
-positions require manual review instead of invented prices.
-
-**Copy contract**, **Copy plan reference**, and **Copy reference sheet** prepare
-reference text for Fidelity Trader+ Desktop's **Conditional → Sell bracket (OCO)**
-workflow. Published **Risk Cut** option premium and **Hump Exit** option premium
-(or **Base Tgt** when Hump Exit is absent) remain unchanged. Actual fill price and
-underlying-stock triggers are separate; levels are never rebased automatically.
-An indicative mark crossing an old stop or target is flagged for review.
-
-Choose stop-market versus stop-limit and the matching time-in-force in Fidelity.
-Confirm the actual holding, available quantity, other open sell orders, account
-restrictions, paid-for status, and permitted price increments there. Multiple
-tracker lots sharing one account/contract show a quantity warning. The tracker
-has no Fidelity order feed and cannot confirm protection or submit orders.
-Existing scanner funding guards remain in place.
-
-After submitting a bracket yourself, **I entered this in Fidelity (unverified)**
-saves a note only in this browser. A changed quantity or plan invalidates that
-note; closing a lot removes it from the queue. Copying does not mark a lot entered.
-
-`GET /secret/options/exit-plans` uses the existing protected read scope and does
-not mutate positions, scanner links, reminders, or broker orders.
-
-Fidelity references: [Trader+ Desktop user guide](https://www.fidelity.com/bin-public/060_www_fidelity_com/documents/active-trader/things-to-know.pdf)
-and [order types and OCO behavior](https://www.fidelity.com/trading/faqs-order-types).
-
 This document consolidates the operational notes that were previously split between the trade-management and Greeks summary files.
 
 ## Scope

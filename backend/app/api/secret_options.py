@@ -47,7 +47,6 @@ from app.models.stock_projection_snapshot import StockProjectionSnapshot
 from app.services.market_data.factory import get_market_data_provider
 from app.services.market_data.provider import MarketDataProvider
 from app.services.option_field_context import build_option_field_context
-from app.services.option_exit_plans import build_exit_plan_queue
 from app.services.options_quotes import option_quote_from_row
 from app.services.option_strategy_engine import (
     STRATEGY_MODEL_VERSION,
@@ -3204,33 +3203,6 @@ def get_positions(refresh: bool = Query(False)):
         traceback.print_exc()
         # Return a useful message to the caller to aid debugging (temporary)
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(exc)}")
-
-
-@router.get("/exit-plans")
-def get_exit_plans():
-    """Research references for existing holdings; never submits broker orders."""
-    with get_db_session() as db:
-        positions = db.query(OptionPosition).order_by(OptionPosition.id).all()
-        proposals = {}
-        for position in positions:
-            if position.source_event_id is not None or getattr(position, "strategy_type", None) not in (None, "single_leg"):
-                continue
-            candidate = _resolve_signal_attribution(
-                db, position.symbol, position.trade_date,
-                expiration=position.expiration, strike=position.strike,
-                option_type=position.option_type, strategy_type="single_leg",
-                latest_allowed_at=position.created_at,
-            )
-            # A symbol/direction-only match cannot supply this contract's exits.
-            if str(candidate.get("source_match_method", "")).startswith("contract"):
-                proposals[position.id] = candidate
-        event_ids = {p.source_event_id for p in positions if p.source_event_id is not None}
-        event_ids.update(p["source_event_id"] for p in proposals.values())
-        events = db.query(OptionAlertEvent).filter(OptionAlertEvent.id.in_(event_ids)).all() if event_ids else []
-        return _json_safe(build_exit_plan_queue(
-            positions, {event.id: event for event in events},
-            {p.id: _cached_position_metrics(p) for p in positions}, proposals=proposals,
-        ))
 
 
 @router.get("/position-row-context")
