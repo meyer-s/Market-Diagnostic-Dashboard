@@ -176,13 +176,13 @@ class PreciousMetalsIngester:
 
     def backfill_historical_prices(self, days: int = 365) -> int:
         """
-        Backfill historical spot prices for all metals
+        Repair historical daily futures bars using their provider sessions
         
         Args:
             days: Number of days to backfill (default 365)
         
         Returns:
-            Total number of price records inserted
+            Total number of provider observations refreshed
         """
         count = 0
         with get_db_session() as db:
@@ -192,7 +192,7 @@ class PreciousMetalsIngester:
                     
                     # Fetch historical data
                     ticker = yf.Ticker(symbols["yahoo"])
-                    data = ticker.history(period=f"{days}d")
+                    data = ticker.history(period=f"{days}d", auto_adjust=False)
                     
                     if data.empty:
                         logger.warning(f"No historical data for {metal}")
@@ -207,19 +207,19 @@ class PreciousMetalsIngester:
                                 MetalPrice.source == "YAHOO",
                                 MetalPrice.date >= date.date(),
                                 MetalPrice.date < date.date() + timedelta(days=1)
-                            ).first()
-                            
-                            if existing:
-                                continue
-                            
+                            ).order_by(MetalPrice.created_at.desc(), MetalPrice.id.desc()).first()
                             price = float(row["Close"])
-                            metal_price = MetalPrice(
-                                metal=metal,
-                                date=date.to_pydatetime(),
-                                price_usd_per_oz=price,
-                                source="YAHOO"
-                            )
-                            db.add(metal_price)
+                            if not math.isfinite(price) or price <= 0:
+                                continue
+                            session = datetime.combine(pd.Timestamp(date).date(), datetime.min.time())
+                            if existing is None:
+                                existing = MetalPrice(metal=metal, source="YAHOO")
+                                db.add(existing)
+                            existing.date = session
+                            existing.price_usd_per_oz = price
+                            raw_volume = row.get("Volume")
+                            existing.volume = float(raw_volume) if raw_volume is not None and pd.notna(raw_volume) and math.isfinite(float(raw_volume)) and float(raw_volume) >= 0 else None
+                            existing.created_at = datetime.utcnow()
                             count += 1
                             
                         except Exception as e:
@@ -234,126 +234,128 @@ class PreciousMetalsIngester:
         
         return count
 
+    def ingest_market_data(self) -> Dict[str, int]:
+        """Refresh market-derived evidence without downloading slow archives."""
+        results = {}
+        for name, operation in (
+            ("prices_ingested", self._ingest_spot_prices),
+            ("ratios_computed", self._compute_ratios),
+            ("correlations_computed", self._compute_correlations),
+            ("volatility_computed", self._compute_volatility),
+        ):
+            try:
+                results[name] = operation()
+            except Exception:
+                logger.exception("Metal market refresh failed for %s", name)
+                results[name] = 0
+                results["errors"] = results.get("errors", 0) + 1
+        return results
+
+    @staticmethod
+    def _daily_price_map(db, metal: str, cutoff: datetime) -> dict:
+        """One valid Yahoo observation per session, newest retrieval wins.
+
+        Legacy duplicate rows remain in the archive but do not become extra
+        return observations when the refresh cadence increases.
+        """
+        rows = db.query(MetalPrice).filter(
+            MetalPrice.metal == metal, MetalPrice.source == "YAHOO",
+            MetalPrice.date >= cutoff,
+        ).order_by(MetalPrice.created_at.asc(), MetalPrice.id.asc()).all()
+        result = {}
+        for row in rows:
+            value = row.price_usd_per_oz
+            if row.date and row.date.time() == datetime.min.time() and value is not None and math.isfinite(value) and value > 0:
+                result[row.date.date()] = row
+        return result
+
     def _ingest_spot_prices(self) -> int:
-        """Ingest daily spot prices from FRED and Yahoo"""
+        """Upsert source daily futures bars, which may still be in progress.
+
+        The provider index is a session label, not a quote timestamp. Retrieval
+        time belongs in created_at; it must not manufacture a new price date.
+        """
         count = 0
         with get_db_session() as db:
-            today = datetime.utcnow().date()
-
             for metal, symbols in METAL_SYMBOLS.items():
                 try:
-                    # Check if already ingested today
-                    existing = db.query(MetalPrice).filter(
-                        MetalPrice.metal == metal,
-                        MetalPrice.source == "YAHOO",
-                        MetalPrice.date >= datetime(today.year, today.month, today.day)
-                    ).first()
-
-                    if existing:
-                        logger.info(f"Price for {metal} already ingested today, skipping")
-                        continue
-
-                    # Fetch from Yahoo
-                    ticker = yf.Ticker(symbols["yahoo"])
-                    data = ticker.history(period="1d")
-
-                    if not data.empty:
-                        price = float(data["Close"].iloc[-1])
-                        metal_price = MetalPrice(
-                            metal=metal,
-                            date=datetime.utcnow(),
-                            price_usd_per_oz=price,
-                            source="YAHOO"
-                        )
-                        db.add(metal_price)
+                    data = yf.Ticker(symbols["yahoo"]).history(period="5d", auto_adjust=False)
+                    for source_day, row in data.iterrows():
+                        price = float(row["Close"])
+                        if not math.isfinite(price) or price <= 0:
+                            continue
+                        stamp = pd.Timestamp(source_day)
+                        if pd.isna(stamp):
+                            continue
+                        session = datetime.combine(stamp.date(), datetime.min.time())
+                        existing = db.query(MetalPrice).filter(
+                            MetalPrice.metal == metal, MetalPrice.source == "YAHOO",
+                            MetalPrice.date >= session,
+                            MetalPrice.date < session + timedelta(days=1),
+                        ).order_by(MetalPrice.created_at.desc(), MetalPrice.id.desc()).first()
+                        raw_volume = row.get("Volume")
+                        volume = float(raw_volume) if raw_volume is not None and pd.notna(raw_volume) else None
+                        if volume is not None and (not math.isfinite(volume) or volume < 0):
+                            volume = None
+                        if existing is None:
+                            existing = MetalPrice(metal=metal, source="YAHOO")
+                            db.add(existing)
+                        existing.date = session
+                        existing.price_usd_per_oz = price
+                        existing.volume = volume
+                        existing.created_at = datetime.utcnow()
                         count += 1
-
-                except Exception as e:
-                    logger.error(f"Error ingesting {metal} price: {str(e)}")
-
+                except Exception as exc:
+                    logger.error("Error refreshing %s daily futures bars: %s", metal, exc)
             db.commit()
         return count
 
     def _compute_ratios(self) -> int:
-        """Compute metal-to-metal and metal-to-USD ratios"""
+        """Upsert session-aligned ratios with one prior sample per day."""
         count = 0
+        cutoff = datetime.utcnow() - timedelta(days=730)
         with get_db_session() as db:
-            today = datetime.utcnow().date()
-
-            # Get latest prices
-            au_price = db.query(MetalPrice).filter(
-                MetalPrice.metal == "AU",
-                MetalPrice.date >= datetime(today.year, today.month, today.day)
-            ).order_by(MetalPrice.date.desc()).first()
-
-            ag_price = db.query(MetalPrice).filter(
-                MetalPrice.metal == "AG",
-                MetalPrice.date >= datetime(today.year, today.month, today.day)
-            ).order_by(MetalPrice.date.desc()).first()
-
-            pt_price = db.query(MetalPrice).filter(
-                MetalPrice.metal == "PT",
-                MetalPrice.date >= datetime(today.year, today.month, today.day)
-            ).order_by(MetalPrice.date.desc()).first()
-
-            pd_price = db.query(MetalPrice).filter(
-                MetalPrice.metal == "PD",
-                MetalPrice.date >= datetime(today.year, today.month, today.day)
-            ).order_by(MetalPrice.date.desc()).first()
-
-            if not au_price:
+            price_maps = {metal: self._daily_price_map(db, metal, cutoff) for metal in ("AU", "AG", "PT", "PD")}
+            gold = price_maps["AU"]
+            if not gold:
                 return 0
-
-            # Compute ratios
-            ratios_to_compute = []
-
-            if ag_price:
-                ratios_to_compute.append(("AU", "AG", au_price.price_usd_per_oz / ag_price.price_usd_per_oz))
-            if pt_price:
-                ratios_to_compute.append(("PT", "AU", pt_price.price_usd_per_oz / au_price.price_usd_per_oz))
-            if pd_price:
-                ratios_to_compute.append(("PD", "AU", pd_price.price_usd_per_oz / au_price.price_usd_per_oz))
-
-            # Add DXY ratio (FRED)
-            dxy_value = self._fetch_fred_latest("DTWEXBGS") or self._fetch_fred_latest("DEXY")
-            if dxy_value:
-                ratios_to_compute.append(("AU", "DXY", au_price.price_usd_per_oz / dxy_value))
-                if ag_price:
-                    ratios_to_compute.append(("AG", "DXY", ag_price.price_usd_per_oz / dxy_value))
-
-            # Calculate z-scores (2-year window)
-            cutoff_2y = datetime.utcnow() - timedelta(days=730)
-
-            for metal1, metal2, ratio_value in ratios_to_compute:
-                # Get historical ratios for z-score
-                historical = db.query(MetalRatio).filter(
-                    MetalRatio.metal1 == metal1,
-                    MetalRatio.metal2 == metal2,
-                    MetalRatio.date >= cutoff_2y
-                ).all()
-
-                if historical:
-                    values = [r.ratio_value for r in historical]
-                    mean = statistics.mean(values)
-                    std = statistics.stdev(values) if len(values) > 1 else 1.0
-                    zscore = (ratio_value - mean) / std if std > 0 else 0.0
-                else:
-                    zscore = 0.0
-
-                ratio = MetalRatio(
-                    date=datetime.utcnow(),
-                    metal1=metal1,
-                    metal2=metal2,
-                    ratio_value=ratio_value,
-                    zscore_2y=zscore
-                )
-                db.add(ratio)
+            ratios = []
+            for first, second in (("AU", "AG"), ("PT", "AU"), ("PD", "AU")):
+                common = set(price_maps[first]) & set(price_maps[second])
+                if common:
+                    session = max(common)
+                    history = {day: price_maps[first][day].price_usd_per_oz / price_maps[second][day].price_usd_per_oz for day in common}
+                    ratios.append((first, second, session, history[session], history))
+            # FRED is daily and often delayed. Use an actual shared observation
+            # date rather than assigning its last value to today's futures bar.
+            dollar = self._fetch_fred_series_historical("DTWEXBGS", 730)
+            for metal in ("AU", "AG"):
+                common = set(price_maps[metal]) & set(dollar)
+                if common:
+                    session = max(common)
+                    denominator = dollar[session]
+                    if math.isfinite(denominator) and denominator > 0:
+                        history = {day: price_maps[metal][day].price_usd_per_oz / dollar[day] for day in common if math.isfinite(dollar[day]) and dollar[day] > 0}
+                        ratios.append((metal, "DXY", session, history[session], history))
+            for first, second, day, value, history in ratios:
+                session = datetime.combine(day, datetime.min.time())
+                values = [history[prior_day] for prior_day in sorted(history) if prior_day < day]
+                deviation = statistics.stdev(values) if len(values) >= 2 else None
+                zscore = (value - statistics.mean(values)) / deviation if deviation and deviation > 0 else None
+                record = db.query(MetalRatio).filter(
+                    MetalRatio.metal1 == first, MetalRatio.metal2 == second,
+                    MetalRatio.date >= session, MetalRatio.date < session + timedelta(days=1),
+                ).order_by(MetalRatio.created_at.desc(), MetalRatio.id.desc()).first()
+                if record is None:
+                    record = MetalRatio(metal1=first, metal2=second)
+                    db.add(record)
+                record.date = session
+                record.ratio_value = value
+                record.zscore_2y = zscore
+                record.created_at = datetime.utcnow()
                 count += 1
-
-            # Ensure we have enough DXY ratio history for AAS z-scores
-            if dxy_value:
+            if dollar:
                 self._backfill_dxy_ratios(db, days=365)
-
             db.commit()
         return count
 
@@ -535,11 +537,7 @@ class PreciousMetalsIngester:
         if not dxy_series:
             return
 
-        gold_prices = db.query(MetalPrice).filter(
-            MetalPrice.metal == "AU",
-            MetalPrice.date >= cutoff
-        ).order_by(MetalPrice.date).all()
-        gold_map = {p.date.date(): p.price_usd_per_oz for p in gold_prices if p.price_usd_per_oz}
+        gold_map = {day: row.price_usd_per_oz for day, row in self._daily_price_map(db, "AU", cutoff).items()}
 
         for day, dxy_value in dxy_series.items():
             gold_price = gold_map.get(day)
@@ -691,18 +689,10 @@ class PreciousMetalsIngester:
         count = 0
         with get_db_session() as db:
             try:
-                cutoff_60d = datetime.utcnow() - timedelta(days=60)
+                cutoff_60d = datetime.utcnow() - timedelta(days=400)
 
                 def price_series(metal: str) -> dict:
-                    prices = db.query(MetalPrice).filter(
-                        MetalPrice.metal == metal,
-                        MetalPrice.date >= cutoff_60d
-                    ).order_by(MetalPrice.date).all()
-                    return {
-                        price.date.date(): price.price_usd_per_oz
-                        for price in prices
-                        if price.price_usd_per_oz is not None
-                    }
+                    return {day: row.price_usd_per_oz for day, row in self._daily_price_map(db, metal, cutoff_60d).items()}
 
                 def equity_series(symbol: str) -> dict:
                     prices = db.query(EquityPrice).filter(
@@ -717,7 +707,7 @@ class PreciousMetalsIngester:
 
                 def aligned_returns(series_a: dict, series_b: dict) -> list:
                     common_dates = sorted(set(series_a.keys()) & set(series_b.keys()))
-                    if len(common_dates) < 2:
+                    if len(common_dates) < 2 or common_dates[-1] != observation_day:
                         return []
                     returns = []
                     for i in range(1, len(common_dates)):
@@ -725,10 +715,10 @@ class PreciousMetalsIngester:
                         curr_date = common_dates[i]
                         prev_a = series_a.get(prev_date)
                         prev_b = series_b.get(prev_date)
-                        if not prev_a or not prev_b:
+                        curr_a = series_a[curr_date]
+                        curr_b = series_b[curr_date]
+                        if any(value is None or not math.isfinite(value) or value <= 0 for value in (prev_a, prev_b, curr_a, curr_b)):
                             continue
-                        curr_a = series_a.get(curr_date, prev_a)
-                        curr_b = series_b.get(curr_date, prev_b)
                         returns.append((
                             (curr_a - prev_a) / prev_a,
                             (curr_b - prev_b) / prev_b,
@@ -737,12 +727,10 @@ class PreciousMetalsIngester:
 
                 def compute_pair(series_a: dict, series_b: dict):
                     pairs = aligned_returns(series_a, series_b)
-                    if len(pairs) < 30:
-                        return None, None
                     series_x = [p[0] for p in pairs]
                     series_y = [p[1] for p in pairs]
-                    corr_60d = self._pearson_correlation(series_x, series_y)
-                    corr_30d = self._pearson_correlation(series_x[-30:], series_y[-30:])
+                    corr_60d = self._pearson_correlation(series_x[-60:], series_y[-60:]) if len(pairs) >= 60 else None
+                    corr_30d = self._pearson_correlation(series_x[-30:], series_y[-30:]) if len(pairs) >= 30 else None
                     return corr_30d, corr_60d
 
                 series = {
@@ -758,6 +746,9 @@ class PreciousMetalsIngester:
                     "VIX": equity_series("VIX"),
                 }
 
+                observation_day = max(series["AU"]) if series["AU"] else None
+                if observation_day is None:
+                    return 0
                 au_ag_30d, au_ag_60d = compute_pair(series["AU"], series["AG"])
                 au_pt_30d, au_pt_60d = compute_pair(series["AU"], series["PT"])
                 au_pd_30d, au_pd_60d = compute_pair(series["AU"], series["PD"])
@@ -769,14 +760,17 @@ class PreciousMetalsIngester:
                 au_dxy_30d, au_dxy_60d = compute_pair(series["AU"], equity["DXY"])
                 au_vix_30d, au_vix_60d = compute_pair(series["AU"], equity["VIX"])
 
-                if not any([
-                    au_ag_60d, au_pt_60d, au_pd_60d, ag_pt_60d, ag_pd_60d, pt_pd_60d,
-                    au_spy_60d, au_tlt_60d, au_dxy_60d, au_vix_60d,
+                if all(value is None for value in [
+                    au_ag_30d, au_ag_60d, au_pt_30d, au_pt_60d, au_pd_30d, au_pd_60d,
+                    ag_pt_30d, ag_pt_60d, ag_pd_30d, ag_pd_60d, pt_pd_30d, pt_pd_60d,
+                    au_spy_30d, au_spy_60d, au_tlt_30d, au_tlt_60d, au_dxy_30d, au_dxy_60d, au_vix_30d, au_vix_60d,
                 ]):
                     return 0
 
+                session = datetime.combine(observation_day, datetime.min.time())
+                previous = db.query(MetalCorrelation).filter(MetalCorrelation.date == session).first()
                 correlation = MetalCorrelation(
-                    date=datetime.utcnow(),
+                    date=session,
                     au_ag_60d=au_ag_60d,
                     au_ag_30d=au_ag_30d,
                     au_pt_60d=au_pt_60d,
@@ -798,7 +792,13 @@ class PreciousMetalsIngester:
                     au_vix_60d=au_vix_60d,
                     au_vix_30d=au_vix_30d,
                 )
-                db.add(correlation)
+                if previous is None:
+                    db.add(correlation)
+                else:
+                    for column in MetalCorrelation.__table__.columns:
+                        if column.name not in {"id", "created_at"}:
+                            setattr(previous, column.name, getattr(correlation, column.name))
+                    previous.created_at = datetime.utcnow()
                 count += 1
                 db.commit()
 
@@ -808,49 +808,26 @@ class PreciousMetalsIngester:
         return count
 
     def _compute_volatility(self) -> int:
-        """Compute rolling volatility"""
+        """Compute 30/60/252-return windows, never calendar-day substitutes."""
         count = 0
         with get_db_session() as db:
-            try:
-                cutoff_252d = datetime.utcnow() - timedelta(days=252)
-                cutoff_60d = datetime.utcnow() - timedelta(days=60)
-                cutoff_30d = datetime.utcnow() - timedelta(days=30)
-
-                for metal in ["AU", "AG", "PT", "PD"]:
-                    prices_252d = db.query(MetalPrice).filter(
-                        MetalPrice.metal == metal,
-                        MetalPrice.date >= cutoff_252d
-                    ).order_by(MetalPrice.date).all()
-
-                    prices_60d = db.query(MetalPrice).filter(
-                        MetalPrice.metal == metal,
-                        MetalPrice.date >= cutoff_60d
-                    ).order_by(MetalPrice.date).all()
-
-                    prices_30d = db.query(MetalPrice).filter(
-                        MetalPrice.metal == metal,
-                        MetalPrice.date >= cutoff_30d
-                    ).order_by(MetalPrice.date).all()
-
-                    if len(prices_252d) > 1:
-                        vol_252d = self._compute_volatility_from_prices(prices_252d)
-                        vol_60d = self._compute_volatility_from_prices(prices_60d) if len(prices_60d) > 1 else vol_252d
-                        vol_30d = self._compute_volatility_from_prices(prices_30d) if len(prices_30d) > 1 else vol_60d
-
-                        volatility = MetalVolatility(
-                            date=datetime.utcnow(),
-                            metal=metal,
-                            volatility_252d=vol_252d,
-                            volatility_60d=vol_60d,
-                            volatility_30d=vol_30d
-                        )
-                        db.add(volatility)
-                        count += 1
-
-                db.commit()
-            except Exception as e:
-                logger.error(f"Error computing volatility: {str(e)}")
-
+            for metal in ("AU", "AG", "PT", "PD"):
+                daily = self._daily_price_map(db, metal, datetime.utcnow() - timedelta(days=800))
+                rows = [daily[day] for day in sorted(daily)]
+                if len(rows) < 31:
+                    continue
+                values = {window: self._compute_volatility_from_prices(rows[-(window + 1):]) if len(rows) >= window + 1 else None for window in (30, 60, 252)}
+                session = datetime.combine(max(daily), datetime.min.time())
+                record = db.query(MetalVolatility).filter(MetalVolatility.metal == metal, MetalVolatility.date == session).first()
+                if record is None:
+                    record = MetalVolatility(metal=metal, date=session)
+                    db.add(record)
+                record.volatility_30d = values[30]
+                record.volatility_60d = values[60]
+                record.volatility_252d = values[252]
+                record.created_at = datetime.utcnow()
+                count += 1
+            db.commit()
         return count
 
     # ==================== WEEKLY INGESTION ====================
@@ -1767,10 +1744,12 @@ class PreciousMetalsIngester:
     # ==================== UTILITY FUNCTIONS ====================
 
     @staticmethod
-    def _pearson_correlation(x: List[float], y: List[float]) -> float:
+    def _pearson_correlation(x: List[float], y: List[float]) -> Optional[float]:
         """Calculate Pearson correlation coefficient"""
         if len(x) < 2 or len(y) < 2 or len(x) != len(y):
-            return 0.0
+            return None
+        if any(not math.isfinite(value) for value in x + y):
+            return None
 
         mean_x = statistics.mean(x)
         mean_y = statistics.mean(y)
@@ -1778,9 +1757,9 @@ class PreciousMetalsIngester:
         std_y = statistics.stdev(y) if len(y) > 1 else 1.0
 
         if std_x == 0 or std_y == 0:
-            return 0.0
+            return None
 
-        covariance = sum((x[i] - mean_x) * (y[i] - mean_y) for i in range(len(x))) / len(x)
+        covariance = sum((x[i] - mean_x) * (y[i] - mean_y) for i in range(len(x))) / (len(x) - 1)
         correlation = covariance / (std_x * std_y)
 
         return max(-1.0, min(1.0, correlation))

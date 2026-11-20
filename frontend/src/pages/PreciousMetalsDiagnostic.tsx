@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useApi } from "../hooks/useApi";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
 import MarketLoading from "../components/ui/MarketLoading";
@@ -58,6 +58,8 @@ interface MetalProjection {
     rotation_confirmed: boolean;
   };
   as_of: string;
+  source_session_date?: string;
+  retrieved_at?: string | null;
 }
 
 interface MetalIndicators {
@@ -73,6 +75,8 @@ interface MetalIndicators {
     ag_dxy_ratio_zscore: number | null;
     real_rate_signal: number | null;
     monetary_hedge_strength: number | null;
+    monetary_hedge_available_components?: number;
+    monetary_hedge_total_components?: number;
   };
   relative_value: {
     au_ag_ratio: number | null;
@@ -130,6 +134,10 @@ interface CBHolding {
 }
 
 interface SupplyData {
+  period?: string | null;
+  source?: string | null;
+  price_as_of?: string | null;
+  data_quality?: { status: string; reason?: string };
   metal: string;
   production_tonnes_yoy_pct: number | null;
   aisc_per_oz: number | null;
@@ -139,6 +147,8 @@ interface SupplyData {
 }
 
 interface DemandData {
+  source?: string | null;
+  data_quality?: { status: string; reason?: string };
   metal: string;
   period: string;
   investment_tonnes: number | null;
@@ -428,7 +438,7 @@ function ProjectionCard({ proj }: { proj: MetalProjection }) {
   const ratioLabel = proj.metal === "AU" ? "Au/Pt,Ag,Pd" : `${proj.metal}/Au`;
 
   return (
-    <div className="surface-card p-4">
+    <div className="surface-card min-w-0 p-3 xl:p-4" data-metal={proj.metal}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-xs uppercase tracking-[0.2em] text-stealth-500">{proj.metal}</div>
@@ -446,7 +456,7 @@ function ProjectionCard({ proj }: { proj: MetalProjection }) {
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <ProjectionMetric label="Futures series" value={formatProjectionPrice(proj, proj.current_price)} detail={`${proj.instrument.price_type} · ${formatTimestamp(proj.as_of)}`} />
+        <ProjectionMetric label="Futures series" value={formatProjectionPrice(proj, proj.current_price)} detail={`Daily bar · session ${proj.source_session_date ?? proj.as_of.slice(0, 10)} · may be incomplete`} />
         <ProjectionMetric label="RSI" value={proj.technicals.rsi?.toFixed(1) || "n/a"} />
         <ProjectionMetric label="Total Score" value={`${proj.score_total.toFixed(1)}/100`} />
         <ProjectionMetric label="SMA 50" value={formatProjectionPrice(proj, proj.technicals.sma_50)} />
@@ -483,9 +493,9 @@ function ProjectionCard({ proj }: { proj: MetalProjection }) {
         />
       </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-2 xl:grid-cols-4">
-        <ProjectionMetric label="Upper" value={formatProjectionPrice(proj, proj.levels.take_profit)} tone="buy" />
-        <ProjectionMetric label="Lower" value={formatProjectionPrice(proj, proj.levels.stop_loss)} tone="sell" />
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <ProjectionMetric label="Upper (+10%)" value={formatProjectionPrice(proj, proj.levels.take_profit)} tone="buy" />
+        <ProjectionMetric label="Lower (−5%)" value={formatProjectionPrice(proj, proj.levels.stop_loss)} tone="sell" />
         <ProjectionMetric label="Trend" value={`${proj.score_trend.toFixed(1)}/100`} />
         <ProjectionMetric label="Momentum" value={`${proj.score_momentum.toFixed(1)}/100`} />
       </div>
@@ -541,14 +551,31 @@ export default function PreciousMetalsDiagnostic({ embedded = false }: { embedde
     error,
     refetch: refetchRegime,
   } = useApi<MetalIndicators>("/precious-metals/regime");
-  const { data: correlations, loading: correlationsLoading, error: correlationsError } = useApi<CorrelationMatrix>("/precious-metals/correlations");
+  const { data: correlations, loading: correlationsLoading, error: correlationsError, refetch: refreshCorrelations } = useApi<CorrelationMatrix>("/precious-metals/correlations");
   const { data: cb_holdings, loading: cbLoading, error: cbError } = useApi<CBHolding[]>("/precious-metals/cb-holdings");
   const { data: supply_data, loading: supplyLoading, error: supplyError } = useApi<SupplyData[]>("/precious-metals/supply");
   const { data: demand_data, loading: demandLoading, error: demandError } = useApi<DemandData[]>("/precious-metals/demand");
-  const { data: market_caps, loading: marketCapsLoading, error: marketCapsError } = useApi<MarketCapsResponse>("/precious-metals/market-caps");
+  const { data: market_caps, loading: marketCapsLoading, error: marketCapsError, refetch: refreshMarketCaps } = useApi<MarketCapsResponse>("/precious-metals/market-caps");
   const { data: market_caps_history, loading: marketCapsHistoryLoading, error: marketCapsHistoryError } = useApi<MarketCapsHistoryResponse>("/precious-metals/market-caps/history?years=50");
-  const { data: projectionsData, loading: projectionsLoading, error: projectionsError } = useApi<{ projections: MetalProjection[] }>("/precious-metals/projections/latest");
-  const { data: futuresCurve, loading: futuresLoading, error: futuresError } = useApi<FuturesCurveResponse>("/precious-metals/futures-curve?contracts=4");
+  const { data: projectionsData, loading: projectionsLoading, error: projectionsError, refetch: refreshProjections } = useApi<{ projections: MetalProjection[] }>("/precious-metals/projections/latest");
+  const { data: futuresCurve, loading: futuresLoading, error: futuresError, refetch: refreshFutures } = useApi<FuturesCurveResponse>("/precious-metals/futures-curve?contracts=4");
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      clearTimeout(timer);
+      const interval = document.hidden || !document.hasFocus() ? 300_000 : 60_000;
+      timer = setTimeout(() => {
+        refetchRegime(); refreshProjections(); refreshCorrelations(); refreshMarketCaps(); refreshFutures();
+        schedule();
+      }, interval);
+    };
+    schedule();
+    document.addEventListener("visibilitychange", schedule);
+    window.addEventListener("focus", schedule);
+    window.addEventListener("blur", schedule);
+    return () => { clearTimeout(timer); document.removeEventListener("visibilitychange", schedule); window.removeEventListener("focus", schedule); window.removeEventListener("blur", schedule); };
+  }, [refetchRegime, refreshProjections, refreshCorrelations, refreshMarketCaps, refreshFutures]);
 
   const [selectedTab, setSelectedTab] = useState<"overview" | "deep-dive">("overview");
   const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
@@ -559,7 +586,7 @@ export default function PreciousMetalsDiagnostic({ embedded = false }: { embedde
     document.getElementById(`metals-${nextTab}-tab`)?.focus();
   };
 
-  if (loading) {
+  if (loading && !indicators) {
     return (
       <div className={embedded ? "py-8" : "page-shell-wide flex min-h-[60vh] items-center justify-center"}>
         <div className="flex justify-center py-6">
@@ -569,7 +596,7 @@ export default function PreciousMetalsDiagnostic({ embedded = false }: { embedde
     );
   }
 
-  if (error) {
+  if (error && !indicators) {
     return (
       <div className={embedded ? "py-8" : "page-shell-wide"}>
         <div className="rounded-xl border border-red-700 bg-red-900/20 p-4 text-red-100" role="alert">
@@ -650,9 +677,13 @@ export default function PreciousMetalsDiagnostic({ embedded = false }: { embedde
             <h1 className="text-2xl font-semibold tracking-tight text-white md:text-3xl">Metals Diagnostic</h1>
             <p className="mt-1 text-sm text-stealth-300">Exchange trends, market structure, and supply.</p>
           </div>
-          <p className="text-xs text-stealth-400">Updated {formatTimestamp(freshestTimestamp)}</p>
+          <div className="text-xs text-stealth-300 md:text-right">
+            <p>Latest bar session {projections[0]?.source_session_date ?? projections[0]?.as_of?.slice(0, 10) ?? "unavailable"}</p>
+            <p className="mt-1">15-minute market refresh · page checks every minute</p>
+          </div>
         </header>
       )}
+      {error && indicators ? <p role="status" className="text-sm text-amber-300">The latest refresh failed. Previous observations remain visible.</p> : null}
 
       {/* TAB NAVIGATION */}
       <div id="metals-views" className="section-anchor control-strip self-start" role="tablist" aria-label="Metals diagnostic view">
@@ -796,7 +827,7 @@ function RegimeClassificationPanel({
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <h2 id="metals-now-heading" className="text-lg font-bold text-white md:text-xl">Regime snapshot</h2>
         <div className="text-xs text-stealth-300" role="status" aria-live="polite">
-          {supportingAvailable}/8 datasets
+          {supportingAvailable}/8 responses loaded
           {supportingLoading > 0 ? ` · ${supportingLoading} updating` : ""}
           {supportingErrors > 0 ? ` · ${supportingErrors} unavailable` : ""}
         </div>
@@ -891,7 +922,7 @@ function MethodologyPanel() {
           <div>
             <p className="font-semibold text-white mb-2">Composite Score (0-100):</p>
             <p>Each metal receives a technical score combining trend strength, momentum, and exhaustion risk. Higher scores indicate more bullish potential.</p>
-            
+
             <div className="mt-3">
               <p className="font-semibold text-blue-300">Trend Score (0-100):</p>
               <ul className="list-disc list-inside ml-2 space-y-1">
@@ -919,8 +950,8 @@ function MethodologyPanel() {
             </div>
 
             <p className="mt-3 text-xs text-stealth-400">
-              <strong>Philosophy:</strong> The algorithm rewards positive trends while penalizing over-extension. 
-              A metal trading 15% above its SMA50 may have strong momentum but faces exhaustion risk, 
+              <strong>Philosophy:</strong> The algorithm rewards positive trends while penalizing over-extension.
+              A metal trading 15% above its SMA50 may have strong momentum but faces exhaustion risk,
               resulting in a lower score than a metal trending steadily at +5% above its moving averages.
             </p>
           </div>
@@ -929,7 +960,7 @@ function MethodologyPanel() {
         <Section id="support-resistance" title="Support & Resistance Detection">
           <div>
             <p className="mb-2">Identifies key price levels using local extrema analysis over the last 365 days.</p>
-            
+
             <div className="mt-3">
               <p className="font-semibold text-blue-300">Algorithm:</p>
               <ul className="list-disc list-inside ml-2 space-y-1">
@@ -941,7 +972,7 @@ function MethodologyPanel() {
             </div>
 
             <p className="mt-3 text-xs text-stealth-400">
-              <strong>Usage:</strong> Support/resistance levels help identify potential entry/exit zones. 
+              <strong>Usage:</strong> Support/resistance levels help identify potential entry/exit zones.
               Breakouts above resistance or breakdowns below support often signal significant trend changes.
             </p>
           </div>
@@ -950,7 +981,7 @@ function MethodologyPanel() {
         <Section id="regime" title="Regime Classification Framework">
           <div>
             <p className="mb-2">Classifies current precious metals market environment into 5 distinct regimes based on metal performance dynamics.</p>
-            
+
             <div className="mt-3">
               <p className="font-semibold text-blue-300">Regime Types:</p>
               <div className="space-y-2 ml-2">
@@ -991,7 +1022,7 @@ function MethodologyPanel() {
         <Section id="derived-indicators" title="Derived Indicators & Formulas">
           <div>
             <p className="mb-2">Composite indicators synthesizing multiple data points to assess market structure.</p>
-            
+
             <div className="space-y-3">
               <div>
                 <p className="font-semibold text-blue-300">Silver-Monetary Bias (SMB):</p>
@@ -1244,13 +1275,14 @@ function PriceAnchorsPanel({ indicators, correlations }: { indicators: MetalIndi
               />
             </div>
             <p className="text-xs text-stealth-400 mt-1">-100 to +100: Is gold priced as currency or commodity?</p>
+            {anchors.monetary_hedge_available_components !== undefined ? <p className="mt-1 text-xs text-stealth-300">{anchors.monetary_hedge_available_components}/{anchors.monetary_hedge_total_components ?? 3} inputs available; missing components are excluded.</p> : null}
           </div>
 
-        {/* Au/DXY Z-Score */}
+        {/* Au/USD index proxy Z-Score */}
           <div>
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm font-semibold text-stealth-300">
-                <DerivedLabel label="Au/DXY Ratio (Z-Score)" />
+                <DerivedLabel label="Au/USD index proxy Ratio (Z-Score)" />
               </span>
               <span className={`text-lg font-bold ${auDxyClass}`}>
                 {auDxyText}
@@ -1287,7 +1319,7 @@ function PriceAnchorsPanel({ indicators, correlations }: { indicators: MetalIndi
                 <span className="text-stealth-300">{formatSignedValue(corrAuTlt, 2)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-stealth-400">Au {"<->"} DXY:</span>
+                <span className="text-stealth-400">Au {"<->"} USD index proxy:</span>
                 <span className="text-stealth-300">{formatSignedValue(corrAuDxy, 2)}</span>
               </div>
               <div className="flex justify-between">
@@ -1742,8 +1774,8 @@ function SupplyPanel({ supply_data }: { supply_data: SupplyData[] | null }) {
                   return (
                     <>
                       <div className="flex justify-between items-start mb-2">
-                        <span 
-                          className="text-sm font-semibold" 
+                        <span
+                          className="text-sm font-semibold"
                           style={{ color: getMetalTextColor(metal.metal) }}
                         >
                           {getMetalName(metal.metal)} ({metal.metal})
@@ -1752,10 +1784,12 @@ function SupplyPanel({ supply_data }: { supply_data: SupplyData[] | null }) {
                           {prodText}
                         </span>
                       </div>
+                      <p className="mb-2 text-xs text-stealth-300">{metal.period ?? "Period unavailable"} · {metal.source ?? "Source unavailable"} · {metal.data_quality?.status ?? "quality unverified"}</p>
+                      {metal.data_quality?.reason ? <p className="mb-2 text-xs text-amber-300">{metal.data_quality.reason}</p> : null}
                       <div className="text-xs text-stealth-400 space-y-1">
                         <div className="flex justify-between">
                           <span>AISC: {isNumber(metal.aisc_per_oz) ? `$${metal.aisc_per_oz.toFixed(0)}/oz` : "n/a"}</span>
-                          <span>Spot: {isNumber(metal.current_spot_price) ? `$${metal.current_spot_price.toFixed(0)}/oz` : "n/a"}</span>
+                          <span>Futures bar: {isNumber(metal.current_spot_price) ? `$${metal.current_spot_price.toFixed(0)}/oz` : "n/a"}</span>
                         </div>
                         <div className="flex justify-between">
                           <span>Margin:</span>
@@ -1820,15 +1854,16 @@ function DemandPanel({ demand_data }: { demand_data: DemandData[] | null }) {
             return (
               <div key={idx} className="border-b border-stealth-600 pb-3 last:border-b-0">
                   <div className="flex justify-between items-start mb-2">
-                    <span 
-                      className="text-sm font-semibold" 
+                    <span
+                      className="text-sm font-semibold"
                       style={{ color: getMetalTextColor(metal.metal) }}
                     >
                       {getMetalName(metal.metal)} ({metal.metal})
                     </span>
-                    <span className="text-xs text-stealth-400">{metal.period}</span>
+                    <span className="text-xs text-stealth-300">{metal.period} · {metal.data_quality?.status ?? "quality unverified"}</span>
                   </div>
-                  
+                  <p className="mb-2 text-xs text-stealth-300">{metal.source ?? "Source unavailable"}{metal.data_quality?.reason ? ` · ${metal.data_quality.reason}` : ""}</p>
+
                   {categories.length > 0 ? (
                     <>
                       {/* Stacked bar showing demand composition */}
@@ -1844,7 +1879,7 @@ function DemandPanel({ demand_data }: { demand_data: DemandData[] | null }) {
                           </div>
                         ))}
                       </div>
-        
+
                       {/* Legend and values */}
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         {categories.map((cat, i) => (
@@ -1876,7 +1911,7 @@ function MarketCapPanel({ market_caps, market_caps_history }: { market_caps: Mar
   if (!market_caps || !market_caps_history) {
     return (
       <div className="primary-card p-4 md:p-6">
-        <h3 className="text-lg font-bold mb-4 text-white">How Big Is This Asset Class?</h3>
+        <h3 className="text-lg font-bold mb-4 text-white">Tracked Holdings Value</h3>
         <p className="text-sm text-stealth-400">Loading market cap data...</p>
       </div>
     );
@@ -1893,7 +1928,7 @@ function MarketCapPanel({ market_caps, market_caps_history }: { market_caps: Mar
   const total_cap = market_caps.total_market_cap_usd ?? null;
   const m2_ratio = market_caps.metals_to_m2_pct ?? null;
   const m2_ratio_bps = isNumber(m2_ratio) ? m2_ratio * 100 : null;
-  
+
   const gold_pct = isNumber(total_cap) && isNumber(gold_cap) && total_cap > 0
     ? (gold_cap / total_cap * 100)
     : null;
@@ -1903,11 +1938,11 @@ function MarketCapPanel({ market_caps, market_caps_history }: { market_caps: Mar
 
   // Calculate scenario prices (derived from ingested pricing when available)
   const gold_price = market_caps.metals?.AU?.price_usd_per_oz ?? null;
-  const scenario_3k_total = isNumber(gold_price) && isNumber(total_cap)
-    ? (3000 / gold_price) * total_cap
+  const scenario_3k_total = isNumber(gold_price) && gold_price > 0 && isNumber(gold_cap) && isNumber(others_cap)
+    ? (3000 / gold_price) * gold_cap + others_cap
     : null;
-  const scenario_5k_total = isNumber(gold_price) && isNumber(total_cap)
-    ? (5000 / gold_price) * total_cap
+  const scenario_5k_total = isNumber(gold_price) && gold_price > 0 && isNumber(gold_cap) && isNumber(others_cap)
+    ? (5000 / gold_price) * gold_cap + others_cap
     : null;
   const history = market_caps_history?.history || [];
   const ratioHistory = history
@@ -1952,8 +1987,8 @@ function MarketCapPanel({ market_caps, market_caps_history }: { market_caps: Mar
 
   return (
     <div className="primary-card p-4 md:p-6">
-        <h3 className="text-lg font-bold mb-4 text-white">How Big Is This Asset Class?</h3>
-        <p className="text-xs text-stealth-400 mb-1">Tiny markets = easier to move = more volatility = bigger % gains possible</p>
+        <h3 className="text-lg font-bold mb-4 text-white">Tracked Holdings Value</h3>
+        <p className="text-xs text-stealth-400 mb-1">Tracked holdings are a sample; they do not measure all above-ground metal.</p>
         <p className="text-xs text-stealth-500 mb-4">Tracked holdings use ETF assets plus central bank gold.</p>
       <div className="space-y-4 text-sm">
           <div className="grid grid-cols-2 gap-4">
@@ -1985,18 +2020,18 @@ function MarketCapPanel({ market_caps, market_caps_history }: { market_caps: Mar
                 </span>
               </div>
             </div>
-        
+
         {/* Annual Average History Chart */}
             <div className="border-t border-stealth-600 pt-4 mt-4">
               <div className="text-stealth-400 text-xs mb-3 font-semibold">
-                Tracked Metals/M2 Annual Average (log scale)
+                Tracked Gold/M2 Annual Average (log scale)
               </div>
             {yearlyRatioHistory.length > 0 && hasLogHistory ? (
               <>
                 <ResponsiveContainer width="100%" height={220}>
                   <LineChart
                     accessibilityLayer
-                    aria-label="Tracked precious-metals-to-M2 annual average history"
+                    aria-label="Tracked gold-to-M2 annual average history"
                     data={yearlyRatioHistory}
                   >
                     <CartesianGrid strokeDasharray="3 3" stroke={CHART_NEUTRAL.grid} />
@@ -2012,7 +2047,7 @@ function MarketCapPanel({ market_caps, market_caps_history }: { market_caps: Mar
                       scale="log"
                       domain={[minPositiveBps * 0.8, 'auto']}
                       tickFormatter={(value) => formatBps(Number(value))}
-                      label={{ value: 'Metals/M2 (bps, log)', angle: -90, position: 'insideLeft', style: { fill: CHART_NEUTRAL.label, fontSize: 12 } }}
+                      label={{ value: 'Gold/M2 (bps, log)', angle: -90, position: 'insideLeft', style: { fill: CHART_NEUTRAL.label, fontSize: 12 } }}
                     />
                     <Tooltip
                       contentStyle={{ backgroundColor: CHART_NEUTRAL.tooltipBg, border: `1px solid ${CHART_NEUTRAL.tooltipBorder}`, borderRadius: '4px' }}
@@ -2045,9 +2080,9 @@ function MarketCapPanel({ market_caps, market_caps_history }: { market_caps: Mar
               </div>
             )}
           </div>
-          
+
           <p className="text-xs text-stealth-400 border-t border-stealth-600 pt-3 mt-3">
-            Non-predictive scenarios: If Au {"->"} $3,000/oz, metals {"->"} {formatMarketCap(scenario_3k_total)}. 
+            Other metal prices and quantities held constant: If Au {"->"} $3,000/oz, metals {"->"} {formatMarketCap(scenario_3k_total)}.
             If Au {"->"} $5,000/oz, {"->"} {formatMarketCap(scenario_5k_total)}.
           </p>
       </div>
@@ -2071,7 +2106,7 @@ function CorrelationPanel({ correlations }: { correlations: CorrelationMatrix | 
     <div className="primary-card p-4 md:p-6">
       <h3 className="text-lg font-bold mb-4 text-white">Does Gold Zig When Stocks Zag?</h3>
       <p className="text-xs text-stealth-400 mb-4">Negative correlation to stocks/dollar = working as a hedge. Positive = riding the same wave.</p>
-      
+
       <div
         className="overflow-x-auto"
         role="region"
@@ -2110,7 +2145,7 @@ function CorrelationPanel({ correlations }: { correlations: CorrelationMatrix | 
             </tr>
             <tr className="border-b border-stealth-700">
               <td className="py-2">
-                <span style={{ color: getMetalTextColor('AU') }}>Au</span> {"<->"} DXY
+                <span style={{ color: getMetalTextColor('AU') }}>Au</span> {"<->"} USD index proxy
               </td>
                 <td className="text-right font-semibold">{formatCorr(correlations.au_dxy)}</td>
               <td className="text-right">Currency hedge effect</td>
@@ -2141,28 +2176,33 @@ function ProjectionsPanel({ projections }: { projections: MetalProjection[] }) {
   const industrialProjections = rankedProjections.filter((proj) => METAL_CATEGORIES[proj.metal] === "industrial");
   const leader = rankedProjections[0];
   const laggard = rankedProjections[rankedProjections.length - 1];
+  const lowest = rankedProjections.filter(proj => proj.score_total === laggard?.score_total);
   const confirmedLeaders = preciousProjections.filter((proj) => proj.relative_confirmation?.rotation_confirmed);
   const shortTermAdvancers = rankedProjections.filter((proj) => (proj.technicals.momentum_5d ?? -Infinity) > 0).length;
   const intermediateAdvancers = rankedProjections.filter((proj) => (proj.technicals.momentum_20d ?? -Infinity) > 0).length;
 
   const overviewHeadline = leader
-    ? `${leader.metal_name} is leading the complex right now, while ${laggard?.metal_name ?? "the laggard"} remains the weakest link in the tape.`
+    ? `${leader.metal_name} has the highest model score. ${lowest.length > 1 ? `${lowest.map(proj => proj.metal_name).join(", ")} share the lowest score.` : `${laggard?.metal_name ?? "The laggard"} has the lowest score.`}`
     : "Metals leadership is unavailable.";
 
-  const breadthRead = shortTermAdvancers > intermediateAdvancers
+  const breadthRead = shortTermAdvancers === 0 && intermediateAdvancers === 0
+    ? `None of the ${rankedProjections.length} tracked metals has positive momentum over either 5 or 20 sessions; weakness is broad across this sample.`
+    : shortTermAdvancers > intermediateAdvancers
     ? "Short-term momentum is improving faster than the 20-day trend, which reads more like a rebound first and a full trend reset second."
-    : "Short and intermediate momentum are aligned, which points to broader participation rather than a narrow bounce.";
+    : shortTermAdvancers < intermediateAdvancers
+      ? `${shortTermAdvancers} of ${rankedProjections.length} metals are positive over 5 sessions, versus ${intermediateAdvancers} over 20; short-term breadth is weaker.`
+      : `${shortTermAdvancers} of ${rankedProjections.length} tracked metals have positive momentum in each window. Equal breadth alone does not establish broad strength.`;
 
   const confirmationRead = confirmedLeaders.length > 0
     ? `${confirmedLeaders.map((proj) => proj.metal_name).join(", ")} ${confirmedLeaders.length === 1 ? "has" : "have"} active rotation confirmation inside the precious-metal group.`
     : "No precious metal has fully confirmed rotation yet, so leadership is still tentative rather than broad-based.";
 
   const industrialRead = industrialProjections.length > 0
-    ? `${industrialProjections[0].metal_name} is the strongest industrial read, which helps separate growth-sensitive metal strength from purely monetary hedging.`
+    ? `${industrialProjections[0].metal_name} has the highest technical score within the industrial group. This price-based score does not measure physical demand.`
     : "Industrial metals are not populated yet, so this read is still concentrated in the precious-metal sleeve.";
 
   const conclusion = leader
-    ? `${leader.metal_name} remains the metal to respect, but ${breadthRead.toLowerCase()} Keep treating gold as the monetary anchor, and use palladium, copper, and aluminum as the cleaner cyclical cross-checks.`
+    ? `${leader.metal_name} has the highest relative model score (${leader.score_total.toFixed(0)}/100). ${breadthRead} Relative leadership can coexist with falling prices.`
     : "Wait for fresh metals data before drawing a tactical conclusion.";
 
   return (
@@ -2205,7 +2245,7 @@ function ProjectionsPanel({ projections }: { projections: MetalProjection[] }) {
       {/* Detailed Projections - Precious Metals */}
       <div className="mb-8">
         <h3 className="text-lg font-bold mb-3 text-yellow-400">Precious Metals</h3>
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3" data-testid="precious-metal-grid">
           {preciousProjections.map((proj) => (
             <ProjectionCard key={proj.metal} proj={proj} />
           ))}
@@ -2215,7 +2255,7 @@ function ProjectionsPanel({ projections }: { projections: MetalProjection[] }) {
       {/* Detailed Projections - Industrial Metals */}
       <div className="mb-8">
         <h3 className="text-lg font-bold mb-3 text-blue-400">Industrial Metals</h3>
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3" data-testid="industrial-metal-grid">
           {industrialProjections.map((proj) => (
             <ProjectionCard key={proj.metal} proj={proj} />
           ))}
@@ -2223,7 +2263,7 @@ function ProjectionsPanel({ projections }: { projections: MetalProjection[] }) {
       </div>
 
       <div className="mt-4 rounded-xl border border-blue-500/30 bg-blue-500/10 p-3 text-xs text-stealth-300">
-        <strong>How to read this:</strong> Scores blend trend structure, momentum, and nearby support/resistance. A high score means leadership is broadening; a low score means the metal is lagging even if its stored futures-series price still looks elevated. Strong = {'>'} 75 total score.
+        <strong>How to read this:</strong> Scores blend 60% moving-average trend and 40% RSI positioning. Support/resistance levels are separate context. A high relative rank does not establish broad participation or forecast returns. Strong = {'≥'} 75 total score.
       </div>
     </div>
   );

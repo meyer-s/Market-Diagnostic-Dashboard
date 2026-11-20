@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from collections import OrderedDict
+from concurrent.futures import Future
+from threading import Lock
+from time import monotonic
 from typing import Optional, Sequence
 
 import pandas as pd
@@ -12,6 +16,48 @@ from app.services.market_data.provider import OptionChainFrame, OptionRight, Und
 
 class YahooProvider:
     name = "yahoo"
+
+    def __init__(self) -> None:
+        self._options_cache: OrderedDict[tuple, tuple[float, object]] = OrderedDict()
+        self._options_pending: dict[tuple, Future] = {}
+        self._options_lock = Lock()
+
+    def _cached_options(self, key: tuple, fetch):
+        # Calendar, strike discovery and quote filtering must reuse the same
+        # provider snapshot. Preserve its original retrieval time on cache hits.
+        with self._options_lock:
+            cached = self._options_cache.get(key)
+            if cached and monotonic() - cached[0] < 120:
+                self._options_cache.move_to_end(key)
+                return cached[1]
+            future = self._options_pending.get(key)
+            owner = future is None
+            if owner:
+                future = Future()
+                self._options_pending[key] = future
+        if not owner:
+            return future.result()
+        try:
+            result = fetch()
+            with self._options_lock:
+                self._options_cache[key] = (monotonic(), result)
+                self._options_cache.move_to_end(key)
+                while len(self._options_cache) > 128:
+                    self._options_cache.popitem(last=False)
+            future.set_result(result)
+            return result
+        except Exception as exc:
+            future.set_exception(exc)
+            raise
+        finally:
+            with self._options_lock:
+                self._options_pending.pop(key, None)
+
+    def _option_snapshot(self, symbol: str, expiry: str):
+        def fetch():
+            chain = yf.Ticker(symbol).option_chain(expiry)
+            return chain, datetime.now(timezone.utc).isoformat()
+        return self._cached_options(("chain", symbol.upper(), expiry), fetch)
 
     def quote(self, symbol: str) -> UnderlyingQuote:
         stock = yf.Ticker(symbol)
@@ -54,12 +100,12 @@ class YahooProvider:
         return frame.tail(requested_bars)
 
     def option_expirations(self, symbol: str) -> list[str]:
-        expiries = yf.Ticker(symbol).options or []
+        expiries = self._cached_options(("expiries", symbol.upper()), lambda: tuple(yf.Ticker(symbol).options or []))
         parsed = [parse_option_expiry(exp) for exp in expiries]
         return sorted(exp.isoformat() for exp in parsed if exp is not None)
 
     def option_strikes(self, symbol: str, expiry: str) -> list[float]:
-        chain = yf.Ticker(symbol).option_chain(expiry_to_iso(expiry))
+        chain, _retrieved_at = self._option_snapshot(symbol, expiry_to_iso(expiry))
         values: set[float] = set()
         for frame in (chain.calls, chain.puts):
             if frame is not None and not frame.empty and "strike" in frame.columns:
@@ -75,7 +121,7 @@ class YahooProvider:
         strikes: Optional[Sequence[float]] = None,
     ) -> OptionChainFrame:
         iso_expiry = expiry_to_iso(expiry)
-        chain = yf.Ticker(symbol).option_chain(iso_expiry)
+        chain, retrieved_at = self._option_snapshot(symbol, iso_expiry)
         calls = chain.calls.copy() if chain.calls is not None else pd.DataFrame()
         puts = chain.puts.copy() if chain.puts is not None else pd.DataFrame()
         if strikes is not None:
@@ -88,7 +134,6 @@ class YahooProvider:
             puts = pd.DataFrame()
         elif right == "PUT":
             calls = pd.DataFrame()
-        retrieved_at = datetime.now(timezone.utc).isoformat()
         return OptionChainFrame(
             symbol=symbol.upper(),
             expiry=iso_expiry,

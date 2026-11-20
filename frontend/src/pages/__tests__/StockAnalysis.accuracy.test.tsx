@@ -1,8 +1,9 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import StockAnalysis from "../StockAnalysis";
+import { activitySignal } from "../../features/price-volume/__tests__/fixtures";
 
 const { apiFetchMock } = vi.hoisted(() => ({ apiFetchMock: vi.fn() }));
 
@@ -115,21 +116,7 @@ const payload = {
     put_volume_total: 0,
     put_call_oi_ratio: null,
   },
-  institutional_flow: {
-    summary: {
-      signal: "accumulation",
-      confidence: 62,
-      buy_cluster_level: 18.8,
-      sell_cluster_level: 20.1,
-      distance_to_buy_pct: -2,
-      distance_to_sell_pct: 4,
-      buy_notional_usd: 2_000_000,
-      sell_notional_usd: 1_000_000,
-      net_flow_usd: 1_000_000,
-      event_count: 1,
-    },
-    event_history: [],
-  },
+  institutional_flow: { summary: activitySignal, signal: activitySignal, event_history: [] },
   fundamentals: {
     eps: series([0.2, 0.25]),
     roe: series([8, 9]),
@@ -230,11 +217,11 @@ describe("StockAnalysis accuracy pass", () => {
     expect(screen.getByText("EPS TTM")).not.toBeNull();
     expect(screen.getByText("$1.25")).not.toBeNull();
     expect(screen.getByText(/TTM through Mar 31, 2026 · price metrics at Aug 1, 2026 close/)).not.toBeNull();
-    expect(screen.getAllByText("High-Volume Bar Proxy").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Signed Notional").length).toBeGreaterThan(0);
-    expect(screen.getByText(/Proxy strength 62\/100/)).not.toBeNull();
-    expect(screen.getByText(/1 bar/)).not.toBeNull();
-    expect(screen.getAllByText("Signal Quality").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Price & volume evidence").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Signed flagged turnover · full window").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Proxy strength|confidence.*100/i)).toBeNull();
+    expect(screen.getByText("2 / 85 baseline-ready bars")).not.toBeNull();
+    expect(screen.getAllByText("Model Strength").length).toBeGreaterThan(0);
     expect(screen.getByText("Options Pricing Context")).not.toBeNull();
     expect(screen.getByText("Unavailable")).not.toBeNull();
     expect(screen.getByText(/Latest article/)).not.toBeNull();
@@ -310,7 +297,7 @@ describe("StockAnalysis accuracy pass", () => {
     await waitFor(() => expect(screen.queryByText("Loading recent KVUE headlines separately…")).toBeNull());
   });
 
-  it("shows unavailable instead of the initial empty state for a partial projection payload", async () => {
+  it("retains available evidence and marks missing lookbacks unavailable", async () => {
     apiFetchMock.mockImplementation((endpoint: string) => {
       if (endpoint.startsWith("/stocks/KVUE/projections")) {
         return Promise.resolve({ ...payload, projections: { T: payload.projections.T } });
@@ -325,7 +312,53 @@ describe("StockAnalysis accuracy pass", () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => expect(screen.getByText("Trailing analysis unavailable for this asset.")).not.toBeNull());
+    await waitFor(() => expect(screen.getByText(/Some lookbacks lack usable aligned history/)).not.toBeNull());
+    expect(screen.getByRole("heading", { name: "21D evidence" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "12M" }).hasAttribute("disabled")).toBe(true);
+    expect(within(screen.getByRole("img", { name: /Trailing scores:/ })).getAllByText("Unavailable")).toHaveLength(3);
     expect(screen.queryByText("Search for a stock to get started")).toBeNull();
+  });
+
+  it("uses the path symbol over a conflicting legacy query and updates the URL on search", async () => {
+    function Location() { return <output aria-label="Current route">{useLocation().pathname}</output>; }
+    apiFetchMock.mockImplementation((endpoint: string) => {
+      if (endpoint.startsWith("/news?")) return Promise.resolve([]);
+      const symbol = endpoint.includes("/NVDA/") ? "NVDA" : "KVUE";
+      return Promise.resolve({ ...payload, ticker: symbol, projections: Object.fromEntries(Object.entries(payload.projections).map(([key, value]) => [key, { ...value, ticker: symbol }])) });
+    });
+    render(<MemoryRouter initialEntries={["/stock-analysis/KVUE?symbol=TGT"]}><Routes><Route path="/stock-analysis/:symbol" element={<><StockAnalysis /><Location /></>} /></Routes></MemoryRouter>);
+    await waitFor(() => expect(screen.getByRole("heading", { name: "21D evidence" })).not.toBeNull());
+    expect(apiFetchMock.mock.calls.some(([endpoint]) => String(endpoint).includes("/stocks/TGT/"))).toBe(false);
+    fireEvent.change(screen.getByLabelText("Stock symbol"), { target: { value: "NVDA" } });
+    fireEvent.click(screen.getByRole("button", { name: "Analyze" }));
+    await waitFor(() => expect(screen.getByLabelText("Current route").textContent).toBe("/stock-analysis/NVDA"));
+    await waitFor(() => expect(screen.getByText("Tracking NVDA")).not.toBeNull());
+    expect(apiFetchMock.mock.calls.filter(([endpoint]) => String(endpoint).includes("/stocks/NVDA/"))).toHaveLength(1);
+  });
+
+  it("aborts an obsolete request when navigating to a different symbol", async () => {
+    let finishOld: ((value: typeof payload) => void) | undefined;
+    let oldSignal: AbortSignal | undefined;
+    const pending = new Promise<typeof payload>(resolve => { finishOld = resolve; });
+    apiFetchMock.mockImplementation((endpoint: string, options?: { signal?: AbortSignal }) => {
+      if (endpoint.startsWith("/news?")) return Promise.resolve([]);
+      if (endpoint.includes("/KVUE/")) { oldSignal = options?.signal; return pending; }
+      return Promise.resolve({ ...payload, ticker: "NVDA", projections: Object.fromEntries(Object.entries(payload.projections).map(([key, value]) => [key, { ...value, ticker: "NVDA" }])) });
+    });
+    function Switch() { const navigate = useNavigate(); return <button onClick={() => navigate("/stock-analysis/NVDA")}>Switch symbol</button>; }
+    render(<MemoryRouter initialEntries={["/stock-analysis/KVUE"]}><Routes><Route path="/stock-analysis/:symbol" element={<><StockAnalysis /><Switch /></>} /></Routes></MemoryRouter>);
+    await waitFor(() => expect(oldSignal).toBeDefined());
+    fireEvent.click(screen.getByText("Switch symbol"));
+    await waitFor(() => expect(oldSignal?.aborted).toBe(true));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "21D evidence" })).not.toBeNull());
+    finishOld?.(payload);
+    await waitFor(() => expect(screen.getByText("Tracking NVDA")).not.toBeNull());
+  });
+
+  it("rejects a response for another symbol", async () => {
+    apiFetchMock.mockImplementation((endpoint: string) => endpoint.startsWith("/news?") ? Promise.resolve([]) : Promise.resolve({ ...payload, ticker: "TGT" }));
+    render(<MemoryRouter initialEntries={["/stock-analysis?symbol=KVUE"]}><StockAnalysis /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByText(/The response belongs to another symbol/)).not.toBeNull());
+    expect(screen.queryByText("$19.24")).toBeNull();
   });
 });

@@ -193,6 +193,7 @@ interface LeadershipComparison {
 }
 
 interface SectorProjectionAnalyticsResponse {
+  run_id: number;
   as_of_date: string;
   analytics_version: string;
   leadership_method: string;
@@ -217,6 +218,7 @@ const BLOCKING_WARNING_TYPES = new Set([
   "empty_sector_projection_run",
   "missing_sector_projections",
   "partial_sector_metrics",
+  "invalid_sector_metrics",
 ]);
 
 function hasBlockingDataWarnings(warnings?: DataWarning[]) {
@@ -295,9 +297,11 @@ function CompactScoreBar({
 
 export default function SectorProjections() {
   interface SectorProjectionsResponse {
+    run_id: number;
     projections: Record<string, SectorProjectionItem[]>;
     historical: Record<string, number>;
     as_of_date: string;
+    price_as_of_date?: string | null;
     system_state: string;
     data_warnings: DataWarning[];
     quality_status?: string;
@@ -305,10 +309,15 @@ export default function SectorProjections() {
   }
   const { data, loading, error, refetch: refetchProjections } = useApi<SectorProjectionsResponse>("/sectors/projections/latest");
   const {
-    data: analyticsData,
+    data: receivedAnalytics,
     error: analyticsError,
+    loading: analyticsLoading,
     refetch: refetchAnalytics,
   } = useApi<SectorProjectionAnalyticsResponse>("/sectors/projections/analytics?days=365&scanner_days=45");
+  // Separate requests may straddle a scheduled refresh. Never combine scores
+  // or scenarios from one run with the raw component inputs of another.
+  const analyticsData = receivedAnalytics && data && Number.isInteger(data.run_id) && receivedAnalytics.run_id === data.run_id ? receivedAnalytics : null;
+  const analyticsMismatch = Boolean(receivedAnalytics && data && !analyticsData);
   const [projections, setProjections] = useState<Record<string, SectorProjectionItem[]>>({});
   const [methodologyOpen, setMethodologyOpen] = useState(false);
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
@@ -398,7 +407,7 @@ export default function SectorProjections() {
 
   // Prepare data for line chart: track each sector's score across horizons
   const getChartData = () => {
-    if (!displayProjections["3m"]) return [];
+    if (!displayProjections["3m"] || !analyticsData) return [];
     
     // Get all unique sectors from 3m data (use 3m as reference since it should always exist)
     const sectors = displayProjections["3m"] || [];
@@ -416,17 +425,10 @@ export default function SectorProjections() {
       // scores remain available below as model inputs and audit evidence.
       CHART_HORIZONS.forEach((h) => {
         const scenario = analyticsData?.sectors[sector.sector_symbol]?.forward_scenarios?.[h];
-        const horizonData = displayProjections[h] || [];
-        const match = horizonData.find((s) => s.sector_symbol === sector.sector_symbol);
-        if (scenario) {
+        if (scenario && [scenario.projected_score, scenario.projected_low, scenario.projected_high].every(Number.isFinite)) {
           sectorData.scores[h] = scenario.projected_score;
           sectorData.lower[h] = scenario.projected_low;
           sectorData.upper[h] = scenario.projected_high;
-        } else if (match) {
-          const stable = analyticsData?.sectors[sector.sector_symbol]?.horizons[h];
-          sectorData.scores[h] = stable?.stable_score ?? match.score_total;
-          sectorData.lower[h] = stable?.uncertainty_low ?? match.score_total;
-          sectorData.upper[h] = stable?.uncertainty_high ?? match.score_total;
         } else {
           // If no data for this horizon, use null to indicate missing data
           sectorData.scores[h] = null;
@@ -436,7 +438,7 @@ export default function SectorProjections() {
       });
       
       return sectorData;
-    });
+    }).filter((sector) => CHART_HORIZONS.every((h) => sector.scores[h] !== null));
   };
 
   const chartData = getChartData();
@@ -445,9 +447,7 @@ export default function SectorProjections() {
     data?.quality_status === "blocked" ||
     hasBlockingDataWarnings(data?.data_warnings) ||
     isSuspiciousProjectionSet(data?.projections);
-  const tInterpolated = chartData.some((sector) =>
-    sector.scores["T"] === null || sector.scores["T"] === undefined
-  );
+  const scenariosIncomplete = Boolean(analyticsData && chartData.length < (displayProjections["3m"]?.length ?? 0));
   
   // Detect if T data is valid (should have variation across sectors)
   // If all sectors have identical scores, T data is likely stale/unavailable
@@ -522,15 +522,16 @@ export default function SectorProjections() {
         <p className="mt-2 max-w-3xl text-sm leading-6 text-stealth-300 md:text-[15px]">Compare stabilized forward leadership scenarios built from trailing sector evidence, rank persistence, and bounded scanner confirmation.</p>
         <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-stealth-300">
           {data && <span className="page-badge">System {data.system_state}</span>}
-          {data && <span className="page-badge">As of {data.as_of_date}</span>}
+          {data && <span className="page-badge">Run {data.as_of_date}</span>}
+          {data && <span className="page-badge">{data.price_as_of_date ? `Prices through ${data.price_as_of_date}` : "Price session unavailable"}</span>}
         </div>
       </div>
 
-      {analyticsError && data && (
+      {(analyticsError || analyticsMismatch) && data && (
         <div className="rounded-xl border border-amber-500/40 bg-amber-950/25 p-4" role="status">
           <h2 className="text-sm font-semibold text-amber-200">Partial sector update</h2>
-          <p className="mt-1 text-sm text-amber-100">Current projection rows are available, but leadership history and stabilization analytics are unavailable.</p>
-          <button type="button" onClick={refetchAnalytics} className="mt-3 inline-flex min-h-11 items-center rounded-lg border border-amber-600 px-4 text-sm font-semibold text-amber-100 hover:bg-amber-900/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300">
+          <p className="mt-1 text-sm text-amber-100">Raw trailing inputs remain available. {analyticsMismatch ? "The analytics and inputs belong to different runs; refresh to align them." : "Leadership history and forward scenarios are unavailable."}</p>
+          <button type="button" onClick={() => { refetchProjections(); refetchAnalytics(); }} className="mt-3 inline-flex min-h-11 items-center rounded-lg border border-amber-600 px-4 text-sm font-semibold text-amber-100 hover:bg-amber-900/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300">
             Retry sector analytics
           </button>
         </div>
@@ -650,6 +651,7 @@ export default function SectorProjections() {
                       stroke={CHART_NEUTRAL.axis}
                       tickFormatter={(value: number) =>
                         new Date(value).toLocaleDateString(undefined, {
+                          timeZone: "UTC",
                           month: "short",
                           day: "numeric",
                         })
@@ -669,6 +671,7 @@ export default function SectorProjections() {
                       contentStyle={commonTooltipStyle}
                       labelFormatter={(label: number) =>
                         new Date(label).toLocaleDateString(undefined, {
+                          timeZone: "UTC",
                           month: "short",
                           day: "numeric",
                           year: "numeric",
@@ -723,15 +726,20 @@ export default function SectorProjections() {
       
       
       {/* Multi-sector forward score scenarios. */}
-      {!pageLoading && !pageError && Object.keys(projections).length > 0 && (
+      {!pageLoading && !pageError && Object.keys(projections).length > 0 && chartData.length === 0 && (
+        <section className="surface-card-muted p-4" role="status">
+          {analyticsLoading ? "Loading forward scenarios…" : "Forward scenarios unavailable. Raw trailing input rankings are shown below."}
+        </section>
+      )}
+      {!pageLoading && !pageError && Object.keys(projections).length > 0 && chartData.length > 0 && (
         <section id="sector-scenarios" className="surface-card-strong scroll-mt-32 p-4 sm:p-6">
           <h2 className="mb-2 text-base font-semibold sm:text-lg">Stabilized Sector Forward Scenarios</h2>
           <p className="mb-3 max-w-4xl text-xs leading-relaxed text-stealth-400">
-            Projected leadership scores blend today's stabilized reading toward longer-run anchors, then apply bounded rank persistence and scanner confirmation. Select a sector to emphasize its path and scenario range.
+            Projected leadership scores blend today's stabilized reading toward longer-run anchors, then apply bounded rank persistence and scanner confirmation. These heuristic score ranges are not return forecasts or calibrated confidence intervals.
           </p>
-          {tInterpolated && (
+          {scenariosIncomplete && (
             <p className="mb-3 text-xs text-amber-300/90">
-              Some current values fall back to the stabilized 3M reading because a valid current observation is unavailable.
+              Some sector scenarios are incomplete. Only sectors with all four scenario observations are plotted.
             </p>
           )}
 
@@ -761,10 +769,11 @@ export default function SectorProjections() {
                   const color = getSectorColor(sector.symbol);
                   const isSelected = selectedSector === sector.symbol;
                   const opacity = isSelected ? 1 : 0.16;
-                  const score3m = sector.scores["3m"] ?? 0;
-                  const score6m = sector.scores["6m"] ?? 0;
-                  const score12m = sector.scores["12m"] ?? 0;
-                  const scoreT = sector.scores["T"] ?? score3m;
+                  // getChartData retains complete scenario paths only.
+                  const score3m = sector.scores["3m"]!;
+                  const score6m = sector.scores["6m"]!;
+                  const score12m = sector.scores["12m"]!;
+                  const scoreT = sector.scores["T"]!;
                   const points = [
                     { x: 150, y: 260 - scoreT * 2.4, upper: 260 - (sector.upper["T"] ?? scoreT) * 2.4, lower: 260 - (sector.lower["T"] ?? scoreT) * 2.4 },
                     { x: 400, y: 260 - score3m * 2.4, upper: 260 - (sector.upper["3m"] ?? score3m) * 2.4, lower: 260 - (sector.lower["3m"] ?? score3m) * 2.4 },
@@ -831,7 +840,7 @@ export default function SectorProjections() {
                       <CartesianGrid {...commonGridProps} />
                       <XAxis dataKey="timestampNum" type="number" domain={["dataMin", "dataMax"]} tick={false} axisLine={{ stroke: CHART_NEUTRAL.axis }} />
                       <YAxis domain={[0, 100]} ticks={[0, 50, 100]} tick={{ fill: CHART_NEUTRAL.tick, fontSize: 12 }} stroke={CHART_NEUTRAL.axis} />
-                      <Tooltip contentStyle={commonTooltipStyle} labelFormatter={(label: number) => new Date(label).toLocaleDateString()} formatter={(value: number, name: string) => [value.toFixed(1), name === "stable_score" ? "Stable score" : "Raw score"]} />
+                      <Tooltip contentStyle={commonTooltipStyle} labelFormatter={(label: number) => new Date(label).toLocaleDateString(undefined, { timeZone: "UTC" })} formatter={(value: number, name: string) => [value.toFixed(1), name === "stable_score" ? "Stable score" : "Raw score"]} />
                       <Line type="monotone" dataKey="raw_score" stroke={CHART_NEUTRAL.tick} strokeWidth={1} strokeOpacity={0.45} dot={false} isAnimationActive={false} />
                       <Line type="monotone" dataKey="stable_score" stroke={getSectorColor(selectedSectorAnalytics.sector_symbol)} strokeWidth={2.25} dot={false} isAnimationActive={false} />
                     </LineChart>
@@ -847,7 +856,7 @@ export default function SectorProjections() {
                 <div className="rounded-lg border border-stealth-800 bg-stealth-950/30 p-2.5">
                   <div className="uppercase tracking-wide text-stealth-500">Scanner confirmation</div>
                   <div className="mt-1 font-semibold text-stealth-100">{selectedSectorAnalytics.scanner.hits} deduped hits · {selectedSectorAnalytics.scanner.unique_symbols} names</div>
-                  <div className="mt-0.5 text-stealth-500">Overlay {selectedSectorAnalytics.scanner.overlay_points >= 0 ? "+" : ""}{selectedSectorAnalytics.scanner.overlay_points.toFixed(1)} · reliability {(selectedSectorAnalytics.scanner.reliability * 100).toFixed(0)}%</div>
+                  <div className="mt-0.5 text-stealth-500">Overlay {selectedSectorAnalytics.scanner.overlay_points >= 0 ? "+" : ""}{selectedSectorAnalytics.scanner.overlay_points.toFixed(1)} · directional coverage factor {(selectedSectorAnalytics.scanner.reliability * 100).toFixed(0)}%</div>
                 </div>
               </div>
             </div>
@@ -861,7 +870,7 @@ export default function SectorProjections() {
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 mb-4">
             <div>
               <h2 className="text-base sm:text-lg font-semibold">Trailing Input Rankings</h2>
-              <p className="mt-1 text-xs text-stealth-500">These backward-looking windows are model evidence, not the forward scenario dates shown above. Leadership score is the smoothed composite plus scanner adjustment.</p>
+              <p className="mt-1 text-xs text-stealth-500">These backward-looking windows are model evidence. {analyticsData ? "Leadership score is the smoothed composite plus scanner adjustment; the component columns show raw inputs." : "Raw composite scores are shown; stabilization and scanner adjustments are unavailable."}</p>
             </div>
             <div className="flex flex-wrap gap-1 sm:gap-2">
               {["T", "3m", "6m", "12m"].map((h) => {
@@ -1076,10 +1085,10 @@ export default function SectorProjections() {
             <div className="px-4 sm:px-6 pb-6 text-xs sm:text-sm text-stealth-300 space-y-5">
             <div>
               <h3 className="font-semibold text-stealth-100 mb-3 text-sm sm:text-base">Transparent Rule-Based Scoring</h3>
-              <p className="text-stealth-400 mb-2 text-xs sm:text-sm">
-                Ranks 11 sector ETFs (XLE, XLF, XLK, XLY, XLP, XLV, XLI, XLU, XLB, XLRE, XLC) using 8000 days of historical data. Each sector receives a composite score (0-100) from four weighted components.
+              <p className="text-stealth-300 mb-2 text-xs sm:text-sm">
+                Ranks 11 sector ETFs (XLE, XLF, XLK, XLY, XLP, XLV, XLI, XLU, XLB, XLRE, XLC) from daily adjusted prices. Each sector receives a composite score (0-100) from four weighted components.
               </p>
-              <p className="text-stealth-400 text-xs sm:text-sm">
+              <p className="text-stealth-300 text-xs sm:text-sm">
                 Raw evidence is computed independently from trailing 3-month (63 trading days), 6-month (126), and 12-month (252) windows. The forward chart then converts those inputs into separate +3M, +6M, and +12M score scenarios.
               </p>
             </div>
@@ -1095,7 +1104,7 @@ export default function SectorProjections() {
                   </p>
                   <div className="text-xs text-stealth-400 space-y-1 ml-3">
                     <p><strong>Return:</strong> Total return over the horizon period: (Price_end / Price_start) - 1</p>
-                    <p><strong>SMA Distance:</strong> Distance from 200-day simple moving average: (Price_current / SMA_200) - 1</p>
+                    <p><strong>SMA Distance:</strong> (Price_current / SMA) - 1. Current uses 10 sessions; the 3M, 6M and 12M inputs use 63, 126 and 200 sessions respectively.</p>
                     <p><strong>Composite:</strong> Return + (0.5 x SMA Distance), scored from peer rank plus robust distance from the peer median on a 0-100 scale</p>
                   </div>
                 </div>
@@ -1203,8 +1212,8 @@ export default function SectorProjections() {
               <h4 className="font-semibold text-stealth-100 mb-2 text-xs sm:text-sm">Data Sources & Frequency</h4>
               <div className="text-xs sm:text-sm text-stealth-400 space-y-1">
                 <p><strong>Price Data:</strong> Yahoo Finance API (adjusted close prices)</p>
-                <p><strong>Lookback:</strong> 8000 trading days for 12-month calculation reliability</p>
-                <p><strong>Updates:</strong> Every 4 hours during market hours (Monday-Friday, 8am-8pm ET)</p>
+                <p><strong>History request:</strong> Up to 8000 calendar days, limited by each ETF's available history. Scored inputs use 21, 63, 126 or 252 completed sessions.</p>
+                <p><strong>Updates:</strong> Scheduled weekdays at 8am, noon, 4pm and 8pm ET; the run date and latest price session are shown separately.</p>
                 <p><strong>System State:</strong> Market Diagnostic Dashboard composite indicator model</p>
               </div>
             </div>

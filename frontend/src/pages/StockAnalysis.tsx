@@ -14,7 +14,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useParams, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   Line,
   ResponsiveContainer,
@@ -36,6 +36,8 @@ import {
 import { OptionsStructureMap } from "../components/widgets/OptionsStructureMap";
 import NarrativeImpulseWidget, { type NarrativeAnalysis } from "../components/widgets/NarrativeImpulseWidget";
 import MarketLoading from "../components/ui/MarketLoading";
+import PriceVolumeDetail from "../features/price-volume/PriceVolumeDetail";
+import type { PriceVolumeEvent, PriceVolumeSignal, PriceVolumeSummary } from "../features/price-volume/types";
 import "../index.css";
 import { CHART_NEUTRAL } from "../utils/chartUtils";
 import { getFamilyColor } from "../theme/metricColors";
@@ -209,6 +211,7 @@ interface FundamentalSnapshotMetric {
   period_end?: string | null;
   change_pct?: number | null;
   derived?: boolean;
+  definition?: string;
 }
 
 interface FundamentalSnapshot {
@@ -271,417 +274,10 @@ interface IntradayHistoryPoint {
   close: number;
 }
 
-interface InstitutionalFlowEvent {
-  date: string;
-  price: number;
-  volume: number;
-  notional: number;
-  volume_z: number;
-  clv: number;
-  price_change_pct: number;
-  side: "buy" | "sell" | "neutral";
-  strength: number;
-}
-
 interface InstitutionalFlowPayload {
-  summary: {
-    signal: "accumulation" | "distribution" | "neutral";
-    confidence: number;
-    buy_cluster_level: number | null;
-    sell_cluster_level: number | null;
-    distance_to_buy_pct: number | null;
-    distance_to_sell_pct: number | null;
-    buy_notional_usd: number;
-    sell_notional_usd: number;
-    net_flow_usd: number;
-    event_count: number;
-  };
-  event_history: InstitutionalFlowEvent[];
-}
-
-interface FlowTimelineBucket {
-  bucket: string;
-  buy_notional_usd: number;
-  sell_notional_usd: number;
-  neutral_notional_usd: number;
-  net_flow_usd: number;
-  total_notional_usd: number;
-  buy_events: number;
-  sell_events: number;
-  neutral_events: number;
-}
-
-function formatFlowCurrency(value: number | null | undefined): string {
-  if (value === null || value === undefined || Number.isNaN(value)) return "-";
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: Math.abs(value) >= 1_000_000 ? 0 : 2,
-  }).format(value);
-}
-
-function formatCompactCurrency(value: number | null | undefined): string {
-  if (value === null || value === undefined || Number.isNaN(value)) return "-";
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    notation: "compact",
-    maximumFractionDigits: 2,
-  }).format(value);
-}
-
-function formatFlowPercent(value: number | null | undefined): string {
-  if (value === null || value === undefined || Number.isNaN(value)) return "-";
-  return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
-}
-
-function getSignalClasses(signal: "accumulation" | "distribution" | "neutral"): string {
-  if (signal === "accumulation") return "border-emerald-700/50 bg-emerald-950/35 text-emerald-300";
-  if (signal === "distribution") return "border-rose-700/50 bg-rose-950/35 text-rose-300";
-  return "border-stealth-600 bg-stealth-800/80 text-stealth-300";
-}
-
-function getSignalStrengthStrokeClass(signal: "accumulation" | "distribution" | "neutral"): string {
-  if (signal === "accumulation") return "stroke-emerald-300/75 drop-shadow-[0_0_5px_rgba(74,222,128,0.2)]";
-  if (signal === "distribution") return "stroke-rose-300/75 drop-shadow-[0_0_5px_rgba(251,113,133,0.2)]";
-  return "stroke-stealth-300/70 drop-shadow-[0_0_4px_rgba(148,163,184,0.16)]";
-}
-
-function SignalStrengthArc({ strength, signal }: { strength: number; signal: "accumulation" | "distribution" | "neutral" }) {
-  const normalizedStrength = Math.max(0, Math.min(100, strength));
-  const strokeWidth = 10;
-  const radius = 50 - strokeWidth;
-  const circumference = 2 * Math.PI * radius;
-  const dashOffset = circumference * (1 - normalizedStrength / 100);
-
-  return (
-    <div
-      className="inline-flex h-4 w-4 items-center"
-      role="img"
-      aria-label={`Signal strength ${normalizedStrength.toFixed(0)} out of 100`}
-    >
-      <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90" aria-hidden="true">
-        <circle cx="50" cy="50" r={radius} className="fill-none stroke-white/8" strokeWidth={strokeWidth} />
-        <circle
-          cx="50"
-          cy="50"
-          r={radius}
-          className={`fill-none ${getSignalStrengthStrokeClass(signal)}`}
-          strokeWidth={strokeWidth}
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={dashOffset}
-        />
-      </svg>
-    </div>
-  );
-}
-
-function GroupBadge({ label, value, tone = "default" }: { label: string; value: string | number; tone?: "default" | "buy" | "sell" }) {
-  const toneClass =
-    tone === "buy"
-      ? "border-emerald-700/40 bg-emerald-950/30 text-emerald-300"
-      : tone === "sell"
-      ? "border-rose-700/40 bg-rose-950/30 text-rose-300"
-      : "border-stealth-700 bg-stealth-900/70 text-stealth-200";
-
-  return (
-    <div className={`rounded-xl border px-2.5 py-1.5 ${toneClass}`}>
-      <div className="text-xs uppercase tracking-[0.18em] opacity-70">{label}</div>
-      <div className="mt-0.5 text-sm font-semibold">{value}</div>
-    </div>
-  );
-}
-
-function CenteredFlowBar({ value, scale }: { value: number | null; scale: number }) {
-  const numericValue = value ?? 0;
-  const magnitude = scale > 0 ? Math.max(5, Math.min(50, (Math.abs(numericValue) / scale) * 50)) : 0;
-  const toneClass = numericValue > 0 ? "bg-emerald-400/85" : numericValue < 0 ? "bg-rose-400/85" : "bg-stealth-400/60";
-
-  return (
-    <div className="relative h-3 overflow-hidden rounded-full border border-stealth-700 bg-stealth-950/90">
-      <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-stealth-400/80" />
-      {numericValue === 0 ? (
-        <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-stealth-300/80" />
-      ) : (
-        <div
-          className={`absolute inset-y-0 ${toneClass}`}
-          style={numericValue > 0 ? { left: "50%", width: `${magnitude}%` } : { right: "50%", width: `${magnitude}%` }}
-        />
-      )}
-    </div>
-  );
-}
-
-function longestDirectionalStreak(timeline: FlowTimelineBucket[], direction: "positive" | "negative"): number {
-  let longest = 0;
-  let current = 0;
-
-  timeline.forEach((bucket) => {
-    const matches = direction === "positive" ? bucket.net_flow_usd > 0 : bucket.net_flow_usd < 0;
-    if (matches) {
-      current += 1;
-      longest = Math.max(longest, current);
-    } else {
-      current = 0;
-    }
-  });
-
-  return longest;
-}
-
-function formatBucket(bucket: string): string {
-  return new Date(bucket).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
-}
-
-function TrendZoneBar({ value, scale, certainty }: { value: number | null; scale: number; certainty: number }) {
-  const numericValue = value ?? 0;
-  const direction = numericValue > 0 ? "positive" : numericValue < 0 ? "negative" : "neutral";
-  const baseReach = scale > 0 ? Math.max(6, Math.min(50, (Math.abs(numericValue) / scale) * 50)) : 0;
-  const totalReach = Math.max(8, Math.min(50, certainty * 50));
-  const certaintyReach = Math.max(baseReach, Math.min(50, baseReach * (0.7 + certainty * 0.45)));
-  const counterReach = direction === "neutral" ? totalReach : Math.max(5, Math.min(totalReach, totalReach * 0.42));
-  const straddleClass =
-    direction === "positive"
-      ? "bg-[linear-gradient(90deg,rgba(148,163,184,0.12),rgba(110,231,183,0.16),rgba(110,231,183,0.12))]"
-      : direction === "negative"
-      ? "bg-[linear-gradient(90deg,rgba(251,113,133,0.12),rgba(251,113,133,0.16),rgba(148,163,184,0.12))]"
-      : "bg-[linear-gradient(90deg,rgba(148,163,184,0.12),rgba(148,163,184,0.18),rgba(148,163,184,0.12))]";
-  const glowClass = direction === "positive" ? "bg-emerald-400/25" : direction === "negative" ? "bg-rose-400/25" : "bg-stealth-400/20";
-  const bodyClass = direction === "positive" ? "bg-emerald-300/90" : direction === "negative" ? "bg-rose-300/90" : "bg-stealth-300/75";
-
-  return (
-    <div className="relative h-6 overflow-hidden rounded-full border border-stealth-800 bg-stealth-950/90">
-      <div className="absolute inset-y-1 left-1/2 w-px -translate-x-1/2 bg-stealth-500/80" />
-      <div className={`absolute top-1/2 h-3.5 -translate-y-1/2 rounded-full ${straddleClass}`} style={{ left: `${50 - totalReach}%`, width: `${totalReach * 2}%` }} />
-      {direction === "neutral" ? (
-        <div className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-stealth-300/80 shadow-[0_0_12px_rgba(148,163,184,0.25)]" />
-      ) : (
-        <>
-          <div className={`absolute top-1/2 h-2 -translate-y-1/2 rounded-full ${direction === "positive" ? "bg-emerald-200/28" : "bg-rose-200/28"}`} style={direction === "positive" ? { right: "50%", width: `${counterReach}%` } : { left: "50%", width: `${counterReach}%` }} />
-          <div className={`absolute top-1/2 h-4 -translate-y-1/2 rounded-full ${glowClass}`} style={direction === "positive" ? { left: "50%", width: `${certaintyReach}%` } : { right: "50%", width: `${certaintyReach}%` }} />
-          <div className={`absolute top-1/2 h-2.5 -translate-y-1/2 rounded-full ${bodyClass}`} style={direction === "positive" ? { left: "50%", width: `${baseReach}%` } : { right: "50%", width: `${baseReach}%` }} />
-        </>
-      )}
-    </div>
-  );
-}
-
-function TimelineCluster({ timeline }: { timeline: FlowTimelineBucket[] }) {
-  const recentTimeline = timeline.slice(-4);
-  const scale = Math.max(1, ...recentTimeline.map((bucket) => Math.abs(bucket.net_flow_usd)));
-  const positiveBuckets = recentTimeline.filter((bucket) => bucket.net_flow_usd > 0).length;
-  const negativeBuckets = recentTimeline.filter((bucket) => bucket.net_flow_usd < 0).length;
-  const positiveStreak = longestDirectionalStreak(recentTimeline, "positive");
-  const negativeStreak = longestDirectionalStreak(recentTimeline, "negative");
-  const maxVolume = Math.max(1, ...recentTimeline.map((bucket) => bucket.total_notional_usd));
-  const dominantCluster = positiveStreak > negativeStreak
-    ? "Positive-bar streak"
-    : negativeStreak > positiveStreak
-      ? "Negative-bar streak"
-      : "Mixed proxy";
-
-  return (
-    <div className="rounded-2xl border border-stealth-700 bg-stealth-950/55 p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <div className="text-xs uppercase tracking-[0.22em] text-stealth-500">Proxy Over Time</div>
-          <div className="mt-1 text-xs text-stealth-300">{dominantCluster} across the latest weekly buckets.</div>
-        </div>
-        <div className="flex gap-2 text-xs">
-          <GroupBadge label="Positive" value={positiveBuckets} tone="buy" />
-          <GroupBadge label="Negative" value={negativeBuckets} tone="sell" />
-        </div>
-      </div>
-
-      <div className="mt-2.5 space-y-1.5">
-        {recentTimeline.map((bucket) => {
-          const certainty = bucket.total_notional_usd / maxVolume;
-          const barCount = bucket.buy_events + bucket.sell_events + bucket.neutral_events;
-          return (
-            <div key={bucket.bucket} className="grid grid-cols-[54px_minmax(0,1fr)_88px] items-center gap-2 rounded-xl border border-stealth-800 bg-stealth-900/55 px-2.5 py-2">
-              <div className="text-xs uppercase tracking-[0.16em] text-stealth-500">{formatBucket(bucket.bucket)}</div>
-              <TrendZoneBar value={bucket.net_flow_usd} scale={scale} certainty={certainty} />
-              <div className="text-right">
-                <div className="text-xs font-semibold text-stealth-100">{formatCompactCurrency(bucket.net_flow_usd)}</div>
-                <div className="mt-0.5 text-xs uppercase tracking-[0.16em] text-stealth-500">
-                  {barCount} {barCount === 1 ? "bar" : "bars"}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function buildFlowTimeline(events: InstitutionalFlowEvent[]): FlowTimelineBucket[] {
-  if (!events.length) return [];
-  const buckets = new Map<string, FlowTimelineBucket>();
-
-  events.forEach((event) => {
-    const eventDate = new Date(event.date);
-    if (Number.isNaN(eventDate.getTime())) return;
-    const day = eventDate.getUTCDay();
-    const mondayOffset = day === 0 ? -6 : 1 - day;
-    const monday = new Date(eventDate);
-    monday.setUTCDate(eventDate.getUTCDate() + mondayOffset);
-    monday.setUTCHours(0, 0, 0, 0);
-    const key = monday.toISOString().slice(0, 10);
-
-    if (!buckets.has(key)) {
-      buckets.set(key, {
-        bucket: key,
-        buy_notional_usd: 0,
-        sell_notional_usd: 0,
-        neutral_notional_usd: 0,
-        net_flow_usd: 0,
-        total_notional_usd: 0,
-        buy_events: 0,
-        sell_events: 0,
-        neutral_events: 0,
-      });
-    }
-
-    const target = buckets.get(key)!;
-    const notional = Number.isFinite(event.notional) ? Math.abs(event.notional) : 0;
-    if (event.side === "buy") {
-      target.buy_notional_usd += notional;
-      target.buy_events += 1;
-      target.net_flow_usd += notional;
-    } else if (event.side === "sell") {
-      target.sell_notional_usd += notional;
-      target.sell_events += 1;
-      target.net_flow_usd -= notional;
-    } else {
-      target.neutral_notional_usd += notional;
-      target.neutral_events += 1;
-    }
-    target.total_notional_usd += notional;
-  });
-
-  return Array.from(buckets.values()).sort((a, b) => a.bucket.localeCompare(b.bucket));
-}
-
-function FlowFocusCard({
-  flow,
-  events,
-  ticker,
-  currentPrice,
-  closeLabel,
-}: {
-  flow: InstitutionalFlowPayload;
-  events: InstitutionalFlowEvent[];
-  ticker: string;
-  currentPrice: number | null;
-  closeLabel: string;
-}) {
-  const summary = flow.summary;
-  const signal = summary.signal;
-  const toneClasses = getSignalClasses(signal);
-  const signalLabel = signal === "accumulation"
-    ? "Positive-bar proxy"
-    : signal === "distribution"
-      ? "Negative-bar proxy"
-      : "Mixed proxy";
-  const confidencePercent = Math.max(0, Math.min(100, summary.confidence));
-  const directionalDenominator = Math.max(Math.abs(summary.buy_notional_usd), Math.abs(summary.sell_notional_usd), 1);
-  const normalizedSignal = Math.max(-100, Math.min(100, (summary.net_flow_usd / directionalDenominator) * 100));
-  const clusterLow = summary.sell_cluster_level ?? currentPrice ?? summary.buy_cluster_level ?? 0;
-  const clusterHigh = summary.buy_cluster_level ?? currentPrice ?? summary.sell_cluster_level ?? 0;
-  const clusterRange = Math.max(0.0001, clusterHigh - clusterLow);
-  const currentPosition = currentPrice !== null
-    ? Math.max(0, Math.min(100, ((currentPrice - clusterLow) / clusterRange) * 100))
-    : 50;
-  const currentIsInsideCluster = currentPrice !== null && currentPrice >= clusterLow && currentPrice <= clusterHigh;
-  const currentInsetPx = 18;
-  const currentMarkerStyle = { left: `clamp(${currentInsetPx}px, ${currentPosition}%, calc(100% - ${currentInsetPx}px))` };
-  const timeline = buildFlowTimeline(events);
-
-  return (
-    <div className="min-w-0 space-y-3 p-4 sm:p-5">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <div className="text-xs uppercase tracking-[0.22em] text-stealth-500">High-Volume Bar Proxy</div>
-          <div className="mt-1 text-sm font-semibold text-stealth-100">{ticker} proxy read</div>
-        </div>
-        <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${toneClasses}`}>
-          {signalLabel}
-        </span>
-      </div>
-
-      <div className="rounded-2xl border border-stealth-700 bg-stealth-950/55 p-3">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="text-xs uppercase tracking-[0.22em] text-stealth-500">Signed Notional</div>
-            <div className={`mt-1 text-base font-semibold ${summary.net_flow_usd >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
-              {formatCompactCurrency(summary.net_flow_usd)}
-            </div>
-          </div>
-          <div className="text-right text-xs text-stealth-400">
-            <div className="flex justify-end">
-              <SignalStrengthArc strength={confidencePercent} signal={signal} />
-            </div>
-            <div className="mt-0.5">Proxy strength {Math.round(confidencePercent)}/100</div>
-            <div>
-              {summary.event_count} {summary.event_count === 1 ? "bar" : "bars"} · {formatCompactCurrency(summary.buy_notional_usd + summary.sell_notional_usd)} flagged
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-end gap-2 text-xs uppercase tracking-[0.16em] text-stealth-500">
-          <div>
-            <div>Negative-Bar Cluster</div>
-            <div className="mt-0.5 text-sm font-semibold normal-case tracking-normal text-rose-300">{formatFlowCurrency(summary.sell_cluster_level)}</div>
-          </div>
-          <div className="text-center">
-            <div>{closeLabel}</div>
-            <div className="mt-0.5 text-sm font-semibold normal-case tracking-normal text-stealth-100">{formatFlowCurrency(currentPrice)}</div>
-          </div>
-          <div className="text-right">
-            <div>Positive-Bar Cluster</div>
-            <div className="mt-0.5 text-sm font-semibold normal-case tracking-normal text-emerald-300">{formatFlowCurrency(summary.buy_cluster_level)}</div>
-          </div>
-        </div>
-
-        <div className="mt-2 relative">
-          <div className="relative h-8 overflow-hidden rounded-full border border-stealth-700 bg-stealth-950/90">
-            <div className="absolute inset-y-0 left-0 w-[26%] bg-[radial-gradient(circle_at_left_center,rgba(251,113,133,0.35)_0%,rgba(251,113,133,0.18)_28%,rgba(251,113,133,0.06)_48%,rgba(251,113,133,0)_75%)]" />
-            <div className="absolute inset-y-0 right-0 w-[26%] bg-[radial-gradient(circle_at_right_center,rgba(110,231,183,0.35)_0%,rgba(110,231,183,0.18)_28%,rgba(110,231,183,0.06)_48%,rgba(110,231,183,0)_75%)]" />
-            <div className="absolute inset-y-[7px] left-5 right-5 rounded-full bg-[linear-gradient(90deg,rgba(251,113,133,0.04),rgba(148,163,184,0.05)_50%,rgba(110,231,183,0.04))]" />
-            <div className="absolute inset-y-1 left-1/2 w-px -translate-x-1/2 bg-stealth-500/65" />
-            {currentPrice !== null && (
-              <>
-                <div
-                  className={`absolute top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 rounded-full ${currentIsInsideCluster ? "bg-[radial-gradient(circle,rgba(226,232,240,0.22)_0%,rgba(226,232,240,0.07)_46%,rgba(226,232,240,0)_74%)]" : "bg-[radial-gradient(circle,rgba(226,232,240,0.16)_0%,rgba(226,232,240,0.05)_44%,rgba(226,232,240,0)_74%)]"}`}
-                  style={currentMarkerStyle}
-                />
-                <div
-                  className={`absolute top-1/2 z-10 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border ${currentIsInsideCluster ? "border-white/70 shadow-[0_0_0_1px_rgba(241,245,249,0.14),0_0_16px_rgba(226,232,240,0.24)]" : "border-white/55 shadow-[0_0_0_1px_rgba(226,232,240,0.1),0_0_14px_rgba(226,232,240,0.18)]"} bg-stealth-100/90`}
-                  style={currentMarkerStyle}
-                />
-              </>
-            )}
-          </div>
-        </div>
-
-        <div className="mt-3">
-          <CenteredFlowBar value={summary.net_flow_usd} scale={directionalDenominator} />
-        </div>
-        <div className="mt-2 text-right text-xs uppercase tracking-[0.16em] text-stealth-500">
-          {formatFlowPercent(normalizedSignal)}
-        </div>
-      </div>
-
-      {timeline.length > 0 ? <TimelineCluster timeline={timeline} /> : null}
-
-    </div>
-  );
+  summary: PriceVolumeSummary;
+  event_history: PriceVolumeEvent[];
+  signal: PriceVolumeSignal;
 }
 
 export default function StockAnalysis() {
@@ -689,6 +285,7 @@ export default function StockAnalysis() {
   const NEWS_CACHE_TTL_MS = 10 * 60 * 1000;
 
   type ProjectionsPayload = {
+    ticker?: string;
     projections?: Record<string, StockProjection>;
     historical?: { score_3m_ago?: number; cutoff_date?: string | null };
     technical?: TechnicalData;
@@ -718,6 +315,9 @@ export default function StockAnalysis() {
   const resultTickerRef = useRef("");
 
   const location = useLocation();
+  const navigate = useNavigate();
+  const projectionAbortRef = useRef<AbortController | null>(null);
+  useEffect(() => () => projectionAbortRef.current?.abort(), []);
   const [searchParams] = useSearchParams();
   const { symbol: symbolFromPath } = useParams<{ symbol?: string }>();
   const autoLoadedSymbolRef = useRef<string | null>(null);
@@ -753,6 +353,7 @@ export default function StockAnalysis() {
   const applyProjectionsPayload = useCallback((payload: ProjectionsPayload | null) => {
     if (payload) {
       setProjections(payload.projections ?? {});
+      setSelectedHorizon(current => payload.projections?.[current] ? current : HORIZON_OPTIONS.find(option => payload.projections?.[option.value])?.value ?? "T");
       setTechnicalData(payload.technical || null);
       setOptionsFlow(payload.options_flow || null);
       setOptionalityMetrics(payload.optionality || null);
@@ -796,6 +397,9 @@ export default function StockAnalysis() {
     const normalizedTicker = rawTicker.trim().toUpperCase();
     if (!normalizedTicker) return;
 
+    projectionAbortRef.current?.abort();
+    const controller = new AbortController();
+    projectionAbortRef.current = controller;
     const generation = ++requestGenerationRef.current;
     const tickerChanged = Boolean(resultTickerRef.current && resultTickerRef.current !== normalizedTicker);
     lastRequestedWindowRef.current = window;
@@ -850,16 +454,20 @@ export default function StockAnalysis() {
       try {
         const parsedPayload = await apiFetch<ProjectionsPayload>(
           `/stocks/${normalizedTicker}/projections?history_window=${window}`,
-          { timeoutMs: 55_000 },
+          { timeoutMs: 55_000, signal: controller.signal },
         );
         if (generation !== requestGenerationRef.current) return;
+        const responseSymbols = [parsedPayload.ticker, ...Object.values(parsedPayload.projections ?? {}).map(item => item.ticker)].filter(Boolean);
+        if (responseSymbols.some(symbol => symbol?.toUpperCase() !== normalizedTicker)) {
+          throw new Error("The response belongs to another symbol. Retry the lookup.");
+        }
         projectionsPayload = parsedPayload;
         projectionCacheRef.current.set(cacheKey, {
           payload: parsedPayload,
           fetchedAt: now,
         });
       } catch (err: unknown) {
-        if (generation !== requestGenerationRef.current) return;
+        if (controller.signal.aborted || generation !== requestGenerationRef.current) return;
         if (err instanceof ApiError && err.status === 404) {
           setProjectionUnavailable(true);
         } else {
@@ -875,10 +483,10 @@ export default function StockAnalysis() {
 
     if (generation !== requestGenerationRef.current) return;
     if (projectionsPayload) {
-      const hasAllRequiredWindows = (["T", "3m", "6m", "12m"] as const).every(
+      const hasAnyWindow = (["T", "3m", "6m", "12m"] as const).some(
         (horizon) => Boolean(projectionsPayload?.projections?.[horizon])
       );
-      setProjectionUnavailable(!hasAllRequiredWindows);
+      setProjectionUnavailable(!hasAnyWindow);
       applyProjectionsPayload(projectionsPayload);
       resultTickerRef.current = normalizedTicker;
     } else if (tickerChanged || !resultTickerRef.current) {
@@ -897,7 +505,11 @@ export default function StockAnalysis() {
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    await runSearch(ticker, historyWindow, { includeNews: true });
+    const symbol = ticker.trim().toUpperCase();
+    if (!symbol) return;
+    autoLoadedSymbolRef.current = symbol;
+    navigate(`/stock-analysis/${encodeURIComponent(symbol)}`);
+    await runSearch(symbol, historyWindow, { includeNews: true });
   };
 
   useEffect(() => {
@@ -917,9 +529,9 @@ export default function StockAnalysis() {
     })();
 
     const symbolFromQuery = (
+      symbolFromPath ||
       searchParams.get("symbol") ||
       searchParams.get("ticker") ||
-      symbolFromPath ||
       symbolFromHash ||
       ""
     )
@@ -935,28 +547,16 @@ export default function StockAnalysis() {
 
   // Prepare data for line chart
   const getChartData = () => {
-    const tScore = projections["T"]?.score_total;
-    const score3m = projections["3m"]?.score_total;
-    const score6m = projections["6m"]?.score_total;
-    const score12m = projections["12m"]?.score_total;
-
-    if (
-      tScore === undefined ||
-      score3m === undefined ||
-      score6m === undefined ||
-      score12m === undefined
-    ) {
-      return null;
-    }
-
+    const available = HORIZON_OPTIONS.filter(option => projections[option.value]);
+    if (!available.length) return null;
     return {
       ticker: searchTicker,
-      name: projections["3m"].name,
+      name: projections[available[0].value].name,
       scores: {
-        "T": tScore,
-        "3m": score3m,
-        "6m": score6m,
-        "12m": score12m,
+        T: projections.T?.score_total ?? null,
+        "3m": projections["3m"]?.score_total ?? null,
+        "6m": projections["6m"]?.score_total ?? null,
+        "12m": projections["12m"]?.score_total ?? null,
       },
     };
   };
@@ -1064,7 +664,7 @@ export default function StockAnalysis() {
       <div className="flex flex-col">
         <span className="page-kicker">Single Name Lens</span>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-4xl">Stock Analysis</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-stealth-300 md:text-[15px]">Compare trailing stock evidence across four lookback windows with quantified signal quality.</p>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-stealth-300 md:text-[15px]">Compare price, fundamentals and options evidence across four trailing windows.</p>
         {searchTicker && <div className="mt-4"><span className="page-badge">Tracking {searchTicker}</span></div>}
       </div>
       
@@ -1120,6 +720,7 @@ export default function StockAnalysis() {
         </div>
       )}
 
+      {Object.keys(projections).length > 0 && Object.keys(projections).length < 4 && <p className="mb-3 text-sm text-amber-300" role="status">Some lookbacks lack usable aligned history. Available evidence is shown; missing scores are marked unavailable.</p>}
       {/* Results */}
       {chartData && (
         <div className="space-y-5 md:space-y-6">
@@ -1215,6 +816,7 @@ export default function StockAnalysis() {
                     <button
                       key={option.value}
                       type="button"
+                      disabled={!projections[option.value]}
                       aria-pressed={selectedHorizon === option.value}
                       onClick={() => setSelectedHorizon(option.value)}
                       className={`min-h-11 rounded-lg px-3 text-xs font-semibold transition-colors ${
@@ -1285,9 +887,7 @@ export default function StockAnalysis() {
                       {[
                         optionsFlow?.expiry ? `expiry ${formatObservedDate(optionsFlow.expiry)}` : null,
                         optionsFlow?.quote_source || optionsFlow?.data_source,
-                        optionsFlow?.observed_at || optionsFlow?.as_of
-                          ? `observed ${formatObservedDate(optionsFlow.observed_at || optionsFlow.as_of)}`
-                          : null,
+                        optionsFlow?.observed_at ? `quote observed ${formatObservedDate(optionsFlow.observed_at)}` : "quote time unavailable",
                       ].filter(Boolean).join(" · ") || "Options chain unavailable"}
                     </p>
                   </div>
@@ -1314,13 +914,7 @@ export default function StockAnalysis() {
 
                 <div className="min-w-0 border-t border-stealth-700 lg:border-l lg:border-t-0">
                   {institutionalFlow ? (
-                    <FlowFocusCard
-                      flow={institutionalFlow}
-                      events={institutionalFlow.event_history ?? []}
-                      ticker={searchTicker}
-                      currentPrice={projections["T"]?.current_price ?? null}
-                      closeLabel={priceMetadata?.stale ? "Last Available Close" : "Latest Close"}
-                    />
+                    <PriceVolumeDetail signal={institutionalFlow.signal} />
                   ) : (
                     <div className="p-4 sm:p-5">
                       <div className="text-xs uppercase tracking-[0.2em] text-stealth-500">High-Volume Bar Proxy</div>
@@ -1484,12 +1078,19 @@ export default function StockAnalysis() {
 
                 {/* ── Snapshot Strip ── */}
                 <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-                  {snapMetrics.map((m) => (
+                  {snapMetrics.map((m, index) => (
                     <div key={m.label} className="secondary-card px-3 py-2 text-center">
                       <div className="mb-1 text-xs uppercase tracking-wider text-stealth-400">{m.label}</div>
                       <div className="text-sm font-semibold text-stealth-100">
                         {m.value !== null ? m.fmt(m.value) : "—"}
                       </div>
+                      <details className="mt-1 text-xs text-stealth-300">
+                        <summary className="cursor-pointer">{(() => {
+                          const metric = [snapshot?.eps_ttm, snapshot?.roe_ttm, snapshot?.free_cash_flow_ttm, snapshot?.revenue_ttm, snapshot?.pe_ratio, snapshot?.market_cap][index];
+                          return metric?.period_end ? "Through " + formatObservedDate(metric.period_end) : "Period unavailable";
+                        })()}</summary>
+                        <p className="mt-1">{[snapshot?.eps_ttm, snapshot?.roe_ttm, snapshot?.free_cash_flow_ttm, snapshot?.revenue_ttm, snapshot?.pe_ratio, snapshot?.market_cap][index]?.definition ?? "Latest available provider value."}</p>
+                      </details>
                       {m.delta !== null && (
                         <div className={`mt-0.5 text-xs ${m.delta >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
                           {m.delta >= 0 ? "▲" : "▼"} {Math.abs(m.delta).toFixed(1)}% {m.deltaLabel}
@@ -1503,6 +1104,7 @@ export default function StockAnalysis() {
                   {[snapshotPeriodLabel, priceMetricPeriodLabel, "Yahoo Finance via yfinance"].filter(Boolean).join(" · ")}
                 </div>
 
+                {ttmPeriodEnds.length > 1 && <p role="status" className="mb-4 text-xs text-amber-300">Statement coverage differs by metric. Earlier revenue, cash-flow or ROE periods do not include the latest EPS quarter; expand each period above to inspect its basis.</p>}
                 {/* ── Dual-Axis Charts ── */}
                 <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
 
@@ -1729,23 +1331,24 @@ export default function StockAnalysis() {
             <div
               className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-stealth-800 bg-stealth-800 sm:grid-cols-4"
               role="img"
-              aria-label={`Trailing scores: 21 days ${Math.round(chartData.scores.T)}, 3 months ${Math.round(chartData.scores["3m"])}, 6 months ${Math.round(chartData.scores["6m"])}, 12 months ${Math.round(chartData.scores["12m"])}`}
+              aria-label={"Trailing scores: " + HORIZON_OPTIONS.map(option => option.label + " " + (chartData.scores[option.value] == null ? "unavailable" : Math.round(chartData.scores[option.value]!))).join(", ")}
             >
               {HORIZON_OPTIONS.map((option) => {
-                const score = Math.max(0, Math.min(100, chartData.scores[option.value]));
+                const value = chartData.scores[option.value];
+                const score = value == null ? null : Math.max(0, Math.min(100, value));
                 const active = selectedHorizon === option.value;
                 return (
                   <div key={option.value} className={`min-w-0 bg-stealth-950/65 px-3 py-3 ${active ? "bg-stealth-900" : ""}`}>
                     <div className="mb-2 flex items-center justify-between gap-2">
                       <span className={`text-xs font-semibold ${active ? "text-sky-300" : "text-stealth-400"}`}>{option.label}</span>
                       <span className={`text-sm font-semibold tabular-nums ${active ? "text-white" : "text-stealth-300"}`}>
-                        {Math.round(score)}
+                        {score == null ? "Unavailable" : Math.round(score)}
                       </span>
                     </div>
                     <div className="h-2 overflow-hidden rounded-full bg-stealth-800">
                       <div
                         className={`h-full rounded-full transition-[width] ${active ? "bg-sky-400" : "bg-sky-700/65"}`}
-                        style={{ width: `${score}%` }}
+                        style={{ width: `${score ?? 0}%` }}
                       />
                     </div>
                   </div>

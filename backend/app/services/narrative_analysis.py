@@ -428,7 +428,7 @@ def _z_score(current: Optional[float], history: pd.Series) -> Optional[float]:
     return (current - mean) / std
 
 
-def _market_confirmation(stock_df: pd.DataFrame, benchmark_df: pd.DataFrame, direction: Optional[float]) -> dict[str, Any]:
+def _market_confirmation(stock_df: pd.DataFrame, benchmark_df: pd.DataFrame, direction: Optional[float], benchmark_symbol: str = "SPY") -> dict[str, Any]:
     metrics: list[dict[str, Any]] = []
     residual_z: Optional[float] = None
     volume_z: Optional[float] = None
@@ -457,7 +457,7 @@ def _market_confirmation(stock_df: pd.DataFrame, benchmark_df: pd.DataFrame, dir
         current_beta = _finite(beta.shift(1).iloc[-1]) if not beta.empty else None
         metrics.append({
             "key": "beta_adjusted_residual",
-            "label": "5-session residual vs IGV",
+            "label": f"5-session residual vs {benchmark_symbol}",
             "status": "available" if residual_z is not None else "unavailable",
             "z_score": _round(residual_z, 2),
             "value": _round(current_residual * 100.0 if current_residual is not None else None, 2),
@@ -467,12 +467,12 @@ def _market_confirmation(stock_df: pd.DataFrame, benchmark_df: pd.DataFrame, dir
     except Exception:
         metrics.append({
             "key": "beta_adjusted_residual",
-            "label": "5-session residual vs IGV",
+            "label": f"5-session residual vs {benchmark_symbol}",
             "status": "unavailable",
             "z_score": None,
             "value": None,
             "unit": "% log return",
-            "detail": "Aligned stock and IGV history is unavailable.",
+            "detail": f"Aligned stock and {benchmark_symbol} history is unavailable.",
         })
 
     try:
@@ -576,7 +576,7 @@ def _market_confirmation(stock_df: pd.DataFrame, benchmark_df: pd.DataFrame, dir
     available_count = sum(metric["status"] == "available" for metric in metrics)
     return {
         "status": "available" if available_count >= 3 else "limited" if available_count else "unavailable",
-        "benchmark": "IGV",
+        "benchmark": benchmark_symbol,
         "market_impulse_z": _round(market_impulse, 2),
         "confirmation_z": _round(confirmation, 2),
         "available_metric_count": available_count,
@@ -621,6 +621,7 @@ def build_narrative_analysis(
     benchmark_df: pd.DataFrame,
     *,
     now: Optional[datetime] = None,
+    benchmark_symbol: str = "SPY",
 ) -> dict[str, Any]:
     """Build an auditable narrative-event read without counting reposts as corroboration."""
 
@@ -687,7 +688,7 @@ def build_narrative_analysis(
         **collection,
     }
 
-    market = _market_confirmation(stock_df, benchmark_df, direction)
+    market = _market_confirmation(stock_df, benchmark_df, direction, benchmark_symbol)
     classification = _classification(
         impulse,
         direction,
@@ -799,6 +800,6 @@ def build_narrative_analysis(
             "evidence_confidence_aggregation": "relevance-, novelty-, and time-decay-weighted mean of cluster confidence",
             "attention_window_days": ATTENTION_WINDOW_DAYS,
             "headline_model": "deterministic_headline_lexicon_v1",
-            "market_benchmark": "IGV",
+            "market_benchmark": benchmark_symbol,
         },
     }

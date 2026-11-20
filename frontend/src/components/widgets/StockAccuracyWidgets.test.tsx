@@ -45,6 +45,16 @@ const intradayFixture = technicalFixture.candles.flatMap((candle) =>
 );
 
 describe("stock accuracy widgets", () => {
+  it("defaults to daily candles and explicitly labels the optional two-hour averages", () => {
+    render(<TechnicalIndicators technicalData={technicalFixture} intradayHistory2h={intradayFixture} hideOptionsContext />);
+    expect(screen.getByRole("button", { name: "Daily" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText(/Daily candles · daily EMA50\/200/)).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "2H" }));
+    expect(screen.getByRole("button", { name: "2H" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText(/2H candles · EMA periods are 2H bars/)).not.toBeNull();
+    // The short fixture has fewer than 50 intraday bars; no average should be invented.
+    expect(screen.queryByText("EMA50 (2H)")).toBeNull();
+  });
   it("presents price bands as non-actionable references and hardens crossed bands", () => {
     render(
       <PriceAnalysisChart
@@ -85,7 +95,7 @@ describe("stock accuracy widgets", () => {
     expect(analystContext.className).toContain("flex-col");
     expect(analystContext.className).toContain("sm:flex-row");
     expect(screen.getByText("Analyst reference: $103.00 (12)")).not.toBeNull();
-    expect(screen.getByText("Reference alignment: Aligned")).not.toBeNull();
+    expect(screen.getByText("Provider target; horizon and publication date not supplied")).not.toBeNull();
   });
 
   it("labels composite signal quality and direction without advice or probability language", () => {
@@ -93,13 +103,13 @@ describe("stock accuracy widgets", () => {
       <ConvictionSnapshot signalQuality={56} score={60} volatility={22} horizon="3M" />
     );
 
-    expect(screen.getByText("Signal Quality")).not.toBeNull();
-    expect(screen.getByText("Composite")).not.toBeNull();
+    expect(screen.getByText("Model Strength")).not.toBeNull();
+    expect(screen.getByText("Heuristic")).not.toBeNull();
     expect(screen.getByText("56/100")).not.toBeNull();
-    expect(screen.getByText("Bullish")).not.toBeNull();
+    expect(screen.getByText("Above midpoint")).not.toBeNull();
     expect(screen.getByText("Model Score")).not.toBeNull();
-    expect(screen.getByText("Quality drivers")).not.toBeNull();
-    expect(screen.getByRole("img", { name: /component consistency 40 percent.*realized volatility 35 percent.*directional strength 25 percent/i })).not.toBeNull();
+    expect(screen.getByText("Model inputs")).not.toBeNull();
+    expect(screen.getByRole("img", { name: /component consistency 40 percent.*realized volatility 35 percent.*distance from the score midpoint 25 percent/i })).not.toBeNull();
     expect(screen.queryByText("Why?")).toBeNull();
     expect(container.textContent).not.toMatch(/Strong Buy|\bBuy\b|Strong Sell|\bSell\b|Confidence|Conviction|Signal Coherence|Alignment/);
   });
@@ -393,6 +403,7 @@ describe("stock accuracy widgets", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "2H" }));
     expect(screen.getByText("2 clusters · 3 bars · notional-scaled")).not.toBeNull();
     expect(screen.queryByText("Bubble area = relative flagged notional")).toBeNull();
     expect(screen.getByTestId("price-history-header").className).toContain("flex-col");

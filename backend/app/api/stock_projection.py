@@ -21,6 +21,10 @@ import json
 import os
 import time
 import threading
+import re
+from collections import OrderedDict
+from copy import deepcopy
+from weakref import WeakValueDictionary
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -32,7 +36,13 @@ from app.models.news_article import NewsArticle
 from app.models.news_collection_observation import NewsCollectionObservation
 from app.models.stock_projection_snapshot import StockProjectionSnapshot
 from app.models.system_status import SystemStatus
-from app.services.institutional_flow import detect_flow_events_from_frame, summarize_flow_events
+from app.services.institutional_flow import (
+    build_price_volume_signal,
+    detect_flow_events_from_frame,
+    prepare_price_volume_frame,
+    price_volume_method,
+    summarize_flow_events,
+)
 from app.services.market_data.date_utils import parse_option_expiry
 from app.services.market_data.factory import get_market_data_provider
 from app.services.market_data.provider import MarketDataProvider
@@ -51,9 +61,11 @@ HORIZONS = {
 }
 
 _STOCK_PROJECTION_CACHE_TTL_SECONDS = 5 * 60
-_STOCK_PROJECTION_PAYLOAD_SCHEMA_VERSION = 4
-_stock_projection_cache: dict[str, dict[str, Any]] = {}
+_STOCK_PROJECTION_PAYLOAD_SCHEMA_VERSION = 6
+_stock_projection_cache: dict[str, dict[str, Any]] = OrderedDict()
 _stock_projection_cache_lock = threading.Lock()
+_stock_request_locks: WeakValueDictionary = WeakValueDictionary()
+_stock_request_locks_guard = threading.Lock()
 _MARKET_TIMEZONE = ZoneInfo("America/New_York")
 
 
@@ -130,7 +142,7 @@ def _get_stock_projection_cache(ticker: str) -> Optional[dict[str, Any]]:
                     and _cache_matches_market_data_provider(payload)
                     and _cache_matches_accuracy_contract(payload)
                 ):
-                    return dict(payload)
+                    return deepcopy(payload)
 
     # Fallback to persistent DB snapshot cache so warm data survives process restarts.
     try:
@@ -156,10 +168,12 @@ def _get_stock_projection_cache(ticker: str) -> Optional[dict[str, Any]]:
                 return None
             with _stock_projection_cache_lock:
                 _stock_projection_cache[ticker] = {
-                    "cached_at": time.time(),
+                    "cached_at": row.cached_at.replace(tzinfo=timezone.utc).timestamp(),
                     "payload": payload,
                 }
-            return payload
+                while len(_stock_projection_cache) > 128:
+                    _stock_projection_cache.pop(next(iter(_stock_projection_cache)))
+            return deepcopy(payload)
     except Exception:
         return None
 
@@ -172,9 +186,11 @@ def _set_stock_projection_cache(ticker: str, payload: dict[str, Any]) -> None:
 
     with _stock_projection_cache_lock:
         _stock_projection_cache[ticker] = {
-            "cached_at": now_utc.timestamp(),
+            "cached_at": time.time(),
             "payload": safe_payload,
         }
+        while len(_stock_projection_cache) > 128:
+            _stock_projection_cache.pop(next(iter(_stock_projection_cache)))
 
     # Persist snapshot to Postgres for cross-process cache reuse.
     try:
@@ -360,20 +376,27 @@ def _insert_institutional_flow_events(db, event_rows: list[dict[str, Any]]) -> N
 
 
 def _sync_institutional_flow_history(db, symbol: str, df: pd.DataFrame, latest_price: Optional[float]) -> dict:
-    analysis_frame = df.tail(365) if df is not None else pd.DataFrame()
-    detected_events = detect_flow_events_from_frame(analysis_frame, lookback_days=365)
+    analysis_frame = prepare_price_volume_frame(df) if df is not None and not df.empty else pd.DataFrame()
+    detected_events = detect_flow_events_from_frame(analysis_frame, lookback_days=365, symbol=symbol)
+    signal = build_price_volume_signal(symbol, analysis_frame, lookback_days=365)
 
     valid_index = pd.to_datetime(analysis_frame.index, errors="coerce") if not analysis_frame.empty else []
     valid_dates = [value for value in valid_index if not pd.isna(value)]
     if valid_dates:
-        min_date = pd.Timestamp(min(valid_dates)).normalize().to_pydatetime().replace(tzinfo=None)
-        max_date = pd.Timestamp(max(valid_dates)).normalize().to_pydatetime().replace(tzinfo=None)
+        min_date = datetime.fromisoformat(signal["window_start"])
+        max_date = datetime.fromisoformat(signal["window_end"])
         existing_rows = (
             db.query(InstitutionalFlowEvent)
             .filter(
                 InstitutionalFlowEvent.symbol == symbol,
                 InstitutionalFlowEvent.event_date >= min_date,
                 InstitutionalFlowEvent.event_date <= max_date,
+                # A missing provider bar is not evidence that an archived
+                # event was superseded. Reconcile only observed session dates.
+                InstitutionalFlowEvent.event_date.in_([
+                    pd.Timestamp(value).normalize().to_pydatetime().replace(tzinfo=None)
+                    for value in valid_dates
+                ]),
             )
             .all()
         )
@@ -386,6 +409,7 @@ def _sync_institutional_flow_history(db, symbol: str, df: pd.DataFrame, latest_p
             )
             for row in existing_rows
         }
+        events_by_key = {(event["date"], event["side"], round(float(event["price"]), 4), int(event["volume"])): event for event in detected_events}
         detected_keys = {
             (
                 event["date"],
@@ -411,6 +435,12 @@ def _sync_institutional_flow_history(db, symbol: str, df: pd.DataFrame, latest_p
                 db.delete(row)
                 existing_keys.discard(key)
                 removed = True
+            else:
+                # Source revisions and formula changes can alter derived values
+                # without changing the event's identity or unique key.
+                event = events_by_key[key]
+                for field in ("notional", "volume_z", "clv", "price_change_pct", "strength"):
+                    setattr(row, field, float(event[field]))
 
         rows_to_insert: list[dict[str, Any]] = []
         for event in detected_events:
@@ -438,44 +468,18 @@ def _sync_institutional_flow_history(db, symbol: str, df: pd.DataFrame, latest_p
             )
             existing_keys.add(key)
 
-        if rows_to_insert or removed:
+        if rows_to_insert or removed or db.dirty:
             _insert_institutional_flow_events(db, rows_to_insert)
             db.commit()
 
-    newest_rows = (
-        db.query(InstitutionalFlowEvent)
-        .filter(InstitutionalFlowEvent.symbol == symbol)
-        .order_by(InstitutionalFlowEvent.event_date.desc())
-        .limit(250)
-        .all()
-    )
-    rows = list(reversed(newest_rows))
-
-    history = [
-        {
-            "date": row.event_date.date().isoformat(),
-            "price": round(float(row.price), 4),
-            "volume": int(row.volume),
-            "notional": round(float(row.notional), 2),
-            "volume_z": round(float(row.volume_z), 2),
-            "clv": round(float(row.clv), 3),
-            "price_change_pct": round(float(row.price_change_pct), 2),
-            "side": row.side,
-            "strength": round(float(row.strength), 2),
-        }
-        for row in rows
-    ]
-
-    summary = summarize_flow_events(history, latest_price=latest_price)
-    summary["signal_strength"] = summary.get("confidence")
+    # Stored rows are an archive of derived events. Only bars recomputed using
+    # the current method enter the response; old formula versions never leak in.
+    summary = summarize_flow_events(detected_events, latest_price=latest_price)
     return {
         "summary": summary,
-        "event_history": history,
-        "method": {
-            "name": "high_volume_accumulation_proxy",
-            "description": "High-volume daily bars classified by close location and price direction.",
-            "direct_institutional_tape": False,
-        },
+        "event_history": detected_events,
+        "signal": {**signal, **summary},
+        "method": price_volume_method(),
     }
 
 
@@ -574,11 +578,12 @@ def _build_price_history(df: pd.DataFrame, days: Optional[int] = 180) -> list[di
 
     history = []
     rows = df.tail(days) if days is not None else df
-    for idx, row in rows.iterrows():
-        open_price = row.get("Open")
-        high_price = row.get("High")
-        low_price = row.get("Low")
-        close_price = row.get("Close")
+    # iterrows constructs a Series and deep-copies DataFrame.attrs for every
+    # candle. Cached provider metadata can be large; tuple rows preserve the
+    # same values without copying that metadata hundreds of times per request.
+    for idx, open_price, high_price, low_price, close_price in rows[
+        ["Open", "High", "Low", "Close"]
+    ].itertuples(index=True, name=None):
         if pd.isna(open_price) or pd.isna(high_price) or pd.isna(low_price) or pd.isna(close_price):
             continue
         date = pd.to_datetime(idx, errors="coerce")
@@ -602,11 +607,9 @@ def _build_intraday_history(df: pd.DataFrame) -> list[dict]:
         return []
 
     history = []
-    for idx, row in df.iterrows():
-        open_price = row.get("Open")
-        high_price = row.get("High")
-        low_price = row.get("Low")
-        close_price = row.get("Close")
+    for idx, open_price, high_price, low_price, close_price in df[
+        ["Open", "High", "Low", "Close"]
+    ].itertuples(index=True, name=None):
         if pd.isna(open_price) or pd.isna(high_price) or pd.isna(low_price) or pd.isna(close_price):
             continue
         dt = pd.to_datetime(idx, errors="coerce")
@@ -1753,17 +1756,26 @@ def _apply_underlying_basis_quality(
     payload["underlying_price"] = price
     payload["underlying_observed_at"] = price_metadata.get("observed_at")
     payload["underlying_source"] = price_metadata.get("source")
-    underlying_usable = not bool(price_metadata.get("stale")) and price is not None and price > 0
+    underlying_usable = not bool(price_metadata.get("stale")) and price is not None and math.isfinite(price) and price > 0
+    underlying_date = pd.to_datetime(price_metadata.get("observed_at"), errors="coerce", utc=True)
+    option_date = pd.to_datetime(payload.get("iv30_observed_at") or payload.get("observed_at"), errors="coerce", utc=True)
+    session_mismatch = bool(
+        not pd.isna(underlying_date) and not pd.isna(option_date)
+        and underlying_date.date() != option_date.tz_convert(_MARKET_TIMEZONE).date()
+    )
+    underlying_usable = underlying_usable and not session_mismatch
     payload["underlying_basis_usable"] = underlying_usable
     if not underlying_usable:
         payload["mispricing_usable"] = False
         components = dict(payload.get("component_usable") or {})
         components["mispricing"] = False
+        components["avg_edr"] = False
         payload["component_usable"] = components
         payload["quality_status"] = "unusable"
         reasons = list(payload.get("quality_reasons") or [])
-        if "stale_underlying_basis" not in reasons:
-            reasons.append("stale_underlying_basis")
+        reason = "underlying_quote_session_mismatch" if session_mismatch else "stale_underlying_basis"
+        if reason not in reasons:
+            reasons.append(reason)
         payload["quality_reasons"] = reasons
     return payload
 
@@ -1779,6 +1791,10 @@ def compute_options_flow(
     primary_failure_reason: Optional[str] = None
 
     for candidate_index, candidate in enumerate(candidates):
+        cooldown_reason = getattr(provider, "stock_options_fallback_reason", lambda: None)()
+        if candidate_index == 0 and len(candidates) > 1 and cooldown_reason:
+            primary_failure_reason = cooldown_reason
+            continue
         try:
             expiries = candidate.option_expirations(symbol)
             if not expiries:
@@ -1791,6 +1807,9 @@ def compute_options_flow(
         except Exception as exc:
             if candidate_index == 0:
                 primary_failure_reason = str(exc) or exc.__class__.__name__
+                notify = getattr(provider, "note_stock_options_failure", None)
+                if callable(notify):
+                    notify(primary_failure_reason)
             continue
 
         chain = None
@@ -1815,6 +1834,9 @@ def compute_options_flow(
         else:
             if candidate_index == 0:
                 primary_failure_reason = last_chain_error or "primary_options_unavailable"
+                notify = getattr(provider, "note_stock_options_failure", None)
+                if callable(notify) and last_chain_error:
+                    notify(primary_failure_reason)
             continue
 
         if calls.empty and puts.empty:
@@ -1872,7 +1894,7 @@ def compute_options_flow(
         result = {
             "expiry": chain.expiry if chain else None,
             "as_of": flow_as_of,
-            "observed_at": chain_observed_at or latest_contract_trade_at,
+            "observed_at": chain_observed_at,
             "retrieved_at": chain_retrieved_at,
             "quote_observation_provenance": (
                 "chain_observed_at"
@@ -1941,6 +1963,7 @@ def compute_optionality_metrics(
 ) -> dict:
     """Compute IV/HV spread, IV percentile, and extrinsic density ratio."""
     ordered_providers = _ordered_option_providers(provider)
+    known_primary_failure = known_primary_failure or getattr(provider, "stock_options_fallback_reason", lambda: None)()
     if len(ordered_providers) > 1:
         if known_primary_failure:
             primary_metrics = _empty_optionality(
@@ -2393,8 +2416,6 @@ def compute_optionality_metrics(
         "observed_at": (
             observed_at.isoformat()
             if observed_at is not None
-            else latest_contract_trade_at.isoformat()
-            if latest_contract_trade_at is not None
             else None
         ),
         "retrieved_at": retrieved_at.isoformat() if retrieved_at is not None else None,
@@ -2712,15 +2733,19 @@ def calculate_stop_loss(current_price: float, volatility: float, risk_score: flo
 
 
 def calculate_rsi(df: pd.DataFrame, period: int = 14) -> tuple:
-    """Calculate RSI and return current value and historical values"""
-    delta = df['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-    
-    rs = gain / loss
-    rsi = 100 - (100 / (1 + rs))
-    
-    return rsi.iloc[-1], rsi
+    """Wilder RSI: seed with 14 changes, then recursively smooth gains/losses."""
+    changes = pd.to_numeric(df["Close"], errors="coerce").diff()
+    gains, losses = changes.clip(lower=0), -changes.clip(upper=0)
+    values = pd.Series(float("nan"), index=df.index, dtype=float)
+    if len(df) <= period:
+        return None, values
+    avg_gain, avg_loss = gains.iloc[1:period + 1].mean(), losses.iloc[1:period + 1].mean()
+    for index in range(period, len(df)):
+        if index > period:
+            avg_gain = (avg_gain * (period - 1) + gains.iloc[index]) / period
+            avg_loss = (avg_loss * (period - 1) + losses.iloc[index]) / period
+        values.iloc[index] = 50.0 if avg_gain == avg_loss == 0 else 100.0 if avg_loss == 0 else 100 - 100 / (1 + avg_gain / avg_loss)
+    return values.iloc[-1], values
 
 
 def calculate_macd(df: pd.DataFrame, lookback_days: int = 252) -> dict:
@@ -2755,6 +2780,8 @@ def calculate_technical_indicators(df: pd.DataFrame, lookback_days: int = 252) -
     # OHLC data for candlestick chart (return all candles, no sampling)
     candles = []
     
+    ema50_series = df["Close"].ewm(span=50, adjust=False).mean()
+    ema200_series = df["Close"].ewm(span=200, adjust=False).mean()
     for date, row in lookback_df.iterrows():
         candles.append({
             "date": date.strftime("%Y-%m-%d"),
@@ -2763,17 +2790,19 @@ def calculate_technical_indicators(df: pd.DataFrame, lookback_days: int = 252) -
             "low": float(row['Low']),
             "close": float(row['Close']),
             "volume": int(row.get('Volume', 0)) if 'Volume' in row else 0,
+            "ema50": float(ema50_series.loc[date]),
+            "ema200": float(ema200_series.loc[date]) if len(df.loc[:date]) >= 200 else None,
         })
     
     # RSI
-    rsi_current, rsi_series = calculate_rsi(lookback_df)
+    rsi_current, rsi_series = calculate_rsi(df)
     
     # MACD
-    macd_data = calculate_macd(lookback_df, lookback_days)
+    macd_data = calculate_macd(df, lookback_days)
     
     # EMA 50 and 200
-    ema_50 = lookback_df['Close'].ewm(span=50, adjust=False).mean().iloc[-1]
-    ema_200 = lookback_df['Close'].ewm(span=200, adjust=False).mean().iloc[-1] if len(lookback_df) >= 200 else None
+    ema_50 = ema50_series.iloc[-1]
+    ema_200 = ema200_series.iloc[-1] if len(df) >= 200 else None
     
     # Price levels
     current_price = lookback_df['Close'].iloc[-1]
@@ -2792,6 +2821,8 @@ def calculate_technical_indicators(df: pd.DataFrame, lookback_days: int = 252) -
         "sma_50": float(ema_50),
         "sma_200": float(ema_200) if ema_200 else None,
         "trend": trend,
+        "indicator_basis": "daily_raw_close_full_history_warmup",
+        "rsi_method": "wilder_14",
         "rsi": {
             "current": float(rsi_current),
             "status": "overbought" if rsi_current > 70 else "oversold" if rsi_current < 30 else "neutral",
@@ -2815,6 +2846,8 @@ def _trading_return_frame(df: pd.DataFrame, prefix: str) -> pd.DataFrame:
         return pd.DataFrame()
     frame = _canonicalize_daily_sessions(df)
     raw_close = pd.to_numeric(frame["Close"], errors="coerce")
+    if not (np.isfinite(raw_close) & raw_close.gt(0)).all():
+        raise ValueError(f"Invalid {prefix} close history; positive finite prices are required.")
     adjusted = frame.get("Adjusted Close")
     if adjusted is not None:
         adjusted = pd.to_numeric(adjusted, errors="coerce")
@@ -3049,6 +3082,23 @@ def get_stock_projections(
     ticker: str = Path(..., description="Stock ticker symbol (e.g., AAPL, TSLA)"),
     history_window: Literal["252d", "1y", "5y", "max"] = Query("252d", description="Price history window for chart payload"),
 ):
+    ticker = ticker.strip().upper()
+    if not re.fullmatch(r"[A-Z0-9^][A-Z0-9.^=\-]{0,24}", ticker):
+        raise HTTPException(status_code=400, detail="Enter a valid market symbol, such as TGT or BRK-B.")
+    with _stock_request_locks_guard:
+        lock = _stock_request_locks.get(ticker)
+        if lock is None:
+            lock = threading.Lock()
+            _stock_request_locks[ticker] = lock
+    if not lock.acquire(timeout=45):
+        raise HTTPException(status_code=503, detail="Analysis is already refreshing for this symbol. Retry shortly.", headers={"Retry-After": "5"})
+    try:
+        return _get_stock_projections(ticker, history_window)
+    finally:
+        lock.release()
+
+
+def _get_stock_projections(ticker: str, history_window: str):
     """Return multi-window trailing analysis for a single stock."""
 
     ticker = ticker.upper()
@@ -3074,6 +3124,10 @@ def get_stock_projections(
     # observed close can never be paired with an older cached headline.
     df = fetch_stock_data(ticker)
     spy_df = fetch_stock_data("SPY")
+    for symbol, source_frame in ((ticker, df), ("SPY", spy_df)):
+        closes = pd.to_numeric(source_frame.get("Close", pd.Series(dtype=float)), errors="coerce")
+        if closes.empty or not (np.isfinite(closes) & closes.gt(0)).all():
+            raise HTTPException(status_code=503, detail=f"Price history for {symbol} failed validation. Analysis is unavailable until the source recovers.")
     price_metadata = _frame_response_metadata(df, ticker, "1d")
     benchmark_metadata = _frame_response_metadata(spy_df, "SPY", "1d")
     stock_observed = pd.to_datetime(price_metadata.get("observed_at"), errors="coerce", utc=True)
@@ -3199,11 +3253,6 @@ def get_stock_projections(
                 error=str(exc),
                 reason="provider_error",
             )
-        optionality = _apply_underlying_basis_quality(
-            optionality,
-            price=current_price,
-            price_metadata=price_metadata,
-        )
         if optionality.get("error"):
             data_warnings.append({
                 "type": "upstream_options_unavailable",
@@ -3294,6 +3343,8 @@ def get_stock_projections(
         # Calculate technical indicators for 252-day lookback
         try:
             technical_data = calculate_technical_indicators(df, lookback_days=252)
+            if technical_data.get("error"):
+                raise ValueError(technical_data["error"])
         except Exception as exc:
             technical_data = None
             data_warnings.append({
@@ -3347,7 +3398,7 @@ def get_stock_projections(
     history_days = history_fetch_days[history_window]
 
     try:
-        price_history_df = fetch_stock_data(ticker, days=history_days)
+        price_history_df = df if history_window in {"252d", "1y"} else fetch_stock_data(ticker, days=history_days)
     except Exception as exc:
         # Keep analysis available even if long-range history fetch fails.
         price_history_df = df
@@ -3447,17 +3498,14 @@ def get_stock_projections(
                 .limit(500)
                 .all()
             )
-        try:
-            narrative_benchmark = fetch_stock_data("IGV")
-        except Exception:
-            narrative_benchmark = pd.DataFrame()
         narrative = build_narrative_analysis(
             ticker,
             narrative_articles,
             collection_checks,
             df,
-            narrative_benchmark,
+            spy_df,
             now=narrative_now,
+            benchmark_symbol="SPY",
         )
     except Exception as exc:
         data_warnings.append({

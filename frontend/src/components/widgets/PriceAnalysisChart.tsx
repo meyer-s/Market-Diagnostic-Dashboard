@@ -62,7 +62,6 @@ export function PriceAnalysisChart({
   const lowerHeight = Math.min(100, (lowerVisualDistance / maxRange) * 100);
   const upperHeight = Math.min(100, (upperVisualDistance / maxRange) * 100);
   
-  const modelReference = upperReference;
   const hasRawExtensionGap = rawUpper > upperReference * 1.03;
   const normalizedTargetRegime = targetRegime?.trim()
     ? targetRegime.trim().replace(/_/g, " ")
@@ -70,26 +69,10 @@ export function PriceAnalysisChart({
   const highSeverityFlags = (sanityFlags || []).filter((flag) => flag.severity === "high");
   const hasAnalystTarget =
     analystTarget !== null && analystTarget !== undefined && analystTarget > 0;
-  const analystDiffPct = hasAnalystTarget
-    ? ((modelReference - analystTarget) / analystTarget) * 100
-    : null;
-  let analystAlignment = "n/a";
-  let analystColor = "text-stealth-400";
-  if (analystDiffPct !== null) {
-    if (Math.abs(analystDiffPct) <= 5) {
-      analystAlignment = "Aligned";
-      analystColor = "text-green-400";
-    } else if (analystDiffPct > 5) {
-      analystAlignment = "Above analysts";
-      analystColor = "text-orange-300";
-    } else {
-      analystAlignment = "Below analysts";
-      analystColor = "text-blue-300";
-    }
-  }
 
   return (
     <div className="secondary-card stock-price-analysis-panel h-full min-w-0 p-3 sm:p-4">
+      <details className="mb-2 text-xs text-stealth-300"><summary className="cursor-pointer">Reference methodology</summary><p className="mt-1">Upper reference extends a positive historical return; lower reference scales annualized volatility. These are model heuristics, not forecasts or statistical confidence bounds. Analyst targets use a separate basis.</p></details>
       {/* Header */}
       <div className="mb-3">
         <p className="text-xs text-stealth-400 mb-1">Price Analysis for {horizon}</p>
@@ -114,9 +97,7 @@ export function PriceAnalysisChart({
               Analyst reference: ${analystTarget!.toFixed(2)}
               {analystCount ? ` (${analystCount})` : ""}
             </span>
-            <span className={`font-semibold ${analystColor}`}>
-              Reference alignment: {analystAlignment}
-            </span>
+            <span>Provider target; horizon and publication date not supplied</span>
           </div>
         )}
         {(normalizedTargetRegime || highSeverityFlags.length > 0) && (

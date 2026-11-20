@@ -494,6 +494,32 @@ def test_intraday_history_serializes_cached_naive_utc_with_offset() -> None:
     assert payload[0]["timestamp"] == "2026-08-03T14:00:00+00:00"
 
 
+@pytest.mark.parametrize("intraday", [False, True])
+def test_chart_serialization_does_not_copy_provider_metadata_per_candle(intraday) -> None:
+    class MetadataCopyProbe:
+        copies = 0
+
+        def __deepcopy__(self, memo):
+            self.copies += 1
+            return self
+
+    frame = _price_frame(periods=400, raw_start=10.0, raw_end=20.0)
+    # Extra/reordered fields must not change the OHLC mapping.
+    frame = frame[["Volume", "Close", "Low", "Adjusted Close", "High", "Open"]]
+    frame.iloc[1, frame.columns.get_loc("Open")] = np.nan
+    probe = MetadataCopyProbe()
+    frame.attrs["provider_metadata"] = probe
+
+    payload = _build_intraday_history(frame) if intraday else _build_price_history(frame, days=None)
+
+    assert len(payload) == 399
+    assert {key: payload[-1][key] for key in ("open", "high", "low", "close")} == {
+        "open": 20.0, "high": 21.0, "low": 19.0, "close": 20.0,
+    }
+    assert probe.copies < 20
+    assert frame.attrs["provider_metadata"] is probe
+
+
 class _LastOnlyProvider(FakeProvider):
     def option_chain(self, *args, **kwargs):
         chain = super().option_chain(*args, **kwargs)
@@ -705,7 +731,8 @@ def test_options_flow_as_of_uses_frozen_chain_retrieval_time_not_compute_time() 
 
     assert flow is not None
     assert flow["as_of"] == "2026-07-01T14:30:00+00:00"
-    assert flow["observed_at"] == "2026-06-30T19:00:00+00:00"
+    assert flow["observed_at"] is None
+    assert flow["latest_contract_trade_at"] == "2026-06-30T19:00:00+00:00"
     assert flow["retrieved_at"] == "2026-07-01T14:30:00+00:00"
 
 
@@ -958,7 +985,7 @@ def test_projection_cache_rejects_pre_accuracy_payloads() -> None:
     )
     assert _cache_matches_accuracy_contract(
         {
-            "schema_version": 4,
+            "schema_version": 6,
             "optionality": {
                 "mispricing_usable": False,
                 "iv30_chain_percentile": None,

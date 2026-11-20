@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 import math
 import statistics
 from typing import Any, Iterable, Optional
@@ -10,7 +10,7 @@ from app.services.optionality_clusters import classify_optionality_symbol
 from app.services.sector_projection import HORIZONS, SECTOR_ETFS
 
 
-ANALYTICS_VERSION = "sector_stability_v4"
+ANALYTICS_VERSION = "sector_stability_v5"
 LEADERSHIP_BAND = 15.0
 
 SECTOR_NAME_TO_ETF = {
@@ -178,8 +178,16 @@ def build_scanner_sector_signals(
     for event in events:
         symbol = str(getattr(event, "symbol", "") or "").strip().upper()
         triggered_at = getattr(event, "triggered_at", None)
-        event_day = triggered_at.date() if isinstance(triggered_at, datetime) else as_of
-        if not symbol or event_day < cutoff:
+        # ORM timestamps are naive UTC. A missing timestamp cannot be treated
+        # as a new hit, and a later event cannot confirm an older run-day.
+        if not isinstance(triggered_at, datetime):
+            continue
+        event_day = (
+            triggered_at.astimezone(timezone.utc).date()
+            if triggered_at.tzinfo is not None
+            else triggered_at.date()
+        )
+        if not symbol or not cutoff <= event_day <= as_of:
             continue
         total_events += 1
         classification = classify_optionality_symbol(symbol)
@@ -214,6 +222,9 @@ def build_scanner_sector_signals(
         prior_hits = 0
         symbols: set[str] = set()
         days: set[date] = set()
+        directional_hits = 0
+        directional_symbols: set[str] = set()
+        directional_days: set[date] = set()
         for row in rows:
             age_days = max(0, (as_of - row["day"]).days)
             recency = math.exp(-age_days / 14.0)
@@ -223,6 +234,9 @@ def build_scanner_sector_signals(
                 weight = recency * score_strength
                 signed_weight += direction * weight
                 directional_weight += weight
+                directional_hits += 1
+                directional_symbols.add(row["symbol"])
+                directional_days.add(row["day"])
             if age_days <= 13:
                 recent_hits += 1
             elif age_days <= 27:
@@ -231,9 +245,11 @@ def build_scanner_sector_signals(
             days.add(row["day"])
 
         directional_balance = signed_weight / directional_weight if directional_weight else 0.0
-        sample_reliability = min(1.0, len(rows) / 8.0)
-        breadth_reliability = min(1.0, len(symbols) / 4.0)
-        persistence_reliability = min(1.0, len(days) / 4.0)
+        # Unknown sides remain in the activity counts, but do not strengthen
+        # the coverage factor for a call/put directional adjustment.
+        sample_reliability = min(1.0, directional_hits / 8.0)
+        breadth_reliability = min(1.0, len(directional_symbols) / 4.0)
+        persistence_reliability = min(1.0, len(directional_days) / 4.0)
         reliability = sample_reliability * breadth_reliability * persistence_reliability
         scanner_score = 50.0 + directional_balance * 25.0
         overlay_points = directional_balance * 4.0 * reliability
@@ -243,6 +259,10 @@ def build_scanner_sector_signals(
             "prior_hits": prior_hits,
             "unique_symbols": len(symbols),
             "distinct_days": len(days),
+            "directional_hits": directional_hits,
+            "unknown_side_hits": len(rows) - directional_hits,
+            "directional_unique_symbols": len(directional_symbols),
+            "directional_distinct_days": len(directional_days),
             "directional_balance": round(directional_balance, 4),
             "scanner_score": round(scanner_score, 2),
             "reliability": round(reliability, 4),
@@ -255,6 +275,8 @@ def build_scanner_sector_signals(
         "total_events": total_events,
         "classified_events": classified_events,
         "deduplicated_events": len(candidates),
+        "directional_deduplicated_events": sum(row["option_type"] in {"call", "put"} for row in candidates.values()),
+        "unknown_side_deduplicated_events": sum(row["option_type"] not in {"call", "put"} for row in candidates.values()),
         "classification_coverage_pct": round(classified_events / total_events * 100.0, 1) if total_events else 0.0,
         "max_overlay_points": 4.0,
     }
@@ -487,7 +509,7 @@ def build_sector_projection_analytics(
         "leadership_band": LEADERSHIP_BAND,
         "forward_scenario_method": "Current stabilized score blended toward trailing-window anchors, with bounded recent-rank persistence and reliability-gated scanner confirmation.",
         "score_method": "55% EWMA + 30% five-run median + 15% latest raw score",
-        "scanner_method": "Directional scanner evidence is deduplicated by symbol/day/side and capped at +/-4 score points before horizon decay.",
+        "scanner_method": "Scanner activity is deduplicated by symbol/UTC-day/side. Only explicit calls and puts contribute to directional weighting and its coverage factor; unknown sides remain in all-hit counts. Adjustments are capped at +/-4 score points before horizon decay.",
         "uncertainty_method": "Observed 20-run score variability with asymmetric scenario width from persistent rank direction and reliable scanner breadth; not a probability confidence interval.",
         "scanner_coverage": scanner_coverage,
         "sectors": sector_payload,

@@ -8,6 +8,8 @@ export interface OptionalityMetrics {
   iv_percentile_kind?: string | null;
   avg_edr: number | null;
   observed_at?: string | null;
+  retrieved_at?: string | null;
+  latest_contract_trade_at?: string | null;
   data_source?: string | null;
   quote_source?: string | null;
   primary_data_source?: string | null;
@@ -121,6 +123,11 @@ export function OptionalityMispricingWidget({ metrics }: OptionalityMispricingWi
     }
   }
 
+  const contextTime = (value: string | null | undefined) => {
+    if (!value) return "Unavailable";
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? "Unavailable" : date.toLocaleString("en-US", { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
+  };
   const source = metrics.quote_source || metrics.data_source || metrics.primary_data_source;
   const observed = formatObservedAt(metrics.observed_at);
   const quality = metrics.quality_status && metrics.quality_status !== "good"
@@ -179,6 +186,13 @@ export function OptionalityMispricingWidget({ metrics }: OptionalityMispricingWi
           <div className="text-xs text-stealth-400">Extrinsic / price</div>
         </div>
       </div>
+      <details className="mt-3 text-xs text-stealth-300">
+        <summary className="cursor-pointer">Quote quality &amp; coverage</summary>
+        <p className="mt-2">Quote observation: {contextTime(metrics.observed_at)}. Retrieved: {contextTime(metrics.retrieved_at)}.</p>
+        <p className="mt-1">Latest contract trade: {contextTime(metrics.latest_contract_trade_at)}. A trade timestamp does not establish when bid/ask quotes or open interest were observed.</p>
+        {metrics.fallback_reason && <p className="mt-1">Primary provider: {metrics.fallback_reason}</p>}
+        {!!metrics.quality_reasons?.length && <ul className="mt-2 list-inside list-disc">{metrics.quality_reasons.map(reason => <li key={reason}>{reason.replace(/_/g, " ")}</li>)}</ul>}
+      </details>
     </div>
   );
 }

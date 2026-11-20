@@ -71,10 +71,8 @@ const pairPath = (extra: string) =>
   `/market-weather?symbol=SPY&comparison=pair&compare=QQQ&timeframe=1D&bars=120&${extra}`;
 
 async function selectInstitutionalGroup(page: Page, heading: string) {
-  const section = page
-    .locator("section")
-    .filter({ has: page.getByRole("heading", { name: heading, exact: true }) })
-    .first();
+  const section = page.getByRole("heading", { name: heading, exact: true })
+    .locator("xpath=ancestor::section[1]");
   await section.getByRole("button").first().click();
 }
 
@@ -216,7 +214,7 @@ const stateTargets: StateTarget[] = [
     id: "state-10-flow-sectors",
     name: "Institutional Flow — sector focus",
     path: "/institutional-flow",
-    action: async (page) => selectInstitutionalGroup(page, "Sectors"),
+    action: async (page) => selectInstitutionalGroup(page, "Sector ETFs"),
   },
   {
     id: "state-12-flow-crypto",

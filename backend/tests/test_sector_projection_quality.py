@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
+import numpy as np
+import pandas as pd
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -11,6 +14,7 @@ from app.services.sector_projection import (
     HORIZONS,
     SECTOR_ETFS,
     build_sector_projection_history,
+    compute_sector_projections,
     get_latest_sector_projection_run,
     save_sector_projection_run,
     validate_sector_projection_quality,
@@ -178,3 +182,120 @@ def test_quality_blocked_run_is_not_latest_eligible_run():
     assert latest.id == good_run.id
     assert bad_run.config_json["excluded_from_latest"] is True
     assert any(warning["type"] == "partial_sector_metrics" for warning in warnings)
+
+
+def _source_price_frames(periods=300):
+    sessions = pd.bdate_range("2025-01-02", periods=periods).strftime("%Y-%m-%d")
+    return {
+        symbol: pd.DataFrame({
+            "date": sessions,
+            "value": 100 * np.exp(np.arange(periods) * (0.0005 + index * 0.0001)),
+        })
+        for index, symbol in enumerate([etf["symbol"] for etf in SECTOR_ETFS] + ["SPY"])
+    }
+
+
+@pytest.mark.parametrize("bad_value", [np.nan, np.inf, 0.0, -1.0])
+def test_single_invalid_sector_price_blocks_the_peer_run(bad_value):
+    frames = _source_price_frames()
+    frames["XLE"].loc[frames["XLE"].index[-1], "value"] = bad_value
+
+    rows = compute_sector_projections(frames)
+    warnings = validate_sector_projection_quality(rows)
+
+    assert not any(row["sector_symbol"] == "XLE" for row in rows)
+    assert any(warning["type"] == "missing_sector_projections" for warning in warnings)
+    assert all(np.isfinite(row["score_total"]) for row in rows)
+
+
+@pytest.mark.parametrize("bad_date", ["not-a-date", "2025-01-02"])
+def test_invalid_or_duplicate_session_does_not_enter_peer_scoring(bad_date):
+    frames = _source_price_frames()
+    frames["XLE"].loc[frames["XLE"].index[-1], "date"] = bad_date
+
+    rows = compute_sector_projections(frames)
+
+    assert not any(row["sector_symbol"] == "XLE" for row in rows)
+    assert any(warning["type"] == "missing_sector_projections" for warning in validate_sector_projection_quality(rows))
+
+
+def test_sector_missing_latest_session_cannot_compete_at_an_older_end_date():
+    frames = _source_price_frames()
+    frames["XLE"] = frames["XLE"].iloc[:-1].copy()
+
+    rows = compute_sector_projections(frames)
+
+    assert not any(row["sector_symbol"] == "XLE" for row in rows)
+    assert any(warning["type"] == "missing_sector_projections" for warning in validate_sector_projection_quality(rows))
+
+
+def test_missing_interior_benchmark_session_cannot_shorten_one_peer_window():
+    frames = _source_price_frames()
+    frames["XLE"] = frames["XLE"].drop(index=frames["XLE"].index[-10])
+
+    rows = compute_sector_projections(frames)
+
+    assert not any(row["sector_symbol"] == "XLE" for row in rows)
+    assert any(warning["type"] == "missing_sector_projections" for warning in validate_sector_projection_quality(rows))
+
+
+def test_sector_windows_require_exactly_lookback_plus_one_shared_observations():
+    complete = compute_sector_projections(_source_price_frames(periods=253))
+    short = compute_sector_projections(_source_price_frames(periods=252))
+
+    assert len(complete) == len(SECTOR_ETFS) * len(HORIZONS)
+    assert len({row["source_session_date"] for row in complete}) == 1
+    assert len([row for row in short if row["horizon"] == "12m"]) == 0
+    assert any(warning["type"] == "missing_sector_projections" for warning in validate_sector_projection_quality(short))
+
+
+def test_source_session_metadata_is_distinct_from_the_run_day():
+    db = _session()
+    frames = _source_price_frames()
+    rows = compute_sector_projections(frames)
+    source_session = frames["SPY"]["date"].iloc[-1]
+
+    run, _ = save_sector_projection_run(db, rows, system_state="YELLOW", as_of_date=date(2026, 11, 19))
+
+    assert run.as_of_date == date(2026, 11, 19)
+    assert run.config_json["price_as_of_date"] == source_session
+    assert run.config_json["price_observations"] == {etf["symbol"]: source_session for etf in SECTOR_ETFS}
+
+
+def test_saved_rows_without_source_evidence_do_not_invent_an_observation_date():
+    db = _session()
+
+    run, _ = save_sector_projection_run(db, _projection_rows(), system_state="YELLOW", as_of_date=date(2026, 11, 19))
+
+    assert run.config_json["price_as_of_date"] is None
+    assert run.config_json["price_observations"] == {}
+
+
+def test_mixed_source_sessions_do_not_get_one_shared_observation_date():
+    db = _session()
+    rows = _projection_rows()
+    for row in rows:
+        row["source_session_date"] = "2026-11-18"
+    rows[0]["source_session_date"] = "2026-11-17"
+
+    run, _ = save_sector_projection_run(db, rows, system_state="YELLOW", as_of_date=date(2026, 11, 19))
+
+    assert run.config_json["price_as_of_date"] is None
+
+
+@pytest.mark.parametrize("metric", ["return", "sma_dist", "rel_ret", "vol", "drawdown"])
+def test_one_missing_stored_metric_blocks_the_entire_peer_run(metric):
+    db = _session()
+    good_run, _ = save_sector_projection_run(db, _projection_rows(), system_state="YELLOW", as_of_date=date(2026, 11, 18))
+    rows = _projection_rows()
+    rows[0]["metrics"][metric] = None
+    bad_run, warnings = save_sector_projection_run(db, rows, system_state="YELLOW", as_of_date=date(2026, 11, 19))
+    assert bad_run.config_json["excluded_from_latest"]
+    assert any(warning["type"] == "invalid_sector_metrics" for warning in warnings)
+    assert get_latest_sector_projection_run(db).id == good_run.id
+
+
+def test_duplicate_stored_sector_row_cannot_change_the_peer_denominator():
+    rows = _projection_rows()
+    rows.append(dict(rows[0]))
+    assert any(warning["type"] == "missing_sector_projections" for warning in validate_sector_projection_quality(rows))

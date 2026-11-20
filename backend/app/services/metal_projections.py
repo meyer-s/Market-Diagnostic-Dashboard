@@ -23,29 +23,61 @@ METAL_INSTRUMENTS: dict[str, dict[str, str | None]] = {
 }
 
 
-def fetch_metal_price_history(metal: str, days: int = 365) -> pd.DataFrame:
+def fetch_metal_price_history(metal: str, days: int = 400) -> pd.DataFrame:
     """Fetch historical price data for a metal"""
     with get_db_session() as db:
         cutoff = datetime.utcnow() - timedelta(days=days)
         prices = db.query(MetalPrice).filter(
             MetalPrice.metal == metal,
+            MetalPrice.source == "YAHOO",
             MetalPrice.date >= cutoff
-        ).order_by(MetalPrice.date).all()
+        ).order_by(MetalPrice.date, MetalPrice.created_at, MetalPrice.id).all()
         
         if not prices:
             return pd.DataFrame()
         
         df = pd.DataFrame([{
             'date': p.date,
-            'price': p.price_usd_per_oz
+            'price': p.price_usd_per_oz,
+            'retrieved_at': p.created_at,
+            'row_id': p.id,
         } for p in prices])
         
         df['date'] = pd.to_datetime(df['date'])
+        df['session'] = df['date'].dt.normalize()
+        df['canonical'] = df['date'].eq(df['session'])
+        # Legacy wall-clock rows can represent a repeated prior-session close,
+        # including weekends. Only provider-session rows support session counts.
+        df = df[df['canonical']]
+        if df.empty:
+            return pd.DataFrame()
+        df = df.sort_values(['session', 'canonical', 'retrieved_at', 'row_id']).drop_duplicates('session', keep='last')
+        df['date'] = df['session']
+        if not (np.isfinite(pd.to_numeric(df['price'], errors='coerce')) & df['price'].gt(0)).all():
+            return pd.DataFrame()
+        retrieved_at = df['retrieved_at'].max()
+        df = df[['date', 'price']]
         df = df.set_index('date')
+        df.attrs['retrieved_at'] = retrieved_at.isoformat() if pd.notna(retrieved_at) else None
         return df
 
 
-def compute_metal_projection(metal: str, metal_name: str, etf_symbol: str) -> Dict[str, Any]:
+def _wilder_rsi(prices: pd.Series, period: int = 14) -> pd.Series:
+    changes = prices.diff()
+    gains, losses = changes.clip(lower=0), -changes.clip(upper=0)
+    output = pd.Series(np.nan, index=prices.index, dtype=float)
+    if len(prices) <= period:
+        return output
+    gain, loss = gains.iloc[1:period + 1].mean(), losses.iloc[1:period + 1].mean()
+    for index in range(period, len(prices)):
+        if index > period:
+            gain = (gain * (period - 1) + gains.iloc[index]) / period
+            loss = (loss * (period - 1) + losses.iloc[index]) / period
+        output.iloc[index] = 50.0 if gain == loss == 0 else 100.0 if loss == 0 else 100 - 100 / (1 + gain / loss)
+    return output
+
+
+def compute_metal_projection(metal: str, metal_name: str, etf_symbol: str, history: pd.DataFrame | None = None) -> Dict[str, Any]:
     """
     Compute technical projection for a precious metal
     
@@ -55,16 +87,16 @@ def compute_metal_projection(metal: str, metal_name: str, etf_symbol: str) -> Di
     - Technical score
     - Price targets
     """
-    df = fetch_metal_price_history(metal, days=365)
-    instrument = METAL_INSTRUMENTS[metal]
+    df = (fetch_metal_price_history(metal, days=400) if history is None else history).copy()
+    instrument = {**METAL_INSTRUMENTS[metal], "price_type": "daily provider bar (may be incomplete)"}
     
-    if df.empty or len(df) < 30:
+    if df.empty or len(df) < 200 or not (np.isfinite(df['price']) & df['price'].gt(0)).all():
         return {
             "metal": metal,
             "metal_name": metal_name,
             "etf_symbol": etf_symbol,
             "instrument": instrument,
-            "error": "Insufficient historical data"
+            "error": "Need 200 valid, distinct daily observations"
         }
     
     current_price = float(df['price'].iloc[-1])
@@ -76,11 +108,7 @@ def compute_metal_projection(metal: str, metal_name: str, etf_symbol: str) -> Di
     df['sma_200'] = df['price'].rolling(window=200).mean()
     
     # RSI calculation
-    delta = df['price'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / loss
-    df['rsi'] = 100 - (100 / (1 + rs))
+    df['rsi'] = _wilder_rsi(df['price'])
     
     # Momentum
     df['momentum_5d'] = df['price'].pct_change(periods=5) * 100
@@ -88,7 +116,7 @@ def compute_metal_projection(metal: str, metal_name: str, etf_symbol: str) -> Di
     df['momentum_60d'] = df['price'].pct_change(periods=60) * 100
     
     # Volatility
-    df['returns'] = df['price'].pct_change()
+    df['returns'] = df['price'].pct_change(fill_method=None)
     volatility_30d = df['returns'].rolling(window=30).std() * np.sqrt(252) * 100
     
     latest = df.iloc[-1]
@@ -227,6 +255,10 @@ def compute_metal_projection(metal: str, metal_name: str, etf_symbol: str) -> Di
             "stop_loss": round(stop_loss, 2),
         },
         "as_of": price_as_of,
+        "source_session_date": df.index[-1].date().isoformat(),
+        "retrieved_at": df.attrs.get("retrieved_at"),
+        "rsi_method": "wilder_14",
+        "observation_count": len(df),
     }
 
 
@@ -244,17 +276,21 @@ def compute_all_metal_projections() -> Dict[str, Any]:
     ]
     
     projections = []
+    histories = {metal: fetch_metal_price_history(metal, days=400) for metal, _, _ in metals}
+    unavailable = []
     for metal, name, etf in metals:
-        proj = compute_metal_projection(metal, name, etf)
+        proj = compute_metal_projection(metal, name, etf, history=histories[metal])
         if "error" not in proj:
             projections.append(proj)
+        else:
+            unavailable.append({"metal": metal, "reason": proj["error"]})
 
     def _compute_ratio_momentum(numerator_df: pd.DataFrame, denominator_df: pd.DataFrame, periods: int) -> float | None:
         if numerator_df.empty or denominator_df.empty:
             return None
-        ratio_df = pd.DataFrame(index=numerator_df.index.union(denominator_df.index)).sort_index()
-        ratio_df["num"] = numerator_df["price"].reindex(ratio_df.index).ffill()
-        ratio_df["den"] = denominator_df["price"].reindex(ratio_df.index).ffill()
+        if numerator_df.index.max() != denominator_df.index.max():
+            return None
+        ratio_df = pd.concat([numerator_df['price'].rename('num'), denominator_df['price'].rename('den')], axis=1, join='inner').sort_index()
         ratio_df = ratio_df.dropna()
         ratio_df = ratio_df[ratio_df["den"] != 0]
         if len(ratio_df) <= periods:
@@ -267,10 +303,7 @@ def compute_all_metal_projections() -> Dict[str, Any]:
         return ((current - prior) / prior) * 100.0
 
     # Fetch all metal price histories for rotation confirmation (precious metals only)
-    pt_df = fetch_metal_price_history("PT", days=365)
-    au_df = fetch_metal_price_history("AU", days=365)
-    ag_df = fetch_metal_price_history("AG", days=365)
-    pd_df = fetch_metal_price_history("PD", days=365)
+    pt_df, au_df, ag_df, pd_df = (histories[metal] for metal in ("PT", "AU", "AG", "PD"))
 
     proj_by_metal = {proj["metal"]: proj for proj in projections}
     pt_proj = proj_by_metal.get("PT")
@@ -391,19 +424,32 @@ def compute_all_metal_projections() -> Dict[str, Any]:
     projections.sort(key=lambda x: x['score_total'], reverse=True)
     
     # Add rank and classification
-    for i, proj in enumerate(projections):
-        proj['rank'] = i + 1
-        if i == 0:
+    for proj in projections:
+        proj['rank'] = 1 + sum(other['score_total'] > proj['score_total'] for other in projections)
+        high, low = projections[0]['score_total'], projections[-1]['score_total']
+        if high == low:
+            proj['relative_classification'] = "Neutral"
+        elif proj['score_total'] == high:
             proj['relative_classification'] = "Winner"
-        elif i == len(projections) - 1:
+        elif proj['score_total'] == low:
             proj['relative_classification'] = "Loser"
         else:
             proj['relative_classification'] = "Neutral"
     
+    precious_sessions = {proj.get("source_session_date") for proj in projections if proj["metal"] in {"AU", "AG", "PT", "PD"}}
+    sessions_match = len(precious_sessions) == 1 and len([proj for proj in projections if proj["metal"] in {"AU", "AG", "PT", "PD"}]) == 4
+    for proj in projections:
+        if proj.get("relative_confirmation") is not None:
+            proj["relative_confirmation"]["observation_sessions_match"] = sessions_match
+            if not sessions_match:
+                proj["relative_confirmation"]["rotation_confirmed"] = False
+                proj["relative_confirmation"]["leadership_divergence_confirmed"] = False
     projection_timestamps = [proj["as_of"] for proj in projections if proj.get("as_of")]
     return {
         "projections": projections,
         "as_of": max(projection_timestamps) if projection_timestamps else None,
         "generated_at": datetime.utcnow().isoformat(),
-        "model_version": "1.1"
+        "unavailable_metals": unavailable,
+        "model_version": "1.2",
+        "refresh_interval_seconds": 900,
     }

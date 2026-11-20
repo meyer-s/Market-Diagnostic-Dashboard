@@ -127,7 +127,7 @@ def test_postgres_flow_insert_uses_atomic_unique_conflict_handling() -> None:
     )
 
 
-def test_flow_history_returns_newest_250_in_chronological_order() -> None:
+def test_flow_history_does_not_expose_unrecomputed_legacy_archive() -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     InstitutionalFlowEvent.__table__.create(bind=engine)
     session_local = sessionmaker(bind=engine)
@@ -144,12 +144,12 @@ def test_flow_history_returns_newest_250_in_chronological_order() -> None:
 
         payload = _sync_institutional_flow_history(db, "SPY", pd.DataFrame(), 399.0)
 
-        assert len(payload["event_history"]) == 250
-        assert payload["event_history"][0]["date"] == (start + pd.Timedelta(days=50)).date().isoformat()
-        assert payload["event_history"][-1]["date"] == (start + pd.Timedelta(days=299)).date().isoformat()
-        assert payload["method"]["name"] == "high_volume_accumulation_proxy"
+        assert payload["event_history"] == []
+        assert db.query(InstitutionalFlowEvent).count() == 300
+        assert payload["method"]["name"] == "daily_price_volume_v2"
         assert payload["method"]["direct_institutional_tape"] is False
-        assert payload["summary"]["signal_strength"] == payload["summary"]["confidence"]
+        assert "confidence" not in payload["summary"]
+
     finally:
         db.close()
         engine.dispose()
@@ -195,6 +195,46 @@ def test_flow_reconciliation_removes_superseded_events(monkeypatch) -> None:
         assert len(payload["event_history"]) == 1
         assert payload["event_history"][0]["side"] == "buy"
         assert db.query(InstitutionalFlowEvent).count() == 1
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_flow_reconciliation_refreshes_values_without_changing_identity(monkeypatch) -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    InstitutionalFlowEvent.__table__.create(bind=engine)
+    db = sessionmaker(bind=engine)()
+    try:
+        row = _event_row()
+        db.add(InstitutionalFlowEvent(**row))
+        db.commit()
+        replacement = {key: value for key, value in row.items() if key not in ("symbol", "event_date")}
+        replacement.update(date="2026-07-29", notional=123.0, volume_z=3.1)
+        monkeypatch.setattr(stock_projection, "detect_flow_events_from_frame", lambda *args, **kwargs: [replacement])
+        frame = pd.DataFrame({"High": 735, "Low": 700, "Close": 729.46, "Volume": 1_000}, index=pd.date_range("2026-06-01", "2026-07-31", freq="B"))
+        payload = _sync_institutional_flow_history(db, "SPY", frame, 729.46)
+        saved = db.query(InstitutionalFlowEvent).one()
+        assert saved.notional == 123.0
+        assert saved.volume_z == 3.1
+        assert payload["summary"]["signed_turnover_usd"] == -123.0
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_missing_source_bar_does_not_delete_an_archived_event() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    InstitutionalFlowEvent.__table__.create(bind=engine)
+    db = sessionmaker(bind=engine)()
+    try:
+        db.add(InstitutionalFlowEvent(**_event_row()))
+        db.commit()
+        dates = pd.date_range("2026-06-01", "2026-07-31", freq="B")
+        dates = dates[dates != pd.Timestamp("2026-07-29")]
+        frame = pd.DataFrame({"High": 735, "Low": 700, "Close": 729.46, "Volume": 1_000}, index=dates)
+        payload = _sync_institutional_flow_history(db, "SPY", frame, 729.46)
+        assert db.query(InstitutionalFlowEvent).count() == 1
+        assert payload["event_history"] == []
     finally:
         db.close()
         engine.dispose()
