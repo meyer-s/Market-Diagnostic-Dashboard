@@ -662,25 +662,23 @@ def _get_top_crypto_signals(component: AASComponentV2) -> List[dict]:
 
 def _get_component_description(component_key: str) -> str:
     descriptions = {
-        # Metals
-        "gold_dxy_ratio": "Gold price normalized by dollar strength; higher implies hedge demand.",
-        "gold_real_rate_divergence": "Gold strength versus real rates; divergence implies monetary stress.",
-        "silver_outperformance": "Silver vs gold ratio; low values signal defensive posture.",
-        "pgm_weakness": "Platinum/palladium underperformance vs gold; indicates industrial weakness.",
-        "cb_gold_accumulation": "Central bank net gold buying momentum; sustained purchases signal concern.",
-        "comex_registered_inventory": "Deliverable COMEX inventory; declines indicate physical stress.",
-        "oi_to_registered_ratio": "Open interest vs registered inventory; high ratios signal squeeze risk.",
-        "gold_etf_flows": "Net GLD flows; positive flows reflect institutional flight to safety.",
-        "mining_stock_divergence": "Gold miners vs gold; underperformance implies stress in risk assets.",
-        # Crypto
-        "btc_dominance": "BTC share of total crypto market cap; rising implies flight to quality.",
-        "btc_hash_rate": "Network security proxy; rising indicates infrastructure commitment.",
-        "btc_difficulty": "Mining competition; higher difficulty implies stronger incentives.",
-        "stablecoin_supply": "USDT+USDC supply; growth shows fiat entering crypto rails.",
-        "stablecoin_btc_ratio": "Stablecoins vs BTC market cap; high values suggest dry powder.",
-        "defi_tvl": "Total value locked in DeFi protocols; growth signals adoption.",
-        "exchange_outflows": "BTC leaving exchanges; net outflows indicate self-custody preference.",
-        "btc_spy_correlation": "BTC-SPY correlation; negative indicates alternative behavior.",
-        "altcoin_weakness": "Altcoins underperforming BTC; weakness signals risk-off crypto.",
+        "gold_dxy_ratio": "Normalized gold/dollar ratio pressure; a price ratio does not establish hedge demand.",
+        "gold_real_rate_divergence": "Normalized gold-versus-real-rate divergence pressure; this is a model signal, not measured monetary stress.",
+        "silver_outperformance": "Normalized silver/gold relative-performance pressure; not a direct measure of investor positioning.",
+        "pgm_weakness": "Normalized PGM performance relative to gold; price performance does not directly measure industrial demand.",
+        "cb_gold_accumulation": "Normalized reported official gold-holdings changes; holdings do not establish policy motives.",
+        "comex_registered_inventory": "Normalized registered warehouse-inventory pressure; inventory alone does not establish a shortage.",
+        "oi_to_registered_ratio": "Normalized futures open-interest/registered-inventory pressure; not every contract seeks delivery.",
+        "gold_etf_flows": "Normalized GLD holdings-change pressure; fund holdings do not identify all investor flows or motives.",
+        "mining_stock_divergence": "Normalized miner-equity performance relative to gold; company and equity-market factors also matter.",
+        "btc_dominance": "Normalized BTC market-cap share versus its reference history; a rising share does not establish a flight to safety.",
+        "btc_hash_rate": "Normalized reported network hash-rate level; not a direct measure of investment intent.",
+        "btc_difficulty": "Normalized network-difficulty level; difficulty is not a mining-profit estimate.",
+        "stablecoin_supply": "Normalized USDT/USDC supply level; outstanding token supply is not a measured fiat inflow.",
+        "stablecoin_btc_ratio": "Normalized stablecoin-supply/BTC-market-cap ratio; it does not measure deployable cash.",
+        "defi_tvl": "Normalized DeFi TVL level; asset-price changes can affect TVL without equivalent capital flows.",
+        "exchange_outflows": "Normalized observed net exchange outflows; transfers do not establish self-custody intent.",
+        "btc_spy_correlation": "BTC/SPY divergence pressure = (1 - return correlation) / 2; 0.5 means zero correlation.",
+        "altcoin_weakness": "Normalized alt-capitalization performance relative to BTC; not a representative breadth survey of every token.",
     }
     return descriptions.get(component_key, f"Component: {component_key}")
