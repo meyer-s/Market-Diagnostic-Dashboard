@@ -69,6 +69,7 @@ interface MetalIndicators {
     net_purchases_yoy: number | null;
     structural_monetary_bid: number | null;
     em_accumulation_momentum: number | null;
+    coverage?: { latest_reporting_countries: number; prior_year_reporting_countries: number; matched_yoy_countries: number; latest_reserve_share_countries?: number; matched_reserve_share_countries?: number; scope: string };
   };
   price_anchors: {
     au_dxy_ratio_zscore: number | null;
@@ -77,6 +78,7 @@ interface MetalIndicators {
     monetary_hedge_strength: number | null;
     monetary_hedge_available_components?: number;
     monetary_hedge_total_components?: number;
+    monetary_hedge_quality?: { components: Record<string, number | null>; classification_usable: boolean };
   };
   relative_value: {
     au_ag_ratio: number | null;
@@ -136,8 +138,10 @@ interface CBHolding {
 interface SupplyData {
   period?: string | null;
   source?: string | null;
+  source_url?: string | null;
+  production_tonnes?: number | null;
   price_as_of?: string | null;
-  data_quality?: { status: string; reason?: string };
+  data_quality?: { status: string; reason?: string; estimated?: boolean; cadence?: string };
   metal: string;
   production_tonnes_yoy_pct: number | null;
   aisc_per_oz: number | null;
@@ -148,6 +152,7 @@ interface SupplyData {
 
 interface DemandData {
   source?: string | null;
+  source_url?: string | null;
   data_quality?: { status: string; reason?: string };
   metal: string;
   period: string;
@@ -847,7 +852,7 @@ function RegimeClassificationPanel({
           <div className="text-sm font-bold md:text-base">{getBiasText(indicators.regime.pgm_bias)}</div>
         </div>
         <div className={`rounded-lg border p-3 md:p-4 ${getRiskBadgeClass(indicators.regime.paper_physical_risk)}`}>
-          <div className="mb-1 text-xs font-semibold text-stealth-300 md:text-sm">Paper / physical</div>
+          <div className="mb-1 text-xs font-semibold text-stealth-300 md:text-sm">Model paper risk</div>
           <div className="text-sm font-bold md:text-base">{indicators.regime.paper_physical_risk || "Unknown"}</div>
         </div>
         <div className={`rounded-lg border p-3 md:p-4 ${getRegimeBadgeClass(indicators.regime.overall_regime)}`}>
@@ -860,6 +865,7 @@ function RegimeClassificationPanel({
 
       <div className="mt-4 text-xs text-stealth-300">
         Market prices through {formatTimestamp(freshestTimestamp)} · component observation dates are shown in Deep Dive.
+        {(indicators.price_anchors.monetary_hedge_available_components ?? 3) < 3 ? <span className="mt-1 block text-amber-300">Monetary context is incomplete. Gold and overall labels may be unavailable until their inputs are sufficient.</span> : null}
       </div>
     </section>
   );
@@ -919,198 +925,29 @@ function MethodologyPanel() {
 
       <div className="divide-y divide-stealth-700">
         <Section id="scoring" title="Technical Scoring Algorithm">
-          <div>
-            <p className="font-semibold text-white mb-2">Composite Score (0-100):</p>
-            <p>Each metal receives a technical score combining trend strength, momentum, and exhaustion risk. Higher scores indicate more bullish potential.</p>
-
-            <div className="mt-3">
-              <p className="font-semibold text-blue-300">Trend Score (0-100):</p>
-              <ul className="list-disc list-inside ml-2 space-y-1">
-                <li><strong>SMA Crossovers:</strong> Price above all SMAs (20/50/200) = maximum trend points</li>
-                <li><strong>Distance Penalties:</strong> Excessive distance reduces score to signal exhaustion
-                  <ul className="list-circle list-inside ml-4 text-xs">
-                    <li>&gt;10% above SMA20: 10pts instead of 25pts (60% penalty)</li>
-                    <li>&gt;15% above SMA50: Penalized proportionally</li>
-                    <li>&gt;25% above SMA200: Extreme exhaustion penalty</li>
-                  </ul>
-                </li>
-                <li><strong>Below SMAs:</strong> Distance below moving averages also penalized (potential downtrend)</li>
-              </ul>
-            </div>
-
-            <div className="mt-3">
-              <p className="font-semibold text-blue-300">Momentum Score (0-100):</p>
-              <ul className="list-disc list-inside ml-2 space-y-1">
-                <li><strong>RSI 45-55:</strong> 100pts (neutral zone, maximum room to run)</li>
-                <li><strong>RSI 40-45 or 55-60:</strong> 75pts (mild directional bias)</li>
-                <li><strong>RSI 30-40 or 60-70:</strong> 50pts (moderate momentum)</li>
-                <li><strong>RSI &gt;70:</strong> 25pts (overbought exhaustion risk)</li>
-                <li><strong>RSI &lt;30:</strong> 25pts (oversold, potential reversal)</li>
-              </ul>
-            </div>
-
-            <p className="mt-3 text-xs text-stealth-400">
-              <strong>Philosophy:</strong> The algorithm rewards positive trends while penalizing over-extension.
-              A metal trading 15% above its SMA50 may have strong momentum but faces exhaustion risk,
-              resulting in a lower score than a metal trending steadily at +5% above its moving averages.
-            </p>
-          </div>
+          <p>Total score = 60% moving-average trend score + 40% RSI score, rounded to one decimal place. It describes this model's setup, not an expected return or probability.</p>
+          <p>Trend points use price versus SMA20, SMA50 and SMA200, plus SMA20 versus SMA50. Large positive distances reduce the points awarded. Momentum uses Wilder RSI(14): 45–55 earns 100; 40–45 or 55–60 earns 90; 35–40 or 60–65 earns 75; 30–35 or 65–70 earns 50; below 30 earns 30; above 70 earns 25. Boundary 55 belongs to the 100-point band.</p>
+          <p>Calculations require at least 200 distinct source-session prices within a 400-calendar-day lookback. Equal total scores receive equal ranks.</p>
         </Section>
-
         <Section id="support-resistance" title="Support & Resistance Detection">
-          <div>
-            <p className="mb-2">Identifies key price levels using local extrema analysis over the last 365 days.</p>
-
-            <div className="mt-3">
-              <p className="font-semibold text-blue-300">Algorithm:</p>
-              <ul className="list-disc list-inside ml-2 space-y-1">
-                <li><strong>Rolling Window:</strong> 5-period lookback to identify local minima (support) and maxima (resistance)</li>
-                <li><strong>Support:</strong> Price level where metal historically finds buying pressure (local minimum in window)</li>
-                <li><strong>Resistance:</strong> Price level where metal historically faces selling pressure (local maximum in window)</li>
-                <li><strong>Nearest Levels:</strong> System reports closest support below current price and closest resistance above</li>
-              </ul>
-            </div>
-
-            <p className="mt-3 text-xs text-stealth-400">
-              <strong>Usage:</strong> Support/resistance levels help identify potential entry/exit zones.
-              Breakouts above resistance or breakdowns below support often signal significant trend changes.
-            </p>
-          </div>
+          <p>Local closing-price extrema use the latest 90 observations and five observations on either side. Duplicate prices are removed; up to three levels below and above the current price are retained.</p>
+          <p>These historical levels are separate from the score. Upper (+10%) and lower (−5%) references are fixed price offsets, not forecasts or calibrated trade recommendations.</p>
         </Section>
-
         <Section id="regime" title="Regime Classification Framework">
-          <div>
-            <p className="mb-2">Classifies current precious metals market environment into 5 distinct regimes based on metal performance dynamics.</p>
-
-            <div className="mt-3">
-              <p className="font-semibold text-blue-300">Regime Types:</p>
-              <div className="space-y-2 ml-2">
-                <div>
-                  <p className="font-semibold text-green-400">MONETARY_STRESS</p>
-                  <p className="text-xs">Gold outperforming (gold bias &gt; 0.15), low industrial activity. Flight to monetary safety.</p>
-                </div>
-                <div>
-                  <p className="font-semibold text-yellow-400">INFLATION_HEDGE</p>
-                  <p className="text-xs">Balanced gold/silver with moderate industrial (MHS 0.8-1.2). Broad inflation concerns.</p>
-                </div>
-                <div>
-                  <p className="font-semibold text-blue-400">GROWTH_REFLATION</p>
-                  <p className="text-xs">Silver/PGMs outperforming (gold bias &lt; -0.1), industrial metals strong. Economic expansion.</p>
-                </div>
-                <div>
-                  <p className="font-semibold text-red-400">LIQUIDITY_CRISIS</p>
-                  <p className="text-xs">All metals declining, paper risk elevated (&gt; 0.6). Deleveraging environment.</p>
-                </div>
-                <div>
-                  <p className="font-semibold text-purple-400">INDUSTRIAL_COMMODITY</p>
-                  <p className="text-xs">PGMs surging (strong PGM momentum), diverging from monetary metals. Supply/demand fundamentals.</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-3">
-              <p className="font-semibold text-blue-300">Key Metrics:</p>
-              <ul className="list-disc list-inside ml-2 space-y-1">
-                <li><strong>Gold Bias:</strong> (AU score - AG score) / 100. Positive = gold outperformance, negative = silver outperformance.</li>
-                <li><strong>PGM Momentum:</strong> Average of platinum and palladium 30-day momentum scores.</li>
-                <li><strong>Paper Risk:</strong> Ratio of ETF holdings to physical supply. Higher = more paper leverage risk.</li>
-              </ul>
-            </div>
-          </div>
+          <p>Rule-based labels combine monetary-hedge strength, central-bank holdings changes, silver price momentum, platinum/gold and the paper index. They are model labels, not measurements of inflation, economic growth or a liquidity crisis.</p>
+          <p>Read the available inputs and their dates beside each result. Incomplete inputs limit the classification; absence of evidence does not establish an industrial-demand regime.</p>
         </Section>
-
         <Section id="derived-indicators" title="Derived Indicators & Formulas">
-          <div>
-            <p className="mb-2">Composite indicators synthesizing multiple data points to assess market structure.</p>
-
-            <div className="space-y-3">
-              <div>
-                <p className="font-semibold text-blue-300">Silver-Monetary Bias (SMB):</p>
-                <p className="text-xs">SMB = (Silver Score - Gold Score) / 100</p>
-                <p className="text-xs mt-1">Measures silver's relative strength vs gold. Positive SMB suggests industrial/growth themes dominating, negative suggests monetary stress.</p>
-              </div>
-
-              <div>
-                <p className="font-semibold text-blue-300">Monetary-Hedge Score (MHS):</p>
-                <p className="text-xs">MHS = (Gold Score + Silver Score) / 2 / 100</p>
-                <p className="text-xs mt-1">Average performance of monetary metals (AU + AG). High MHS = strong inflation hedge environment.</p>
-              </div>
-
-              <div>
-                <p className="font-semibold text-blue-300">PGM-Commodity Index (PCI):</p>
-                <p className="text-xs">PCI = (Platinum Score + Palladium Score) / 2 / 100</p>
-                <p className="text-xs mt-1">Industrial metals gauge. High PCI = strong auto/manufacturing demand, supply concerns, or industrial reflation.</p>
-              </div>
-
-              <div>
-                <p className="font-semibold text-blue-300">Industrial Divergence Pressure (IDP):</p>
-                <p className="text-xs">IDP = PCI - MHS</p>
-                <p className="text-xs mt-1">Spread between industrial PGMs and monetary metals. Positive IDP = industrial outperformance, negative = monetary flight.</p>
-              </div>
-
-              <div>
-                <p className="font-semibold text-blue-300">Supply-Inflation Signal (SIS):</p>
-                <p className="text-xs">SIS = (0.4 x MHS) + (0.3 x PCI) + (0.3 x CB Holdings YoY%)</p>
-                <p className="text-xs mt-1">Composite of monetary strength, industrial demand, and central bank accumulation. High SIS = broad precious metals bullish structure.</p>
-              </div>
-            </div>
-          </div>
+          <p><strong>Structural Monetary Bid (SMB):</strong> weighted average of matched-country official holdings YoY (weight 0.5), reserve-share YoY change (0.3), and the selected emerging-market holdings YoY change (0.2), clipped to −100…100. Missing components are omitted and weights renormalized.</p>
+          <p><strong>Monetary Hedge Strength (MHS):</strong> 50 + 50 × weighted mean of gold/USD-index z-score (weight 1), inverted real-rate z-score (1), and M2 growth signal (0.5), clipped to 0…100. Missing components are omitted; a high partial estimate is not broad confirmation.</p>
+          <p><strong>Holdings / inventory index (PCI):</strong> normally (GLD holdings z-score + 2) / 4 × 100. With GLD unavailable, the fallback is 100 − 100 × current gold OI/registered ratio divided by its historical 90th-percentile reference. Gold backwardation over 500 bp subtracts 15 points; the final value is clipped to 0…100.</p>
+          <p>ETF holdings, open interest and warehouse inventories describe different populations. Their levels alone do not establish leverage, delivery failure or a physical shortage.</p>
         </Section>
-
         <Section id="data-sources" title="Data Sources & Update Frequencies">
-          <div>
-            <div className="space-y-3">
-              <div>
-                <p className="font-semibold text-blue-300">Price Data:</p>
-                <ul className="list-disc list-inside ml-2 text-xs space-y-1">
-                  <li><strong>Source:</strong> Yahoo Finance futures contracts (GC=F, SI=F, PL=F, PA=F)</li>
-                  <li><strong>Update:</strong> Daily continuous-futures observations ingested from Yahoo Finance</li>
-                  <li><strong>Historical:</strong> 365-day lookback for technical analysis and moving averages</li>
-                </ul>
-              </div>
-
-              <div>
-                <p className="font-semibold text-blue-300">ETF Holdings:</p>
-                <ul className="list-disc list-inside ml-2 text-xs space-y-1">
-                  <li><strong>Source:</strong> GLD, SLV, PPLT, PALL fund websites</li>
-                  <li><strong>Update:</strong> Daily holdings data (tonnes/ounces)</li>
-                  <li><strong>Metrics:</strong> Paper/physical ratio, holdings momentum, institutional flows</li>
-                </ul>
-              </div>
-
-              <div>
-                <p className="font-semibold text-blue-300">Supply & Demand:</p>
-                <ul className="list-disc list-inside ml-2 text-xs space-y-1">
-                  <li><strong>Source:</strong> World Gold Council, Silver Institute, Platinum Guild, industry reports</li>
-                  <li><strong>Update:</strong> Weekly aggregation of production, consumption, inventory data</li>
-                  <li><strong>Categories:</strong> Mine production, recycling, jewelry, industrial, investment demand</li>
-                </ul>
-              </div>
-
-              <div>
-                <p className="font-semibold text-blue-300">Central Bank Holdings:</p>
-                <ul className="list-disc list-inside ml-2 text-xs space-y-1">
-                  <li><strong>Source:</strong> IMF COFER database, World Gold Council quarterly reports</li>
-                  <li><strong>Update:</strong> Monthly updates from major central banks (Fed, ECB, PBoC, RBI, etc.)</li>
-                  <li><strong>Metrics:</strong> Gold as % of total reserves, net purchases YoY, top 10 holders</li>
-                </ul>
-              </div>
-
-              <div>
-                <p className="font-semibold text-blue-300">Technical Indicators:</p>
-                <ul className="list-disc list-inside ml-2 text-xs space-y-1">
-                  <li><strong>RSI:</strong> 14-period relative strength index</li>
-                  <li><strong>Moving Averages:</strong> Simple moving averages at 20, 50, 200 periods (daily)</li>
-                  <li><strong>Volume:</strong> Daily trading volume from futures contracts</li>
-                  <li><strong>Recalculation:</strong> All technical indicators recomputed on each price update</li>
-                </ul>
-              </div>
-            </div>
-
-            <p className="mt-4 text-xs text-stealth-400">
-              <strong>Note:</strong> All data undergoes validation checks before ingestion. Missing or anomalous values trigger alerts for manual review.
-            </p>
-          </div>
+          <p><strong>Prices:</strong> Yahoo daily continuous-futures bars for gold, silver, platinum, palladium, copper and aluminum. Ingestion checks every 15 minutes during futures sessions; today's daily bar may be incomplete. The page checks every minute while active and every five minutes in the background.</p>
+          <p><strong>Holdings and inventories:</strong> GLD uses the official SPDR archive; COMEX warehouse data uses CME. Other ETF holdings may be estimated from assets divided by price. These sources follow their publication schedules.</p>
+          <p><strong>Macro and central banks:</strong> FRED rates, money aggregates and a broad USD-index proxy; World Gold Council/IMF IFS official gold holdings. Reporting-country coverage and observation periods vary.</p>
+          <p><strong>Supply and demand:</strong> source and reporting period are shown with each observation. Missing cost data stays unavailable. Historical report values are not relabeled as current estimates.</p>
         </Section>
       </div>
     </div>
@@ -1139,22 +976,24 @@ function CBContextPanel({ cb_holdings, indicators }: { cb_holdings: CBHolding[] 
   const smbBarColor = isNumber(smb) ? (smb > 0 ? "bg-green-500" : "bg-red-500") : "bg-stealth-600";
   const smbText = isNumber(smb) ? `${smb > 0 ? "+" : ""}${smb.toFixed(0)}` : "n/a";
   const goldPctWidth = isNumber(goldPct)
-    ? Math.min((goldPct / 15) * 100, 100)
+    ? Math.min(Math.max(goldPct, 0), 100)
     : 0;
   const smbWidth = isNumber(smb)
     ? Math.min(Math.abs((smb / 100) * 100), 100)
     : 0;
   return (
     <div className="primary-card p-4 md:p-6">
-      <h3 className="text-lg font-bold mb-4 text-white">Government Gold Buying Pressure</h3>
-      <p className="text-xs text-stealth-400 mb-4">Shows whether central banks are aggressively accumulating gold, consistent with inflation concerns or de-dollarization themes</p>
+      <h3 className="text-lg font-bold mb-4 text-white">Official Gold Holdings</h3>
+      <p className="text-xs text-stealth-400 mb-4">Reported official holdings and changes for the available countries.</p>
+      {cbContext.coverage ? <p className="mb-4 text-xs text-stealth-300">{cbContext.coverage.latest_reporting_countries} countries in the latest snapshot · {cbContext.coverage.matched_yoy_countries} matched for YoY comparison ({cbContext.coverage.prior_year_reporting_countries} in the prior snapshot). {cbContext.coverage.scope}</p> : null}
+      {cbContext.coverage?.latest_reserve_share_countries !== undefined ? <p className="mb-4 text-xs text-stealth-300">Reserve-share denominator: {cbContext.coverage.latest_reserve_share_countries} countries with usable reserve percentages; {cbContext.coverage.matched_reserve_share_countries ?? "unknown"} matched for its YoY comparison.</p> : null}
 
       <div className="space-y-6">
         {/* CB Gold % of Reserves */}
         <div>
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm font-semibold text-stealth-300">
-                <DerivedLabel label="How much central banks trust gold vs fiat" />
+                <DerivedLabel label="Gold share of reported reserves" />
               </span>
               <span className="text-lg font-bold text-blue-300">
                 {isNumber(goldPct) ? `${goldPct.toFixed(1)}%` : "n/a"}
@@ -1166,7 +1005,7 @@ function CBContextPanel({ cb_holdings, indicators }: { cb_holdings: CBHolding[] 
                 style={{ width: `${goldPctWidth}%` }}
               />
             </div>
-          <p className="text-xs text-stealth-400 mt-1">Above 11% = governments hedging currency risk</p>
+          <p className="text-xs text-stealth-400 mt-1">Reserve composition is affected by gold prices and other reserve assets; it does not establish policy motives.</p>
         </div>
 
         {/* Net CB Purchases YoY */}
@@ -1186,7 +1025,7 @@ function CBContextPanel({ cb_holdings, indicators }: { cb_holdings: CBHolding[] 
           <div>
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm font-semibold text-stealth-300">
-                <DerivedLabel label="Official sector support (floor under price)" />
+                <DerivedLabel label="Official holdings composite (SMB)" />
               </span>
               <span className={`text-lg font-bold ${smbColor}`}>
                 {smbText}
@@ -1198,7 +1037,7 @@ function CBContextPanel({ cb_holdings, indicators }: { cb_holdings: CBHolding[] 
                 style={{ width: `${smbWidth}%` }}
               />
             </div>
-            <p className="text-xs text-stealth-400 mt-1">Range: -100 to +100. Positive = structural demand</p>
+            <p className="text-xs text-stealth-400 mt-1">Range: −100 to +100. A holdings-based heuristic; it does not establish a price floor.</p>
           </div>
 
         {/* EM Accumulation */}
@@ -1231,8 +1070,9 @@ function PriceAnchorsPanel({ indicators, correlations }: { indicators: MetalIndi
   const mhs = anchors.monetary_hedge_strength;
   const auDxy = anchors.au_dxy_ratio_zscore;
   const realRate = anchors.real_rate_signal;
-  const mhsColor = isNumber(mhs) ? (mhs > 0 ? "text-green-400" : "text-red-400") : "text-stealth-400";
-  const mhsBarColor = isNumber(mhs) ? (mhs > 0 ? "bg-green-500" : "bg-red-500") : "bg-stealth-600";
+  const mhsPartial = (anchors.monetary_hedge_available_components ?? 0) < (anchors.monetary_hedge_total_components ?? 3);
+  const mhsColor = isNumber(mhs) ? (mhsPartial ? "text-amber-300" : mhs >= 60 ? "text-green-400" : mhs < 40 ? "text-red-400" : "text-stealth-300") : "text-stealth-400";
+  const mhsBarColor = isNumber(mhs) ? (mhsPartial ? "bg-amber-400" : mhs >= 60 ? "bg-green-500" : mhs < 40 ? "bg-red-500" : "bg-stealth-400") : "bg-stealth-600";
   const mhsWidth = isNumber(mhs) ? Math.min(Math.abs((mhs / 100) * 100), 100) : 0;
   const auDxyClass = isNumber(auDxy)
     ? (Math.abs(auDxy) > 1.5 ? "text-red-400" : "text-yellow-400")
@@ -1241,21 +1081,17 @@ function PriceAnchorsPanel({ indicators, correlations }: { indicators: MetalIndi
     ? `${auDxy > 0 ? "+" : ""}${auDxy.toFixed(2)} sigma`
     : "n/a";
   const auDxySummary = isNumber(auDxy)
-    ? (Math.abs(auDxy) > 2
-      ? "Warning: Extreme deviation from 2Y norm"
-      : Math.abs(auDxy) > 1.5
-        ? "High valuation"
-        : "Normal range")
+    ? (auDxy > 1.5 ? "Above its historical ratio reference" : auDxy < -1.5 ? "Below its historical ratio reference" : "Within 1.5 standard deviations of its reference")
     : "Data unavailable";
-  const realRateColor = isNumber(realRate) ? (realRate < 0 ? "text-green-400" : "text-red-400") : "text-stealth-400";
+  const realRateColor = isNumber(realRate) ? (realRate > 0 ? "text-green-400" : "text-red-400") : "text-stealth-400";
   const corrAuSpy = correlations?.au_spy;
   const corrAuTlt = correlations?.au_tlt;
   const corrAuDxy = correlations?.au_dxy;
   const corrAuVix = correlations?.au_vix;
   return (
     <div className="primary-card p-4 md:p-6">
-      <h3 className="text-lg font-bold mb-4 text-white">Where Prices Tend to Bounce or Break</h3>
-      <p className="text-xs text-stealth-400 mb-4">Shows if metals are expensive/cheap vs currencies, interest rates, and inflation</p>
+      <h3 className="text-lg font-bold mb-4 text-white">Monetary Context</h3>
+      <p className="text-xs text-stealth-400 mb-4">Relative gold pricing, real rates and money growth, subject to available inputs.</p>
 
       <div className="space-y-4">
         {/* MHS Score */}
@@ -1274,8 +1110,9 @@ function PriceAnchorsPanel({ indicators, correlations }: { indicators: MetalIndi
                 style={{ width: `${mhsWidth}%` }}
               />
             </div>
-            <p className="text-xs text-stealth-400 mt-1">-100 to +100: Is gold priced as currency or commodity?</p>
-            {anchors.monetary_hedge_available_components !== undefined ? <p className="mt-1 text-xs text-stealth-300">{anchors.monetary_hedge_available_components}/{anchors.monetary_hedge_total_components ?? 3} inputs available; missing components are excluded.</p> : null}
+            <p className="text-xs text-stealth-400 mt-1">0–100 model index; 50 is the transformed zero-signal reference.</p>
+            {anchors.monetary_hedge_available_components !== undefined ? <p className="mt-1 text-xs text-stealth-300">{anchors.monetary_hedge_available_components}/{anchors.monetary_hedge_total_components ?? 3} inputs available{mhsPartial ? "; partial estimate, not broad confirmation." : "; complete input coverage."}</p> : null}
+            {anchors.monetary_hedge_quality ? <details className="mt-2 text-xs text-stealth-300"><summary className="cursor-pointer">Inspect monetary inputs</summary><dl className="mt-2 space-y-1">{Object.entries(anchors.monetary_hedge_quality.components).map(([key, value]) => <div key={key} className="flex justify-between gap-3"><dt>{({gold_usd_zscore: "Gold / USD z-score", real_rate_signal: "Inverted real-rate z-score", m2_growth_signal: "Money growth / 10"} as Record<string, string>)[key] ?? key}</dt><dd>{isNumber(value) ? value.toFixed(3) : "Unavailable"}</dd></div>)}</dl></details> : null}
           </div>
 
         {/* Au/USD index proxy Z-Score */}
@@ -1301,7 +1138,7 @@ function PriceAnchorsPanel({ indicators, correlations }: { indicators: MetalIndi
                 {formatValue(realRate, 2)}
               </span>
             </div>
-            <p className="text-xs text-stealth-400">Negative = lower real rates favor gold</p>
+            <p className="text-xs text-stealth-400">Positive = real rates below their reference mean; the rate z-score is inverted.</p>
           </div>
 
         {/* Correlation Summary */}
@@ -1330,7 +1167,8 @@ function PriceAnchorsPanel({ indicators, correlations }: { indicators: MetalIndi
           </div>
           <SourceQuality items={[
             { label: "Metal ratios", value: indicators.data_quality?.metal_ratios },
-            { label: "Rates and M2", value: indicators.data_quality?.macro_liquidity },
+            { label: "Rates", value: indicators.data_quality?.macro_liquidity },
+            { label: "Money proxy", value: indicators.data_quality?.m2 },
           ]} />
       </div>
     </div>
@@ -1347,8 +1185,8 @@ function RelativeValuePanel({ indicators }: { indicators: MetalIndicators }) {
   const pdAuZ = rv.pd_au_ratio_zscore;
   return (
     <div className="primary-card p-4 md:p-6">
-      <h3 className="text-lg font-bold mb-4 text-white">Which Metal Is Cheap vs Others</h3>
-      <p className="text-xs text-stealth-400 mb-4">When ratios stretch beyond normal ranges, one metal is likely oversold or overbought</p>
+      <h3 className="text-lg font-bold mb-4 text-white">Relative Metal Pricing</h3>
+      <p className="text-xs text-stealth-400 mb-4">Ratios describe relative pricing; a historical deviation is not evidence that it must reverse.</p>
 
       <div className="space-y-4">
         {/* Au/Ag Ratio */}
@@ -1463,15 +1301,15 @@ function PhysicalPaperPanel({ indicators }: { indicators: MetalIndicators }) {
     : "n/a";
   return (
     <div className="primary-card p-4 md:p-6">
-      <h3 className="text-lg font-bold mb-4 text-white">Is There a Physical Squeeze Brewing?</h3>
-      <p className="text-xs text-stealth-400 mb-4">Shows if paper contracts are overwhelming physical supply (precursor to price spikes)</p>
+      <h3 className="text-lg font-bold mb-4 text-white">Holdings and Warehouse Context</h3>
+      <p className="text-xs text-stealth-400 mb-4">ETF holdings, warehouse inventory and nearby futures spreads describe distinct parts of the market.</p>
 
       <div className="space-y-4">
         {/* PCI Score */}
           <div>
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm font-semibold text-stealth-300">
-                <DerivedLabel label="Paper Credibility Index (PCI)" />
+                <DerivedLabel label="Holdings / inventory index (PCI)" />
               </span>
               <span className={`text-lg font-bold ${pciColor}`}>
                 {formatValue(pci, 0)}
@@ -1484,9 +1322,9 @@ function PhysicalPaperPanel({ indicators }: { indicators: MetalIndicators }) {
               />
             </div>
             <div className="flex justify-between text-xs text-stealth-400 mt-1">
-              <span>0 (Stress)</span>
-              <span>50 (Caution)</span>
-              <span>75+ (Healthy)</span>
+              <span>0 (Low)</span>
+              <span>50 (Mid)</span>
+              <span>75+ (High)</span>
             </div>
           </div>
 
@@ -1508,7 +1346,7 @@ function PhysicalPaperPanel({ indicators }: { indicators: MetalIndicators }) {
               {useEtfZ
                 ? "GLD trust ounces vs 2Y norm (official SPDR archive)."
                 : isNumber(oiRatio)
-                  ? `Normal: 0.9-1.0x. ${oiRatio > 1.3 ? "Warning: Elevated stress" : "Healthy"}`
+                  ? "Open interest is not a claim that every contract will seek physical delivery."
                   : "Data unavailable"}
             </p>
           </div>
@@ -1548,7 +1386,7 @@ function PhysicalPaperPanel({ indicators }: { indicators: MetalIndicators }) {
             </div>
             <p className="text-xs text-stealth-400">
               {isNumber(backwardation)
-                ? (backwardation > 500 ? "Warning: Deep backwardation = stress" : "Normal contango structure")
+                ? (backwardation > 0 ? "Front contract above deferred contract (backwardation)." : backwardation < 0 ? "Deferred contract above front contract (contango)." : "Front and deferred prices are equal.")
                 : "Data unavailable"}
             </p>
           </div>
@@ -1753,8 +1591,8 @@ function FuturesCurvePanel({ futuresCurve }: { futuresCurve: FuturesCurveRespons
 function SupplyPanel({ supply_data }: { supply_data: SupplyData[] | null }) {
   return (
     <div className="primary-card p-4 md:p-6">
-      <h3 className="text-lg font-bold mb-4 text-white">Are Miners Profitable or Squeezed?</h3>
-      <p className="text-xs text-stealth-400 mb-4">Low margins = production cuts ahead = tighter supply = bullish</p>
+      <h3 className="text-lg font-bold mb-4 text-white">Mine Supply and Costs</h3>
+      <p className="text-xs text-stealth-400 mb-4">Reported mine production, recycling and available cost observations. Futures price less AISC is not a company profit margin.</p>
 
         {supply_data && supply_data.length > 0 ? (
           <div className="space-y-4">
@@ -1784,9 +1622,11 @@ function SupplyPanel({ supply_data }: { supply_data: SupplyData[] | null }) {
                           {prodText}
                         </span>
                       </div>
-                      <p className="mb-2 text-xs text-stealth-300">{metal.period ?? "Period unavailable"} · {metal.source ?? "Source unavailable"} · {metal.data_quality?.status ?? "quality unverified"}</p>
+                      <p className="mb-2 text-xs text-stealth-300">{metal.period ?? "Period unavailable"}{metal.data_quality?.estimated ? " annual estimate" : ""} · {metal.source_url ? <a href={metal.source_url} target="_blank" rel="noreferrer" className="underline">{metal.source}</a> : metal.source ?? "Source unavailable"} · {metal.data_quality?.status ?? "quality unverified"}</p>
                       {metal.data_quality?.reason ? <p className="mb-2 text-xs text-amber-300">{metal.data_quality.reason}</p> : null}
+                      {!isNumber(metal.aisc_per_oz) ? <p className="mb-2 text-xs text-stealth-300">Production coverage does not include a verified mining-cost observation.</p> : null}
                       <div className="text-xs text-stealth-400 space-y-1">
+                        {isNumber(metal.production_tonnes) ? <div className="flex justify-between"><span>Mine production:</span><span>{metal.production_tonnes.toLocaleString(undefined, {maximumFractionDigits: 1})} t</span></div> : null}
                         <div className="flex justify-between">
                           <span>AISC: {isNumber(metal.aisc_per_oz) ? `$${metal.aisc_per_oz.toFixed(0)}/oz` : "n/a"}</span>
                           <span>Futures bar: {isNumber(metal.current_spot_price) ? `$${metal.current_spot_price.toFixed(0)}/oz` : "n/a"}</span>
@@ -1813,7 +1653,7 @@ function SupplyPanel({ supply_data }: { supply_data: SupplyData[] | null }) {
             ))}
           </div>
       ) : (
-        <p className="text-sm text-stealth-400">Supply data loading...</p>
+        <p className="text-sm text-stealth-400">No supply observations available.</p>
       )}
     </div>
   );
@@ -1829,8 +1669,8 @@ function DemandPanel({ demand_data }: { demand_data: DemandData[] | null }) {
 
   return (
       <div className="primary-card p-4 md:p-6">
-        <h3 className="text-lg font-bold mb-4 text-white">Who's Buying and Why</h3>
-        <p className="text-xs text-stealth-400 mb-4">Industrial demand = economy strong, Investment demand = fear rising, Jewelry = wealth in Asia</p>
+        <h3 className="text-lg font-bold mb-4 text-white">Reported Demand Mix</h3>
+        <p className="text-xs text-stealth-400 mb-4">Reported category volumes for each period; these do not identify buyer motives.</p>
 
         {demand_data && demand_data.length > 0 ? (
           <div className="space-y-4">
@@ -1847,9 +1687,10 @@ function DemandPanel({ demand_data }: { demand_data: DemandData[] | null }) {
               const categories = [
                 { label: "Investment", value: metal.investment_tonnes, pct: hasTotal && isNumber(metal.investment_tonnes) ? (metal.investment_tonnes / total) * 100 : null, color: categoryColors.investment },
                 { label: "Industrial", value: metal.industrial_tonnes, pct: hasTotal && isNumber(metal.industrial_tonnes) ? (metal.industrial_tonnes / total) * 100 : null, color: categoryColors.industrial },
-                { label: "Jewelry", value: metal.jewelry_tonnes, pct: hasTotal && isNumber(metal.jewelry_tonnes) ? (metal.jewelry_tonnes / total) * 100 : null, color: categoryColors.jewelry },
-                { label: "Other", value: metal.other_tonnes, pct: hasTotal && isNumber(metal.other_tonnes) ? (metal.other_tonnes / total) * 100 : null, color: categoryColors.other }
-              ].filter((cat): cat is typeof cat & { value: number } => isNumber(cat.value) && cat.value > 0);
+                { label: metal.metal === "AU" && metal.source_url ? "Jewelry fabrication" : "Jewelry", value: metal.jewelry_tonnes, pct: hasTotal && isNumber(metal.jewelry_tonnes) ? (metal.jewelry_tonnes / total) * 100 : null, color: categoryColors.jewelry },
+                { label: metal.metal === "AU" && metal.source_url ? "Official + OTC / other" : "Other", value: metal.other_tonnes, pct: hasTotal && isNumber(metal.other_tonnes) ? (metal.other_tonnes / total) * 100 : null, color: categoryColors.other }
+              ].filter((cat): cat is typeof cat & { value: number } => isNumber(cat.value));
+              const validComposition = hasTotal && categories.length === 4 && categories.every(cat => cat.value >= 0) && Math.abs(categories.reduce((sum, cat) => sum + cat.value, 0) - total) <= Math.max(0.5, total * 0.001);
 
             return (
               <div key={idx} className="border-b border-stealth-600 pb-3 last:border-b-0">
@@ -1862,12 +1703,12 @@ function DemandPanel({ demand_data }: { demand_data: DemandData[] | null }) {
                     </span>
                     <span className="text-xs text-stealth-300">{metal.period} · {metal.data_quality?.status ?? "quality unverified"}</span>
                   </div>
-                  <p className="mb-2 text-xs text-stealth-300">{metal.source ?? "Source unavailable"}{metal.data_quality?.reason ? ` · ${metal.data_quality.reason}` : ""}</p>
+                  <p className="mb-2 text-xs text-stealth-300">{metal.source_url ? <a href={metal.source_url} target="_blank" rel="noreferrer" className="underline">{metal.source}</a> : metal.source ?? "Source unavailable"}{metal.data_quality?.reason ? ` · ${metal.data_quality.reason}` : ""}</p>
 
                   {categories.length > 0 ? (
                     <>
                       {/* Stacked bar showing demand composition */}
-                      <div className="w-full h-6 bg-stealth-700 rounded overflow-hidden flex mb-2">
+                      {validComposition ? <div className="w-full h-6 bg-stealth-700 rounded overflow-hidden flex mb-2" aria-label={`${getMetalName(metal.metal)} reported demand composition`}>
                         {categories.map((cat, i) => (
                           <div
                             key={i}
@@ -1878,7 +1719,7 @@ function DemandPanel({ demand_data }: { demand_data: DemandData[] | null }) {
                             {isNumber(cat.pct) && cat.pct > 8 ? `${cat.pct.toFixed(0)}%` : ""}
                           </div>
                         ))}
-                      </div>
+                      </div> : <p className="mb-2 text-xs text-stealth-300">Reported net values shown below; a complete nonnegative composition is unavailable.</p>}
 
                       {/* Legend and values */}
                       <div className="grid grid-cols-2 gap-2 text-xs">
@@ -1901,7 +1742,7 @@ function DemandPanel({ demand_data }: { demand_data: DemandData[] | null }) {
             })}
         </div>
       ) : (
-        <p className="text-sm text-stealth-400">Demand data loading...</p>
+        <p className="text-sm text-stealth-400">No demand observations available.</p>
       )}
     </div>
   );
@@ -2011,14 +1852,15 @@ function MarketCapPanel({ market_caps, market_caps_history }: { market_caps: Mar
           </div>
             <div className="rounded bg-stealth-800 p-3">
               <div className="mb-2 text-xs text-stealth-200">
-                <DerivedLabel label="Tracked Ratio to Global M2" />
+                <DerivedLabel label="Tracked Ratio to Four-Economy Money Proxy" />
               </div>
               <div className="flex justify-between items-center">
-                <span>Tracked Metals / M2:</span>
+                <span>Tracked value / money proxy:</span>
                 <span className="text-lg font-bold text-blue-300">
                   {isNumber(m2_ratio_bps) ? `${m2_ratio_bps.toFixed(2)} bps` : "n/a"}
                 </span>
               </div>
+              <p className="mt-2 text-xs text-stealth-300">The denominator is a US/eurozone/Japan/UK broad-money proxy at approximate FX, not global M2. It is unavailable when any required source is outdated.</p>
             </div>
 
         {/* Annual Average History Chart */}
@@ -2070,11 +1912,11 @@ function MarketCapPanel({ market_caps, market_caps_history }: { market_caps: Mar
                 </>
               ) : (
                 <div className="text-xs text-stealth-500">
-                  Tracked metals/M2 ratio uses ETF assets and CB gold holdings. Latest gold price and global M2 shown below.
+                  No comparable historical ratio is available for the selected period. The money denominator requires verified, aligned observations for the US, eurozone, Japan and UK.
                   {latestHistory && (
                     <div className="mt-2 text-stealth-400">
                     Gold: {isNumber(latestHistory.gold_price) ? `$${latestHistory.gold_price.toFixed(2)}` : "n/a"} ·
-                    Global M2: {isNumber(latestHistory.global_m2_trillions) ? `${latestHistory.global_m2_trillions.toFixed(2)}T` : "n/a"}
+                    Four-economy money proxy: {isNumber(latestHistory.global_m2_trillions) ? `${latestHistory.global_m2_trillions.toFixed(2)}T` : "n/a"}
                   </div>
                 )}
               </div>

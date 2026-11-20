@@ -6,6 +6,7 @@ from typing import List, Optional, Tuple
 from types import SimpleNamespace
 from sqlalchemy import func, desc
 import statistics
+import math
 
 from app.models.alternative_assets import MacroLiquidityData
 from app.models.precious_metals import (
@@ -37,6 +38,8 @@ logger = logging.getLogger(__name__)
 
 TONNES_TO_OZ = 32150.7466
 COMEX_PLACEHOLDER_SOURCES = ["SEED", "ESTIMATED_FROM_PRICES"]
+VERIFIED_M2_SOURCE = "FRED_FIXED_FOUR_BROAD_MONEY_APPROX_FX_V1"
+M2_MAX_AGE_DAYS = 62
 FRESHNESS_DAYS = {
     "central_bank": 150,
     "gld_holdings": 7,
@@ -95,6 +98,17 @@ def _source_quality(
     }
 
 
+def _reported_source(record) -> tuple[str, Optional[str]]:
+    source = str(getattr(record, "source", "") or "")
+    label, separator, url = source.partition("|")
+    source_url = url if separator and url.startswith("https://") else None
+    label = {
+        "WGC_METALS_FOCUS_GDT": "World Gold Council / Metals Focus, Gold Demand Trends",
+        "USGS_MCS_ANNUAL_ESTIMATE": "USGS Mineral Commodity Summaries, annual production estimate",
+    }.get(label, label)
+    return label, source_url
+
+
 def _reported_period_quality(record) -> dict:
     """Expose report coverage without mistaking insertion time for its period."""
     period = str(getattr(record, "period", "") or "")
@@ -107,14 +121,29 @@ def _reported_period_quality(record) -> dict:
             observed_at = datetime(int(period), 12, 31)
     except ValueError:
         pass
+    source, source_url = _reported_source(record)
+    annual = len(period) == 4
     quality = _source_quality(
-        SimpleNamespace(date=observed_at, created_at=getattr(record, "created_at", None), source=getattr(record, "source", None)),
-        cadence="reported quarterly/annual period", max_age_days=180,
+        SimpleNamespace(date=observed_at, created_at=getattr(record, "created_at", None), source=source),
+        cadence="annual" if annual else "quarterly", max_age_days=450 if annual else 180, source_url=source_url,
     )
+    quality["estimated"] = str(getattr(record, "source", "") or "").startswith("USGS_MCS_ANNUAL_ESTIMATE|")
     if str(getattr(record, "source", "") or "").upper() in {"SEED", "ESTIMATED_FROM_PRICES", "SAMPLE", "PLACEHOLDER"}:
         quality["status"] = "unavailable"
         quality["reason"] = "Placeholder values excluded from observed supply/demand metrics."
     return quality
+
+
+def _latest_report_rows(db, model) -> list:
+    """Select each metal's latest attributable report, across mixed cadences."""
+    output = []
+    for metal in ("AU", "AG", "PT", "PD"):
+        query = db.query(model).filter(model.metal == metal)
+        latest = query.filter(model.source.notin_(["SEED", "ESTIMATED_FROM_PRICES", "SAMPLE", "PLACEHOLDER"])).order_by(model.period.desc(), model.id.desc()).first()
+        latest = latest or query.order_by(model.period.desc(), model.id.desc()).first()
+        if latest is not None:
+            output.append(latest)
+    return output
 
 
 # ==================== HELPER FUNCTIONS ====================
@@ -164,7 +193,8 @@ def _get_latest_cb_dates(db) -> Tuple[Optional[datetime], Optional[datetime]]:
     if not latest_date:
         return None, None
     prior_date = db.query(func.max(CBHolding.date)).filter(
-        CBHolding.date <= latest_date - timedelta(days=330)
+        CBHolding.date <= latest_date - timedelta(days=330),
+        CBHolding.date >= latest_date - timedelta(days=400),
     ).scalar()
     return latest_date, prior_date
 
@@ -182,7 +212,7 @@ def _sum_gold_tonnes(db, date: datetime, countries: Optional[List[str]] = None) 
 def _calc_global_cb_gold_pct_reserves(
     db, date: Optional[datetime], countries: Optional[List[str]] = None
 ) -> Optional[float]:
-    if not date:
+    if not date or (countries is not None and not countries):
         return None
     query = db.query(CBHolding).filter(
         CBHolding.date == date,
@@ -197,7 +227,7 @@ def _calc_global_cb_gold_pct_reserves(
     total_gold = 0.0
     total_reserves = 0.0
     for holding in holdings:
-        if not holding.pct_of_reserves:
+        if not holding.pct_of_reserves or not 0 < holding.pct_of_reserves <= 100 or not math.isfinite(holding.gold_tonnes) or holding.gold_tonnes <= 0:
             continue
         total_gold += holding.gold_tonnes
         total_reserves += holding.gold_tonnes / (holding.pct_of_reserves / 100)
@@ -217,6 +247,7 @@ def _matched_cb_countries(
     latest_date: Optional[datetime],
     prior_date: Optional[datetime],
     countries: Optional[List[str]] = None,
+    require_reserve_pct: bool = False,
 ) -> List[str]:
     if not latest_date or not prior_date:
         return []
@@ -228,6 +259,9 @@ def _matched_cb_countries(
         CBHolding.date == prior_date,
         CBHolding.gold_tonnes.isnot(None),
     )
+    if require_reserve_pct:
+        latest_query = latest_query.filter(CBHolding.pct_of_reserves > 0, CBHolding.pct_of_reserves <= 100, CBHolding.gold_tonnes > 0)
+        prior_query = prior_query.filter(CBHolding.pct_of_reserves > 0, CBHolding.pct_of_reserves <= 100, CBHolding.gold_tonnes > 0)
     if countries:
         latest_query = latest_query.filter(CBHolding.country.in_(countries))
         prior_query = prior_query.filter(CBHolding.country.in_(countries))
@@ -287,7 +321,8 @@ def _calc_etf_holdings_yoy(db, ticker: str = "GLD") -> Optional[float]:
     prior = db.query(ETFHolding).filter(
         ETFHolding.ticker == ticker,
         ETFHolding.holdings.isnot(None),
-        ETFHolding.date <= latest.date - timedelta(days=330)
+        ETFHolding.date <= latest.date - timedelta(days=365),
+        ETFHolding.date >= latest.date - timedelta(days=400),
     ).order_by(desc(ETFHolding.date)).first()
     if not prior or prior.holdings is None:
         return None
@@ -306,6 +341,7 @@ def _calc_em_accumulation_momentum(db) -> Optional[float]:
         CBHolding.country.in_(em_countries),
         CBHolding.gold_tonnes.isnot(None),
         CBHolding.date <= latest_date - timedelta(days=330),
+        CBHolding.date >= latest_date - timedelta(days=400),
     ).scalar()
     if not prior_date:
         return None
@@ -373,13 +409,16 @@ def _compute_real_rate_signal(db) -> Optional[float]:
 
 def _compute_m2_growth_signal(db) -> Optional[float]:
     latest = db.query(MacroLiquidityData).filter(
-        MacroLiquidityData.global_m2.between(10, 500)
+        MacroLiquidityData.global_m2.between(10, 500),
+        MacroLiquidityData.source == VERIFIED_M2_SOURCE,
     ).order_by(desc(MacroLiquidityData.date)).first()
-    if not latest or latest.global_m2 is None:
+    if not latest or latest.global_m2 is None or not _is_fresh(latest.date, M2_MAX_AGE_DAYS):
         return None
     prior = db.query(MacroLiquidityData).filter(
         MacroLiquidityData.global_m2.between(10, 500),
-        MacroLiquidityData.date <= latest.date - timedelta(days=330)
+        MacroLiquidityData.source == VERIFIED_M2_SOURCE,
+        MacroLiquidityData.date <= latest.date - timedelta(days=330),
+        MacroLiquidityData.date >= latest.date - timedelta(days=400),
     ).order_by(desc(MacroLiquidityData.date)).first()
     if not prior or prior.global_m2 is None or prior.global_m2 == 0:
         return None
@@ -397,7 +436,7 @@ def calculate_structural_monetary_bid(db) -> Optional[float]:
     latest_date, prior_date = _get_latest_cb_dates(db)
     if not _is_fresh(latest_date, FRESHNESS_DAYS["central_bank"]):
         return None
-    matched_countries = _matched_cb_countries(db, latest_date, prior_date)
+    matched_countries = _matched_cb_countries(db, latest_date, prior_date, require_reserve_pct=True)
     net_purchase_momentum = _calc_cb_holdings_yoy(db, latest_date, prior_date)
     
     # CB Gold % Reserve Change
@@ -440,47 +479,87 @@ def _session_ratios(db):
     )
 
 
+def _monetary_hedge_components(db, real_rate_signal=None, m2_growth_signal=None) -> dict:
+    latest = _session_ratios(db).filter(
+        MetalRatio.metal1 == "AU", MetalRatio.metal2 == "DXY"
+    ).order_by(desc(MetalRatio.date)).first()
+    gold_usd = latest.zscore_2y if latest and _is_fresh(latest.date, FRESHNESS_DAYS["metal_ratios"]) else None
+    values = {
+        "gold_usd_zscore": gold_usd,
+        "real_rate_signal": real_rate_signal if real_rate_signal is not None else _compute_real_rate_signal(db),
+        "m2_growth_signal": m2_growth_signal if m2_growth_signal is not None else _compute_m2_growth_signal(db),
+    }
+    return {key: float(value) if value is not None and math.isfinite(value) else None for key, value in values.items()}
+
+
+def _monetary_hedge_quality(components: dict) -> dict:
+    missing = [key for key, value in components.items() if value is None]
+    available = len(components) - len(missing)
+    return {
+        "status": "complete" if not missing else "partial" if available else "unavailable",
+        "available_components": available,
+        "total_components": len(components),
+        "classification_usable": not missing,
+        "components": components,
+        "missing_components": missing,
+        "weights": {"gold_usd_zscore": 1.0, "real_rate_signal": 1.0, "m2_growth_signal": 0.5},
+    }
+
+
+def _score_monetary_hedge_components(components: dict) -> Optional[float]:
+    weights = {"gold_usd_zscore": 1.0, "real_rate_signal": 1.0, "m2_growth_signal": 0.5}
+    observed = [(value, weights[key]) for key, value in components.items() if value is not None]
+    if not observed:
+        return None
+    raw = sum(value * weight for value, weight in observed) / sum(weight for _, weight in observed)
+    return max(0, min(100, 50 + raw * 50))
+
+
 def calculate_monetary_hedge_strength(
     db,
     real_rate_signal: Optional[float] = None,
-    m2_growth_signal: Optional[float] = None
+    m2_growth_signal: Optional[float] = None,
 ) -> Optional[float]:
-    """
-    MHS = (Au/DXY_Z + Real_Rate_Signal + 0.5 × M2_Growth_Signal) / 2.5
-    Normalized to 0-100
-    """
-    # Get latest Au/DXY ratio z-score
-    latest_au_dxy = _session_ratios(db).filter(
-        MetalRatio.metal1 == "AU",
-        MetalRatio.metal2 == "DXY"
-    ).order_by(desc(MetalRatio.date)).first()
-    
-    au_dxy_zscore = latest_au_dxy.zscore_2y if latest_au_dxy else None
-    if latest_au_dxy and not _is_fresh(
-        latest_au_dxy.date, FRESHNESS_DAYS["metal_ratios"]
-    ):
-        au_dxy_zscore = None
+    """Weighted 0-100 score, preserving available-input normalization.
 
-    if real_rate_signal is None:
-        real_rate_signal = _compute_real_rate_signal(db)
-    if m2_growth_signal is None:
-        m2_growth_signal = _compute_m2_growth_signal(db)
+    Incomplete scores remain inspectable but cannot establish a full composite
+    classification. Source coverage is returned separately by the regime API.
+    """
+    return _score_monetary_hedge_components(_monetary_hedge_components(db, real_rate_signal, m2_growth_signal))
 
-    components = []
-    if au_dxy_zscore is not None:
-        components.append((au_dxy_zscore, 1.0))
-    if real_rate_signal is not None:
-        components.append((real_rate_signal, 1.0))
-    if m2_growth_signal is not None:
-        components.append((m2_growth_signal, 0.5))
-    if not components:
+
+def _session_prices(db, metal: str):
+    return db.query(MetalPrice).filter(
+        MetalPrice.metal == metal, MetalPrice.source == "YAHOO",
+        func.extract("hour", MetalPrice.date) == 0,
+        func.extract("minute", MetalPrice.date) == 0,
+        func.extract("second", MetalPrice.date) == 0,
+    )
+
+
+def _latest_session_price(db, metal: str):
+    for row in _session_prices(db, metal).order_by(MetalPrice.date.desc(), MetalPrice.created_at.desc(), MetalPrice.id.desc()):
+        if row.date.time() == datetime.min.time() and row.price_usd_per_oz is not None and math.isfinite(row.price_usd_per_oz) and row.price_usd_per_oz > 0:
+            return row
+    return None
+
+
+def _daily_session_prices(db, metal: str, cutoff):
+    daily = {}
+    for row in _session_prices(db, metal).filter(MetalPrice.date >= cutoff).order_by(MetalPrice.created_at.asc(), MetalPrice.id.asc()):
+        if row.date.time() == datetime.min.time() and row.price_usd_per_oz is not None and math.isfinite(row.price_usd_per_oz) and row.price_usd_per_oz > 0:
+            daily[row.date] = row
+    return [daily[day] for day in sorted(daily)]
+
+
+def _silver_session_momentum(db) -> Optional[float]:
+    """60 returns from 61 unique provider sessions, never 60 ingestion rows."""
+    rows = _daily_session_prices(db, "AG", datetime.utcnow() - timedelta(days=400))
+    daily = {row.date: row.price_usd_per_oz for row in rows}
+    sessions = sorted(daily)
+    if len(sessions) < 61 or not _is_fresh(sessions[-1], FRESHNESS_DAYS["metal_ratios"]):
         return None
-
-    weighted_sum = sum(value * weight for value, weight in components)
-    weight_total = sum(weight for _, weight in components)
-    mhs_raw = weighted_sum / weight_total
-    mhs_score = 50 + (mhs_raw * 50)  # Normalize to 0-100
-    return max(0, min(100, mhs_score))
+    return (daily[sessions[-1]] / daily[sessions[-61]] - 1) * 100
 
 
 def calculate_paper_credibility_index(db) -> Optional[float]:
@@ -540,7 +619,9 @@ def classify_regime(db) -> tuple:
     Returns: (regime, gold_bias, silver_bias, pgm_bias, paper_physical_risk)
     """
     smb = calculate_structural_monetary_bid(db)
-    mhs = calculate_monetary_hedge_strength(db)
+    mhs_components = _monetary_hedge_components(db)
+    mhs_quality = _monetary_hedge_quality(mhs_components)
+    mhs = _score_monetary_hedge_components(mhs_components) if mhs_quality["classification_usable"] else None
     pci = calculate_paper_credibility_index(db)
     
     # Get latest ratios
@@ -556,19 +637,9 @@ def classify_regime(db) -> tuple:
     au_ag_latest = au_ag_latest if au_ag_latest and _is_fresh(au_ag_latest.date, FRESHNESS_DAYS["metal_ratios"]) else None
     pt_au_latest = pt_au_latest if pt_au_latest and _is_fresh(pt_au_latest.date, FRESHNESS_DAYS["metal_ratios"]) else None
     
-    # Get industrial demand proxy (silver price momentum + PGM ratios)
-    recent_silver_prices = db.query(MetalPrice).filter(
-        MetalPrice.metal == "AG"
-    ).order_by(desc(MetalPrice.date)).limit(60).all()
-    
-    silver_momentum = None
-    if len(recent_silver_prices) >= 2:
-        silver_momentum = (
-            (recent_silver_prices[0].price_usd_per_oz - recent_silver_prices[-1].price_usd_per_oz)
-            / recent_silver_prices[-1].price_usd_per_oz
-            * 100
-        )
-    
+    # Momentum is descriptive price evidence, not an observed demand series.
+    silver_momentum = _silver_session_momentum(db)
+
     # Regime logic
     has_signal = any(
         value is not None
@@ -585,8 +656,11 @@ def classify_regime(db) -> tuple:
         regime = RegimeType.GROWTH_REFLATION
     elif pci is not None and pci < 50:
         regime = RegimeType.LIQUIDITY_CRISIS
-    else:
+    elif all(value is not None for value in (mhs, smb, pci, silver_momentum)) and pt_au_latest:
         regime = RegimeType.INDUSTRIAL_COMMODITY
+    else:
+        # Missing inputs are not affirmative evidence for the catch-all regime.
+        regime = None
     
     # Gold bias
     if mhs is None:
@@ -644,7 +718,9 @@ def get_regime_classification():
             smb = calculate_structural_monetary_bid(db)
             real_rate_signal = _compute_real_rate_signal(db)
             m2_growth_signal = _compute_m2_growth_signal(db)
-            mhs = calculate_monetary_hedge_strength(db, real_rate_signal, m2_growth_signal)
+            mhs_components = _monetary_hedge_components(db, real_rate_signal, m2_growth_signal)
+            mhs_quality = _monetary_hedge_quality(mhs_components)
+            mhs = _score_monetary_hedge_components(mhs_components)
             pci = calculate_paper_credibility_index(db)
             
             # Get latest ratios
@@ -684,7 +760,8 @@ def get_regime_classification():
             if comex:
                 prior_comex = db.query(COMEXInventory).filter(
                     COMEXInventory.metal == "AU",
-                    COMEXInventory.date <= comex.date - timedelta(days=330),
+                    COMEXInventory.date <= comex.date - timedelta(days=365),
+                    COMEXInventory.date >= comex.date - timedelta(days=400),
                     COMEXInventory.source.notin_(COMEX_PLACEHOLDER_SOURCES)
                 ).order_by(desc(COMEXInventory.date)).first()
                 if prior_comex and prior_comex.registered_oz:
@@ -752,6 +829,26 @@ def get_regime_classification():
             macro_record = db.query(MacroLiquidityData).order_by(
                 desc(MacroLiquidityData.date)
             ).first()
+            m2_record = db.query(MacroLiquidityData).filter(
+                MacroLiquidityData.source == VERIFIED_M2_SOURCE,
+                MacroLiquidityData.global_m2.between(10, 500),
+            ).order_by(desc(MacroLiquidityData.date)).first()
+
+            latest_reporting = db.query(func.count(func.distinct(CBHolding.country))).filter(CBHolding.date == latest_cb_date).scalar() if latest_cb_date else 0
+            prior_reporting = db.query(func.count(func.distinct(CBHolding.country))).filter(CBHolding.date == prior_cb_date).scalar() if prior_cb_date else 0
+            matched_reporting = len(_matched_cb_countries(db, latest_cb_date, prior_cb_date))
+            latest_reserve_reporting = len(_matched_cb_countries(db, latest_cb_date, latest_cb_date, require_reserve_pct=True))
+            matched_reserve_reporting = len(_matched_cb_countries(db, latest_cb_date, prior_cb_date, require_reserve_pct=True))
+            cb_coverage = {
+                "latest_as_of": latest_cb_date.isoformat() if latest_cb_date else None,
+                "prior_year_as_of": prior_cb_date.isoformat() if prior_cb_date else None,
+                "latest_reporting_countries": latest_reporting,
+                "prior_year_reporting_countries": prior_reporting,
+                "matched_yoy_countries": matched_reporting,
+                "latest_reserve_share_countries": latest_reserve_reporting,
+                "matched_reserve_share_countries": matched_reserve_reporting,
+                "scope": "Reporting-country sample; not a complete global holdings total.",
+            }
 
             return {
                 "regime": {
@@ -762,6 +859,7 @@ def get_regime_classification():
                     "paper_physical_risk": paper_physical_risk.value if paper_physical_risk else None
                 },
                 "cb_context": {
+                    "coverage": cb_coverage,
                     "global_cb_gold_pct_reserves": global_cb_gold_pct_reserves,
                     "net_purchases_yoy": net_purchases_yoy,
                     "structural_monetary_bid": smb,
@@ -772,7 +870,8 @@ def get_regime_classification():
                     "ag_dxy_ratio_zscore": ag_dxy.zscore_2y if ag_dxy else None,
                     "real_rate_signal": real_rate_signal,
                     "m2_growth_signal": m2_growth_signal,
-                    "monetary_hedge_available_components": sum(value is not None for value in (au_dxy.zscore_2y if au_dxy else None, real_rate_signal, m2_growth_signal)),
+                    "monetary_hedge_available_components": mhs_quality["available_components"],
+                    "monetary_hedge_quality": mhs_quality,
                     "monetary_hedge_total_components": 3,
                     "monetary_hedge_strength": mhs
                 },
@@ -794,6 +893,11 @@ def get_regime_classification():
                     "etf_flow_divergence": etf_divergence if latest_etf else None
                 },
                 "data_quality": {
+                    "m2": _source_quality(
+                        m2_record, cadence="fixed four-economy broad-money proxy",
+                        max_age_days=M2_MAX_AGE_DAYS,
+                        source_name="FRED US/eurozone/Japan/UK broad money at approximate FX",
+                    ),
                     "central_bank": _source_quality(
                         cb_record,
                         cadence="quarterly",
@@ -873,7 +977,8 @@ def get_cb_holdings():
             for holding in holdings:
                 prior_year = db.query(CBHolding).filter(
                     CBHolding.country == holding.country,
-                    CBHolding.date <= holding.date - timedelta(days=330)
+                    CBHolding.date <= holding.date - timedelta(days=330),
+                    CBHolding.date >= holding.date - timedelta(days=400),
                 ).order_by(desc(CBHolding.date)).first()
                 
                 yoy_pct = None
@@ -959,7 +1064,7 @@ def get_global_price_dispersion(
                 })
         else:
             with get_db_session() as db:
-                latest = db.query(MetalPrice).filter(MetalPrice.metal == metal).order_by(desc(MetalPrice.date)).first()
+                latest = _latest_session_price(db, metal)
                 if latest and latest.price_usd_per_oz is not None:
                     rows.append({
                         "registry_id": reference_id,
@@ -1033,14 +1138,8 @@ def get_global_price_dispersion_history(
     def fetch_reference_history() -> tuple[list[dict], dict]:
         cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
         with get_db_session() as db:
-            rows = db.query(MetalPrice).filter(
-                MetalPrice.metal == metal,
-                MetalPrice.price_usd_per_oz.isnot(None),
-                MetalPrice.date >= cutoff,
-            ).order_by(MetalPrice.date).all()
-        yahoo_rows = [row for row in rows if str(row.source or "").upper() == "YAHOO"]
-        selected_rows = yahoo_rows if len(yahoo_rows) >= 2 else rows
-        row_by_date = {row.date.date().isoformat(): row for row in selected_rows}
+            rows = _daily_session_prices(db, metal, cutoff)
+        row_by_date = {row.date.date().isoformat(): row for row in rows}
         observations = [{
             "registry_id": reference_id,
             "provider_id": "us_reference",
@@ -1128,21 +1227,15 @@ def get_supply_data():
     """
     with get_db_session() as db:
         try:
-            latest_period = db.query(func.max(SupplyData.period)).scalar()
-            if not latest_period:
+            supply = _latest_report_rows(db, SupplyData)
+            if not supply:
                 return []
-            
-            supply = db.query(SupplyData).filter(
-                SupplyData.period == latest_period
-            ).all()
             
             # Fetch latest spot prices for each metal
             spot_prices = {}
             spot_price_dates = {}
             for metal in ['AU', 'AG', 'PT', 'PD']:
-                latest_price = db.query(MetalPrice).filter(
-                    MetalPrice.metal == metal
-                ).order_by(desc(MetalPrice.date)).first()
+                latest_price = _latest_session_price(db, metal)
                 if latest_price:
                     spot_prices[metal] = latest_price.price_usd_per_oz
                     spot_price_dates[metal] = latest_price.date.isoformat()
@@ -1162,14 +1255,17 @@ def get_supply_data():
                 result.append({
                     "metal": s.metal,
                     "period": s.period,
-                    "source": s.source,
+                    "source": _reported_source(s)[0],
+                    "source_url": _reported_source(s)[1],
                     "data_quality": quality,
                     "price_as_of": spot_price_dates.get(s.metal),
+                    "production_tonnes": s.production_tonnes if usable else None,
                     "production_tonnes_yoy_pct": s.production_yoy_pct if usable else None,
                     "aisc_per_oz": aisc,
                     "current_spot_price": current_spot,
                     "margin_pct": margin_pct,
                     "recycling_pct_of_supply": s.recycling_pct if usable else None,
+                    "recycling_tonnes": s.recycling_tonnes if usable else None,
                 })
             
             return result
@@ -1184,13 +1280,9 @@ def get_demand_data():
     """
     with get_db_session() as db:
         try:
-            latest_period = db.query(func.max(DemandData.period)).scalar()
-            if not latest_period:
+            demand = _latest_report_rows(db, DemandData)
+            if not demand:
                 return []
-            
-            demand = db.query(DemandData).filter(
-                DemandData.period == latest_period
-            ).all()
             
             result = []
             for d in demand:
@@ -1199,8 +1291,14 @@ def get_demand_data():
                 result.append({
                     "metal": d.metal,
                     "period": d.period,
-                    "source": d.source,
+                    "source": _reported_source(d)[0],
+                    "source_url": _reported_source(d)[1],
                     "data_quality": quality,
+                    "category_scope": {
+                        "industrial_tonnes": "Technology demand",
+                        "jewelry_tonnes": "Jewellery fabrication",
+                        "other_tonnes": "Central banks and other institutions plus OTC and other",
+                    } if str(d.source or "").startswith("WGC_METALS_FOCUS_GDT|") else None,
                     "investment_tonnes": d.investment_tonnes if usable else None,
                     "industrial_tonnes": d.industrial_tonnes if usable else None,
                     "jewelry_tonnes": d.jewelry_tonnes if usable else None,
@@ -1224,9 +1322,7 @@ def get_market_caps():
             # Get latest prices
             prices = {}
             for metal in ['AU', 'AG', 'PT', 'PD']:
-                latest = db.query(MetalPrice).filter(
-                    MetalPrice.metal == metal
-                ).order_by(desc(MetalPrice.date)).first()
+                latest = _latest_session_price(db, metal)
                 if latest:
                     prices[metal] = latest.price_usd_per_oz
             
@@ -1266,9 +1362,10 @@ def get_market_caps():
                     total_value += value
             
             macro = db.query(MacroLiquidityData).filter(
-                MacroLiquidityData.global_m2.isnot(None)
+                MacroLiquidityData.source == VERIFIED_M2_SOURCE,
+                MacroLiquidityData.global_m2.between(10, 500),
             ).order_by(desc(MacroLiquidityData.date)).first()
-            global_m2_usd = (macro.global_m2 * 1e12) if macro and macro.global_m2 is not None else None
+            global_m2_usd = (macro.global_m2 * 1e12) if macro and _is_fresh(macro.date, M2_MAX_AGE_DAYS) else None
             metals_to_m2_ratio = (
                 (total_value / global_m2_usd) * 100
                 if global_m2_usd and total_value
@@ -1279,10 +1376,12 @@ def get_market_caps():
                 "metals": market_caps,
                 "total_market_cap_usd": total_value if total_value else None,
                 "global_m2_usd": global_m2_usd,
+                "m2_quality": _source_quality(macro, cadence="fixed four-economy broad-money proxy", max_age_days=M2_MAX_AGE_DAYS),
                 "metals_to_m2_pct": metals_to_m2_ratio,
                 "notes": {
                     "tracked_stock": "Computed from latest ETF holdings; gold includes latest CB holdings.",
                     "numerator_scope": "Tracked ETF holdings across four metals plus the latest reporting-country central-bank gold snapshot; not total global above-ground metal stock.",
+                    "denominator_scope": "Fixed US/eurozone/Japan/UK broad-money proxy at approximate FX; not complete global M2.",
                 },
                 "timestamp": datetime.utcnow().isoformat()
             }
@@ -1349,10 +1448,7 @@ def get_metal_price_history(metal: str, days: int = Query(365, ge=1, le=1095)):
     with get_db_session() as db:
         try:
             cutoff_date = datetime.utcnow() - timedelta(days=days)
-            prices = db.query(MetalPrice).filter(
-                MetalPrice.metal == metal.upper(),
-                MetalPrice.date >= cutoff_date
-            ).order_by(MetalPrice.date).all()
+            prices = _daily_session_prices(db, metal.upper(), cutoff_date)
             
             return [
                 {
@@ -1372,13 +1468,10 @@ async def get_market_caps_history(years: int = 25):
     """
     with get_db_session() as db:
         start_date = datetime.utcnow().date() - timedelta(days=years * 365)
-        gold_prices = db.query(MetalPrice).filter(
-            MetalPrice.metal == 'AU',
-            MetalPrice.price_usd_per_oz.isnot(None),
-            MetalPrice.date >= start_date
-        ).order_by(MetalPrice.date).all()
+        gold_prices = _daily_session_prices(db, "AU", start_date)
         macro = db.query(MacroLiquidityData).filter(
-            MacroLiquidityData.global_m2.isnot(None),
+            MacroLiquidityData.source == VERIFIED_M2_SOURCE,
+            MacroLiquidityData.global_m2.between(10, 500),
             MacroLiquidityData.date >= start_date
         ).order_by(MacroLiquidityData.date).all()
 
@@ -1426,6 +1519,7 @@ async def get_market_caps_history(years: int = 25):
             'history': history,
             'notes': {
                 'metals_to_m2_pct': 'Tracked using GLD holdings and CB gold holdings (carried forward).',
-                'numerator_scope': 'Tracked gold only, using holdings observed on or before each historical date; unavailable before the first holdings observation.'
+                'numerator_scope': 'Tracked gold only, using holdings observed on or before each historical date; unavailable before the first holdings observation.',
+                'denominator_scope': 'Verified fixed US/eurozone/Japan/UK broad-money history at approximate FX; not complete global M2.'
             }
         }

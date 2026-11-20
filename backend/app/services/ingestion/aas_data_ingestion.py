@@ -23,6 +23,12 @@ from app.core.db import SessionLocal
 
 logger = logging.getLogger(__name__)
 
+# Fixed, comparable broad-money proxy; static FX assumptions are intentionally
+# explicit. Discontinued foreign series cannot be treated as current money.
+M2_PANEL_SOURCE = "FRED_FIXED_FOUR_BROAD_MONEY_APPROX_FX_V1"
+M2_PANEL_SERIES = {"us_m2": "WM2NS", "eurozone_m2": "MABMM301EZM189S", "japan_m2": "MABMM301JPM189S", "uk_m2": "MABMM301GBM189S"}
+
+
 # Yahoo Finance tickers for extended crypto coverage (no rate limits)
 _YAHOO_CRYPTO_TICKERS: Dict[str, str] = {
     "SOL": "SOL-USD",
@@ -792,7 +798,7 @@ class MacroDataIngestion:
 
     @staticmethod
     def _convert_m2_to_usd_trillions(series_name: str, value: float) -> Optional[float]:
-        """Normalize known FRED M2 series units into approximate USD trillions."""
+        """Normalize configured broad-money currency levels into approximate USD trillions."""
         converters = {
             "us_m2": lambda raw: raw / 1_000.0,  # USD billions
             "china_m2": lambda raw: (raw / 1_000_000_000_000.0) / 7.2,
@@ -806,6 +812,41 @@ class MacroDataIngestion:
         converted = converter(float(value))
         return converted if 0 < converted < 100 else None
     
+    @staticmethod
+    def _m2_panel_snapshot(series_data: dict, as_of: date, max_age_days: int = 62) -> Optional[dict]:
+        components = {}
+        dates = []
+        for name in M2_PANEL_SERIES:
+            observations = series_data.get(name) or {}
+            eligible = [day for day in observations if day <= as_of and (as_of - day).days <= max_age_days]
+            if not eligible:
+                return None
+            observed = max(eligible)
+            try:
+                value = MacroDataIngestion._convert_m2_to_usd_trillions(name, observations[observed])
+            except (ValueError, TypeError, OverflowError):
+                return None
+            if value is None:
+                return None
+            components[name] = value
+            dates.append(observed)
+        total = sum(components.values())
+        if not 10 <= total <= 500:
+            return None
+        return {"value": total, "date": max(dates), "components": components}
+
+    def _store_m2_panel_snapshot(self, snapshot: dict):
+        observed = datetime.combine(snapshot["date"], datetime.min.time())
+        row = self.db.query(MacroLiquidityData).filter(
+            MacroLiquidityData.date == observed, MacroLiquidityData.source == M2_PANEL_SOURCE,
+        ).first()
+        if row is None:
+            row = MacroLiquidityData(date=observed, source=M2_PANEL_SOURCE)
+            self.db.add(row)
+        row.global_m2 = snapshot["value"]
+        row.created_at = datetime.utcnow()
+        return row
+
     def fetch_current_macro_data(self) -> Optional[MacroLiquidityData]:
         """
         Fetch latest macro liquidity indicators.
@@ -828,54 +869,19 @@ class MacroDataIngestion:
             # CPI (for real rate calculation)
             cpi_yoy = self._fetch_fred_series("CPIAUCSL", units="pc1")  # Year-over-year % change
             
-            # Global M2 aggregate (sum of major economies converted to USD trillions)
-            # Note: FRED series have different units - need to normalize carefully
-            
-            m2_trillions_usd = []
-            
-            # US M2: Billions USD -> Trillions USD
-            us_m2_billions = self._fetch_fred_series("WM2NS")  # Billions USD
-            if us_m2_billions:
-                us_m2_trillions = us_m2_billions / 1000.0
-                m2_trillions_usd.append(us_m2_trillions)
-                logger.debug(f"US M2: ${us_m2_trillions:.2f}T")
-            
-            # OECD broad-money levels: national-currency units -> approximate USD trillions
-            eurozone_m2_raw = self._fetch_fred_series("MABMM301EZM189S")
-            eurozone_m2_trillions_usd = (
-                self._convert_m2_to_usd_trillions("eurozone_m2", eurozone_m2_raw)
-                if eurozone_m2_raw else None
-            )
-            if eurozone_m2_trillions_usd:
-                m2_trillions_usd.append(eurozone_m2_trillions_usd)
-                logger.debug(f"Eurozone M2: ${eurozone_m2_trillions_usd:.2f}T")
-            
-            japan_m2_raw = self._fetch_fred_series("MABMM301JPM189S")
-            japan_m2_trillions_usd = (
-                self._convert_m2_to_usd_trillions("japan_m2", japan_m2_raw)
-                if japan_m2_raw else None
-            )
-            if japan_m2_trillions_usd:
-                m2_trillions_usd.append(japan_m2_trillions_usd)
-                logger.debug(f"Japan M2: ${japan_m2_trillions_usd:.2f}T")
-            
-            uk_m2_raw = self._fetch_fred_series("MABMM301GBM189S")
-            uk_m2_trillions_usd = (
-                self._convert_m2_to_usd_trillions("uk_m2", uk_m2_raw)
-                if uk_m2_raw else None
-            )
-            if uk_m2_trillions_usd:
-                m2_trillions_usd.append(uk_m2_trillions_usd)
-                logger.debug(f"UK M2: ${uk_m2_trillions_usd:.2f}T")
-            
-            # Calculate global M2 (already in trillions)
-            global_m2 = None
-            if len(m2_trillions_usd) >= 3:  # Need at least 3 major economies
-                global_m2 = sum(m2_trillions_usd)
-                logger.info(f"Global M2 calculated: ${global_m2:.2f}T from {len(m2_trillions_usd)} economies")
+            # Four fixed component series, actual observation dates, bounded
+            # carry-forward. A source that stopped in2023 cannot support2026 M2.
+            today = datetime.utcnow().date()
+            panel = {name: self._fetch_fred_series_historical(series, today - timedelta(days=90), today) for name, series in M2_PANEL_SERIES.items()}
+            snapshot = self._m2_panel_snapshot(panel, today)
+            if snapshot is not None:
+                self._store_m2_panel_snapshot(snapshot)
             else:
-                logger.warning(f"Insufficient M2 data: only {len(m2_trillions_usd)} economies available")
-            
+                logger.warning("Current broad-money proxy unavailable: fixed four-country source coverage is stale or incomplete")
+            # Current rate observations and the dated money aggregate have
+            # distinct source clocks and must not share a retrieval-date label.
+            global_m2 = None
+
             if not fed_bs:
                 logger.warning("Could not fetch Fed balance sheet data")
                 return None
@@ -896,7 +902,8 @@ class MacroDataIngestion:
             
             # Check if today's data exists
             existing = self.db.query(MacroLiquidityData).filter(
-                MacroLiquidityData.date == macro_data.date
+                MacroLiquidityData.date == macro_data.date,
+                MacroLiquidityData.source == "FRED",
             ).first()
             
             if existing:
@@ -952,100 +959,33 @@ class MacroDataIngestion:
             logger.error(f"Error fetching FRED series {series_id}: {e}")
             return None
     
-    def seed_estimated_global_m2(self, days: int = 365):
-        """
-        Backfill historical global M2 data from FRED.
-        
-        Args:
-            days: Number of days of historical data to fetch
+    def seed_estimated_global_m2(self, days: int = 730):
+        """Backfill only a fixed, date-aligned four-economy money proxy.
+
+        Missing/discontinued component coverage is not replaced with zero,
+        future observations, a changing country basket, or unlimited forwards.
         """
         if not self.fred_api_key or self.fred_api_key == "YOUR_FRED_API_KEY":
-            logger.warning("FRED API key not configured. Cannot backfill M2 data.")
-            return
-        
+            return 0
+        end_date = datetime.utcnow().date()
+        start_date = end_date - timedelta(days=days)
         try:
-            logger.info(f"Backfilling {days} days of global M2 data...")
-            
-            # Fetch historical data for all M2 components
-            end_date = datetime.utcnow().date()
-            start_date = end_date - timedelta(days=days)
-            
-            # FRED series IDs
-            series_map = {
-                'us_m2': 'WM2NS',
-                'china_m2': 'MYAGM2CNM189S',
-                'eurozone_m2': 'MABMM301EZM189S',
-                'japan_m2': 'MABMM301JPM189S',
-                'uk_m2': 'MABMM301GBM189S'
-            }
-            
-            # Fetch all series
-            series_data = {}
-            for name, series_id in series_map.items():
-                data = self._fetch_fred_series_historical(series_id, start_date, end_date)
-                if data:
-                    series_data[name] = data
-                    logger.info(f"Fetched {len(data)} observations for {name}")
-            
-            if not series_data:
-                logger.error("No M2 data could be fetched")
-                return
-            
-            # Aggregate by date
-            all_dates = set()
-            for data in series_data.values():
-                all_dates.update(data.keys())
-            
-            logger.info(f"Processing {len(all_dates)} unique dates...")
-            
-            added = 0
-            updated = 0
-            
-            for date in sorted(all_dates):
-                # Collect available M2 values for this date
-                m2_values = []
-                for series_name, data in series_data.items():
-                    if date in data:
-                        converted = self._convert_m2_to_usd_trillions(
-                            series_name, data[date]
-                        )
-                        if converted is not None:
-                            m2_values.append(converted)
-                
-                # Need at least 3 major economies
-                if len(m2_values) < 3:
-                    continue
-                
-                # Components are already normalized to approximate USD trillions.
-                global_m2 = sum(m2_values)
-                
-                # Check if record exists
-                date_dt = datetime.combine(date, datetime.min.time())
-                existing = self.db.query(MacroLiquidityData).filter(
-                    MacroLiquidityData.date == date_dt
-                ).first()
-                
-                if existing:
-                    if existing.global_m2 != global_m2:
-                        existing.global_m2 = global_m2
-                        updated += 1
-                else:
-                    # Create new record with just M2 data
-                    new_record = MacroLiquidityData(
-                        date=date_dt,
-                        global_m2=global_m2,
-                        source="FRED"
-                    )
-                    self.db.add(new_record)
-                    added += 1
-            
+            panel = {name: self._fetch_fred_series_historical(series, start_date - timedelta(days=62), end_date) for name, series in M2_PANEL_SERIES.items()}
+            dates = sorted({day for observations in panel.values() for day in observations if start_date <= day <= end_date})
+            snapshots = {}
+            for observed in dates:
+                snapshot = self._m2_panel_snapshot(panel, observed)
+                if snapshot is not None:
+                    snapshots[snapshot["date"]] = snapshot
+            for snapshot in snapshots.values():
+                self._store_m2_panel_snapshot(snapshot)
             self.db.commit()
-            logger.info(f"Global M2 backfill complete: {added} added, {updated} updated")
-            
-        except Exception as e:
-            logger.error(f"Error backfilling M2 data: {e}", exc_info=True)
+            return len(snapshots)
+        except Exception:
+            logger.exception("Verified broad-money historical refresh failed")
             self.db.rollback()
-    
+            return 0
+
     def _fetch_fred_series_historical(
         self, series_id: str, start_date: date, end_date: date
     ) -> Dict[date, float]:
@@ -1121,7 +1061,7 @@ def run_daily_ingestion():
         macro_result = macro_ingest.fetch_current_macro_data()
         
         if macro_result:
-            logger.info(f"Macro data updated: Fed BS=${macro_result.fed_balance_sheet:.0f}B, Global M2=${macro_result.global_m2:.2f}T")
+            logger.info("Macro data updated: Fed BS=%s; verified money proxy=%s", macro_result.fed_balance_sheet, macro_result.global_m2)
         else:
             logger.info("Macro data not available - FRED API key may not be configured")
 

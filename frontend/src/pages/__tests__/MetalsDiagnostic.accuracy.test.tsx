@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import fixture from "./fixtures/metals-review.json";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import PreciousMetalsDiagnostic from "../PreciousMetalsDiagnostic";
@@ -33,5 +33,20 @@ describe("Metals diagnostic data and updates", () => {
     useApiMock.mockImplementation((endpoint: string) => ({ data: endpoint.endsWith("/regime") ? fixture.regime : endpoint.endsWith("projections/latest") ? fixture.projections : null, loading: true, error: null, refetch: refresh }));
     render(<PreciousMetalsDiagnostic />);
     expect(screen.getByRole("heading", {name:"Winners & Losers Right Now"})).toBeTruthy();
+  });
+  it("distinguishes a high partial monetary score from broad confirmation", () => {
+    const regime = structuredClone(fixture.regime);
+    Object.assign(regime.price_anchors, {monetary_hedge_strength: 96, monetary_hedge_available_components: 1, monetary_hedge_total_components: 3});
+    Object.assign(regime.cb_context, {coverage: {latest_reporting_countries: 54, prior_year_reporting_countries: 101, matched_yoy_countries: 53, scope: "Reporting sample, not all central banks."}});
+    useApiMock.mockImplementation((endpoint: string) => ({data: endpoint.endsWith("/regime") ? regime : endpoint.endsWith("projections/latest") ? fixture.projections : null, loading: false, error: null, refetch: refresh}));
+    render(<PreciousMetalsDiagnostic />);
+    expect(screen.getByText(/Monetary context is incomplete/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", {name: "Deep Dive"}));
+    const card = screen.getByRole("heading", {name: "Monetary Context"}).closest(".primary-card") as HTMLElement;
+    expect(within(card).getByText("96").className).toContain("text-amber-300");
+    expect(within(card).getByText(/1\/3 inputs available; partial estimate/)).toBeTruthy();
+    expect(screen.getByText(/54 countries in the latest snapshot/)).toBeTruthy();
+    expect(screen.getByText(/Positive = real rates below/)).toBeTruthy();
+    expect(screen.queryByText(/floor under price/)).toBeNull();
   });
 });

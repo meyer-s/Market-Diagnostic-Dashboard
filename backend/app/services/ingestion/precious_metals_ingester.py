@@ -1729,16 +1729,126 @@ class PreciousMetalsIngester:
 
         return count
 
-    def _ingest_supply_data(self) -> int:
-        """Ingest supply data (quarterly)"""
-        count = 0
-        with get_db_session() as db:
-            try:
-                # Placeholder: would fetch from USGS or S&P Global
-                logger.info("Supply data requires USGS/S&P subscription")
-            except Exception as e:
-                logger.error(f"Error ingesting supply data: {str(e)}")
+    @staticmethod
+    def _parse_wgc_supply_demand(content: str, source_url: str) -> dict:
+        """Read limited, mutually exclusive metrics from the published GDT table."""
+        tables = pd.read_html(StringIO(content))
+        for table in tables:
+            columns = {}
+            for _, row in table.head(3).iterrows():
+                for column, value in row.items():
+                    match = re.fullmatch(r"Q([1-4])['’](\d{2})", str(value).strip())
+                    if match:
+                        columns[column] = f"20{match.group(2)}-Q{match.group(1)}"
+            if not columns:
+                continue
+            rows = {}
+            for _, row in table.iterrows():
+                label = str(row.iloc[0]).strip().lower()
+                rows[label] = row
+            required = {"mine production", "recycled gold", "total supply", "jewellery fabrication", "technology", "investment", "central bank and other institutions", "otc and other", "total demand"}
+            if not required.issubset(rows):
+                continue
+            periods = {}
+            for column, period in columns.items():
+                parsed = {}
+                for name in required:
+                    raw = str(rows[name][column]).replace(",", "").strip()
+                    value = float(raw)
+                    if not math.isfinite(value) or (name not in {"investment", "central bank and other institutions", "otc and other"} and value < 0):
+                        raise ValueError("WGC table contains invalid required observations")
+                    parsed[name] = value
+                if parsed["total demand"] <= 0 or parsed["total supply"] <= 0 or parsed["mine production"] <= 0:
+                    raise ValueError("WGC supply/demand totals are not positive")
+                # Reported figures are rounded to0.1tonne. Do not import a table
+                # whose category definitions no longer reconcile to its total.
+                total = sum(parsed[name] for name in ("jewellery fabrication", "technology", "investment", "central bank and other institutions", "otc and other"))
+                if abs(total - parsed["total demand"]) > 0.3:
+                    raise ValueError("WGC demand categories do not reconcile")
+                periods[period] = parsed
+            latest = max(periods)
+            report_period = re.search(r"gold-demand-trends-q([1-4])-(20\d{2})", source_url)
+            if report_period and latest != f"{report_period.group(2)}-Q{report_period.group(1)}":
+                raise ValueError("WGC observed-quarter table disagrees with its source report")
+            previous = f"{int(latest[:4])-1}{latest[4:]}"
+            if previous not in periods:
+                raise ValueError("WGC table has no comparable prior-year quarter")
+            return {"period": latest, "latest": periods[latest], "prior_period": previous, "prior": periods[previous], "source_url": source_url}
+        raise ValueError("Published WGC quarterly supply/demand schema was not found")
 
+    def _ingest_wgc_supply_demand(self) -> int:
+        """Refresh limited gold statistics from the actual latest WGC report.
+
+        AISC is not in this report. Preserve missing cost coverage rather than
+        substituting one miner's costs for a global industry measure.
+        """
+        index_url = "https://www.gold.org/goldhub/research/gold-demand-trends"
+        response = self.session.get(index_url, timeout=25)
+        response.raise_for_status()
+        links = re.findall(r'/goldhub/research/gold-demand-trends/gold-demand-trends-q([1-4])-(20\d{2})(?=["/?#])', response.text)
+        if not links:
+            raise ValueError("WGC latest-report discovery returned no quarterly reports")
+        quarter, year = max(links, key=lambda item: (int(item[1]), int(item[0])))
+        source_url = f"https://www.gold.org/goldhub/research/gold-demand-trends/gold-demand-trends-q{quarter}-{year}"
+        report = self.session.get(source_url, timeout=25)
+        report.raise_for_status()
+        data = self._parse_wgc_supply_demand(report.text, source_url)
+        source = f"WGC_METALS_FOCUS_GDT|{source_url}"
+        loaded = datetime.utcnow()
+        with get_db_session() as db:
+            for period, values in ((data["period"], data["latest"]), (data["prior_period"], data["prior"])):
+                row = db.query(SupplyData).filter(SupplyData.metal == "AU", SupplyData.period == period).first()
+                if row is None:
+                    row = SupplyData(metal="AU", period=period)
+                    db.add(row)
+                row.production_tonnes = values["mine production"]
+                row.production_yoy_pct = (data["latest"]["mine production"] / data["prior"]["mine production"] - 1) * 100 if period == data["period"] else None
+                row.recycling_tonnes = values["recycled gold"]
+                row.recycling_pct = values["recycled gold"] / values["total supply"] * 100
+                row.aisc_per_oz = None
+                row.source = source
+                row.created_at = loaded
+            values = data["latest"]
+            demand = db.query(DemandData).filter(DemandData.metal == "AU", DemandData.period == data["period"]).first()
+            if demand is None:
+                demand = DemandData(metal="AU", period=data["period"])
+                db.add(demand)
+            demand.investment_tonnes = values["investment"]
+            demand.industrial_tonnes = values["technology"]
+            demand.jewelry_tonnes = values["jewellery fabrication"]
+            demand.jewelry_asia_tonnes = None
+            demand.other_tonnes = values["central bank and other institutions"] + values["otc and other"]
+            demand.total_tonnes = values["total demand"]
+            demand.source = source
+            demand.created_at = loaded
+            db.commit()
+        return 3
+
+    def _ingest_supply_data(self) -> int:
+        """Refresh independently published sources without cross-source failure."""
+        count = 0
+        try:
+            count += self._ingest_wgc_supply_demand()
+        except Exception:
+            logger.exception("WGC supply/demand refresh failed; preserving prior evidence")
+        try:
+            from app.services.ingestion.metals_report_sources import fetch_usgs_mine_supply
+            report = fetch_usgs_mine_supply(self.session)
+            for error in report.get("errors", []):
+                logger.warning("USGS source gap: %s", error)
+            with get_db_session() as db:
+                for values in report.get("supply", []):
+                    row = db.query(SupplyData).filter(SupplyData.metal == values["metal"], SupplyData.period == values["period"]).first()
+                    if row is None:
+                        row = SupplyData(metal=values["metal"], period=values["period"])
+                        db.add(row)
+                    for field in ("production_tonnes", "production_yoy_pct", "recycling_tonnes", "recycling_pct", "aisc_per_oz", "source"):
+                        setattr(row, field, values.get(field))
+                    row.created_at = datetime.utcnow()
+                    count += 1
+                db.commit()
+        except Exception:
+            logger.exception("USGS annual mine-production refresh failed; preserving prior evidence")
         return count
 
     # ==================== UTILITY FUNCTIONS ====================
