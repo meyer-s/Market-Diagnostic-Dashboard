@@ -61,6 +61,7 @@ interface CryptoAsset {
   observed_at?: string | null;
   change_24h_basis?: string | null;
   change_30d_basis?: string | null;
+  history_source?: string;
 }
 
 interface CryptoMarketOverviewResponse {
@@ -75,6 +76,8 @@ interface CryptoMarketOverviewResponse {
     market_cap_change_24h: number | null;
     advancing_assets_24h: number | null;
     change_24h_available_assets?: number;
+    observed_at?: string | null;
+    data_quality?: {status: string};
     monitored_assets: number;
   };
   assets: CryptoAsset[];
@@ -545,6 +548,7 @@ export default function CryptoDiagnostic({
         <summary className="cursor-pointer">{marketData.source ?? "Market source"} · {marketData.data_quality?.status ?? "quality unverified"} · source and timing</summary>
         <p className="mt-2">{marketData.data_quality?.reason ?? "Check the observation time and per-asset change basis before comparing snapshots."}</p>
         <p className="mt-1">Response generated {formatTimestamp(marketData.generated_at)}. Page checks every minute while active and every five minutes in the background. Server quotes refresh every 15 minutes, including weekends.</p>
+        <p className="mt-1">Market-cap and dominance snapshot {formatTimestamp(marketData.summary.observed_at)} · {marketData.summary.data_quality?.status ?? "quality unverified"}.</p>
         {diagnosticContext ? <p className="mt-1">Model signals {formatTimestamp(diagnosticContext.signal_as_of ?? diagnosticContext.as_of)} · {diagnosticContext.data_quality?.status ?? "quality unverified"}{diagnosticContext.model_dates_aligned === false ? " · model dates differ" : ""}.</p> : null}
       </details>
       <section id="crypto-now" className="section-anchor mb-6 primary-card p-4 md:p-6" aria-labelledby="crypto-now-heading">
@@ -666,6 +670,7 @@ export default function CryptoDiagnostic({
                       <div className="text-xs text-stealth-400">Technical daily bar · {asset.analysis_as_of}</div>
                       <div className="font-semibold text-stealth-100">{formatCurrency(asset.current_price)}</div>
                       <div className="mt-1 text-xs text-stealth-300">Latest quote {formatCurrency(asset.quote_price)} · {formatTimestamp(asset.observed_at)}</div>
+                      <details className="mt-1 text-xs text-stealth-300"><summary className="cursor-pointer">Source and change basis</summary><p className="mt-1">Quote: {asset.source ?? "unavailable"}. History: {asset.history_source ?? asset.source ?? "unavailable"}.</p><p>{asset.change_24h_basis ?? "Daily-change basis unavailable"}; {asset.change_30d_basis ?? "30-day basis unavailable"}.</p></details>
                     </div>
                     <div>
                       <div className="text-xs text-stealth-400">Wilder RSI (14)</div>
