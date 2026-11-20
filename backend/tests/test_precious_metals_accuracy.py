@@ -26,7 +26,7 @@ def database(monkeypatch):
 
 
 def test_monetary_hedge_m2_component_has_one_half_weight(database):
-    database.add(MetalRatio(date=datetime.utcnow(), metal1="AU", metal2="DXY", ratio_value=1, zscore_2y=0))
+    database.add(MetalRatio(date=datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0), metal1="AU", metal2="DXY", ratio_value=1, zscore_2y=0))
     database.commit()
     assert pm.calculate_monetary_hedge_strength(database, real_rate_signal=0, m2_growth_signal=1) == pytest.approx(60)
 
@@ -69,7 +69,7 @@ def test_history_does_not_backfill_future_central_bank_holdings(database):
 
 def test_a_fresh_gold_silver_ratio_does_not_make_stale_other_ratios_current(database):
     database.add_all([
-        MetalRatio(date=datetime.utcnow(), metal1="AU", metal2="AG", ratio_value=80, zscore_2y=1),
+        MetalRatio(date=datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0), metal1="AU", metal2="AG", ratio_value=80, zscore_2y=1),
         MetalRatio(date=datetime(2020, 1, 1), metal1="PT", metal2="AU", ratio_value=0.5, zscore_2y=-1),
         MetalRatio(date=datetime(2020, 1, 1), metal1="AU", metal2="DXY", ratio_value=20, zscore_2y=-1),
     ])
@@ -88,3 +88,15 @@ def test_future_observation_is_not_a_fresh_signal():
     assert not pm._is_fresh(tomorrow, 5)
     quality = pm._source_quality(SimpleNamespace(date=tomorrow), cadence="daily", max_age_days=5)
     assert quality["status"] == "unavailable"
+
+
+def test_legacy_retrieval_clock_ratio_cannot_mask_a_stale_source_session(database):
+    from datetime import timedelta
+    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    database.add_all([
+        MetalRatio(date=today - timedelta(days=10), metal1="AU", metal2="DXY", ratio_value=20, zscore_2y=-1),
+        MetalRatio(date=today + timedelta(hours=1), metal1="AU", metal2="DXY", ratio_value=21, zscore_2y=2),
+    ])
+    database.commit()
+    assert pm.calculate_monetary_hedge_strength(database, real_rate_signal=0, m2_growth_signal=0) == 50
+    assert pm.get_regime_classification()["price_anchors"]["au_dxy_ratio_zscore"] is None

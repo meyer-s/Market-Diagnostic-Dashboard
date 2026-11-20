@@ -431,6 +431,15 @@ def calculate_structural_monetary_bid(db) -> Optional[float]:
     return max(-100, min(100, smb))  # Clamp to [-100, 100]
 
 
+def _session_ratios(db):
+    """Exclude legacy retrieval-clock rows from session-derived signals."""
+    return db.query(MetalRatio).filter(
+        func.extract("hour", MetalRatio.date) == 0,
+        func.extract("minute", MetalRatio.date) == 0,
+        func.extract("second", MetalRatio.date) == 0,
+    )
+
+
 def calculate_monetary_hedge_strength(
     db,
     real_rate_signal: Optional[float] = None,
@@ -441,7 +450,7 @@ def calculate_monetary_hedge_strength(
     Normalized to 0-100
     """
     # Get latest Au/DXY ratio z-score
-    latest_au_dxy = db.query(MetalRatio).filter(
+    latest_au_dxy = _session_ratios(db).filter(
         MetalRatio.metal1 == "AU",
         MetalRatio.metal2 == "DXY"
     ).order_by(desc(MetalRatio.date)).first()
@@ -535,12 +544,12 @@ def classify_regime(db) -> tuple:
     pci = calculate_paper_credibility_index(db)
     
     # Get latest ratios
-    au_ag_latest = db.query(MetalRatio).filter(
+    au_ag_latest = _session_ratios(db).filter(
         MetalRatio.metal1 == "AU",
         MetalRatio.metal2 == "AG"
     ).order_by(desc(MetalRatio.date)).first()
     
-    pt_au_latest = db.query(MetalRatio).filter(
+    pt_au_latest = _session_ratios(db).filter(
         MetalRatio.metal1 == "PT",
         MetalRatio.metal2 == "AU"
     ).order_by(desc(MetalRatio.date)).first()
@@ -639,23 +648,23 @@ def get_regime_classification():
             pci = calculate_paper_credibility_index(db)
             
             # Get latest ratios
-            au_ag = db.query(MetalRatio).filter(
+            au_ag = _session_ratios(db).filter(
                 MetalRatio.metal1 == "AU", MetalRatio.metal2 == "AG"
             ).order_by(desc(MetalRatio.date)).first()
             
-            pt_au = db.query(MetalRatio).filter(
+            pt_au = _session_ratios(db).filter(
                 MetalRatio.metal1 == "PT", MetalRatio.metal2 == "AU"
             ).order_by(desc(MetalRatio.date)).first()
             
-            pd_au = db.query(MetalRatio).filter(
+            pd_au = _session_ratios(db).filter(
                 MetalRatio.metal1 == "PD", MetalRatio.metal2 == "AU"
             ).order_by(desc(MetalRatio.date)).first()
             
-            au_dxy = db.query(MetalRatio).filter(
+            au_dxy = _session_ratios(db).filter(
                 MetalRatio.metal1 == "AU", MetalRatio.metal2 == "DXY"
             ).order_by(desc(MetalRatio.date)).first()
             
-            ag_dxy = db.query(MetalRatio).filter(
+            ag_dxy = _session_ratios(db).filter(
                 MetalRatio.metal1 == "AG", MetalRatio.metal2 == "DXY"
             ).order_by(desc(MetalRatio.date)).first()
             
