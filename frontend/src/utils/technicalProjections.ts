@@ -12,6 +12,11 @@ export type RelativeClassification = "Winner" | "Neutral" | "Loser";
 
 export type TechnicalProjection<T extends object = object> = Omit<T, "history" | "current_price"> & {
   current_price: number;
+  quote_price: number | null;
+  analysis_as_of: string;
+  observation_count: number;
+  rsi_method: "wilder_14";
+  annualization_days: 365;
   score_total: number;
   score_trend: number;
   score_momentum: number;
@@ -44,7 +49,7 @@ const average = (values: number[]) => {
 };
 
 const standardDeviation = (values: number[]) => {
-  if (!values.length) {
+  if (values.length < 2) {
     return null;
   }
 
@@ -53,7 +58,7 @@ const standardDeviation = (values: number[]) => {
     return null;
   }
 
-  const variance = values.reduce((sum, value) => sum + ((value - mean) ** 2), 0) / values.length;
+  const variance = values.reduce((sum, value) => sum + ((value - mean) ** 2), 0) / (values.length - 1);
   return Math.sqrt(variance);
 };
 
@@ -83,12 +88,15 @@ const computeRsi = (prices: number[], window = 14) => {
     return null;
   }
 
-  const sample = prices.slice(-window - 1);
-  const deltas = sample.slice(1).map((price, index) => price - sample[index]);
+  const deltas = prices.slice(1).map((price, index) => price - prices[index]);
   const gains = deltas.map((delta) => (delta > 0 ? delta : 0));
   const losses = deltas.map((delta) => (delta < 0 ? Math.abs(delta) : 0));
-  const avgGain = average(gains) ?? 0;
-  const avgLoss = average(losses) ?? 0;
+  let avgGain = average(gains.slice(0, window)) ?? 0;
+  let avgLoss = average(losses.slice(0, window)) ?? 0;
+  for (let index = window; index < deltas.length; index += 1) {
+    avgGain = (avgGain * (window - 1) + gains[index]) / window;
+    avgLoss = (avgLoss * (window - 1) + losses[index]) / window;
+  }
 
   if (avgLoss === 0 && avgGain === 0) {
     return 50;
@@ -113,7 +121,7 @@ const computeVolatility = (prices: number[], window = 30) => {
   });
 
   const stdev = standardDeviation(returns);
-  return stdev === null ? null : stdev * Math.sqrt(252) * 100;
+  return stdev === null ? null : stdev * Math.sqrt(365) * 100;
 };
 
 const detectPriceLevels = (prices: number[], currentPrice: number, window = 5) => {
@@ -145,17 +153,36 @@ const getClassificationLabel = (scoreTotal: number) => {
   return "Weak";
 };
 
+/** Crypto-only daily technical model; inputs are normalized to UTC calendar days. */
 export function buildTechnicalProjections<T extends object>(assets: Array<TechnicalProjectionInput<T>>): Array<TechnicalProjection<T>> {
   const projections = assets.flatMap((asset) => {
-    const orderedHistory = [...(asset.history ?? [])]
-      .filter((point) => point.price !== null && point.price !== undefined && Number.isFinite(point.price))
-      .sort((left, right) => new Date(left.date).getTime() - new Date(right.date).getTime());
-    const prices = orderedHistory.map((point) => point.price as number);
-    const currentPrice = asset.current_price ?? prices[prices.length - 1];
-
-    if (!prices.length || currentPrice === null || currentPrice === undefined || !Number.isFinite(currentPrice)) {
+    const today = new Date().toISOString().slice(0, 10);
+    const sessions = new Map<string, { timestamp: number; price: number }>();
+    for (const point of asset.history ?? []) {
+      if (typeof point.price !== "number" || !Number.isFinite(point.price) || point.price <= 0) continue;
+      const datePart = /^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(point.date);
+      const timestamp = Date.parse(point.date);
+      if (!datePart || !Number.isFinite(timestamp)) continue;
+      // Date.parse normalizes invalid dates such as February 31; reject them.
+      const calendarDate = new Date(Date.UTC(Number(datePart[1]), Number(datePart[2]) - 1, Number(datePart[3]))).toISOString().slice(0, 10);
+      if (calendarDate !== point.date.slice(0, 10)) continue;
+      const day = new Date(timestamp).toISOString().slice(0, 10);
+      if (day > today) continue;
+      const previous = sessions.get(day);
+      if (!previous || timestamp >= previous.timestamp) sessions.set(day, { timestamp, price: point.price });
+    }
+    const orderedHistory = [...sessions.entries()].sort(([left], [right]) => left.localeCompare(right));
+    // Crypto trades every UTC day. Do not turn a missing day into a one-day
+    // return or give duplicate observations extra moving-average weight.
+    let start = orderedHistory.length - 1;
+    while (start > 0 && Date.parse(orderedHistory[start][0]) - Date.parse(orderedHistory[start - 1][0]) === 86_400_000) start -= 1;
+    const dailyHistory = orderedHistory.slice(Math.max(start, 0));
+    if (dailyHistory.length < 200) {
       return [];
     }
+    const prices = dailyHistory.map(([, point]) => point.price);
+    const currentPrice = prices[prices.length - 1];
+    const quotePrice = typeof asset.current_price === "number" && Number.isFinite(asset.current_price) && asset.current_price > 0 ? asset.current_price : null;
 
     const sma20 = computeSma(prices, 20);
     const sma50 = computeSma(prices, 50);
@@ -194,13 +221,20 @@ export function buildTechnicalProjections<T extends object>(assets: Array<Techni
     }
 
     const levels = detectPriceLevels(prices.slice(-90), currentPrice);
-    const scoreTotal = (scoreTrend * 0.6) + (scoreMomentum * 0.4);
+    const scoreTotal = Number(((scoreTrend * 0.6) + (scoreMomentum * 0.4)).toFixed(1));
+    if ([sma20, sma50, sma200, rsi, momentum5d, momentum20d, momentum60d, volatility30d,
+      scoreTrend, scoreMomentum, scoreTotal, currentPrice * 1.1, currentPrice * 0.95].some((value) => !Number.isFinite(value))) return [];
     const { history, ...rest } = asset;
 
     return [{
       ...rest,
       current_price: currentPrice,
-      score_total: Number(scoreTotal.toFixed(1)),
+      quote_price: quotePrice,
+      analysis_as_of: dailyHistory[dailyHistory.length - 1][0],
+      observation_count: dailyHistory.length,
+      rsi_method: "wilder_14",
+      annualization_days: 365,
+      score_total: scoreTotal,
       score_trend: scoreTrend,
       score_momentum: scoreMomentum,
       classification: getClassificationLabel(scoreTotal),
@@ -227,9 +261,13 @@ export function buildTechnicalProjections<T extends object>(assets: Array<Techni
 
   return projections
     .sort((left, right) => right.score_total - left.score_total)
-    .map((projection, index, ranked) => ({
+    .map((projection, _index, ranked) => ({
       ...projection,
-      rank: index + 1,
-      relativeClassification: index === 0 ? "Winner" : index === ranked.length - 1 ? "Loser" : "Neutral",
+      rank: ranked.findIndex((item) => item.score_total === projection.score_total) + 1,
+      relativeClassification: ranked[0].score_total === ranked[ranked.length - 1].score_total
+        ? "Neutral"
+        : projection.score_total === ranked[0].score_total
+          ? "Winner"
+          : projection.score_total === ranked[ranked.length - 1].score_total ? "Loser" : "Neutral",
     }) as TechnicalProjection<T>);
 }

@@ -917,138 +917,58 @@ class AASCalculator:
         normalized = (zscore + 2) / 4
         return max(0.0, min(1.0, normalized))
 
-    def _calc_btc_hash_rate(self, date: datetime) -> Optional[float]:
-        """BTC hash rate (higher = more pressure)"""
-        metrics = self.db.query(BitcoinNetworkMetric).filter(
-            BitcoinNetworkMetric.date >= date - timedelta(days=180),
-            BitcoinNetworkMetric.date <= date
-        ).order_by(BitcoinNetworkMetric.date).all()
-
-        values = [m.hash_rate for m in metrics if m.hash_rate]
-        if len(values) < 20:
+    def _crypto_metric_pressure(self, model, field: str, date: datetime, minimum: int) -> Optional[float]:
+        """Normalize finite, source-dated daily observations without duplicate weighting."""
+        query = self.db.query(model).filter(
+            model.date >= date - timedelta(days=180), model.date <= date,
+        )
+        if model is CryptoEcosystemMetric:
+            query = query.filter(model.source == "MULTI_V2")
+        else:
+            query = query.filter(model.source == "BLOCKCHAIN")
+        by_day = {}
+        for row in query.order_by(model.date, model.id).all():
+            value = getattr(row, field)
+            if value is not None and np.isfinite(value) and (field == "exchange_net_outflow_btc" or value > 0):
+                by_day[row.date.date()] = (row.date, value)
+        ordered = [by_day[day] for day in sorted(by_day)]
+        if len(ordered) < minimum or date - ordered[-1][0] > timedelta(days=5):
             return None
-
-        mean = np.mean(values)
+        values = [item[1] for item in ordered]
         std = np.std(values)
         if std == 0:
             return 0.5
+        return float(np.clip(((values[-1] - np.mean(values)) / std + 2) / 4, 0, 1))
 
-        zscore = (values[-1] - mean) / std
-        normalized = (zscore + 2) / 4
-        return max(0.0, min(1.0, normalized))
+    def _calc_btc_hash_rate(self, date: datetime) -> Optional[float]:
+        return self._crypto_metric_pressure(BitcoinNetworkMetric, "hash_rate", date, 20)
 
     def _calc_btc_difficulty(self, date: datetime) -> Optional[float]:
-        """BTC difficulty (higher = more pressure)"""
-        metrics = self.db.query(BitcoinNetworkMetric).filter(
-            BitcoinNetworkMetric.date >= date - timedelta(days=180),
-            BitcoinNetworkMetric.date <= date
-        ).order_by(BitcoinNetworkMetric.date).all()
-
-        values = [m.difficulty for m in metrics if m.difficulty]
-        if len(values) < 20:
-            return None
-
-        mean = np.mean(values)
-        std = np.std(values)
-        if std == 0:
-            return 0.5
-
-        zscore = (values[-1] - mean) / std
-        normalized = (zscore + 2) / 4
-        return max(0.0, min(1.0, normalized))
+        return self._crypto_metric_pressure(BitcoinNetworkMetric, "difficulty", date, 20)
 
     def _calc_stablecoin_supply(self, date: datetime) -> Optional[float]:
-        """Stablecoin supply (higher = more pressure)"""
-        metrics = self.db.query(CryptoEcosystemMetric).filter(
-            CryptoEcosystemMetric.date >= date - timedelta(days=180),
-            CryptoEcosystemMetric.date <= date
-        ).order_by(CryptoEcosystemMetric.date).all()
-
-        values = [m.stablecoin_supply_usd for m in metrics if m.stablecoin_supply_usd]
-        if len(values) < 10:
-            return None
-
-        mean = np.mean(values)
-        std = np.std(values)
-        if std == 0:
-            return 0.5
-
-        zscore = (values[-1] - mean) / std
-        normalized = (zscore + 2) / 4
-        return max(0.0, min(1.0, normalized))
+        return self._crypto_metric_pressure(CryptoEcosystemMetric, "stablecoin_supply_usd", date, 10)
 
     def _calc_stablecoin_btc_ratio(self, date: datetime) -> Optional[float]:
-        """Stablecoin supply vs BTC market cap ratio"""
-        metrics = self.db.query(CryptoEcosystemMetric).filter(
-            CryptoEcosystemMetric.date >= date - timedelta(days=180),
-            CryptoEcosystemMetric.date <= date
-        ).order_by(CryptoEcosystemMetric.date).all()
-
-        values = [m.stablecoin_btc_ratio for m in metrics if m.stablecoin_btc_ratio]
-        if len(values) < 10:
-            return None
-
-        mean = np.mean(values)
-        std = np.std(values)
-        if std == 0:
-            return 0.5
-
-        zscore = (values[-1] - mean) / std
-        normalized = (zscore + 2) / 4
-        return max(0.0, min(1.0, normalized))
+        return self._crypto_metric_pressure(CryptoEcosystemMetric, "stablecoin_btc_ratio", date, 10)
 
     def _calc_defi_tvl(self, date: datetime) -> Optional[float]:
-        """DeFi TVL (higher = more pressure)"""
-        metrics = self.db.query(CryptoEcosystemMetric).filter(
-            CryptoEcosystemMetric.date >= date - timedelta(days=180),
-            CryptoEcosystemMetric.date <= date
-        ).order_by(CryptoEcosystemMetric.date).all()
-
-        values = [m.defi_tvl_usd for m in metrics if m.defi_tvl_usd]
-        if len(values) < 10:
-            return None
-
-        mean = np.mean(values)
-        std = np.std(values)
-        if std == 0:
-            return 0.5
-
-        zscore = (values[-1] - mean) / std
-        normalized = (zscore + 2) / 4
-        return max(0.0, min(1.0, normalized))
+        return self._crypto_metric_pressure(CryptoEcosystemMetric, "defi_tvl_usd", date, 10)
 
     def _calc_exchange_outflows(self, date: datetime) -> Optional[float]:
-        """BTC exchange net outflows (higher = more pressure)"""
-        metrics = self.db.query(CryptoEcosystemMetric).filter(
-            CryptoEcosystemMetric.date >= date - timedelta(days=180),
-            CryptoEcosystemMetric.date <= date
-        ).order_by(CryptoEcosystemMetric.date).all()
-
-        values = [m.exchange_net_outflow_btc for m in metrics if m.exchange_net_outflow_btc is not None]
-        if len(values) < 10:
-            return None
-
-        mean = np.mean(values)
-        std = np.std(values)
-        if std == 0:
-            return 0.5
-
-        zscore = (values[-1] - mean) / std
-        normalized = (zscore + 2) / 4
-        return max(0.0, min(1.0, normalized))
+        return self._crypto_metric_pressure(CryptoEcosystemMetric, "exchange_net_outflow_btc", date, 10)
 
     def _calc_btc_spy_correlation(self, date: datetime) -> Optional[float]:
-        """BTC-SPY correlation (negative = high pressure)"""
+        """Pressure transformation of return correlation; this is not a raw coefficient."""
         metric = self.db.query(CryptoEcosystemMetric).filter(
-            CryptoEcosystemMetric.date <= date
-        ).order_by(CryptoEcosystemMetric.date.desc()).first()
-
-        if not metric or metric.btc_spy_corr_30d is None:
+            CryptoEcosystemMetric.date <= date,
+            CryptoEcosystemMetric.date >= date - timedelta(days=5),
+            CryptoEcosystemMetric.source == "MULTI_V2",
+            CryptoEcosystemMetric.btc_spy_corr_30d.isnot(None),
+        ).order_by(CryptoEcosystemMetric.date.desc(), CryptoEcosystemMetric.id.desc()).first()
+        if not metric or not np.isfinite(metric.btc_spy_corr_30d) or not -1 <= metric.btc_spy_corr_30d <= 1:
             return None
-
-        corr = metric.btc_spy_corr_30d
-        pressure = (1 - corr) / 2
-        return max(0.0, min(1.0, pressure))
+        return (1 - metric.btc_spy_corr_30d) / 2
 
     def _calc_altcoin_weakness(self, date: datetime) -> Optional[float]:
         """Altcoin weakness vs BTC (underperformance = pressure)"""
@@ -1173,7 +1093,9 @@ class AASCalculator:
         """Total crypto mcap / global M2 ratio"""
         crypto = self._get_latest_crypto_price(date)
         macro = self.db.query(MacroLiquidityData).filter(
-            MacroLiquidityData.date <= date
+            MacroLiquidityData.date <= date,
+            MacroLiquidityData.date >= date - timedelta(days=62),
+            MacroLiquidityData.source == "FRED_FIXED_FOUR_BROAD_MONEY_APPROX_FX_V1",
         ).order_by(desc(MacroLiquidityData.date)).first()
         
         if not crypto or not macro or not crypto.total_crypto_mcap or not macro.global_m2:
@@ -1491,18 +1413,23 @@ class AASCalculator:
         ).order_by(desc(MetalPrice.date)).first()
     
     def _get_crypto_prices(self, date: datetime, days: int = 30) -> List[CryptoPrice]:
-        """Get crypto prices for lookback window"""
+        """One latest valid observation per UTC day; raw duplicate rows remain archived."""
         start_date = date - timedelta(days=days)
-        return self.db.query(CryptoPrice).filter(
+        rows = self.db.query(CryptoPrice).filter(
             CryptoPrice.date >= start_date,
             CryptoPrice.date <= date
-        ).order_by(CryptoPrice.date).all()
+        ).order_by(CryptoPrice.date, CryptoPrice.id).all()
+        by_day = {}
+        for row in rows:
+            if row.btc_usd and np.isfinite(row.btc_usd) and row.btc_usd > 0:
+                by_day[row.date.date()] = row
+        result = [by_day[day] for day in sorted(by_day)]
+        return result if result and (date - result[-1].date).total_seconds() <= 3 * 86400 else []
     
     def _get_latest_crypto_price(self, date: datetime) -> Optional[CryptoPrice]:
         """Get most recent crypto price on or before date"""
-        return self.db.query(CryptoPrice).filter(
-            CryptoPrice.date <= date
-        ).order_by(desc(CryptoPrice.date)).first()
+        rows = self._get_crypto_prices(date, days=3)
+        return rows[-1] if rows else None
     
     def _get_historical_gsr(self, date: datetime, days: int) -> List[float]:
         """Get historical gold/silver ratios"""
@@ -1526,10 +1453,12 @@ class AASCalculator:
 
         gold_prices = self.db.query(MetalPrice).filter(
             MetalPrice.metal == 'AU',
+            MetalPrice.source == 'YAHOO_FINANCE',
             MetalPrice.date >= start_date,
             MetalPrice.date <= date
         ).order_by(MetalPrice.date).all()
 
+        gold_prices = [row for row in gold_prices if row.date == row.date.replace(hour=0, minute=0, second=0, microsecond=0)]
         if not gold_prices:
             return ratios
 
@@ -1538,7 +1467,7 @@ class AASCalculator:
             while (gold_idx + 1) < len(gold_prices) and gold_prices[gold_idx + 1].date <= cp.date:
                 gold_idx += 1
             gold = gold_prices[gold_idx]
-            if cp.btc_usd and gold and gold.price_usd_per_oz:
+            if cp.btc_usd and gold and gold.price_usd_per_oz and timedelta(0) <= cp.date - gold.date <= timedelta(days=4):
                 ratios.append(cp.btc_usd / gold.price_usd_per_oz)
         
         return ratios
@@ -1550,8 +1479,9 @@ class AASCalculator:
         ratios = []
         crypto_prices = self._get_crypto_prices(date, days=days)
         macro_data = self.db.query(MacroLiquidityData).filter(
-            MacroLiquidityData.date >= start_date,
-            MacroLiquidityData.date <= date
+            MacroLiquidityData.date >= start_date - timedelta(days=62),
+            MacroLiquidityData.date <= date,
+            MacroLiquidityData.source == "FRED_FIXED_FOUR_BROAD_MONEY_APPROX_FX_V1",
         ).order_by(MacroLiquidityData.date).all()
 
         if not macro_data:
@@ -1562,7 +1492,7 @@ class AASCalculator:
             while (macro_idx + 1) < len(macro_data) and macro_data[macro_idx + 1].date <= cp.date:
                 macro_idx += 1
             macro = macro_data[macro_idx]
-            if cp.total_crypto_mcap and macro and macro.global_m2:
+            if cp.total_crypto_mcap and macro and macro.global_m2 and timedelta(0) <= cp.date - macro.date <= timedelta(days=62):
                 ratio = cp.total_crypto_mcap / (macro.global_m2 * 1000)
                 ratios.append(ratio)
         

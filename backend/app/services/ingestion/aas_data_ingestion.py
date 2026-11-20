@@ -6,6 +6,7 @@ Fetches crypto prices and macro liquidity data from external APIs.
 
 import requests
 import logging
+import math
 from datetime import datetime, timedelta, date
 from typing import Optional, Dict, List, Tuple
 from sqlalchemy.orm import Session
@@ -29,11 +30,39 @@ M2_PANEL_SOURCE = "FRED_FIXED_FOUR_BROAD_MONEY_APPROX_FX_V1"
 M2_PANEL_SERIES = {"us_m2": "WM2NS", "eurozone_m2": "MABMM301EZM189S", "japan_m2": "MABMM301JPM189S", "uk_m2": "MABMM301GBM189S"}
 
 
-# Yahoo Finance tickers for extended crypto coverage (no rate limits)
+# Yahoo daily history is a separate basis from the current CoinGecko snapshot.
 _YAHOO_CRYPTO_TICKERS: Dict[str, str] = {
     "SOL": "SOL-USD",
     "XRP": "XRP-USD",
 }
+
+
+def _finite_number(value, *, positive=False):
+    try:
+        number = float(value)
+        return number if math.isfinite(number) and (number > 0 if positive else True) else None
+    except (ValueError, TypeError, OverflowError):
+        return None
+
+
+def _dated_point_map(series):
+    """Provider UTC days only; ignore malformed/nonfinite/nonpositive points."""
+    result = {}
+    for entry in series:
+        try:
+            if not isinstance(entry, (list, tuple)) or len(entry) < 2:
+                continue
+            timestamp, value = entry[:2]
+            timestamp = _finite_number(timestamp, positive=True)
+            value = _finite_number(value, positive=True)
+            if timestamp is None or value is None:
+                continue
+            day = datetime.utcfromtimestamp(timestamp / 1000).date()
+            if day <= datetime.utcnow().date():
+                result[day] = value
+        except (ValueError, TypeError, OverflowError, OSError):
+            continue
+    return result
 
 
 class CryptoDataIngestion:
@@ -56,31 +85,44 @@ class CryptoDataIngestion:
         """
         try:
             date_key = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-            recent_count = self.db.query(CryptoPrice).filter(
-                CryptoPrice.date >= date_key - timedelta(days=60)
-            ).count()
-            if recent_count < 30:
-                logger.info("Seeding historical crypto prices for AAS calculations...")
-                self.fetch_historical_prices(365)
-
             # Get BTC and ETH prices
             url = f"{self.COINGECKO_BASE}/simple/price"
             params = {
-                "ids": "bitcoin,ethereum",
+                "ids": "bitcoin,ethereum,solana,ripple",
                 "vs_currencies": "usd",
                 "include_24hr_vol": "true",
-                "include_market_cap": "true"
+                "include_market_cap": "true",
+                "include_last_updated_at": "true",
             }
             
             response = requests.get(url, params=params, timeout=10)
             response.raise_for_status()
             data = response.json()
+            now = datetime.utcnow()
+            observed = []
+            for coin in ("bitcoin", "ethereum", "solana", "ripple"):
+                item = data.get(coin, {})
+                timestamp = _finite_number(item.get("last_updated_at"), positive=True)
+                price = _finite_number(item.get("usd"), positive=True)
+                if timestamp is None or price is None:
+                    raise ValueError(f"Missing valid {coin} price/time")
+                observation = datetime.utcfromtimestamp(timestamp)
+                if not -300 <= (now - observation).total_seconds() <= 1200:
+                    raise ValueError(f"Stale/future {coin} quote")
+                observed.append(observation)
             
             # Get global market data
             global_url = f"{self.COINGECKO_BASE}/global"
             global_response = requests.get(global_url, timeout=10)
             global_response.raise_for_status()
             global_data = global_response.json()["data"]
+            global_time = datetime.utcfromtimestamp(float(global_data["updated_at"]))
+            if not -300 <= (now - global_time).total_seconds() <= 1200:
+                raise ValueError("Stale/future CoinGecko global snapshot")
+            total_cap = _finite_number(global_data.get("total_market_cap", {}).get("usd"), positive=True)
+            dominance = _finite_number(global_data.get("market_cap_percentage", {}).get("btc"), positive=True)
+            if total_cap is None or dominance is None or dominance > 100:
+                raise ValueError("Invalid global capitalization or dominance")
             
             # Get gold price for BTC/Gold ratio
             gold_price = self._fetch_gold_price()
@@ -89,22 +131,22 @@ class CryptoDataIngestion:
                 date=date_key,
                 btc_usd=data["bitcoin"]["usd"],
                 eth_usd=data["ethereum"]["usd"],
-                total_crypto_mcap=global_data["total_market_cap"]["usd"] / 1_000_000_000,  # Convert to billions
-                btc_dominance=global_data["market_cap_percentage"]["btc"],
+                total_crypto_mcap=total_cap / 1_000_000_000,  # Convert to billions
+                btc_dominance=dominance,
                 btc_gold_ratio=data["bitcoin"]["usd"] / gold_price if gold_price else None,
-                btc_volume_24h=data["bitcoin"]["usd_24h_vol"],
-                source="CoinGecko"
+                btc_volume_24h=_finite_number(data["bitcoin"].get("usd_24h_vol"), positive=True),
+                source="COINGECKO_LIVE|" + min(observed + [global_time]).isoformat(),
+                created_at=now,
             )
 
-            # Augment with Yahoo Finance data for SOL and XRP (no rate limits)
-            yahoo_prices = self._fetch_yahoo_crypto_prices()
-            crypto_price.sol_usd = yahoo_prices.get("SOL")
-            crypto_price.xrp_usd = yahoo_prices.get("XRP")
+            # Keep all current asset quotes on the same timestamped provider basis.
+            crypto_price.sol_usd = data["solana"]["usd"]
+            crypto_price.xrp_usd = data["ripple"]["usd"]
             
             # Check if today's data already exists
             existing = self.db.query(CryptoPrice).filter(
                 CryptoPrice.date == crypto_price.date
-            ).first()
+            ).order_by(CryptoPrice.id.desc()).first()
             
             if existing:
                 # Update existing record
@@ -116,15 +158,17 @@ class CryptoDataIngestion:
                 existing.btc_dominance = crypto_price.btc_dominance
                 existing.btc_gold_ratio = crypto_price.btc_gold_ratio
                 existing.btc_volume_24h = crypto_price.btc_volume_24h
+                existing.source = crypto_price.source
+                existing.created_at = now
                 logger.info(f"Updated crypto prices for {crypto_price.date.date()}")
             else:
                 self.db.add(crypto_price)
                 logger.info(f"Added new crypto prices for {crypto_price.date.date()}")
             
             self.db.commit()
-            return crypto_price
+            return existing or crypto_price
             
-        except requests.RequestException as e:
+        except Exception as e:
             logger.error(f"Error fetching crypto prices: {e}")
             self.db.rollback()
             return None
@@ -167,7 +211,7 @@ class CryptoDataIngestion:
 
                 existing = self.db.query(CryptoPrice).filter(
                     CryptoPrice.date == date
-                ).first()
+                ).order_by(CryptoPrice.id.desc()).first()
                 if existing:
                     # Update SOL/XRP on existing rows if they're still null
                     if existing.sol_usd is None and sol_prices.get(date_obj) is not None:
@@ -186,7 +230,7 @@ class CryptoDataIngestion:
                 if total_mcap and btc_mcap:
                     btc_dominance = (btc_mcap / total_mcap) * 100
 
-                gold_price = self._fetch_gold_price()
+                gold_price = self._fetch_gold_price(date)
 
                 crypto_price = CryptoPrice(
                     date=date,
@@ -242,14 +286,7 @@ class CryptoDataIngestion:
             return None
 
     def _series_to_date_map(self, series: List[List[float]]) -> Dict[date, float]:
-        data = {}
-        for entry in series:
-            if not entry or len(entry) < 2:
-                continue
-            timestamp_ms, value = entry[0], entry[1]
-            day = datetime.utcfromtimestamp(timestamp_ms / 1000).date()
-            data[day] = value
-        return data
+        return _dated_point_map(series)
 
     def _fetch_yahoo_crypto_prices(self) -> Dict[str, Optional[float]]:
         """Fetch current prices for extended crypto assets (SOL, XRP) via Yahoo Finance."""
@@ -292,17 +329,21 @@ class CryptoDataIngestion:
             logger.warning(f"Yahoo Finance history error for {symbol}: {e}")
             return {}
 
-    def _fetch_gold_price(self) -> Optional[float]:
-        """Helper to fetch current gold price for ratio calculation"""
+    def _fetch_gold_price(self, as_of: Optional[datetime] = None) -> Optional[float]:
+        """Use a prior available gold session; never divide past BTC by today's gold."""
         try:
             from app.models.precious_metals import MetalPrice
             from sqlalchemy import desc
 
-            gold = self.db.query(MetalPrice).filter(
-                MetalPrice.metal == 'AU'
-            ).order_by(desc(MetalPrice.date)).first()
-
-            return gold.price_usd_per_oz if gold else None
+            as_of = as_of or datetime.utcnow()
+            candidates = self.db.query(MetalPrice).filter(
+                MetalPrice.metal == 'AU',
+                MetalPrice.source == 'YAHOO_FINANCE',
+                MetalPrice.date <= as_of,
+                MetalPrice.date >= as_of - timedelta(days=4),
+            ).order_by(desc(MetalPrice.date), desc(MetalPrice.id)).all()
+            gold = next((row for row in candidates if row.date == row.date.replace(hour=0, minute=0, second=0, microsecond=0)), None)
+            return _finite_number(gold.price_usd_per_oz, positive=True) if gold else None
 
         except Exception:
             return None
@@ -342,12 +383,13 @@ class BitcoinNetworkIngestion:
                 values = combined[date_key]
                 existing = self.db.query(BitcoinNetworkMetric).filter(
                     BitcoinNetworkMetric.date == date_key
-                ).first()
+                ).order_by(BitcoinNetworkMetric.id.desc()).first()
 
                 if existing:
                     existing.hash_rate = values.get("hash_rate", existing.hash_rate)
                     existing.difficulty = values.get("difficulty", existing.difficulty)
                     existing.source = "BLOCKCHAIN"
+                    existing.created_at = datetime.utcnow()
                 else:
                     self.db.add(BitcoinNetworkMetric(
                         date=date_key,
@@ -361,7 +403,7 @@ class BitcoinNetworkIngestion:
             if latest_date:
                 return self.db.query(BitcoinNetworkMetric).filter(
                     BitcoinNetworkMetric.date == latest_date
-                ).first()
+                ).order_by(BitcoinNetworkMetric.id.desc()).first()
             return None
         except Exception as e:
             logger.error(f"Error fetching Bitcoin network metrics: {e}", exc_info=True)
@@ -380,12 +422,14 @@ class BitcoinNetworkIngestion:
             values = data.get("values", [])
             series = []
             for entry in values:
-                timestamp = entry.get("x")
+                timestamp = _finite_number(entry.get("x"), positive=True)
                 value = entry.get("y")
+                value = _finite_number(value, positive=True)
                 if timestamp is None or value is None:
                     continue
                 date_key = datetime.utcfromtimestamp(timestamp).replace(hour=0, minute=0, second=0, microsecond=0)
-                series.append((date_key, float(value)))
+                if datetime.utcnow() - timedelta(days=370) <= date_key <= datetime.utcnow():
+                    series.append((date_key, value))
             return series
         except Exception as e:
             logger.warning(f"Failed to fetch blockchain chart {chart}: {e}")
@@ -406,49 +450,25 @@ class CryptoEcosystemIngestion:
         self.db = db
 
     def fetch_current_metrics(self) -> Optional[CryptoEcosystemMetric]:
+        """Refresh daily source observations at their actual dates, not retrieval day."""
         try:
             date_key = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-            recent_count = self.db.query(CryptoEcosystemMetric).filter(
-                CryptoEcosystemMetric.date >= date_key - timedelta(days=180)
-            ).count()
-            if recent_count < 10:
-                logger.info("Seeding historical crypto ecosystem metrics...")
-                self._backfill_metrics(180)
-
-            stablecoin_supply = self._fetch_stablecoin_supply()
-            defi_tvl = self._fetch_defi_tvl()
-            exchange_outflows = self._fetch_exchange_outflows()
+            self._backfill_metrics(7)
             btc_spy_corr = self._calculate_btc_spy_corr(date_key)
-            stablecoin_btc_ratio = self._calculate_stablecoin_btc_ratio(date_key, stablecoin_supply)
-
             existing = self.db.query(CryptoEcosystemMetric).filter(
-                CryptoEcosystemMetric.date == date_key
-            ).first()
-
-            if existing:
-                existing.stablecoin_supply_usd = stablecoin_supply
-                existing.defi_tvl_usd = defi_tvl
-                existing.exchange_net_outflow_btc = exchange_outflows[0]
-                existing.exchange_net_outflow_usd = exchange_outflows[1]
+                CryptoEcosystemMetric.date == date_key,
+                CryptoEcosystemMetric.source == "MULTI_V2",
+            ).order_by(CryptoEcosystemMetric.id.desc()).first()
+            if btc_spy_corr is not None:
+                if existing is None:
+                    existing = CryptoEcosystemMetric(date=date_key, source="MULTI_V2")
+                    self.db.add(existing)
                 existing.btc_spy_corr_30d = btc_spy_corr
-                existing.stablecoin_btc_ratio = stablecoin_btc_ratio
-                existing.source = "MULTI"
+                existing.created_at = datetime.utcnow()
                 self.db.commit()
-                return existing
-
-            metric = CryptoEcosystemMetric(
-                date=date_key,
-                stablecoin_supply_usd=stablecoin_supply,
-                defi_tvl_usd=defi_tvl,
-                exchange_net_outflow_btc=exchange_outflows[0],
-                exchange_net_outflow_usd=exchange_outflows[1],
-                btc_spy_corr_30d=btc_spy_corr,
-                stablecoin_btc_ratio=stablecoin_btc_ratio,
-                source="MULTI",
-            )
-            self.db.add(metric)
-            self.db.commit()
-            return metric
+            return self.db.query(CryptoEcosystemMetric).filter(
+                CryptoEcosystemMetric.source == "MULTI_V2"
+            ).order_by(CryptoEcosystemMetric.date.desc()).first()
         except Exception as e:
             logger.error(f"Error fetching crypto ecosystem metrics: {e}", exc_info=True)
             self.db.rollback()
@@ -467,8 +487,9 @@ class CryptoEcosystemIngestion:
         for day in all_dates:
             date_key = datetime.combine(day, datetime.min.time())
             existing = self.db.query(CryptoEcosystemMetric).filter(
-                CryptoEcosystemMetric.date == date_key
-            ).first()
+                CryptoEcosystemMetric.date == date_key,
+                CryptoEcosystemMetric.source == "MULTI_V2",
+            ).order_by(CryptoEcosystemMetric.id.desc()).first()
 
             stablecoin_supply = stablecoin_series.get(day)
             btc_mcap = btc_mcap_series.get(day)
@@ -477,12 +498,13 @@ class CryptoEcosystemIngestion:
             exchange_outflow = exchange_series.get(day, (None, None))
 
             if existing:
-                existing.stablecoin_supply_usd = stablecoin_supply or existing.stablecoin_supply_usd
-                existing.defi_tvl_usd = defi_series.get(day) or existing.defi_tvl_usd
+                existing.stablecoin_supply_usd = stablecoin_supply if stablecoin_supply is not None else existing.stablecoin_supply_usd
+                existing.defi_tvl_usd = defi_series.get(day) if defi_series.get(day) is not None else existing.defi_tvl_usd
                 existing.exchange_net_outflow_btc = exchange_outflow[0] if exchange_outflow[0] is not None else existing.exchange_net_outflow_btc
                 existing.exchange_net_outflow_usd = exchange_outflow[1] if exchange_outflow[1] is not None else existing.exchange_net_outflow_usd
-                existing.stablecoin_btc_ratio = stablecoin_btc_ratio or existing.stablecoin_btc_ratio
-                existing.source = "MULTI"
+                existing.stablecoin_btc_ratio = stablecoin_btc_ratio if stablecoin_btc_ratio is not None else existing.stablecoin_btc_ratio
+                existing.source = "MULTI_V2"
+                existing.created_at = datetime.utcnow()
             else:
                 self.db.add(CryptoEcosystemMetric(
                     date=date_key,
@@ -491,7 +513,7 @@ class CryptoEcosystemIngestion:
                     exchange_net_outflow_btc=exchange_outflow[0],
                     exchange_net_outflow_usd=exchange_outflow[1],
                     stablecoin_btc_ratio=stablecoin_btc_ratio,
-                    source="MULTI"
+                    source="MULTI_V2"
                 ))
 
         self.db.commit()
@@ -530,9 +552,11 @@ class CryptoEcosystemIngestion:
                 if timestamp is None or pegged_usd is None:
                     continue
                 day = datetime.utcfromtimestamp(int(timestamp)).date()
-                if day < cutoff:
+                if day < cutoff or day > datetime.utcnow().date():
                     continue
-                series[day] = float(pegged_usd)
+                value = _finite_number(pegged_usd, positive=True)
+                if value is not None:
+                    series[day] = value
             return series
         except Exception as e:
             logger.warning(f"Stablecoin supply series fetch failed: {e}")
@@ -569,9 +593,11 @@ class CryptoEcosystemIngestion:
                 if timestamp is None or tvl is None:
                     continue
                 day = datetime.utcfromtimestamp(int(timestamp)).date()
-                if day < cutoff:
+                if day < cutoff or day > datetime.utcnow().date():
                     continue
-                series[day] = float(tvl)
+                value = _finite_number(tvl, positive=True)
+                if value is not None:
+                    series[day] = value
             return series
         except Exception as e:
             logger.warning(f"DeFi TVL series fetch failed: {e}")
@@ -582,6 +608,8 @@ class CryptoEcosystemIngestion:
             "assets": "btc",
             "metrics": "FlowOutExNtv,FlowOutExUSD,FlowInExNtv,FlowInExUSD",
             "frequency": "1d",
+            "page_size": 1,
+            "paging_from": "end",
         }
         try:
             response = requests.get(
@@ -594,11 +622,7 @@ class CryptoEcosystemIngestion:
             if not data:
                 return (None, None)
             latest = data[-1]
-            out_ntv = float(latest.get("FlowOutExNtv") or 0.0)
-            out_usd = float(latest.get("FlowOutExUSD") or 0.0)
-            in_ntv = float(latest.get("FlowInExNtv") or 0.0)
-            in_usd = float(latest.get("FlowInExUSD") or 0.0)
-            return (out_ntv - in_ntv, out_usd - in_usd)
+            return self._parse_exchange_flow(latest)
         except Exception as e:
             logger.warning(f"Exchange flow fetch failed: {e}")
             return (None, None)
@@ -610,6 +634,8 @@ class CryptoEcosystemIngestion:
             "metrics": "FlowOutExNtv,FlowOutExUSD,FlowInExNtv,FlowInExUSD",
             "frequency": "1d",
             "start_time": start_date.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "page_size": min(10000, max(10, days + 5)),
+            "paging_from": "end",
         }
         try:
             response = requests.get(
@@ -628,15 +654,24 @@ class CryptoEcosystemIngestion:
                 if "." in clean_time:
                     clean_time = clean_time.split(".")[0]
                 day = datetime.fromisoformat(clean_time).date()
-                out_ntv = float(entry.get("FlowOutExNtv") or 0.0)
-                out_usd = float(entry.get("FlowOutExUSD") or 0.0)
-                in_ntv = float(entry.get("FlowInExNtv") or 0.0)
-                in_usd = float(entry.get("FlowInExUSD") or 0.0)
-                series[day] = (out_ntv - in_ntv, out_usd - in_usd)
+                if start_date.date() <= day <= datetime.utcnow().date():
+                    pair = self._parse_exchange_flow(entry)
+                    if pair != (None, None):
+                        series[day] = pair
             return series
         except Exception as e:
             logger.warning(f"Exchange flow series fetch failed: {e}")
             return {}
+
+    @staticmethod
+    def _parse_exchange_flow(entry):
+        """Missing one side is unknown, never a fabricated zero flow."""
+        out = []
+        for unit in ("Ntv", "USD"):
+            sent = _finite_number(entry.get("FlowOutEx" + unit))
+            received = _finite_number(entry.get("FlowInEx" + unit))
+            out.append(sent - received if sent is not None and received is not None and sent >= 0 and received >= 0 else None)
+        return tuple(out)
 
     def _fetch_btc_market_cap_series(self, days: int) -> Dict[date, float]:
         btc_chart = self._fetch_market_chart("bitcoin", days)
@@ -660,35 +695,28 @@ class CryptoEcosystemIngestion:
             return None
 
     def _series_to_date_map(self, series: List[List[float]]) -> Dict[date, float]:
-        data = {}
-        for entry in series:
-            if not entry or len(entry) < 2:
-                continue
-            timestamp_ms, value = entry[0], entry[1]
-            day = datetime.utcfromtimestamp(timestamp_ms / 1000).date()
-            data[day] = value
-        return data
+        return _dated_point_map(series)
 
     def _calculate_btc_spy_corr(self, date_key: datetime) -> Optional[float]:
         btc_prices = self.db.query(CryptoPrice).filter(
-            CryptoPrice.date <= date_key,
-            CryptoPrice.date >= date_key - timedelta(days=45)
-        ).order_by(CryptoPrice.date).all()
+            CryptoPrice.date < date_key,
+            CryptoPrice.date >= date_key - timedelta(days=31)
+        ).order_by(CryptoPrice.date, CryptoPrice.id).all()
 
         spy_prices = self.db.query(EquityPrice).filter(
             EquityPrice.symbol == "SPY",
-            EquityPrice.date <= date_key,
-            EquityPrice.date >= date_key - timedelta(days=45)
-        ).order_by(EquityPrice.date).all()
+            EquityPrice.date < date_key,
+            EquityPrice.date >= date_key - timedelta(days=31)
+        ).order_by(EquityPrice.date, EquityPrice.id).all()
 
-        if len(btc_prices) < 30 or len(spy_prices) < 30:
+        if len(btc_prices) < 21 or len(spy_prices) < 21:
             return None
 
-        btc_series = {p.date.date(): p.btc_usd for p in btc_prices if p.btc_usd}
-        spy_series = {p.date.date(): p.close for p in spy_prices if p.close}
+        btc_series = {p.date.date(): p.btc_usd for p in btc_prices if _finite_number(p.btc_usd, positive=True) is not None}
+        spy_series = {p.date.date(): p.close for p in spy_prices if _finite_number(p.close, positive=True) is not None}
 
         common_dates = sorted(set(btc_series.keys()) & set(spy_series.keys()))
-        if len(common_dates) < 30:
+        if len(common_dates) < 21 or (date_key.date() - common_dates[-1]).days > 4:
             return None
 
         btc_returns = []
@@ -721,8 +749,6 @@ class CryptoEcosystemIngestion:
         btc_mcap = None
         if crypto_price and crypto_price.total_crypto_mcap and crypto_price.btc_dominance:
             btc_mcap = crypto_price.total_crypto_mcap * 1_000_000_000 * (crypto_price.btc_dominance / 100)
-        elif crypto_price and crypto_price.btc_usd:
-            btc_mcap = crypto_price.btc_usd * 19_500_000
 
         if not btc_mcap or btc_mcap == 0:
             return None
@@ -1035,7 +1061,9 @@ def run_daily_ingestion():
         
         # Fetch crypto data
         crypto_ingest = CryptoDataIngestion(db)
-        crypto_result = crypto_ingest.fetch_current_prices()
+        from app.services.scheduler_lock import scheduler_job_lock
+        with scheduler_job_lock("crypto_market_ingestion") as acquired:
+            crypto_result = crypto_ingest.fetch_current_prices() if acquired else None
         
         if crypto_result:
             logger.info(f"Crypto data updated: BTC=${crypto_result.btc_usd:.2f}")

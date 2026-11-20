@@ -45,8 +45,9 @@ export function CryptoSubsystemPanel({
         </div>
         <div className="text-right">
           <div className="text-2xl font-bold" style={{ color: cryptoColor }}>
-            {(sharePercent ?? (contribution * 100)).toFixed(1)}%
+            {sharePercent !== undefined ? `${sharePercent.toFixed(1)}%` : `${(contribution * 100).toFixed(1)} pts`}
           </div>
+          <div className="text-xs text-stealth-300">{sharePercent !== undefined ? "Share of modeled pressure" : "Weighted model contribution"}</div>
           <div className="text-xs text-stealth-400">{activeCount}/{totalCount} active</div>
         </div>
       </div>
@@ -69,17 +70,17 @@ export function CryptoSubsystemPanel({
             </div>
             <div className="grid grid-cols-3 gap-3 mt-3 pt-3 border-t border-stealth-700/50">
               <div>
-                <div className="text-xs text-stealth-500">Weight</div>
+                <div className="text-xs text-stealth-400">Weight</div>
                 <div className="text-sm font-semibold text-stealth-200">{(component.weight * 100).toFixed(1)}%</div>
               </div>
               {component.status === 'active' && (
                 <>
                   <div>
-                    <div className="text-xs text-stealth-500">Value</div>
+                    <div className="text-xs text-stealth-400">Value</div>
                     <div className="text-sm font-semibold text-stealth-200">{component.value.toFixed(2)}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-stealth-500">Contribution</div>
+                    <div className="text-xs text-stealth-400">Contribution</div>
                     <div className="text-sm font-semibold" style={{ color: cryptoColor }}>
                       {component.contribution.toFixed(2)}
                     </div>
@@ -88,7 +89,7 @@ export function CryptoSubsystemPanel({
               )}
             </div>
             <div className="mt-3">
-              <div className="text-xs text-stealth-500 mb-1">52w trend (raw + smoothed)</div>
+              <div className="text-xs text-stealth-400 mb-1">52w trend (raw + smoothed)</div>
               <div className="h-14">
                 {(() => {
                   const rawSeries = rawHistory[component.name] || [];

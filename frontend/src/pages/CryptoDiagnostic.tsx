@@ -1,4 +1,4 @@
-import { useMemo, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import {
   CartesianGrid,
   Legend,
@@ -57,15 +57,24 @@ interface CryptoAsset {
   market_cap: number | null;
   total_volume_24h: number | null;
   history: CryptoHistoryPoint[];
+  source?: string;
+  observed_at?: string | null;
+  change_24h_basis?: string | null;
+  change_30d_basis?: string | null;
 }
 
 interface CryptoMarketOverviewResponse {
   as_of: string;
+  observed_at?: string | null;
+  generated_at?: string;
+  source?: string;
+  data_quality?: { status: string; reason?: string; age_seconds?: number | null };
   summary: {
     btc_dominance: number | null;
     total_market_cap: number | null;
     market_cap_change_24h: number | null;
-    advancing_assets_24h: number;
+    advancing_assets_24h: number | null;
+    change_24h_available_assets?: number;
     monitored_assets: number;
   };
   assets: CryptoAsset[];
@@ -78,6 +87,11 @@ interface CryptoMarketOverviewResponse {
 
 interface CryptoDiagnosticContextResponse {
   as_of: string;
+  indicator_as_of?: string | null;
+  signal_as_of?: string | null;
+  market_as_of?: string | null;
+  model_dates_aligned?: boolean;
+  data_quality?: { status: string; reason?: string };
   summary: {
     primary_driver: string | null;
     stress_type: string | null;
@@ -212,7 +226,7 @@ const getClassificationColor = (classification: string) => {
     case "Bearish":
       return "text-orange-400";
     case "Weak":
-      return "text-red-400";
+      return "text-red-300";
     default:
       return "text-stealth-400";
   }
@@ -235,7 +249,7 @@ const getAssetTextColor = (symbol: string) => {
 
 const formatTimestamp = (value: string | null | undefined) => {
   if (!value) return "Timestamp unavailable";
-  const timestamp = new Date(value);
+  const timestamp = new Date(/^\d{4}-\d{2}-\d{2}T/.test(value) && !/(Z|[+-]\d{2}:\d{2})$/.test(value) ? `${value}Z` : value);
   return Number.isNaN(timestamp.getTime())
     ? value
     : timestamp.toLocaleString(undefined, {
@@ -321,11 +335,12 @@ export default function CryptoDiagnostic({
     loading,
     error,
     refetch: refetchMarket,
-  } = useApi<CryptoMarketOverviewResponse>("/crypto/market-overview?days=365");
+  } = useApi<CryptoMarketOverviewResponse>("/crypto/market-overview?days=365", {timeoutMs: 30_000});
   const {
     data: diagnosticContext,
     loading: diagnosticLoading,
     error: diagnosticError,
+    refetch: refetchDiagnostic,
   } = useApi<CryptoDiagnosticContextResponse>("/crypto/diagnostic-context?days=365");
   const {
     data: fallbackAasData,
@@ -339,6 +354,19 @@ export default function CryptoDiagnostic({
   } = useApi<AASComponentHistoryResponse>(componentHistory ? "" : "/aas/components/history?days=365");
   const [selectedTab, setSelectedTab] = useState<"overview" | "deep-dive">("overview");
   const [timeframe, setTimeframe] = useState<30 | 90 | 180 | 365>(90);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      clearTimeout(timer);
+      const background = document.visibilityState === "hidden" || !document.hasFocus();
+      timer = setTimeout(() => { refetchMarket(); refetchDiagnostic(); schedule(); }, background ? 300_000 : 60_000);
+    };
+    schedule();
+    document.addEventListener("visibilitychange", schedule);
+    window.addEventListener("focus", schedule);
+    window.addEventListener("blur", schedule);
+    return () => { clearTimeout(timer); document.removeEventListener("visibilitychange", schedule); window.removeEventListener("focus", schedule); window.removeEventListener("blur", schedule); };
+  }, [refetchMarket, refetchDiagnostic]);
   const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     event.preventDefault();
@@ -357,9 +385,10 @@ export default function CryptoDiagnostic({
 
   const cutoffDate = useMemo(() => {
     const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - timeframe);
+    cutoff.setUTCHours(0, 0, 0, 0);
+    cutoff.setUTCDate(cutoff.getUTCDate() - timeframe);
     return cutoff;
-  }, [timeframe]);
+  }, [timeframe, marketData]);
 
   const buildPriceChartData = (symbols: string[]) => {
     if (!marketData?.assets?.length) {
@@ -382,7 +411,7 @@ export default function CryptoDiagnostic({
         if (!dateMap.has(point.date)) {
           dateMap.set(point.date, {
             date: point.date,
-            label: new Date(point.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+            label: new Date(point.date).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }),
           });
         }
 
@@ -403,20 +432,22 @@ export default function CryptoDiagnostic({
     }
 
     const breadth = marketData.summary.advancing_assets_24h;
-    const dominance = marketData.summary.btc_dominance ?? 0;
-    const avg30d = marketData.assets.reduce((sum, asset) => sum + (asset.change_30d ?? 0), 0) / Math.max(marketData.assets.length, 1);
+    const dominance = marketData.summary.btc_dominance;
+    const changes = marketData.assets.map(asset => asset.change_30d).filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+    const observed24h = marketData.summary.change_24h_available_assets ?? marketData.assets.filter(asset => typeof asset.change_24h === "number" && Number.isFinite(asset.change_24h)).length;
+    if (marketData.data_quality?.status === "stale" || marketData.data_quality?.status === "unavailable") return {label: "Stale / unavailable", detail: "Current basket classification is withheld while observations are stale or unavailable."};
+    if (!marketData.assets.length || changes.length < marketData.assets.length || observed24h < marketData.assets.length || breadth === null) return {label: "Partial coverage", detail: `${changes.length}/${marketData.assets.length} assets have 30-day changes; ${observed24h}/${marketData.assets.length} have daily changes. Missing values are excluded.`};
+    const avg30d = changes.reduce((sum, value) => sum + value, 0) / changes.length;
 
     if (breadth >= 3 && avg30d > 8) {
-      return { label: "Broad Risk-On", detail: "Leadership is expanding beyond BTC and participation is healthy." };
-    }
-    if (dominance >= 58) {
-      return { label: "Flight To Quality", detail: "BTC is carrying the tape while lower-beta crypto leadership dominates." };
+      return { label: "Basket strength", detail: `${breadth}/${marketData.assets.length} tracked assets advanced, with a positive 30-day basket mean. This is a four-asset sample.` };
     }
     if (avg30d < 0) {
-      return { label: "Defensive Drift", detail: "The basket is softening and broad participation is fading." };
+      return { label: "Basket weakness", detail: `The tracked basket averages ${avg30d.toFixed(1)}% over 30 days. Relative leaders can still be falling.` };
     }
+    if (dominance !== null && dominance >= 58) return {label: "BTC concentration", detail: `BTC represents ${dominance.toFixed(1)}% of reported crypto capitalization. Its share alone does not establish a flight to safety.`};
 
-    return { label: "Mixed Rotation", detail: "Crypto is active, but leadership is rotating rather than fully broadening out." };
+    return { label: "Mixed basket", detail: "The daily breadth and 30-day mean do not meet this model's strength or weakness rules." };
   }, [marketData]);
 
   const marketStructureData = useMemo(
@@ -425,7 +456,7 @@ export default function CryptoDiagnostic({
         .filter((point) => new Date(point.date) >= cutoffDate)
         .map((point) => ({
           ...point,
-          label: new Date(point.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+          label: new Date(point.date).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }),
         })),
     [marketData, cutoffDate]
   );
@@ -436,7 +467,7 @@ export default function CryptoDiagnostic({
         .filter((point) => new Date(point.date) >= cutoffDate)
         .map((point) => ({
           ...point,
-          label: new Date(point.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+          label: new Date(point.date).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }),
         })),
     [diagnosticContext, cutoffDate]
   );
@@ -446,7 +477,7 @@ export default function CryptoDiagnostic({
       return [];
     }
 
-    return buildTechnicalProjections<CryptoAsset>([...marketData.assets]);
+    return buildTechnicalProjections<CryptoAsset>([...marketData.assets]).filter(asset => Date.now() - Date.parse(`${asset.analysis_as_of}T00:00:00Z`) <= 3 * 86_400_000);
   }, [marketData]);
 
   const hasLargeCapChartData = largeCapChartData.length > 1;
@@ -460,7 +491,7 @@ export default function CryptoDiagnostic({
   const supportingErrors = [diagnosticError, aasError, componentHistoryError]
     .filter(Boolean).length;
 
-  if (loading) {
+  if (loading && !marketData) {
     return (
       <div className={embedded ? "py-8" : "p-6"}>
         <div className="flex justify-center py-6">
@@ -470,7 +501,7 @@ export default function CryptoDiagnostic({
     );
   }
 
-  if (error || !marketData) {
+  if (!marketData) {
     return (
       <div className={embedded ? "py-8" : "page-shell"}>
         <div className="rounded-xl border border-red-700 bg-red-900/20 p-4 text-red-100" role="alert">
@@ -495,14 +526,13 @@ export default function CryptoDiagnostic({
           <p className="page-kicker">Tools</p>
           <h1 className="page-title">Crypto Diagnostic</h1>
           <p className="page-subtitle">
-            A compact market-structure view built around BTC, ETH, SOL, and XRP to track digital monetary leadership,
-            platform beta, speculative breadth, and the payments and regulatory lane inside crypto.
+            Prices, relative technical strength and model context for BTC, ETH, SOL and XRP.
           </p>
           <div className="page-meta">
-            <span className="page-badge">As of {formatTimestamp(marketData.as_of)}</span>
+            <span className="page-badge">Observed {formatTimestamp(marketData.observed_at ?? marketData.as_of)}</span>
             <span className="page-badge">{marketData.summary.monitored_assets} assets monitored</span>
             <span className="page-badge">
-              {supportingAvailable}/3 supporting datasets available
+              {supportingAvailable}/3 supporting responses loaded
               {supportingLoading > 0 ? ` · ${supportingLoading} updating` : ""}
               {supportingErrors > 0 ? ` · ${supportingErrors} unavailable` : ""}
             </span>
@@ -510,6 +540,13 @@ export default function CryptoDiagnostic({
         </section>
       )}
 
+      {error ? <p role="status" className="mb-4 text-sm text-amber-300">The latest check failed. Previous observations remain visible: {error}</p> : null}
+      <details className="mb-5 secondary-card p-3 text-xs text-stealth-300">
+        <summary className="cursor-pointer">{marketData.source ?? "Market source"} · {marketData.data_quality?.status ?? "quality unverified"} · source and timing</summary>
+        <p className="mt-2">{marketData.data_quality?.reason ?? "Check the observation time and per-asset change basis before comparing snapshots."}</p>
+        <p className="mt-1">Response generated {formatTimestamp(marketData.generated_at)}. Page checks every minute while active and every five minutes in the background. Server quotes refresh every 15 minutes, including weekends.</p>
+        {diagnosticContext ? <p className="mt-1">Model signals {formatTimestamp(diagnosticContext.signal_as_of ?? diagnosticContext.as_of)} · {diagnosticContext.data_quality?.status ?? "quality unverified"}{diagnosticContext.model_dates_aligned === false ? " · model dates differ" : ""}.</p> : null}
+      </details>
       <section id="crypto-now" className="section-anchor mb-6 primary-card p-4 md:p-6" aria-labelledby="crypto-now-heading">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -532,13 +569,13 @@ export default function CryptoDiagnostic({
             <div className="text-lg font-bold text-amber-300">{marketData.summary.btc_dominance?.toFixed(2) ?? "n/a"}%</div>
           </div>
           <div className="secondary-card p-4">
-            <div className="text-xs text-stealth-400 mb-1">24H Breadth</div>
+            <div className="text-xs text-stealth-400 mb-1">Daily Breadth</div>
             <div className="text-lg font-bold text-emerald-300">
-              {marketData.summary.advancing_assets_24h}/{marketData.summary.monitored_assets} advancing
+              {marketData.summary.advancing_assets_24h ?? "n/a"}/{marketData.summary.change_24h_available_assets ?? marketData.summary.monitored_assets} advancing
             </div>
           </div>
           <div className="secondary-card p-4">
-            <div className="text-xs text-stealth-400 mb-1">Global MCAP Change</div>
+            <div className="text-xs text-stealth-400 mb-1">Market Cap Change (24H / daily)</div>
             <div className={`text-lg font-bold ${getPercentColor(marketData.summary.market_cap_change_24h)}`}>
               {formatPercent(marketData.summary.market_cap_change_24h)}
             </div>
@@ -590,7 +627,7 @@ export default function CryptoDiagnostic({
               <p className="page-kicker">Drivers</p>
               <h2 className="mt-1 text-lg font-semibold text-stealth-100">Winners & Losers Right Now</h2>
               <p className="text-xs text-stealth-400">
-                Competitive ranking across this four-asset basket based on trend strength, momentum, and exhaustion risk.
+                Relative technical scores within this basket. A winner can still have a weak absolute setup.
               </p>
             </div>
 
@@ -601,12 +638,14 @@ export default function CryptoDiagnostic({
                     #{asset.rank} <span style={{ color: getAssetTextColor(asset.symbol) }}>{asset.name}</span>
                   </div>
                   <div className="text-lg font-bold text-stealth-100">{formatCurrency(asset.current_price)}</div>
+                  <div className="text-xs text-stealth-300">Daily bar · {asset.analysis_as_of}</div>
                   <div className="mt-1 text-xs">Score: {asset.score_total.toFixed(1)}/100</div>
                   <div className={`mt-1 text-xs font-semibold ${getClassificationColor(asset.classification)}`}>{asset.classification}</div>
                 </div>
               ))}
             </div>
 
+            {cryptoProjections.length < marketData.assets.length ? <p role="status" className="mb-4 text-sm text-amber-300">{cryptoProjections.length}/{marketData.assets.length} assets have 200 consecutive valid UTC daily bars ending within three days, required for a current technical score.</p> : null}
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               {cryptoProjections.map((asset) => (
                 <div key={`${asset.symbol}-detail`} className="secondary-card p-4">
@@ -624,25 +663,26 @@ export default function CryptoDiagnostic({
 
                   <div className="mb-3 grid grid-cols-2 gap-2 text-sm">
                     <div>
-                      <div className="text-xs text-stealth-500">Current</div>
+                      <div className="text-xs text-stealth-400">Technical daily bar · {asset.analysis_as_of}</div>
                       <div className="font-semibold text-stealth-100">{formatCurrency(asset.current_price)}</div>
+                      <div className="mt-1 text-xs text-stealth-300">Latest quote {formatCurrency(asset.quote_price)} · {formatTimestamp(asset.observed_at)}</div>
                     </div>
                     <div>
-                      <div className="text-xs text-stealth-500">RSI</div>
+                      <div className="text-xs text-stealth-400">Wilder RSI (14)</div>
                       <div className="font-semibold text-stealth-100">{asset.technicals.rsi?.toFixed(1) ?? "N/A"}</div>
                     </div>
                     <div>
-                      <div className="text-xs text-stealth-500">SMA 20</div>
+                      <div className="text-xs text-stealth-400">SMA 20</div>
                       <div className="font-semibold text-stealth-100">{formatCurrency(asset.technicals.sma_20)}</div>
                     </div>
                     <div>
-                      <div className="text-xs text-stealth-500">SMA 50</div>
+                      <div className="text-xs text-stealth-400">SMA 50</div>
                       <div className="font-semibold text-stealth-100">{formatCurrency(asset.technicals.sma_50)}</div>
                     </div>
                   </div>
 
                   <div className="mb-3">
-                    <div className="mb-1 text-xs text-stealth-500">Momentum</div>
+                    <div className="mb-1 text-xs text-stealth-400">Momentum</div>
                     <div className="grid grid-cols-3 gap-2 text-xs">
                       <div>
                         <span className="text-stealth-400">5d:</span>
@@ -667,30 +707,30 @@ export default function CryptoDiagnostic({
 
                   <div className="mb-3 grid grid-cols-2 gap-3 text-xs">
                     <div>
-                      <div className="mb-1 text-stealth-500">Support Levels</div>
+                      <div className="mb-1 text-stealth-400">Support Levels</div>
                       {asset.levels.support.length > 0 ? asset.levels.support.map((level: number, index: number) => (
                         <div key={`${asset.symbol}-support-${index}`} className="font-semibold text-green-400">
                           {formatCurrency(level)}
                         </div>
-                      )) : <div className="text-stealth-500">None detected</div>}
+                      )) : <div className="text-stealth-400">None detected</div>}
                     </div>
                     <div>
-                      <div className="mb-1 text-stealth-500">Resistance Levels</div>
+                      <div className="mb-1 text-stealth-400">Resistance Levels</div>
                       {asset.levels.resistance.length > 0 ? asset.levels.resistance.map((level: number, index: number) => (
                         <div key={`${asset.symbol}-resistance-${index}`} className="font-semibold text-red-400">
                           {formatCurrency(level)}
                         </div>
-                      )) : <div className="text-stealth-500">None detected</div>}
+                      )) : <div className="text-stealth-400">None detected</div>}
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2 border-t border-stealth-600 pt-3 text-xs">
                     <div>
-                      <span className="text-stealth-400">Upper:</span>
+                      <span className="text-stealth-400">Upper (+10%):</span>
                       <span className="ml-2 font-semibold text-green-400">{formatCurrency(asset.levels.take_profit)}</span>
                     </div>
                     <div>
-                      <span className="text-stealth-400">Lower:</span>
+                      <span className="text-stealth-400">Lower (−5%):</span>
                       <span className="ml-2 font-semibold text-red-400">{formatCurrency(asset.levels.stop_loss)}</span>
                     </div>
                   </div>
@@ -710,8 +750,7 @@ export default function CryptoDiagnostic({
             </div>
 
             <div className="mt-4 rounded-xl border border-stealth-700 bg-stealth-900/50 p-3 text-xs text-stealth-400">
-              <strong>Technical Analysis:</strong> Projections are based on SMA crossovers (20/50/200), RSI, momentum,
-              and recent support/resistance. Winner/Loser classification is relative across BTC, ETH, SOL, and XRP only.
+              <strong>Technical model:</strong> 60% moving-average trend score and 40% RSI score. Indicators use the same daily-bar basis and require 200 consecutive UTC days; today's observation may be incomplete and the latest quote is separate. Support/resistance and fixed upper/lower references do not enter the score. RSI near 50 receives more points under this model; the score is not an expected return.
             </div>
           </div>
 
@@ -721,8 +760,8 @@ export default function CryptoDiagnostic({
                 <p className="page-kicker">Evidence</p>
                 <h2 className="mt-1 text-lg font-semibold text-stealth-100">Price Structure</h2>
                 <p className="text-xs text-stealth-400">
-                  Raw-price curves are separated by market tier so the leadership signal is readable without compressing BTC,
-                  ETH, SOL, and XRP into one distorted axis.
+                  Raw-price curves use separate axes to keep each series visible without compressing BTC,
+                  ETH, SOL, and XRP into one shared price axis. Independent axes do not establish correlation.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2" role="group" aria-label="Price history range">
@@ -748,7 +787,7 @@ export default function CryptoDiagnostic({
               <div className="min-w-0 secondary-card p-4">
                 <div className="mb-3">
                   <h3 className="text-sm font-semibold text-stealth-100">BTC vs ETH</h3>
-                  <p className="text-xs text-stealth-500">BTC stays on the left axis and ETH on the right so institutional leadership and smart-contract beta can diverge cleanly.</p>
+                  <p className="text-xs text-stealth-400">BTC uses the left dollar axis; ETH uses the right. Compare dates and returns separately from line height.</p>
                   <p className="mt-1 text-xs text-stealth-300">Latest plotted: {largeCapChartData[largeCapChartData.length - 1]?.label ?? "unavailable"}</p>
                 </div>
                 <div className="h-80 min-w-0 w-full">
@@ -790,12 +829,12 @@ export default function CryptoDiagnostic({
                         formatter={(value: number, name: string) => [formatAxisCurrency(value), name]}
                       />
                       <Legend wrapperStyle={{ fontSize: 12, color: CHART_NEUTRAL.text }} />
-                      <Line yAxisId="left" type="monotone" dataKey="BTC" name="BTC" stroke="#f59e0b" strokeWidth={2.5} dot={false} connectNulls />
-                      <Line yAxisId="right" type="monotone" dataKey="ETH" name="ETH" stroke="#60a5fa" strokeWidth={2.5} dot={false} connectNulls />
+                      <Line yAxisId="left" type="monotone" dataKey="BTC" name="BTC" stroke="#f59e0b" strokeWidth={2.5} dot={false} />
+                      <Line yAxisId="right" type="monotone" dataKey="ETH" name="ETH" stroke="#60a5fa" strokeWidth={2.5} dot={false} />
                     </LineChart>
                   </ResponsiveContainer>
                   ) : (
-                    <div className="flex h-full items-center justify-center rounded border border-dashed border-stealth-700 bg-stealth-950/40 text-sm text-stealth-500">
+                    <div className="flex h-full items-center justify-center rounded border border-dashed border-stealth-700 bg-stealth-950/40 text-sm text-stealth-400">
                       Large-cap history is temporarily unavailable.
                     </div>
                   )}
@@ -804,8 +843,8 @@ export default function CryptoDiagnostic({
                   label="BTC and ETH price chart summary"
                   description={`The chart spans ${timeframe} days and uses separate price axes. Values below show the first and latest plotted observations.`}
                   rows={buildChartReadRows(largeCapChartData, [
-                    { label: "BTC", read: (row) => formatAxisCurrency(Number(row.BTC)) },
-                    { label: "ETH", read: (row) => formatAxisCurrency(Number(row.ETH)) },
+                    { label: "BTC", read: (row) => formatAxisCurrency(typeof row.BTC === "number" ? row.BTC : null) },
+                    { label: "ETH", read: (row) => formatAxisCurrency(typeof row.ETH === "number" ? row.ETH : null) },
                   ])}
                 />
               </div>
@@ -813,7 +852,7 @@ export default function CryptoDiagnostic({
               <div className="min-w-0 secondary-card p-4">
                 <div className="mb-3">
                   <h3 className="text-sm font-semibold text-stealth-100">SOL vs XRP</h3>
-                  <p className="text-xs text-stealth-500">The higher-beta pair sits in a separate panel so alt rotation is visible without flattening the larger-cap leaders.</p>
+                  <p className="text-xs text-stealth-400">SOL uses the left dollar axis; XRP uses the right. This pair does not represent the entire altcoin market.</p>
                   <p className="mt-1 text-xs text-stealth-300">Latest plotted: {secondaryChartData[secondaryChartData.length - 1]?.label ?? "unavailable"}</p>
                 </div>
                 <div className="h-80 min-w-0 w-full">
@@ -855,12 +894,12 @@ export default function CryptoDiagnostic({
                         formatter={(value: number, name: string) => [formatAxisCurrency(value), name]}
                       />
                       <Legend wrapperStyle={{ fontSize: 12, color: CHART_NEUTRAL.text }} />
-                      <Line yAxisId="left" type="monotone" dataKey="SOL" name="SOL" stroke="#14b8a6" strokeWidth={2.4} dot={false} connectNulls />
-                      <Line yAxisId="right" type="monotone" dataKey="XRP" name="XRP" stroke="#f472b6" strokeWidth={2.4} dot={false} connectNulls />
+                      <Line yAxisId="left" type="monotone" dataKey="SOL" name="SOL" stroke="#14b8a6" strokeWidth={2.4} dot={false} />
+                      <Line yAxisId="right" type="monotone" dataKey="XRP" name="XRP" stroke="#f472b6" strokeWidth={2.4} dot={false} />
                     </LineChart>
                   </ResponsiveContainer>
                   ) : (
-                    <div className="flex h-full items-center justify-center rounded border border-dashed border-stealth-700 bg-stealth-950/40 text-sm text-stealth-500">
+                    <div className="flex h-full items-center justify-center rounded border border-dashed border-stealth-700 bg-stealth-950/40 text-sm text-stealth-400">
                       Alt-rotation history is temporarily unavailable.
                     </div>
                   )}
@@ -869,8 +908,8 @@ export default function CryptoDiagnostic({
                   label="SOL and XRP price chart summary"
                   description={`The chart spans ${timeframe} days and uses separate price axes. Values below show the first and latest plotted observations.`}
                   rows={buildChartReadRows(secondaryChartData, [
-                    { label: "SOL", read: (row) => formatAxisCurrency(Number(row.SOL)) },
-                    { label: "XRP", read: (row) => formatAxisCurrency(Number(row.XRP)) },
+                    { label: "SOL", read: (row) => formatAxisCurrency(typeof row.SOL === "number" ? row.SOL : null) },
+                    { label: "XRP", read: (row) => formatAxisCurrency(typeof row.XRP === "number" ? row.XRP : null) },
                   ])}
                 />
               </div>
@@ -882,7 +921,7 @@ export default function CryptoDiagnostic({
               <div className="min-w-0 rounded-lg border border-stealth-700 bg-stealth-800 p-4 md:p-6">
                 <div className="mb-3">
                   <h3 className="text-lg font-semibold text-stealth-100">Leadership Concentration</h3>
-                  <p className="text-xs text-stealth-400">BTC dominance versus total crypto market cap shows whether leadership is broadening out or collapsing back toward defensive concentration.</p>
+                  <p className="text-xs text-stealth-400">BTC share and total crypto capitalization. Changes in share alone do not identify capital flows or investor motives.</p>
                   <p className="mt-1 text-xs text-stealth-300">Latest plotted: {marketStructureData[marketStructureData.length - 1]?.label ?? "unavailable"}</p>
                 </div>
                 <div className="h-72 min-w-0 w-full">
@@ -910,12 +949,12 @@ export default function CryptoDiagnostic({
                       />
                       <Legend wrapperStyle={{ fontSize: 12, color: CHART_NEUTRAL.text }} />
                       <ReferenceLine yAxisId="left" y={60} stroke="#64748b" strokeDasharray="4 4" />
-                      <Line yAxisId="left" type="monotone" dataKey="btc_dominance_pct" name="BTC Dominance" stroke="#fbbf24" strokeWidth={2.4} dot={false} connectNulls />
-                      <Line yAxisId="right" type="monotone" dataKey="total_market_cap" name="Total Market Cap" stroke="#60a5fa" strokeWidth={2.2} dot={false} connectNulls />
+                      <Line yAxisId="left" type="monotone" dataKey="btc_dominance_pct" name="BTC Dominance" stroke="#fbbf24" strokeWidth={2.4} dot={false} />
+                      <Line yAxisId="right" type="monotone" dataKey="total_market_cap" name="Total Market Cap" stroke="#60a5fa" strokeWidth={2.2} dot={false} />
                     </LineChart>
                   </ResponsiveContainer>
                   ) : (
-                    <div className="flex h-full items-center justify-center rounded border border-dashed border-stealth-700 bg-stealth-950/40 text-sm text-stealth-500">
+                    <div className="flex h-full items-center justify-center rounded border border-dashed border-stealth-700 bg-stealth-950/40 text-sm text-stealth-400">
                       Market-structure history is temporarily unavailable.
                     </div>
                   )}
@@ -930,15 +969,15 @@ export default function CryptoDiagnostic({
                 />
                 <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
                   <div className="rounded border border-stealth-700 bg-stealth-900/60 p-3">
-                    <div className="text-xs text-stealth-500">Primary Driver</div>
+                    <div className="text-xs text-stealth-400">Cross-asset Model Driver</div>
                     <div className="font-semibold text-stealth-100">{diagnosticContext.summary.primary_driver ?? "n/a"}</div>
                   </div>
                   <div className="rounded border border-stealth-700 bg-stealth-900/60 p-3">
-                    <div className="text-xs text-stealth-500">Stress Type</div>
+                    <div className="text-xs text-stealth-400">Cross-asset Model Stress</div>
                     <div className="font-semibold text-stealth-100">{diagnosticContext.summary.stress_type ?? "n/a"}</div>
                   </div>
                   <div className="rounded border border-stealth-700 bg-stealth-900/60 p-3">
-                    <div className="text-xs text-stealth-500">Correlation Regime</div>
+                    <div className="text-xs text-stealth-400">Correlation Regime</div>
                     <div className="font-semibold text-stealth-100">{diagnosticContext.summary.correlation_regime ?? "n/a"}</div>
                   </div>
                 </div>
@@ -947,7 +986,7 @@ export default function CryptoDiagnostic({
               <div className="min-w-0 rounded-lg border border-stealth-700 bg-stealth-800 p-4 md:p-6">
                 <div className="mb-3">
                   <h3 className="text-lg font-semibold text-stealth-100">Liquidity Plumbing & Alt Behavior</h3>
-                  <p className="text-xs text-stealth-400">Crypto subsystem signals on a normalized 0 to 1 scale. The reference bands help separate benign plumbing from a more defensive or stress-heavy tape.</p>
+                  <p className="text-xs text-stealth-400">Normalized model pressure, 0–1. These values are not dollar balances, raw correlations or probabilities; a higher score does not by itself prove market stress.</p>
                   <p className="mt-1 text-xs text-stealth-300">Latest plotted: {signalPanelData[signalPanelData.length - 1]?.label ?? "unavailable"}</p>
                 </div>
                 <div className="h-72 min-w-0 w-full">
@@ -970,14 +1009,14 @@ export default function CryptoDiagnostic({
                       <Legend wrapperStyle={{ fontSize: 12, color: CHART_NEUTRAL.text }} />
                       <ReferenceLine y={0.33} stroke="#1e293b" strokeDasharray="4 4" />
                       <ReferenceLine y={0.67} stroke="#1e293b" strokeDasharray="4 4" />
-                      <Line type="monotone" dataKey="stablecoin_supply" name="Stablecoin Supply" stroke="#38bdf8" strokeWidth={2.2} dot={false} connectNulls />
-                      <Line type="monotone" dataKey="defi_tvl" name="DeFi Participation" stroke="#22c55e" strokeWidth={2.2} dot={false} connectNulls />
-                      <Line type="monotone" dataKey="btc_spy_correlation" name="BTC Equity Correlation" stroke="#c084fc" strokeWidth={2.2} dot={false} connectNulls />
-                      <Line type="monotone" dataKey="altcoin_weakness" name="Alt Breadth Stress" stroke="#f97316" strokeWidth={2.2} dot={false} connectNulls />
+                      <Line type="monotone" dataKey="stablecoin_supply" name="Stablecoin level pressure" stroke="#38bdf8" strokeWidth={2.2} dot={false} />
+                      <Line type="monotone" dataKey="defi_tvl" name="TVL level pressure" stroke="#22c55e" strokeWidth={2.2} dot={false} />
+                      <Line type="monotone" dataKey="btc_spy_correlation" name="BTC/SPY divergence pressure" stroke="#c084fc" strokeWidth={2.2} dot={false} />
+                      <Line type="monotone" dataKey="altcoin_weakness" name="Alt Breadth Stress" stroke="#f97316" strokeWidth={2.2} dot={false} />
                     </LineChart>
                   </ResponsiveContainer>
                   ) : (
-                    <div className="flex h-full items-center justify-center rounded border border-dashed border-stealth-700 bg-stealth-950/40 text-sm text-stealth-500">
+                    <div className="flex h-full items-center justify-center rounded border border-dashed border-stealth-700 bg-stealth-950/40 text-sm text-stealth-400">
                       Signal history is temporarily unavailable.
                     </div>
                   )}
@@ -998,7 +1037,7 @@ export default function CryptoDiagnostic({
 
           {diagnosticError && (
             <div className="mb-6 rounded-xl border border-amber-600/60 bg-amber-950/20 p-4 text-sm text-amber-100" role="status">
-              The market overview is current, but diagnostic-context evidence is unavailable: {diagnosticError}
+              Diagnostic-context evidence is unavailable: {diagnosticError}
             </div>
           )}
         </div>
@@ -1016,36 +1055,35 @@ export default function CryptoDiagnostic({
             <p className="page-kicker">Definition</p>
             <h2 className="mb-2 mt-1 text-lg font-semibold text-stealth-100">Basket Design</h2>
             <p className="text-sm text-stealth-400 leading-relaxed">
-              BTC anchors the monetary-store-of-value lane, ETH captures smart-contract core beta, SOL adds higher-beta speculative and throughput-sensitive behavior,
-              and XRP adds a payments and regulatory-narrative lane. It is not a full ecosystem map, but it is a compact and defensible top-level market read.
+              The monitored basket contains BTC, ETH, SOL and XRP. Its breadth and relative ranks describe these four assets; it is not a representative index of every cryptoasset.
             </p>
           </div>
 
           {diagnosticContext && (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
               <div className="rounded-lg border border-stealth-700 bg-stealth-800 p-4">
-                <div className="text-xs text-stealth-500 mb-1">Stablecoin Dry Powder</div>
+                <div className="text-xs text-stealth-400 mb-1">Stablecoin / BTC Ratio Pressure</div>
                 <div className={`text-2xl font-bold ${getSignalTone(diagnosticContext.current_signals.stablecoin_btc_ratio)}`}>
                   {formatSignal(diagnosticContext.current_signals.stablecoin_btc_ratio)}
                 </div>
-                <div className="mt-2 text-xs text-stealth-400">Higher values suggest more sidelined capital relative to BTC market value.</div>
+                <div className="mt-2 text-xs text-stealth-400">The stablecoin/BTC-cap ratio versus its reference history, normalized to 0–1. It does not measure cash waiting to buy.</div>
               </div>
               <div className="rounded-lg border border-stealth-700 bg-stealth-800 p-4">
-                <div className="text-xs text-stealth-500 mb-1">DeFi Participation</div>
+                <div className="text-xs text-stealth-400 mb-1">DeFi Participation</div>
                 <div className={`text-2xl font-bold ${getSignalTone(diagnosticContext.current_signals.defi_tvl)}`}>
                   {formatSignal(diagnosticContext.current_signals.defi_tvl)}
                 </div>
-                <div className="mt-2 text-xs text-stealth-400">Tracks whether on-chain participation is supporting the broader crypto complex.</div>
+                <div className="mt-2 text-xs text-stealth-400">Normalized DeFi TVL level versus its reference history. Price changes can affect TVL without equivalent capital flows.</div>
               </div>
               <div className="rounded-lg border border-stealth-700 bg-stealth-800 p-4">
-                <div className="text-xs text-stealth-500 mb-1">BTC Alternative Behavior</div>
+                <div className="text-xs text-stealth-400 mb-1">BTC / SPY Divergence Pressure</div>
                 <div className={`text-2xl font-bold ${getSignalTone(diagnosticContext.current_signals.btc_spy_correlation)}`}>
                   {formatSignal(diagnosticContext.current_signals.btc_spy_correlation)}
                 </div>
-                <div className="mt-2 text-xs text-stealth-400">Higher normalized readings mean BTC is acting more like a reserve hedge than plain risk beta.</div>
+                <div className="mt-2 text-xs text-stealth-400">(1 − return correlation) / 2: 0.5 means zero correlation; 1 means −1 correlation. This does not establish hedging effectiveness.</div>
               </div>
               <div className="rounded-lg border border-stealth-700 bg-stealth-800 p-4">
-                <div className="text-xs text-stealth-500 mb-1">Alt Breadth Stress</div>
+                <div className="text-xs text-stealth-400 mb-1">Alt Breadth Stress</div>
                 <div className={`text-2xl font-bold ${getSignalTone(diagnosticContext.current_signals.altcoin_weakness)}`}>
                   {formatSignal(diagnosticContext.current_signals.altcoin_weakness)}
                 </div>
@@ -1083,9 +1121,7 @@ export default function CryptoDiagnostic({
               <div>
                 <h3 className="font-semibold text-stealth-100">Subsystem evidence</h3>
                 <p className="mt-1">
-                  The shared backend still exposes crypto component data under the historical AAS API
-                  namespace. This page filters that payload to crypto-only components and does not
-                  recreate the retired combined AAS route.
+                  The subsystem is a cross-asset pressure model filtered to crypto components. Its scores describe transformations of observed inputs, not raw dollar flows or probabilities.
                 </p>
               </div>
               <div>

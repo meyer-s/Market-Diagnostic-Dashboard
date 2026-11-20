@@ -63,7 +63,7 @@ async def scheduled_etl_job():
             logger.info("📊 Ingesting AAS data (crypto & macro)...")
             try:
                 from app.services.ingestion.aas_data_ingestion import run_daily_ingestion
-                run_daily_ingestion()
+                await asyncio.to_thread(run_daily_ingestion)
                 logger.info("✅ AAS data ingestion completed")
             except Exception as e:
                 logger.error(f"❌ AAS data ingestion failed: {e}", exc_info=True)
@@ -339,6 +339,25 @@ async def scheduled_metals_market_refresh_job():
         logger.exception("Metals market refresh failed")
 
 
+def _refresh_crypto_market_data():
+    """Refresh quotes only; slow on-chain archives keep their own cadence."""
+    from app.services.ingestion.aas_data_ingestion import CryptoDataIngestion
+    with scheduler_job_lock("crypto_market_ingestion") as acquired:
+        if not acquired:
+            return None
+        with get_db_session() as db:
+            result = CryptoDataIngestion(db).fetch_current_prices()
+            return {"source": result.source, "observed_session": result.date.isoformat()} if result else None
+
+
+async def scheduled_crypto_market_refresh_job():
+    try:
+        result = await asyncio.to_thread(_refresh_crypto_market_data)
+        logger.info("Crypto quote refresh completed: %s", result)
+    except Exception:
+        logger.exception("Crypto quote refresh failed")
+
+
 def start_scheduler():
     """
     Initialize and start the background scheduler.
@@ -347,6 +366,13 @@ def start_scheduler():
     - Run every 4 hours during weekdays (market data updates)
     - Skip weekends when markets are closed
     """
+    if scheduler.get_job("crypto_market_refresh") is None:
+        scheduler.add_job(
+            scheduled_crypto_market_refresh_job,
+            CronTrigger(minute="*/15", timezone="UTC"),
+            id="crypto_market_refresh", name="Crypto quote refresh",
+            replace_existing=True, max_instances=1, coalesce=True, misfire_grace_time=60,
+        )
     if scheduler.get_job("metals_market_refresh") is None:
         scheduler.add_job(
             scheduled_metals_market_refresh_job,

@@ -98,7 +98,7 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
   const benchmarkColor = getFamilyColor("benchmark");
 
   const buildRelativeRankings = (assets: CryptoAsset[]): RelativeCryptoRanking[] => {
-    const projections = buildTechnicalProjections<CryptoAsset>(assets);
+    const projections = buildTechnicalProjections<CryptoAsset>(assets).filter(asset => Date.now() - Date.parse(`${asset.analysis_as_of}T00:00:00Z`) <= 3 * 86_400_000);
 
     return projections.map((projection: TechnicalProjection<CryptoAsset>) => ({
       symbol: projection.symbol,
@@ -512,7 +512,7 @@ export default function AASWidget({ timeframe = '90d', onInsight }: AASWidgetPro
                         <div className="font-semibold text-stealth-100">
                           #{asset.rank} <span>{asset.name}</span>
                         </div>
-                        <div className="text-stealth-400">{formatMiniPrice(asset.current_price)} · Score {asset.score_total.toFixed(0)}</div>
+                        <div className="text-stealth-400">Daily bar {formatMiniPrice(asset.current_price)} · Score {asset.score_total.toFixed(0)}</div>
                       </div>
                       <span className={`shrink-0 rounded border px-2 py-1 text-xs font-semibold ${getRelativeClassStyles(asset.relativeClassification)}`}>
                         {asset.relativeClassification}

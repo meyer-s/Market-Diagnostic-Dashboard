@@ -20,6 +20,22 @@ def test_scheduler_lock_only_allows_single_holder() -> None:
             assert acquired_second is False
 
 
+def test_crypto_quotes_refresh_every_fifteen_minutes_on_all_days(monkeypatch):
+    class Probe:
+        running = True
+        def __init__(self): self.jobs = {}
+        def get_job(self, _job_id): return None
+        def add_job(self, func, trigger, *, id, **kwargs): self.jobs[id] = (trigger, kwargs)
+    probe = Probe()
+    monkeypatch.setattr(scheduler_module, "scheduler", probe)
+    scheduler_module.start_scheduler()
+    trigger, options = probe.jobs["crypto_market_refresh"]
+    assert "minute='*/15'" in str(trigger)
+    assert "day_of_week=" not in str(trigger)
+    assert str(trigger.timezone) == "UTC"
+    assert options["max_instances"] == 1 and options["coalesce"] is True
+
+
 def test_postgres_scheduler_lock_releases_on_the_same_connection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
