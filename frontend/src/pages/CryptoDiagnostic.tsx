@@ -570,7 +570,7 @@ export default function CryptoDiagnostic({
           </div>
           <div className="secondary-card p-4">
             <div className="text-xs text-stealth-400 mb-1">Daily Breadth</div>
-            <div className="text-lg font-bold text-emerald-300">
+            <div className={`text-lg font-bold ${marketData.summary.advancing_assets_24h === null ? "text-stealth-300" : marketData.summary.advancing_assets_24h === 0 ? "text-red-300" : marketData.summary.advancing_assets_24h >= 3 ? "text-emerald-300" : "text-amber-300"}`}>
               {marketData.summary.advancing_assets_24h ?? "n/a"}/{marketData.summary.change_24h_available_assets ?? marketData.summary.monitored_assets} advancing
             </div>
           </div>
