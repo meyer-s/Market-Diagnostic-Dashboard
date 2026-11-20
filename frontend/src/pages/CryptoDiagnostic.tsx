@@ -549,7 +549,7 @@ export default function CryptoDiagnostic({
         <p className="mt-2">{marketData.data_quality?.reason ?? "Check the observation time and per-asset change basis before comparing snapshots."}</p>
         <p className="mt-1">Response generated {formatTimestamp(marketData.generated_at)}. Page checks every minute while active and every five minutes in the background. Server quotes refresh every 15 minutes, including weekends.</p>
         <p className="mt-1">Market-cap and dominance snapshot {formatTimestamp(marketData.summary.observed_at)} · {marketData.summary.data_quality?.status ?? "quality unverified"}.</p>
-        {diagnosticContext ? <p className="mt-1">Model signals {formatTimestamp(diagnosticContext.signal_as_of ?? diagnosticContext.as_of)} · {diagnosticContext.data_quality?.status ?? "quality unverified"}{diagnosticContext.model_dates_aligned === false ? " · model dates differ" : ""}.</p> : null}
+        {diagnosticContext ? <p className="mt-1">Model session {(diagnosticContext.signal_as_of ?? diagnosticContext.as_of)?.slice(0, 10) ?? "unavailable"} · {diagnosticContext.data_quality?.status ?? "quality unverified"}{diagnosticContext.model_dates_aligned === false ? " · model dates differ" : ""}.</p> : null}
       </details>
       <section id="crypto-now" className="section-anchor mb-6 primary-card p-4 md:p-6" aria-labelledby="crypto-now-heading">
         <div className="flex flex-wrap items-start justify-between gap-4">
