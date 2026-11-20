@@ -35,6 +35,7 @@ import { apiFetch } from "../utils/apiUtils";
 import { isPersonalEtfOption, readPersonalEtfPreference, savePersonalEtfPreference } from "../utils/personalEtfOptions";
 import { SCANNER_RECOMMENDATIONS_PAUSED, SCANNER_FUNDING_REASON } from "../utils/scannerTradeSafety";
 import { ScannerTradeSafetyNotice } from "../features/secretOptions/ScannerTradeSafetyNotice";
+import { OcoExitPlans } from "../features/secretOptions/OcoExitPlans";
 import {
   clearSecretOptionsToken,
   getSecretOptionsScope,
@@ -1619,6 +1620,7 @@ export default function SecretOptions() {
     [allClosedPositions, showPersonalEtfs],
   );
   const [showClosedLog, setShowClosedLog] = useState(false);
+  const [showOcoPlans, setShowOcoPlans] = useState(false);
   const [showClosedEditModal, setShowClosedEditModal] = useState(false);
   const [editingClosedPositionId, setEditingClosedPositionId] = useState<number | null>(null);
   const [closedFormData, setClosedFormData] = useState(initialClosedFormState);
@@ -1751,6 +1753,7 @@ export default function SecretOptions() {
     setGreeksPositionId(null);
     setGreeksLoadedAt(null);
     setClosedPositions([]);
+    setShowOcoPlans(false);
     setPendingClosedRestore(null);
     setLastClosedPosition(null);
     setClosedRestoreError(null);
@@ -4789,6 +4792,13 @@ export default function SecretOptions() {
           </button>
         ))}
       </div>
+
+      {optionsWorkspace === "positions" ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stealth-800 pb-2">
+          <p className="text-sm text-stealth-300">Carry the scanner’s original exit levels into your broker review.</p>
+          <button type="button" onClick={() => setShowOcoPlans(true)} className="min-h-11 rounded-lg border border-sky-600/60 px-4 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-950/40">OCO exit plans</button>
+        </div>
+      ) : null}
 
       {secretOptionsReadOnly ? (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-sky-700/50 bg-sky-950/25 px-3 py-2 text-xs text-sky-100">
@@ -8241,6 +8251,12 @@ export default function SecretOptions() {
       )}
 
       {/* P/L History Modal */}
+      {showOcoPlans && renderModal("OCO exit plans", () => setShowOcoPlans(false), (
+        <div className="fixed inset-0 flex min-h-[100dvh] items-center justify-center overflow-y-auto bg-stealth-950/90 p-4">
+          <OcoExitPlans onClose={() => setShowOcoPlans(false)} />
+        </div>
+      ))}
+
       {showClosedLog && renderModal(
         "Closed positions history",
         () => setShowClosedLog(false),
