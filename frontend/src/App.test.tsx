@@ -130,7 +130,7 @@ describe("application route lifecycle", () => {
     await advance(2_000);
     headlines = [{ id: "raw", title: "A group claims a breach", source: "Raw source", score: 49, url: "https://example.com/raw", published_at: new Date().toISOString(), report_label: "Unverified victim claim" }];
     await advance(60_000);
-    expect(screen.getByRole("complementary", { name: "Live news alert" }).textContent).toContain("Raw · Unverified victim claim");
+    expect(screen.getByRole("complementary", { name: "Live news alert" }).textContent).toContain("Gray · Unverified victim claim");
     headlines = [];
     act(() => window.dispatchEvent(new Event("live-news:sources-changed")));
     expect(screen.queryByRole("complementary", { name: "Live news alert" })).toBeNull();

@@ -10,6 +10,7 @@ const ACTIVITY_MS = 20_000;
 const BACKGROUND_MS = 60_000;
 const RETRY_MS = 15_000;
 const HOME_HEADLINE_LIMIT = 6;
+const HOME_GRAY_LIMIT = 4;
 const HOVER_DELAY_MS = 180;
 const BUTTON = "field-button field-button-secondary disabled:cursor-not-allowed disabled:opacity-50";
 type View = "focused" | "all";
@@ -63,6 +64,7 @@ type Snapshot = {
   featured: Article[];
   alerts?: AlertSnapshot;
   raw_sources?: string[];
+  gray?: { articles: Article[]; total: number; page: number; pages: number; first: number; last: number };
 };
 
 type WeightSettings = {
@@ -122,7 +124,7 @@ function HeadlineDetails({ article, topic, expanded, featured }: { article: Arti
         <span className="font-semibold text-stealth-100">{priority} priority · Relevance {article.score}</span>
         {article.reasons.length > 0 && <span>{article.reasons.join(" · ")}</span>}
       </p>
-      {article.report_label && <p>Raw source · {article.report_label}. Relevance measures your interests, not confidence in the report.</p>}
+      {article.report_label && <p>Gray source · {article.report_label}. Relevance measures your interests, not confidence in the report.</p>}
       {hasExcerpt && (
         <div className="space-y-1.5">
           <p className="text-sm leading-relaxed text-stealth-100">{summary || preview?.text || "Loading article preview…"}</p>
@@ -135,10 +137,10 @@ function HeadlineDetails({ article, topic, expanded, featured }: { article: Arti
   );
 }
 
-function Headline({ article, topic, featured = false }: { article: Article; topic: string; featured?: boolean }) {
+function Headline({ article, topic, featured = false, secondary = false }: { article: Article; topic: string; featured?: boolean; secondary?: boolean }) {
   const { bars, fade, color } = PRIORITY[article.priority];
   const topicColor = TOPIC_COLORS[article.topic] ?? TOPIC_COLORS.general;
-  const Title = featured ? "h4" : "h3";
+  const Title = featured || secondary ? "h4" : "h3";
   const detailsId = useId();
   const [disclosure, setDisclosure] = useState<"closed" | "hover" | "open">("closed");
   const hoverTimer = useRef<number>();
@@ -188,7 +190,7 @@ function Headline({ article, topic, featured = false }: { article: Article; topi
         </button>
         <div className="min-w-0 flex-1 self-center">
           <div className={`space-y-1 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100 motion-reduce:transition-none ${expanded ? "" : fade}`}>
-            <Title className="break-words text-sm font-semibold leading-snug text-stealth-100 sm:text-base">
+            <Title className={`break-words font-semibold leading-snug text-stealth-100 ${secondary ? "text-sm" : "text-sm sm:text-base"}`}>
               <a className="hover:underline focus-visible:underline" href={article.url} target="_blank" rel="noopener noreferrer">
                 {article.title}<span className="sr-only"> (opens in a new tab)</span>
               </a>
@@ -196,7 +198,7 @@ function Headline({ article, topic, featured = false }: { article: Article; topi
             <p className="flex flex-wrap gap-x-2 text-xs text-stealth-300">
               <span className="sr-only">{topic}</span>
               <span>{article.source}</span>
-              {article.report_label && <span className="font-semibold text-amber-200">Raw · {article.report_label}</span>}
+              {article.report_label && <span className="font-semibold text-amber-200">Gray · {article.report_label}</span>}
               <time dateTime={article.published_at}>{formatDateTimeWithWeekday(article.published_at)} ET</time>
               {article.cached && <span>Cached</span>}
             </p>
@@ -320,7 +322,7 @@ function SourcesEditor({ close, onSaved }: { close: () => void; onSaved: () => v
   }
 
   return (
-    <Dialog open title="Raw / breaking sources" onClose={close} description="Optional sources with more noise and less verification. Off by default; saved for this browser.">
+    <Dialog open title="Gray source settings" onClose={close} description="A separate stream for commentary, community posts, underground claims, and breach reporting. Enabled by default; your choices are saved for this browser.">
       {error && <ErrorState message={error} />}
       {settings ? (
         <form onSubmit={save} className="space-y-4">
@@ -328,7 +330,7 @@ function SourcesEditor({ close, onSaved }: { close: () => void; onSaved: () => v
             {settings.sources.map((source) => (
               <div key={source.id} className="surface-card-muted p-3">
                 <label className="flex cursor-pointer items-start gap-3">
-                  <input type="checkbox" name={source.id} value="1" defaultChecked={settings.enabled.includes(source.id)} className="mt-1 h-4 w-4 shrink-0 accent-sky-400" />
+                  <input type="checkbox" name={source.id} value="1" checked={settings.enabled.includes(source.id)} onChange={(event) => setSettings({ ...settings, enabled: event.target.checked ? [...settings.enabled, source.id] : settings.enabled.filter((key) => key !== source.id) })} className="mt-1 h-4 w-4 shrink-0 accent-sky-400" />
                   <span className="min-w-0 font-semibold text-stealth-100">
                     {source.name}
                     <span className="mt-1 block text-xs text-amber-200">{source.label}</span>
@@ -339,10 +341,11 @@ function SourcesEditor({ close, onSaved }: { close: () => void; onSaved: () => v
               </div>
             ))}
           </div>
-          <p className="text-xs text-stealth-300">Selected sources join your headlines and site-wide alerts above {settings.threshold}. Personal relevance is separate from credibility. Feeds follow publisher cache limits; a fast refresh does not guarantee new reports.</p>
+          <p className="text-xs text-stealth-300">Selected sources appear in the gray feed and site-wide alerts above {settings.threshold}. Personal relevance is separate from credibility. Feeds follow publisher cache limits; a fast refresh does not guarantee new reports.</p>
           <div className="field-dialog-footer">
             <button type="submit" className="field-button field-button-primary disabled:opacity-50" disabled={saving}>{saving ? "Saving…" : "Save sources"}</button>
-            <button type="submit" className={BUTTON} name="reset" value="1" disabled={saving}>Turn off raw sources</button>
+            <button type="button" className={BUTTON} onClick={() => setSettings({ ...settings, enabled: settings.sources.map((source) => source.id) })} disabled={saving}>Select all</button>
+            <button type="submit" className={BUTTON} name="reset" value="1" disabled={saving}>Turn off gray sources</button>
           </div>
         </form>
       ) : !error && <LoadingState message="Loading news sources." />}
@@ -356,6 +359,7 @@ export default function LiveNewsPanel({ compact = false, inViewport }: { compact
   const [when, setWhen] = useState("");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [grayPage, setGrayPage] = useState(1);
   const [revision, setRevision] = useState(0);
   const [showWeights, setShowWeights] = useState(false);
   const [showSources, setShowSources] = useState(false);
@@ -369,15 +373,19 @@ export default function LiveNewsPanel({ compact = false, inViewport }: { compact
   const closeWeights = useCallback(() => setShowWeights(false), []);
   const closeSources = useCallback(() => setShowSources(false), []);
   const feedQuery = new URLSearchParams({ view, topic }).toString();
-  const query = new URLSearchParams({ view, topic, when, q: search, page: String(page) }).toString();
+  const mainQuery = new URLSearchParams({ view, topic, when, q: search, page: String(page) }).toString();
+  const query = `${mainQuery}&gray_page=${grayPage}`;
   const latestSnapshot = result?.data;
-  const data = result?.query === query ? latestSnapshot : undefined;
+  const data = result?.query.startsWith(`${mainQuery}&gray_page=`) ? latestSnapshot : undefined;
+  const grayPending = Boolean(data && result?.query !== query);
   const topics = latestSnapshot?.topics ?? {};
   const error = failedQuery === query;
   const articles = data?.articles.slice(0, compact ? HOME_HEADLINE_LIMIT - data.featured.length : undefined) ?? [];
+  const gray = data?.gray;
+  const grayArticles = gray?.articles.slice(0, compact ? HOME_GRAY_LIMIT : undefined) ?? [];
 
   useEffect(() => {
-    const refresh = () => { setPage(1); setRevision((value) => value + 1); };
+    const refresh = () => { setPage(1); setGrayPage(1); setRevision((value) => value + 1); };
     const sync = (event: StorageEvent) => {
       if (event.key === "live-news:source-revision") refresh();
     };
@@ -472,7 +480,7 @@ export default function LiveNewsPanel({ compact = false, inViewport }: { compact
 
   const topicField = (
     <FormField label="Topic">
-      <select value={topic} onChange={(event) => { setTopic(event.target.value); setPage(1); }} className="min-w-0 px-3 text-sm">
+      <select value={topic} onChange={(event) => { setTopic(event.target.value); setPage(1); setGrayPage(1); }} className="min-w-0 px-3 text-sm">
         <option value="">All topics</option>
         {Object.entries(topics).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
       </select>
@@ -486,7 +494,7 @@ export default function LiveNewsPanel({ compact = false, inViewport }: { compact
           <SegmentedControl label="Live news view" options={VIEWS} value={view} onChange={(value) => { setView(value); setPage(1); }} />
           {compact && <div className="w-full sm:w-44">{topicField}</div>}
           <button type="button" className={BUTTON} onClick={() => setShowSources(true)}>
-            Raw / breaking · {latestSnapshot?.raw_sources?.length ? `${latestSnapshot.raw_sources.length} on` : "Off"}
+            Gray sources · {latestSnapshot ? latestSnapshot.raw_sources?.length ? `${latestSnapshot.raw_sources.length} on` : "Off" : "…"}
           </button>
         </div>
         {compact ? (
@@ -510,11 +518,12 @@ export default function LiveNewsPanel({ compact = false, inViewport }: { compact
           event.preventDefault();
           setSearch(String(new FormData(event.currentTarget).get("search")).trim());
           setPage(1);
+          setGrayPage(1);
         }}
       >
         {topicField}
         <FormField label="Published">
-          <select value={when} onChange={(event) => { setWhen(event.target.value); setPage(1); }} className="min-w-0 px-3 text-sm">
+          <select value={when} onChange={(event) => { setWhen(event.target.value); setPage(1); setGrayPage(1); }} className="min-w-0 px-3 text-sm">
             <option value="">Any recent date</option>
             <option value="24h">Last 24 hours</option>
             <option value="72h">Last 72 hours</option>
@@ -532,7 +541,9 @@ export default function LiveNewsPanel({ compact = false, inViewport }: { compact
       {error && <ErrorState message={data ? "Live updates are delayed. Showing the last loaded snapshot." : "Live news could not be loaded. It will retry automatically."} />}
       {!data && !error && <LoadingState message="Loading live headlines." />}
       {data && (
-        <>
+        <div className="grid min-w-0 items-start gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(17rem,1fr)]">
+          <section aria-label="Main news feed" className="min-w-0 space-y-3">
+          <h3 className="text-sm font-semibold text-stealth-100">Headlines</h3>
           {!compact && (
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-stealth-300">
               <span>{data.total
@@ -579,7 +590,38 @@ export default function LiveNewsPanel({ compact = false, inViewport }: { compact
               ))}
             </ul>
           </details>}
-        </>
+          </section>
+          <aside id={compact ? "dashboard-gray-news" : "gray-news"} aria-label="Gray sources" aria-busy={grayPending} className="surface-card-muted min-w-0 scroll-mt-24 space-y-3 p-3 lg:sticky lg:top-24">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold text-stealth-100">Gray sources</h3>
+                <p className="text-xs text-stealth-300">{data.raw_sources?.length ?? 0} enabled · {gray?.total ?? 0} headlines</p>
+              </div>
+              <button type="button" className={BUTTON} aria-label="Manage gray sources" onClick={() => setShowSources(true)}>Sources</button>
+            </div>
+            <p className="text-xs text-stealth-300">Newest first · claims, commentary & breach reports</p>
+            {grayArticles.length ? (
+              <ul key={gray?.page} aria-label="Gray headlines" className="max-h-[36rem] divide-y divide-stealth-800 overflow-y-auto overscroll-contain">
+                {grayArticles.map((article) => <li key={article.id}><Headline article={article} topic={topics[article.topic]} secondary /></li>)}
+              </ul>
+            ) : (
+              <EmptyState message={!data.raw_sources?.length ? "Gray sources are off." : data.updated_at ? "No gray headlines match these filters." : "Checking gray sources…"} />
+            )}
+            {compact && grayArticles.length > 0 && <a className="inline-block text-xs font-semibold text-sky-200 underline" href="/news#gray-news">More gray headlines</a>}
+            {!compact && gray && gray.pages > 1 && (
+              <nav aria-label="Gray headline pages" className="flex flex-wrap items-center justify-between gap-2">
+                <button type="button" className={BUTTON} aria-label="Previous gray headlines" disabled={grayPending || gray.page <= 1} onClick={() => setGrayPage(gray.page - 1)}>Previous</button>
+                <span className="text-xs tabular-nums text-stealth-300">{gray.page} / {gray.pages}</span>
+                <button type="button" className={BUTTON} aria-label="Next gray headlines" disabled={grayPending || gray.page >= gray.pages} onClick={() => setGrayPage(gray.page + 1)}>Next</button>
+              </nav>
+            )}
+            <details className="text-xs text-stealth-300">
+              <summary className="min-h-8 cursor-pointer py-1 font-semibold text-stealth-100">About this feed</summary>
+              <p className="pt-1 leading-relaxed">Reports retain their source labels. Topic, date, and search filters apply to both columns; Focused applies to the main feed. Your relevance scores and alerts above 45 also apply here. Publisher cache limits determine freshness.</p>
+              {!compact && <a className="mt-2 inline-block text-sky-200 underline" href={`${LIVE_PATH}/rss.xml?${new URLSearchParams({ view: "all", topic, stream: "gray" })}`}>Gray RSS feed</a>}
+            </details>
+          </aside>
+        </div>
       )}
     </div>
   );

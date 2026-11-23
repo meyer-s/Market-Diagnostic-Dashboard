@@ -76,7 +76,7 @@ function showDesktopAlert(headlines: AlertHeadline[]) {
     const notification = new Notification(
       headlines.length === 1 ? "High-relevance headline" : `${headlines.length} high-relevance headlines`,
       {
-        body: `${first.report_label ? `Raw · ${first.report_label} · ` : ""}${first.score.toFixed(0)} relevance · ${first.title}`,
+        body: `${first.report_label ? `Gray · ${first.report_label} · ` : ""}${first.score.toFixed(0)} relevance · ${first.title}`,
         tag: "live-news-relevance",
       },
     );
@@ -308,7 +308,7 @@ export default function LiveNewsAlertProvider({ children }: { children: ReactNod
     <LiveNewsAlertContext.Provider value={{ alerts, enabled, setEnabled, publishFeed }}>
       {children}
       <div className="sr-only" role="status">
-        {newest ? `${title}. ${newest.report_label ? `Raw. ${newest.report_label}. ` : ""}${newest.title}. Relevance ${newest.score.toFixed(0)}.` : ""}
+        {newest ? `${title}. ${newest.report_label ? `Gray source. ${newest.report_label}. ` : ""}${newest.title}. Relevance ${newest.score.toFixed(0)}.` : ""}
       </div>
       {newest && (
         <aside className="surface-card-strong fixed bottom-4 right-4 z-50 w-[calc(100%-2rem)] max-w-sm border-sky-400 p-4 shadow-xl" aria-label="Live news alert">
@@ -316,7 +316,7 @@ export default function LiveNewsAlertProvider({ children }: { children: ReactNod
             <Bell size={16} aria-hidden="true" />
             <p>{title} · {newest.score.toFixed(0)}</p>
           </div>
-          {newest.report_label && <p className="mt-2 text-xs font-semibold text-amber-200">Raw · {newest.report_label}</p>}
+          {newest.report_label && <p className="mt-2 text-xs font-semibold text-amber-200">Gray · {newest.report_label}</p>}
           <a className="mt-2 block text-sm font-semibold text-stealth-100 underline underline-offset-4" href={newest.url} target="_blank" rel="noopener noreferrer">
             {newest.title} <span className="sr-only">(opens in a new tab)</span>
           </a>

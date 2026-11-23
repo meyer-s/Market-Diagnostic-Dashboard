@@ -73,6 +73,7 @@ TOPICS = {
 }
 FOCUSED_LIMITS = dict.fromkeys(TOPICS, 30)
 PAGE_SIZE = 32
+GRAY_PAGE_SIZE = 12
 TOPIC_TABS = dict(zip(TOPICS, ("Releases", "Markets", "Rates & metals", "Crypto & ETFs",
                               "World", "Tech & cyber", "Energy", "General")))
 DATE_FILTERS = {"": ("Any recent date", None), "24h": ("Last 24 hours", 24), "72h": ("Last 72 hours", 72)}
@@ -98,10 +99,16 @@ def load_preferences(cookie_header):
         cookie = SimpleCookie(cookie_header or "")
     except CookieError:
         return DEFAULTS
-    raw_sources = ()
-    if "market_live_sources" in cookie:
-        requested = cookie["market_live_sources"].value.split(".")
+    raw_sources = DEFAULTS.raw_sources
+    if "market_live_sources_v2" in cookie:
+        requested = cookie["market_live_sources_v2"].value.split(".")
         raw_sources = tuple(key for key in RAW_SOURCE_KEYS if key in requested)
+    elif "market_live_sources" in cookie:
+        requested = cookie["market_live_sources"].value.split(".")
+        selected = tuple(key for key in RAW_SOURCE_KEYS if key in requested)
+        # Preserve an explicit off choice; expand older enabled profiles to include the new feed.
+        raw_sources = tuple(key for key in RAW_SOURCE_KEYS
+                            if key in selected or selected and key in NEW_GRAY_SOURCE_KEYS)
     try:
         encoded, focus = cookie["market_live_weights"].value.split(".")
         weights = [int(value) for value in encoded]
@@ -360,12 +367,23 @@ SOURCES = (
     Source("Hacker News · Newest", "https://hnrss.org/newest?count=100", "https://news.ycombinator.com/newest", "tech",
            via="hnrss", wire=True, interval=60, raw_key="hn", report_label="Community submission",
            description="Newest submissions before voting or editorial selection. The RSS service may cache updates for 10 minutes."),
+    Source("RansomLook", "https://www.ransomlook.io/rss.xml", "https://www.ransomlook.io/", "tech",
+           wire=True, interval=60, raw_key="ransomlook", report_label="Unverified victim claim",
+           description="Ransomware-site observations. Listings are claims and may overlap with Ransomware.live."),
+    Source("Dark Web Informer", "https://darkwebinformer.com/rss/", "https://darkwebinformer.com/", "tech",
+           wire=True, interval=120, raw_key="darkwebinformer", news_days=7, report_label="Underground reporting",
+           description="Reporting on breach claims, underground activity, and vulnerabilities."),
+    Source("DataBreaches.net", "https://databreaches.net/feed/", "https://databreaches.net/", "tech",
+           wire=True, interval=300, raw_key="databreaches", news_days=7, report_label="Breach reporting",
+           description="Breach reporting and follow-ups. The public feed may cache updates for four hours."),
     Source("CoinDesk", "https://www.coindesk.com/arc/outboundfeeds/rss/", "https://www.coindesk.com/",
            "crypto", wire=True),
     Source("Cointelegraph · ETFs", "https://cointelegraph.com/rss/tag/etf", "https://cointelegraph.com/tags/etf",
            "crypto"),
 )
 RAW_SOURCE_KEYS = tuple(source.raw_key for source in SOURCES if source.raw_key)
+NEW_GRAY_SOURCE_KEYS = ("ransomlook", "darkwebinformer", "databreaches")
+DEFAULTS = replace(DEFAULTS, raw_sources=RAW_SOURCE_KEYS)
 
 
 def source_enabled(source, preferences):
@@ -1027,9 +1045,11 @@ def display_time(value, *, seconds=False):
     return value.astimezone(EASTERN or UTC).strftime("%b %d, %I:%M:%S %p %Z" if seconds else "%b %d, %I:%M %p %Z")
 
 
-def rss_payload(stories, scores, statuses, updated, topic, view):
+def rss_payload(stories, scores, statuses, updated, topic, view, *, gray=False):
     focused = view == "focused"
     title = f"{FEED_TITLE} · {TOPICS[topic]}" if topic else FEED_TITLE
+    if gray:
+        title += " · Gray sources"
     if not focused:
         title += f" · {VIEWS[view]}"
     root = ET.Element("rss", version="2.0")
@@ -1052,7 +1072,7 @@ def rss_payload(stories, scores, statuses, updated, topic, view):
     now = now_utc()
     for story in sorted(stories, key=lambda story: story.published, reverse=True):
         item = ET.SubElement(channel, "item")
-        label = f"Raw · {story.source.report_label} · " if story.source.raw_key else ""
+        label = f"Gray · {story.source.report_label} · " if story.source.raw_key else ""
         ET.SubElement(item, "title").text = f"[{label}{TOPICS[story.topic]}] {story.title}"
         ET.SubElement(item, "link").text = story.url
         ET.SubElement(item, "guid", isPermaLink="false").text = story.guid
@@ -1098,20 +1118,30 @@ def alert_payload(statuses, updated, preferences, now):
     return {"threshold": ALERT_THRESHOLD, "window_minutes": ALERT_WINDOW_MINUTES, "headlines": headlines}
 
 
-def snapshot_payload(stories, statuses, updated, topic, view, scores, params, archive_error, preferences):
+def snapshot_payload(stories, statuses, updated, topic, view, scores, params, archive_error, preferences,
+                     *, gray_stories=None):
     now = now_utc()
     stories = [story for story in stories if source_enabled(story.source, preferences)]
+    if gray_stories is None:
+        gray_stories = [story for story in stories if story.source.raw_key]
+    gray_stories = [story for story in gray_stories if story.source.raw_key
+                    and source_enabled(story.source, preferences) and (not topic or story.topic == topic)]
+    stories = [story for story in stories if not story.source.raw_key]
     search = params.get("q", "")[:120].casefold().split()
     hours = DATE_FILTERS.get(params.get("when", ""), ("", None))[1]
     if hours:
         cutoff = now - timedelta(hours=hours)
         stories = [story for story in stories if story.published >= cutoff]
+        gray_stories = [story for story in gray_stories if story.published >= cutoff]
     if search:
         stories = [
             story for story in stories
             if all(term in f"{story.title} {story.source.name} {TOPICS[story.topic]}".casefold()
                    for term in search)
         ]
+        gray_stories = [story for story in gray_stories
+                        if all(term in f"{story.title} {story.source.name} {TOPICS[story.topic]}".casefold()
+                               for term in search)]
 
     featured = key_releases(stories, now) if view == "focused" and topic in {"", "releases"} and not search else []
     featured_ids = {story.guid for story in featured}
@@ -1121,6 +1151,12 @@ def snapshot_payload(stories, statuses, updated, topic, view, scores, params, ar
     pages = max(1, (len(stories) + PAGE_SIZE - 1) // PAGE_SIZE)
     page = min(pages, max(1, requested_page))
     start = (page - 1) * PAGE_SIZE
+    gray_stories = sorted(gray_stories, key=lambda story: story.published, reverse=True)
+    raw_gray_page = params.get("gray_page", "")
+    requested_gray_page = int(raw_gray_page) if raw_gray_page.isdecimal() and len(raw_gray_page) < 7 else 1
+    gray_pages = max(1, (len(gray_stories) + GRAY_PAGE_SIZE - 1) // GRAY_PAGE_SIZE)
+    gray_page = min(gray_pages, max(1, requested_gray_page))
+    gray_start = (gray_page - 1) * GRAY_PAGE_SIZE
 
     def display(story):
         score = scores.get(story.guid) or relevance(story, preferences)
@@ -1150,6 +1186,12 @@ def snapshot_payload(stories, statuses, updated, topic, view, scores, params, ar
         "last": min(start + PAGE_SIZE, len(stories)), "sources": source_list,
         "articles": [display(story) for story in stories[start:start + PAGE_SIZE]],
         "featured": [display(story) for story in featured] if page == 1 else [],
+        "gray": {
+            "articles": [display(story) for story in gray_stories[gray_start:gray_start + GRAY_PAGE_SIZE]],
+            "total": len(gray_stories), "page": gray_page, "pages": gray_pages,
+            "first": gray_start + 1 if gray_stories else 0,
+            "last": min(gray_start + GRAY_PAGE_SIZE, len(gray_stories)),
+        },
         "alerts": alert_payload(statuses, updated, preferences, now),
     }
     return json.dumps(result, ensure_ascii=False).encode()
@@ -1236,7 +1278,7 @@ def main():
                     enabled = ()
                 news.renew(raw_sources=enabled)
                 self.send_response(204)
-                self.send_header("Set-Cookie", f"market_live_sources={'.'.join(enabled)}; "
+                self.send_header("Set-Cookie", f"market_live_sources_v2={'.'.join(enabled)}; "
                                  f"Path={PREFIX}/; Max-Age=31536000; HttpOnly; SameSite=Lax{secure}")
                 self.end_headers()
                 return
@@ -1345,17 +1387,23 @@ def main():
                 return
             focused = view == "focused"
             candidates = available_stories(statuses, wire_only=view == "wire", preferences=preferences)
+            gray_candidates = [story for story in candidates if story.source.raw_key]
+            if path in {"/snapshot", "/rss.xml"}:
+                if path == "/rss.xml" and params.get("stream") == "gray":
+                    candidates = gray_candidates
+                else:
+                    candidates = [story for story in candidates if not story.source.raw_key]
             scores = {story.guid: relevance(story, preferences) for story in candidates} if focused else {}
             stories, groups = story_index(candidates, scores, preferences, focused, rank=focused)
             all_count = sum(story.topic == topic for story in candidates) if topic else len(candidates)
             if path == "/rss.xml":
                 selected = groups[topic] if topic else stories
-                body = rss_payload(selected, scores, statuses, updated, topic, view)
+                body = rss_payload(selected, scores, statuses, updated, topic, view, gray=params.get("stream") == "gray")
                 content_type = "application/rss+xml"
             elif path == "/snapshot":
                 selected = groups[topic] if topic else stories
                 body = snapshot_payload(selected, statuses, updated, topic, view, scores, params, news.archive_error,
-                                        preferences)
+                                        preferences, gray_stories=gray_candidates)
                 content_type = "application/json"
             else:
                 wire_count = len(available_stories(statuses, wire_only=True, preferences=preferences))

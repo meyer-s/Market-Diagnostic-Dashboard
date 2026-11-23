@@ -171,15 +171,25 @@ def test_relevance_alerts_use_personal_weights_before_view_filters():
 
 
 def test_raw_sources_are_independent_of_existing_topic_weights_and_allowlisted():
-    custom = live.load_preferences("market_live_weights=11111111.tight; market_live_sources=hn.ransomware.unknown")
+    custom = live.load_preferences("market_live_weights=11111111.tight; market_live_sources_v2=hn.ransomware.unknown")
     assert custom.weights == dict.fromkeys(live.TOPICS, 1)
     assert custom.focus == "tight"
     assert custom.raw_sources == ("ransomware", "hn")
-    assert live.load_preferences(None).raw_sources == ()
-    assert live.load_preferences("market_live_sources=zerohedge").raw_sources == ("zerohedge",)
-    malformed_weights = live.load_preferences("market_live_weights=bad; market_live_sources=hn")
+    assert live.load_preferences(None).raw_sources == live.RAW_SOURCE_KEYS
+    assert live.load_preferences("market_live_sources_v2=zerohedge").raw_sources == ("zerohedge",)
+    malformed_weights = live.load_preferences("market_live_weights=bad; market_live_sources_v2=hn")
     assert malformed_weights.weights == live.DEFAULTS.weights
     assert malformed_weights.raw_sources == ("hn",)
+
+
+def test_gray_defaults_migrate_enabled_profiles_and_preserve_explicit_off():
+    assert live.load_preferences("market_live_sources=").raw_sources == ()
+    assert live.load_preferences("market_live_sources_v2=").raw_sources == ()
+    assert live.load_preferences("market_live_sources=unknown").raw_sources == ()
+    migrated = live.load_preferences("market_live_sources=zerohedge.hn")
+    assert migrated.raw_sources == ("zerohedge", "hn", *live.NEW_GRAY_SOURCE_KEYS)
+    current = live.load_preferences("market_live_sources=zerohedge; market_live_sources_v2=hn")
+    assert current.raw_sources == ("hn",)
 
 
 def test_raw_cached_stories_do_not_leak_to_other_readers_or_alerts():
@@ -189,9 +199,10 @@ def test_raw_cached_stories_do_not_leak_to_other_readers_or_alerts():
     status = live.SourceStatus(story_list=(story,), checked=now, success=now, latest=now)
     statuses = {raw: status}
     enabled = replace(live.DEFAULTS, raw_sources=("zerohedge",))
-    assert live.available_stories(statuses) == []
-    assert live.available_stories(statuses, wire_only=True) == []
-    assert live.alert_payload(statuses, now, live.DEFAULTS, now)["headlines"] == []
+    disabled = replace(live.DEFAULTS, raw_sources=())
+    assert live.available_stories(statuses, preferences=disabled) == []
+    assert live.available_stories(statuses, wire_only=True, preferences=disabled) == []
+    assert live.alert_payload(statuses, now, disabled, now)["headlines"] == []
     assert live.available_stories(statuses, preferences=enabled) == [story]
     alerts = live.alert_payload(statuses, now, enabled, now)["headlines"]
     assert alerts[0]["score"] == 61
@@ -199,10 +210,37 @@ def test_raw_cached_stories_do_not_leak_to_other_readers_or_alerts():
 
     def snapshot(preferences):
         return json.loads(live.snapshot_payload([story], statuses, now, "", "all", {}, {}, "", preferences))
-    assert snapshot(live.DEFAULTS)["articles"] == []
-    assert snapshot(live.DEFAULTS)["sources"][0]["state"] == "Off"
-    assert snapshot(enabled)["articles"][0]["report_label"] == raw.report_label
+    assert snapshot(disabled)["articles"] == []
+    assert snapshot(disabled)["gray"]["articles"] == []
+    assert snapshot(disabled)["sources"][0]["state"] == "Off"
+    assert snapshot(enabled)["articles"] == []
+    assert snapshot(enabled)["gray"]["articles"][0]["report_label"] == raw.report_label
     assert snapshot(enabled)["raw_sources"] == ["zerohedge"]
+
+
+def test_gray_feed_has_independent_pages_and_respects_shared_filters():
+    now = live.now_utc()
+    raw = next(source for source in live.SOURCES if source.raw_key == "ransomlook")
+    direct = live.SOURCES[0]
+    normal = live.Story("Main market headline", direct.home, now, "markets", direct, "normal")
+    gray = [live.Story(f"Claim {index}", raw.home, now - timedelta(minutes=index), "tech", raw, str(index))
+            for index in range(live.GRAY_PAGE_SIZE + 2)]
+    statuses = {source: live.SourceStatus(checked=now, success=now, latest=now) for source in (raw, direct)}
+    def snapshot(**params):
+        return json.loads(live.snapshot_payload([normal], statuses, now, "", "focused", {}, params, "", live.DEFAULTS,
+                                                gray_stories=gray))
+    first = snapshot()
+    assert [article["id"] for article in first["articles"]] == ["normal"]
+    assert first["gray"]["total"] == live.GRAY_PAGE_SIZE + 2
+    assert len(first["gray"]["articles"]) == live.GRAY_PAGE_SIZE
+    last = snapshot(gray_page="999")
+    assert last["page"] == 1
+    assert last["gray"]["page"] == 2
+    assert len(last["gray"]["articles"]) == 2
+    filtered = snapshot(q="Claim 13")
+    assert filtered["articles"] == []
+    assert [article["title"] for article in filtered["gray"]["articles"]] == ["Claim 13"]
+    assert snapshot(when="24h")["gray"]["total"] == len(gray)
 
 
 def test_direct_reporting_wins_over_raw_reposts_and_rss_carries_claim_label():
@@ -216,7 +254,7 @@ def test_direct_reporting_wins_over_raw_reposts_and_rss_carries_claim_label():
     preferences = replace(live.DEFAULTS, raw_sources=("hn",))
     assert live.available_stories(statuses, preferences=preferences) == [official]
     payload = live.rss_payload([story], {}, statuses, now, "", "all").decode()
-    assert "Raw · Community submission" in payload
+    assert "Gray · Community submission" in payload
     assert "Personal relevance is not a confidence score" in payload
 
 
