@@ -241,6 +241,9 @@ def test_gray_feed_has_independent_pages_and_respects_shared_filters():
     assert filtered["articles"] == []
     assert [article["title"] for article in filtered["gray"]["articles"]] == ["Claim 13"]
     assert snapshot(when="24h")["gray"]["total"] == len(gray)
+    assert snapshot(gray_stream="leaks")["gray"]["total"] == len(gray)
+    assert snapshot(gray_stream="community")["gray"]["articles"] == []
+    assert snapshot(gray_stream="community")["articles"][0]["id"] == "normal"
 
 
 def test_direct_reporting_wins_over_raw_reposts_and_rss_carries_claim_label():

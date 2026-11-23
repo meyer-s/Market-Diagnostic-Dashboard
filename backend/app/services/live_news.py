@@ -383,6 +383,12 @@ SOURCES = (
 )
 RAW_SOURCE_KEYS = tuple(source.raw_key for source in SOURCES if source.raw_key)
 NEW_GRAY_SOURCE_KEYS = ("ransomlook", "darkwebinformer", "databreaches")
+GRAY_STREAMS = {
+    "all": RAW_SOURCE_KEYS,
+    "leaks": ("ransomware", *NEW_GRAY_SOURCE_KEYS),
+    "markets": ("zerohedge",),
+    "community": ("hn",),
+}
 DEFAULTS = replace(DEFAULTS, raw_sources=RAW_SOURCE_KEYS)
 
 
@@ -1124,8 +1130,10 @@ def snapshot_payload(stories, statuses, updated, topic, view, scores, params, ar
     stories = [story for story in stories if source_enabled(story.source, preferences)]
     if gray_stories is None:
         gray_stories = [story for story in stories if story.source.raw_key]
+    gray_keys = GRAY_STREAMS.get(params.get("gray_stream", "all"), RAW_SOURCE_KEYS)
     gray_stories = [story for story in gray_stories if story.source.raw_key
-                    and source_enabled(story.source, preferences) and (not topic or story.topic == topic)]
+                    and story.source.raw_key in gray_keys and source_enabled(story.source, preferences)
+                    and (not topic or story.topic == topic)]
     stories = [story for story in stories if not story.source.raw_key]
     search = params.get("q", "")[:120].casefold().split()
     hours = DATE_FILTERS.get(params.get("when", ""), ("", None))[1]
@@ -1390,7 +1398,8 @@ def main():
             gray_candidates = [story for story in candidates if story.source.raw_key]
             if path in {"/snapshot", "/rss.xml"}:
                 if path == "/rss.xml" and params.get("stream") == "gray":
-                    candidates = gray_candidates
+                    gray_keys = GRAY_STREAMS.get(params.get("gray_stream", "all"), RAW_SOURCE_KEYS)
+                    candidates = [story for story in gray_candidates if story.source.raw_key in gray_keys]
                 else:
                     candidates = [story for story in candidates if not story.source.raw_key]
             scores = {story.guid: relevance(story, preferences) for story in candidates} if focused else {}

@@ -360,6 +360,7 @@ export default function LiveNewsPanel({ compact = false, inViewport }: { compact
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [grayPage, setGrayPage] = useState(1);
+  const [grayStream, setGrayStream] = useState("leaks");
   const [revision, setRevision] = useState(0);
   const [showWeights, setShowWeights] = useState(false);
   const [showSources, setShowSources] = useState(false);
@@ -374,7 +375,7 @@ export default function LiveNewsPanel({ compact = false, inViewport }: { compact
   const closeSources = useCallback(() => setShowSources(false), []);
   const feedQuery = new URLSearchParams({ view, topic }).toString();
   const mainQuery = new URLSearchParams({ view, topic, when, q: search, page: String(page) }).toString();
-  const query = `${mainQuery}&gray_page=${grayPage}`;
+  const query = `${mainQuery}&gray_page=${grayPage}&gray_stream=${grayStream}`;
   const latestSnapshot = result?.data;
   const data = result?.query.startsWith(`${mainQuery}&gray_page=`) ? latestSnapshot : undefined;
   const grayPending = Boolean(data && result?.query !== query);
@@ -591,7 +592,7 @@ export default function LiveNewsPanel({ compact = false, inViewport }: { compact
             </ul>
           </details>}
           </section>
-          <aside id={compact ? "dashboard-gray-news" : "gray-news"} aria-label="Gray sources" aria-busy={grayPending} className="surface-card-muted min-w-0 scroll-mt-24 space-y-3 p-3 lg:sticky lg:top-24">
+          <section id={compact ? "dashboard-gray-news" : "gray-news"} aria-label="Gray sources" aria-busy={grayPending} className="surface-card-muted min-w-0 scroll-mt-24 space-y-3 p-3 lg:sticky lg:top-24">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="space-y-1">
                 <h3 className="text-sm font-semibold text-stealth-100">Gray sources</h3>
@@ -600,6 +601,14 @@ export default function LiveNewsPanel({ compact = false, inViewport }: { compact
               <button type="button" className={BUTTON} aria-label="Manage gray sources" onClick={() => setShowSources(true)}>Sources</button>
             </div>
             <p className="text-xs text-stealth-300">Newest first · claims, commentary & breach reports</p>
+            <FormField label="Gray stream">
+              <select value={grayStream} onChange={(event) => { setGrayStream(event.target.value); setGrayPage(1); }} className="min-w-0 px-3 text-sm">
+                <option value="leaks">Leaks & breaches</option>
+                <option value="all">All gray sources</option>
+                <option value="markets">Markets & commentary</option>
+                <option value="community">Community submissions</option>
+              </select>
+            </FormField>
             {grayArticles.length ? (
               <ul key={gray?.page} aria-label="Gray headlines" className="max-h-[36rem] divide-y divide-stealth-800 overflow-y-auto overscroll-contain">
                 {grayArticles.map((article) => <li key={article.id}><Headline article={article} topic={topics[article.topic]} secondary /></li>)}
@@ -617,10 +626,10 @@ export default function LiveNewsPanel({ compact = false, inViewport }: { compact
             )}
             <details className="text-xs text-stealth-300">
               <summary className="min-h-8 cursor-pointer py-1 font-semibold text-stealth-100">About this feed</summary>
-              <p className="pt-1 leading-relaxed">Reports retain their source labels. Topic, date, and search filters apply to both columns; Focused applies to the main feed. Your relevance scores and alerts above 45 also apply here. Publisher cache limits determine freshness.</p>
-              {!compact && <a className="mt-2 inline-block text-sky-200 underline" href={`${LIVE_PATH}/rss.xml?${new URLSearchParams({ view: "all", topic, stream: "gray" })}`}>Gray RSS feed</a>}
+              <p className="pt-1 leading-relaxed">Reports retain their source labels. Topic, date, and search filters apply to both columns; Focused applies to the main feed. Gray stream filters this column; source settings determine which feeds can send alerts above 45. Publisher cache limits determine freshness.</p>
+              {!compact && <a className="mt-2 inline-block text-sky-200 underline" href={`${LIVE_PATH}/rss.xml?${new URLSearchParams({ view: "all", topic, stream: "gray", gray_stream: grayStream })}`}>Gray RSS feed</a>}
             </details>
-          </aside>
+          </section>
         </div>
       )}
     </div>

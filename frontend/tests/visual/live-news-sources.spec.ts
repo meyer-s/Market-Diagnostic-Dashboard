@@ -49,7 +49,7 @@ test("@production-probe secondary gray feed, source preferences and relevance th
     expect(claims.gray.articles.every((item: { report_label: string }) => item.report_label === "Unverified victim claim")).toBe(true);
 
     const mainFeed = page.getByRole("region", { name: "Main news feed", exact: true });
-    const grayFeed = page.getByRole("complementary", { name: "Gray sources", exact: true });
+    const grayFeed = page.getByRole("region", { name: "Gray sources", exact: true });
     await expect(grayFeed.getByRole("list", { name: "Gray headlines" })).toBeVisible();
     const mainBox = await mainFeed.boundingBox();
     const grayBox = await grayFeed.boundingBox();

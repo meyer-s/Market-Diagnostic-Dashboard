@@ -47,7 +47,7 @@ describe("secondary gray news feed", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save sources" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(await screen.findByRole("button", { name: "Gray sources · 1 on" })).toBeTruthy();
-    const grayFeed = within(screen.getByRole("complementary", { name: "Gray sources" }));
+    const grayFeed = within(screen.getByRole("region", { name: "Gray sources" }));
     expect(grayFeed.getByText("Gray · Unverified victim claim")).toBeTruthy();
     expect(within(screen.getByRole("region", { name: "Main news feed" })).queryByText("Company named by group")).toBeNull();
     expect(screen.getByRole("link", { name: /Company named by group/ }).getAttribute("target")).toBe("_blank");
@@ -87,8 +87,9 @@ describe("secondary gray news feed", () => {
     render(<LiveNewsPanel inViewport />);
     const mainLink = await screen.findByRole("link", { name: /Headline main/ });
     expect(screen.getByRole("button", { name: "Gray sources · 6 on" })).toBeTruthy();
-    const grayFeed = within(screen.getByRole("complementary", { name: "Gray sources" }));
+    const grayFeed = within(screen.getByRole("region", { name: "Gray sources" }));
     expect(grayFeed.getByRole("link", { name: /Headline gray-first/ })).toBeTruthy();
+    expect((grayFeed.getByRole("combobox", { name: "Gray stream" }) as HTMLSelectElement).value).toBe("leaks");
     fireEvent.click(grayFeed.getByRole("button", { name: "Next gray headlines" }));
     await waitFor(() => expect(fetchNews).toHaveBeenCalledWith(expect.stringContaining("page=1&gray_page=2"), expect.anything()));
     expect(screen.getByRole("link", { name: /Headline main/ })).toBe(mainLink);
@@ -97,5 +98,8 @@ describe("secondary gray news feed", () => {
     expect(await grayFeed.findByRole("link", { name: /Headline gray-last/ })).toBeTruthy();
     expect(screen.getByRole("link", { name: /Headline main/ })).toBe(mainLink);
     expect(within(screen.getByRole("region", { name: "Main news feed" })).queryByRole("link", { name: /Headline gray/ })).toBeNull();
+    fireEvent.change(grayFeed.getByRole("combobox", { name: "Gray stream" }), { target: { value: "all" } });
+    await waitFor(() => expect(fetchNews).toHaveBeenCalledWith(expect.stringContaining("page=1&gray_page=1&gray_stream=all"), expect.anything()));
+    expect(screen.getByRole("link", { name: /Headline main/ })).toBe(mainLink);
   });
 });
