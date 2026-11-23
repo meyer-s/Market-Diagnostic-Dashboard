@@ -87,7 +87,7 @@ describe("application route lifecycle", () => {
     let headlines = [headline("baseline")];
     const fetchAlert = vi.fn(async () => Response.json({
       updated_at: new Date().toISOString(),
-      alerts: { threshold: 60, window_minutes: 120, headlines },
+      alerts: { threshold: 45, window_minutes: 120, headlines },
     }));
     vi.stubGlobal("fetch", fetchAlert);
     const advance = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms));
@@ -115,5 +115,27 @@ describe("application route lifecycle", () => {
     expect(notice()?.textContent).toContain("2 high-relevance headlines");
     expect(notice()?.textContent).toContain("Headline three");
     expect(screen.getByRole("link", { name: "Review alerts" }).getAttribute("href")).toBe("/news#live-news-alerts");
+  });
+
+  it("clears disabled raw alerts and establishes a quiet baseline after source changes", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    let headlines: { id: string; title: string; source: string; score: number; url: string; published_at: string; report_label: string }[] = [];
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      updated_at: new Date().toISOString(),
+      alerts: { threshold: 45, window_minutes: 120, headlines },
+    })));
+    const advance = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms));
+    render(<MemoryRouter><AppWithAnalytics /></MemoryRouter>);
+    await advance(2_000);
+    headlines = [{ id: "raw", title: "A group claims a breach", source: "Raw source", score: 49, url: "https://example.com/raw", published_at: new Date().toISOString(), report_label: "Unverified victim claim" }];
+    await advance(60_000);
+    expect(screen.getByRole("complementary", { name: "Live news alert" }).textContent).toContain("Raw · Unverified victim claim");
+    headlines = [];
+    act(() => window.dispatchEvent(new Event("live-news:sources-changed")));
+    expect(screen.queryByRole("complementary", { name: "Live news alert" })).toBeNull();
+    await advance(2_000);
+    expect(JSON.parse(localStorage.getItem("live-news:site-alerts-data") ?? "{}").alerts.headlines).toEqual([]);
+    expect(screen.queryByRole("complementary", { name: "Live news alert" })).toBeNull();
   });
 });

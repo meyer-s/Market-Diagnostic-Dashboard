@@ -9,6 +9,7 @@ type AlertHeadline = {
   published_at: string;
   source: string;
   score: number;
+  report_label?: string;
 };
 
 export type AlertSnapshot = {
@@ -75,7 +76,7 @@ function showDesktopAlert(headlines: AlertHeadline[]) {
     const notification = new Notification(
       headlines.length === 1 ? "High-relevance headline" : `${headlines.length} high-relevance headlines`,
       {
-        body: `${first.score.toFixed(0)} relevance · ${first.title}`,
+        body: `${first.report_label ? `Raw · ${first.report_label} · ` : ""}${first.score.toFixed(0)} relevance · ${first.title}`,
         tag: "live-news-relevance",
       },
     );
@@ -127,6 +128,7 @@ export default function LiveNewsAlertProvider({ children }: { children: ReactNod
     return saved && Date.now() - saved.checkedAt < BASELINE_AFTER_MS ? saved.alerts : undefined;
   });
   const [notice, setNotice] = useState<AlertHeadline[]>([]);
+  const [sourceRevision, setSourceRevision] = useState(0);
   const local = useRef<AlertLedger>(EMPTY);
   const active = useRef(enabled);
   const feedAt = useRef(0);
@@ -187,6 +189,30 @@ export default function LiveNewsAlertProvider({ children }: { children: ReactNod
       if (navigator.locks) void navigator.locks.request(DATA_KEY, reset).catch(() => undefined);
       else reset();
     }
+  }, [save]);
+
+  useEffect(() => {
+    const reset = () => {
+      feedAt.current = 0;
+      setNotice([]);
+      setAlerts(undefined);
+      const clear = () => {
+        const current = readLedger() ?? local.current;
+        save({ ...EMPTY, announcedAt: current.announcedAt });
+        setSourceRevision((value) => value + 1);
+      };
+      if (navigator.locks) void navigator.locks.request(DATA_KEY, clear).catch(() => undefined);
+      else clear();
+    };
+    const sync = (event: StorageEvent) => {
+      if (event.key === "live-news:source-revision") reset();
+    };
+    window.addEventListener("live-news:sources-changed", reset);
+    window.addEventListener("storage", sync);
+    return () => {
+      window.removeEventListener("live-news:sources-changed", reset);
+      window.removeEventListener("storage", sync);
+    };
   }, [save]);
 
   useEffect(() => {
@@ -273,7 +299,7 @@ export default function LiveNewsAlertProvider({ children }: { children: ReactNod
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [apply, enabled]);
+  }, [apply, enabled, sourceRevision]);
 
   const [newest] = notice;
   const title = notice.length === 1 ? "High-relevance headline" : `${notice.length} high-relevance headlines`;
@@ -282,7 +308,7 @@ export default function LiveNewsAlertProvider({ children }: { children: ReactNod
     <LiveNewsAlertContext.Provider value={{ alerts, enabled, setEnabled, publishFeed }}>
       {children}
       <div className="sr-only" role="status">
-        {newest ? `${title}. ${newest.title}. Relevance ${newest.score.toFixed(0)}.` : ""}
+        {newest ? `${title}. ${newest.report_label ? `Raw. ${newest.report_label}. ` : ""}${newest.title}. Relevance ${newest.score.toFixed(0)}.` : ""}
       </div>
       {newest && (
         <aside className="surface-card-strong fixed bottom-4 right-4 z-50 w-[calc(100%-2rem)] max-w-sm border-sky-400 p-4 shadow-xl" aria-label="Live news alert">
@@ -290,6 +316,7 @@ export default function LiveNewsAlertProvider({ children }: { children: ReactNod
             <Bell size={16} aria-hidden="true" />
             <p>{title} · {newest.score.toFixed(0)}</p>
           </div>
+          {newest.report_label && <p className="mt-2 text-xs font-semibold text-amber-200">Raw · {newest.report_label}</p>}
           <a className="mt-2 block text-sm font-semibold text-stealth-100 underline underline-offset-4" href={newest.url} target="_blank" rel="noopener noreferrer">
             {newest.title} <span className="sr-only">(opens in a new tab)</span>
           </a>

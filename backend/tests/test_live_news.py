@@ -145,15 +145,15 @@ def test_native_snapshot_keeps_release_priority_and_bounds_headline_pages():
 def test_relevance_alerts_use_personal_weights_before_view_filters():
     now = live.now_utc()
     source = next(source for source in live.SOURCES if source.name == "U.S. Census Bureau")
-    exact = live.Story("U.S. retail sales lift options volume", source.home, now, "releases", source, "exact")
+    exact = live.Story("NVDA earnings", source.home, now, "releases", source, "exact")
     qualified = live.Story(
-        "U.S. retail sales lift gold futures and GLD", source.home, now, "releases", source, "qualified",
+        "U.S. retail sales", source.home, now, "releases", source, "qualified",
     )
     duplicate = replace(qualified, guid="duplicate", title=qualified.title + "!", published=now - timedelta(minutes=1))
     archived = replace(qualified, guid="old", title="CPI and rate cuts lift GLD", published=now - timedelta(hours=3))
     statuses = {source: live.SourceStatus(story_list=(exact, qualified, duplicate, archived), checked=now, success=now, latest=now)}
-    assert live.relevance(exact, live.DEFAULTS).points == 60
-    assert live.relevance(qualified, live.DEFAULTS).points == 61
+    assert live.relevance(exact, live.DEFAULTS).points == 45
+    assert live.relevance(qualified, live.DEFAULTS).points == 46
 
     def snapshot(preferences):
         return json.loads(live.snapshot_payload(
@@ -162,9 +162,98 @@ def test_relevance_alerts_use_personal_weights_before_view_filters():
 
     body = snapshot(live.DEFAULTS)
     assert body["articles"] == []
-    assert [(alert["title"], alert["score"]) for alert in body["alerts"]["headlines"]] == [(qualified.title, 61)]
-    assert body["alerts"]["threshold"] == 60
+    assert [(alert["title"], alert["score"]) for alert in body["alerts"]["headlines"]] == [(qualified.title, 46)]
+    assert body["alerts"]["threshold"] == 45
 
     low_weight = replace(live.DEFAULTS, weights={**live.DEFAULTS.weights, "releases": 3})
     assert snapshot(low_weight)["alerts"]["headlines"] == []
     assert live.alert_payload(statuses, None, live.DEFAULTS, now)["headlines"] == []
+
+
+def test_raw_sources_are_independent_of_existing_topic_weights_and_allowlisted():
+    custom = live.load_preferences("market_live_weights=11111111.tight; market_live_sources=hn.ransomware.unknown")
+    assert custom.weights == dict.fromkeys(live.TOPICS, 1)
+    assert custom.focus == "tight"
+    assert custom.raw_sources == ("ransomware", "hn")
+    assert live.load_preferences(None).raw_sources == ()
+    assert live.load_preferences("market_live_sources=zerohedge").raw_sources == ("zerohedge",)
+    malformed_weights = live.load_preferences("market_live_weights=bad; market_live_sources=hn")
+    assert malformed_weights.weights == live.DEFAULTS.weights
+    assert malformed_weights.raw_sources == ("hn",)
+
+
+def test_raw_cached_stories_do_not_leak_to_other_readers_or_alerts():
+    now = live.now_utc()
+    raw = next(source for source in live.SOURCES if source.raw_key == "zerohedge")
+    story = live.Story("U.S. retail sales lift gold futures and GLD", raw.home, now, "metals", raw, "claim")
+    status = live.SourceStatus(story_list=(story,), checked=now, success=now, latest=now)
+    statuses = {raw: status}
+    enabled = replace(live.DEFAULTS, raw_sources=("zerohedge",))
+    assert live.available_stories(statuses) == []
+    assert live.available_stories(statuses, wire_only=True) == []
+    assert live.alert_payload(statuses, now, live.DEFAULTS, now)["headlines"] == []
+    assert live.available_stories(statuses, preferences=enabled) == [story]
+    alerts = live.alert_payload(statuses, now, enabled, now)["headlines"]
+    assert alerts[0]["score"] == 61
+    assert alerts[0]["report_label"] == "Commentary / unverified"
+
+    def snapshot(preferences):
+        return json.loads(live.snapshot_payload([story], statuses, now, "", "all", {}, {}, "", preferences))
+    assert snapshot(live.DEFAULTS)["articles"] == []
+    assert snapshot(live.DEFAULTS)["sources"][0]["state"] == "Off"
+    assert snapshot(enabled)["articles"][0]["report_label"] == raw.report_label
+    assert snapshot(enabled)["raw_sources"] == ["zerohedge"]
+
+
+def test_direct_reporting_wins_over_raw_reposts_and_rss_carries_claim_label():
+    now = live.now_utc()
+    raw = next(source for source in live.SOURCES if source.raw_key == "hn")
+    direct = live.SOURCES[0]
+    story = live.Story("Breaking headline", raw.home, now, "tech", raw, "raw")
+    official = replace(story, source=direct, guid="official", url=direct.home, published=now - timedelta(seconds=1))
+    statuses = {source: live.SourceStatus(story_list=(item,), checked=now, success=now, latest=now)
+                for source, item in ((raw, story), (direct, official))}
+    preferences = replace(live.DEFAULTS, raw_sources=("hn",))
+    assert live.available_stories(statuses, preferences=preferences) == [official]
+    payload = live.rss_payload([story], {}, statuses, now, "", "all").decode()
+    assert "Raw · Community submission" in payload
+    assert "Personal relevance is not a confidence score" in payload
+
+
+def test_optional_polls_require_a_source_lease_and_follow_background_cadence(tmp_path):
+    raw = next(source for source in live.SOURCES if source.raw_key == "ransomware")
+    with patch.object(live, "monotonic", return_value=100.0) as clock:
+        news = live.News()
+        news.renew()
+        assert news.source_mode(raw) == "idle"
+        news.renew(background=True, raw_sources=("ransomware",))
+        assert news.source_mode(raw) == "background"
+        assert news.source_mode(next(source for source in live.SOURCES if source.raw_key == "hn")) == "idle"
+        news.renew(raw_sources=("ransomware",))
+        assert news.source_mode(raw) == "foreground"
+        clock.return_value += live.ACTIVE_SECONDS
+        assert news.source_mode(raw) == "background"
+        clock.return_value = 100 + live.BACKGROUND_ACTIVE_SECONDS
+        assert news.source_mode(raw) == "idle"
+
+    with (patch.object(live, "SOURCES", (raw,)),
+          patch.object(live, "WIRE_HISTORY_FILE", tmp_path / "raw.sqlite3"),
+          patch.object(live, "fetch", return_value=live.SourceStatus()) as fetch):
+        news = live.News()
+        news.renew()
+        worker = Thread(target=news.refresh)
+        worker.start()
+        try:
+            news.stop.wait(0.08)
+            assert not fetch.called
+            news.renew(raw_sources=("ransomware",))
+            for _ in range(40):
+                if fetch.called:
+                    break
+                news.stop.wait(0.025)
+            fetch.assert_called_once()
+        finally:
+            news.stop.set()
+            news.wakeup.set()
+            worker.join(timeout=2)
+        assert not worker.is_alive()

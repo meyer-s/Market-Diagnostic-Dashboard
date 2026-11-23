@@ -46,7 +46,7 @@ JANITOR_SECONDS = 300
 MAX_FEED_STORIES = 250
 MAX_ARCHIVE_STORIES = 5000
 MAX_HEADLINE_BONUS = 40
-ALERT_THRESHOLD = 60
+ALERT_THRESHOLD = 45
 ALERT_WINDOW_MINUTES = 120
 ALERT_LIMIT = 30
 FEED_TITLE = "Market News Live"
@@ -67,14 +67,14 @@ TOPICS = {
     "metals": "Rates, dollar & metals",
     "crypto": "Bitcoin, Ethereum & ETFs",
     "world": "Geopolitics & policy",
-    "tech": "Technology & AI",
+    "tech": "Technology, AI & cyber",
     "energy": "Energy & commodities",
     "general": "General news",
 }
 FOCUSED_LIMITS = dict.fromkeys(TOPICS, 30)
 PAGE_SIZE = 32
 TOPIC_TABS = dict(zip(TOPICS, ("Releases", "Markets", "Rates & metals", "Crypto & ETFs",
-                              "World", "Tech & AI", "Energy", "General")))
+                              "World", "Tech & cyber", "Energy", "General")))
 DATE_FILTERS = {"": ("Any recent date", None), "24h": ("Last 24 hours", 24), "72h": ("Last 72 hours", 72)}
 WEIGHT_LEVELS = ("Off", "Low", "Normal", "High", "Priority")
 FOCUS_LEVELS = {"broad": ("Broad", 24), "balanced": ("Balanced", 32), "tight": ("Tight", 40)}
@@ -84,6 +84,7 @@ FOCUS_LEVELS = {"broad": ("Broad", 24), "balanced": ("Balanced", 32), "tight": (
 class Preferences:
     weights: dict[str, int]
     focus: str
+    raw_sources: tuple[str, ...] = ()
 
 
 DEFAULTS = Preferences({
@@ -95,13 +96,20 @@ DEFAULTS = Preferences({
 def load_preferences(cookie_header):
     try:
         cookie = SimpleCookie(cookie_header or "")
+    except CookieError:
+        return DEFAULTS
+    raw_sources = ()
+    if "market_live_sources" in cookie:
+        requested = cookie["market_live_sources"].value.split(".")
+        raw_sources = tuple(key for key in RAW_SOURCE_KEYS if key in requested)
+    try:
         encoded, focus = cookie["market_live_weights"].value.split(".")
         weights = [int(value) for value in encoded]
-    except (CookieError, ValueError, KeyError):
-        return DEFAULTS
+    except (ValueError, KeyError):
+        return replace(DEFAULTS, raw_sources=raw_sources)
     if len(weights) != len(TOPICS) or any(not 0 <= w < len(WEIGHT_LEVELS) for w in weights):
-        return DEFAULTS
-    return Preferences(dict(zip(TOPICS, weights)), focus if focus in FOCUS_LEVELS else DEFAULTS.focus)
+        return replace(DEFAULTS, raw_sources=raw_sources)
+    return Preferences(dict(zip(TOPICS, weights)), focus if focus in FOCUS_LEVELS else DEFAULTS.focus, raw_sources)
 
 
 def pattern(terms):
@@ -144,7 +152,12 @@ ENERGY = pattern(
 )
 TECH = pattern(
     r"artificial intelligence|AI|semiconductor[s]?|chipmakers?|Nvidia|Broadcom|ServiceNow|"
-    r"OpenAI|Anthropic|data cent(?:er|re)s?|cybersecurity|cloud computing"
+    r"OpenAI|Anthropic|data cent(?:er|re)s?|cybersecurity|cloud computing|"
+    r"ransomware|data breach|cyberattack|zero.day|CVE-\d+|critical vulnerabilit\w+"
+)
+OPERATIONAL_RISK = pattern(
+    r"ransomware|data breach|cyberattack|active(?:ly)? exploit\w*|zero.day|"
+    r"critical vulnerabilit\w+|(?:cloud|payment|network|exchange) outage"
 )
 PROMOTIONAL = pattern(r"sponsored content|advertorial|paid partnership|press release distribution|coupon codes?")
 LOW_SIGNAL = pattern(
@@ -218,6 +231,9 @@ class Source:
     interval: int = REFRESH_SECONDS
     publisher: str = ""
     sitemap_prefix: str = ""
+    raw_key: str = ""
+    report_label: str = ""
+    description: str = ""
 
 
 def google_news(query):
@@ -331,11 +347,29 @@ SOURCES = (
     Source("The Hindu", "https://www.thehindu.com/news/feeder/default.rss", "https://www.thehindu.com/news/", "world"),
     Source("TechCrunch", "https://techcrunch.com/feed/", "https://techcrunch.com/", "tech"),
     Source("Ars Technica", "https://feeds.arstechnica.com/arstechnica/index/", "https://arstechnica.com/", "tech"),
+    Source("The Hacker News · Security", "https://feeds.feedburner.com/TheHackersNews", "https://thehackernews.com/", "tech", interval=120, news_days=7),
+    Source("KrebsOnSecurity", "https://krebsonsecurity.com/feed/", "https://krebsonsecurity.com/", "tech", interval=300, news_days=7),
+    Source("SANS Internet Storm Center", "https://isc.sans.edu/rssfeed_full.xml", "https://isc.sans.edu/", "tech", interval=300, news_days=7),
+    Source("CISA · Advisories", "https://www.cisa.gov/cybersecurity-advisories/all.xml", "https://www.cisa.gov/cybersecurity-advisories", "tech", interval=300, news_days=14),
+    Source("ZeroHedge", "https://feeds.feedburner.com/zerohedge/feed", "https://www.zerohedge.com/", "markets",
+           wire=True, interval=60, raw_key="zerohedge", report_label="Commentary / unverified",
+           description="Frequent market headlines and opinion. Claims are not independently verified here."),
+    Source("Ransomware.live", "https://ransomware.live/rss.xml", "https://ransomware.live/", "tech",
+           wire=True, interval=60, raw_key="ransomware", report_label="Unverified victim claim",
+           description="Alleged victims named by ransomware groups. A listing does not confirm a breach."),
+    Source("Hacker News · Newest", "https://hnrss.org/newest?count=100", "https://news.ycombinator.com/newest", "tech",
+           via="hnrss", wire=True, interval=60, raw_key="hn", report_label="Community submission",
+           description="Newest submissions before voting or editorial selection. The RSS service may cache updates for 10 minutes."),
     Source("CoinDesk", "https://www.coindesk.com/arc/outboundfeeds/rss/", "https://www.coindesk.com/",
            "crypto", wire=True),
     Source("Cointelegraph · ETFs", "https://cointelegraph.com/rss/tag/etf", "https://cointelegraph.com/tags/etf",
            "crypto"),
 )
+RAW_SOURCE_KEYS = tuple(source.raw_key for source in SOURCES if source.raw_key)
+
+
+def source_enabled(source, preferences):
+    return not source.raw_key or source.raw_key in preferences.raw_sources
 
 
 @dataclass(frozen=True)
@@ -371,6 +405,7 @@ def relevance(story, preferences):
         (METAL_DRIVER.search(title), 10, "Metals, dollar or yields"),
         (SUPPLY_RISK.search(title), 17, "Trade, supply or policy risk"),
         (TECH_CATALYST.search(title), 16, "AI investment or chip supply"),
+        (OPERATIONAL_RISK.search(title), 12, "Cyber or operational disruption"),
     )
     matched = [(points, reason) for match, points, reason in bonuses if match]
     matched.sort(key=lambda match: -match[0])
@@ -712,10 +747,12 @@ def headline_key(title):
     return re.sub(r"[^\w]+", " ", title.casefold()).strip()
 
 
-def available_stories(statuses, *, wire_only=False, published_since=None):
+def available_stories(statuses, *, wire_only=False, published_since=None, preferences=DEFAULTS):
     now = now_utc()
     candidates = []
     for source, status in statuses.items():
+        if not source_enabled(source, preferences):
+            continue
         eligible = source.wire if wire_only else source_state(source, status, now) in {"Online", "Cached"}
         if eligible:
             candidates.extend(
@@ -723,7 +760,7 @@ def available_stories(statuses, *, wire_only=False, published_since=None):
                 if (published_since is None or story.published >= published_since) and fresh_until(story) > now
             )
     # Direct articles win over redirect URLs for the same headline.
-    candidates.sort(key=lambda story: (story.source.via == "Google News", bool(story.source.via),
+    candidates.sort(key=lambda story: (bool(story.source.raw_key), story.source.via == "Google News", bool(story.source.via),
                                        bool(story.source.sitemap_prefix), -story.published.timestamp()))
     stories = []
     seen_guids = set()
@@ -844,16 +881,22 @@ class News:
         self.activity_lock = Lock()
         self.active_until = 0.0
         self.foreground_until = 0.0
+        self.raw_leases = {}
         self.preview_slots = BoundedSemaphore(2)
         self.archive_error = ""
 
-    def renew(self, *, background=False):
+    def renew(self, *, background=False, raw_sources=()):
         with self.activity_lock:
             now = monotonic()
             lease = BACKGROUND_ACTIVE_SECONDS if background else ACTIVE_SECONDS
             self.active_until = max(self.active_until, now + lease)
             if not background:
                 self.foreground_until = now + ACTIVE_SECONDS
+            for key in RAW_SOURCE_KEYS:
+                if key in raw_sources:
+                    foreground, active = self.raw_leases.get(key, (0.0, 0.0))
+                    self.raw_leases[key] = (foreground if background else now + ACTIVE_SECONDS,
+                                            max(active, now + lease))
         self.wakeup.set()
 
     def active(self):
@@ -867,6 +910,16 @@ class News:
             if now < self.active_until:
                 return "background"
             return "idle"
+
+    def source_mode(self, source):
+        if not source.raw_key:
+            return self.activity_mode()
+        with self.activity_lock:
+            now = monotonic()
+            foreground, active = self.raw_leases.get(source.raw_key, (0.0, 0.0))
+            if now < foreground:
+                return "foreground"
+            return "background" if now < active else "idle"
 
     def refresh(self):
         with ThreadPoolExecutor(max_workers=FEED_WORKERS) as pool, ExitStack() as cleanup:
@@ -908,11 +961,13 @@ class News:
                 mode = self.activity_mode()
                 deadlines = {}
                 if mode != "idle":
-                    deadlines = {
-                        source: max(deadline, last_requested[source] + BACKGROUND_SOURCE_INTERVAL)
-                        if mode == "background" and source in last_requested else deadline
-                        for source, deadline in next_poll.items() if source not in pending
-                    }
+                    for source, deadline in next_poll.items():
+                        source_mode = self.source_mode(source)
+                        if source in pending or source_mode == "idle":
+                            continue
+                        if source_mode == "background" and source in last_requested:
+                            deadline = max(deadline, last_requested[source] + BACKGROUND_SOURCE_INTERVAL)
+                        deadlines[source] = deadline
                 due = sorted((source for source, deadline in deadlines.items() if deadline <= started),
                              key=lambda source: source.interval)
                 for source in due[:FEED_WORKERS - len(pending)]:
@@ -997,7 +1052,8 @@ def rss_payload(stories, scores, statuses, updated, topic, view):
     now = now_utc()
     for story in sorted(stories, key=lambda story: story.published, reverse=True):
         item = ET.SubElement(channel, "item")
-        ET.SubElement(item, "title").text = f"[{TOPICS[story.topic]}] {story.title}"
+        label = f"Raw · {story.source.report_label} · " if story.source.raw_key else ""
+        ET.SubElement(item, "title").text = f"[{label}{TOPICS[story.topic]}] {story.title}"
         ET.SubElement(item, "link").text = story.url
         ET.SubElement(item, "guid", isPermaLink="false").text = story.guid
         ET.SubElement(item, "pubDate").text = format_datetime(story.published, usegmt=True)
@@ -1005,6 +1061,8 @@ def rss_payload(stories, scores, statuses, updated, topic, view):
         source_url = story.source.home if story.source.sitemap_prefix else story.source.url
         ET.SubElement(item, "source", url=source_url).text = display_source(story.source)
         desc = display_source(story.source)
+        if story.source.raw_key:
+            desc += f" · {story.source.report_label}. Personal relevance is not a confidence score."
         if focused:
             score = scores[story.guid]
             desc += f" · Relevance {score.points} · {', '.join(score.reasons)}"
@@ -1021,7 +1079,7 @@ def alert_payload(statuses, updated, preferences, now):
     headlines = []
     if updated:
         cutoff = now - timedelta(minutes=ALERT_WINDOW_MINUTES)
-        recent = available_stories(statuses, published_since=cutoff)
+        recent = available_stories(statuses, published_since=cutoff, preferences=preferences)
         recent.sort(key=lambda story: story.published, reverse=True)
         for story in recent:
             if preferences.weights[story.topic] * 8 + MAX_HEADLINE_BONUS <= ALERT_THRESHOLD:
@@ -1033,6 +1091,7 @@ def alert_payload(statuses, updated, preferences, now):
                     "title": story.title, "url": story.url,
                     "published_at": story.published.isoformat(), "source": display_source(story.source),
                     "score": score,
+                    "report_label": story.source.report_label,
                 })
                 if len(headlines) == ALERT_LIMIT:
                     break
@@ -1041,6 +1100,7 @@ def alert_payload(statuses, updated, preferences, now):
 
 def snapshot_payload(stories, statuses, updated, topic, view, scores, params, archive_error, preferences):
     now = now_utc()
+    stories = [story for story in stories if source_enabled(story.source, preferences)]
     search = params.get("q", "")[:120].casefold().split()
     hours = DATE_FILTERS.get(params.get("when", ""), ("", None))[1]
     if hours:
@@ -1070,11 +1130,13 @@ def snapshot_payload(stories, statuses, updated, topic, view, scores, params, ar
             "published_at": story.published.isoformat(), "source": display_source(story.source),
             "topic": story.topic, "priority": priority_level(score.points),
             "score": score.points, "reasons": score.reasons, "summary": story.summary,
+            "report_label": story.source.report_label,
             "cached": state == "Cached" or (view == "wire" and state in {"Checking", "Unavailable"}),
         }
 
     source_list = [
-        {"name": display_source(source), "url": source.home, "state": source_state(source, status, now),
+        {"name": display_source(source), "url": source.home,
+         "state": source_state(source, status, now) if source_enabled(source, preferences) else "Off",
          "last_item": status.latest.isoformat() if status.latest else None, "error": status.error}
         for source, status in statuses.items()
     ]
@@ -1083,6 +1145,7 @@ def snapshot_payload(stories, statuses, updated, topic, view, scores, params, ar
         "checked_label": display_time(updated, seconds=True) if updated else None,
         "archive_error": archive_error or None, "read_interval": VIEW_REFRESH_SECONDS,
         "topics": TOPIC_TABS, "page": page, "pages": pages, "total": len(stories),
+        "raw_sources": preferences.raw_sources,
         "first": start + 1 if stories else 0,
         "last": min(start + PAGE_SIZE, len(stories)), "sources": source_list,
         "articles": [display(story) for story in stories[start:start + PAGE_SIZE]],
@@ -1092,7 +1155,7 @@ def snapshot_payload(stories, statuses, updated, topic, view, scores, params, ar
     return json.dumps(result, ensure_ascii=False).encode()
 
 
-def status_payload(statuses, updated, stories, all_count, wire_count, archive_error, mode):
+def status_payload(statuses, updated, stories, all_count, wire_count, archive_error, mode, preferences=DEFAULTS):
     now = now_utc()
     result = {"last_update": updated.isoformat() if updated else None,
               "stories": len(stories), "all_stories": all_count, "wire_stories": wire_count,
@@ -1102,9 +1165,11 @@ def status_payload(statuses, updated, stories, all_count, wire_count, archive_er
     for source, status in statuses.items():
         result["sources"].append({
             "name": display_source(source), "url": source.url, "wire": source.wire,
+            "raw_key": source.raw_key, "report_label": source.report_label,
             "poll_seconds": max(cadence_floor, source.interval, status.cache_seconds),
             "last_checked": status.checked.isoformat() if status.checked else None,
-            "state": source_state(source, status, now), "items_read": status.read_count,
+            "state": source_state(source, status, now) if source_enabled(source, preferences) else "Off",
+            "items_read": status.read_count,
             "items_matched": status.matched_count,
             "items_retained": len(status.story_list),
             "latest": status.latest.isoformat() if status.latest else None,
@@ -1134,21 +1199,22 @@ def main():
                 if self.headers.get("X-Live-News") != "1":
                     self.send_error(403)
                     return
+                preferences = load_preferences(self.headers.get("Cookie"))
                 if self.path == PREFIX + "/alerts":
-                    news.renew(background=True)
+                    news.renew(background=True, raw_sources=preferences.raw_sources)
                     statuses, updated = news.snapshot
-                    preferences = load_preferences(self.headers.get("Cookie"))
                     payload = {
                         "updated_at": updated.isoformat() if updated else None,
                         "alerts": alert_payload(statuses, updated, preferences, now_utc()),
                     }
                     self.send_payload(json.dumps(payload, ensure_ascii=False).encode(), "application/json")
                     return
-                news.renew(background=self.headers.get("X-Live-News-Mode") == "background")
+                news.renew(background=self.headers.get("X-Live-News-Mode") == "background",
+                           raw_sources=preferences.raw_sources)
                 self.send_response(204)
                 self.end_headers()
                 return
-            if self.path != PREFIX + "/weights":
+            if self.path not in {PREFIX + "/weights", PREFIX + "/sources"}:
                 self.send_error(404)
                 return
             try:
@@ -1163,6 +1229,17 @@ def main():
             if not compare_digest(form.get("token", "").encode(), news.preference_token.encode()):
                 self.send_error(403, "Reload the settings page and try again")
                 return
+            secure = "; Secure" if origin.startswith("https:") else ""
+            if self.path == PREFIX + "/sources":
+                enabled = tuple(key for key in RAW_SOURCE_KEYS if form.get(key) == "1")
+                if form.get("reset") == "1":
+                    enabled = ()
+                news.renew(raw_sources=enabled)
+                self.send_response(204)
+                self.send_header("Set-Cookie", f"market_live_sources={'.'.join(enabled)}; "
+                                 f"Path={PREFIX}/; Max-Age=31536000; HttpOnly; SameSite=Lax{secure}")
+                self.end_headers()
+                return
             if form.get("reset") == "1":
                 preferences = DEFAULTS
             else:
@@ -1176,7 +1253,6 @@ def main():
                     return
                 preferences = Preferences(weights, focus)
             encoded = "".join(str(preferences.weights[topic]) for topic in TOPICS)
-            secure = "; Secure" if origin.startswith("https:") else ""
             self.send_response(204)
             self.send_header("Set-Cookie", f"market_live_weights={encoded}.{preferences.focus}; "
                              f"Path={PREFIX}/; Max-Age=31536000; HttpOnly; SameSite=Lax{secure}")
@@ -1206,7 +1282,7 @@ def main():
             if topic and topic not in TOPICS:
                 self.send_error(404, "Unknown topic")
                 return
-            if path not in {"/", "/snapshot", "/rss.xml", "/status.json", "/weights", "/preview"}:
+            if path not in {"/", "/snapshot", "/rss.xml", "/status.json", "/weights", "/sources", "/preview"}:
                 self.send_error(404)
                 return
             if path == "/":
@@ -1216,6 +1292,16 @@ def main():
                 self.end_headers()
                 return
             preferences = load_preferences(self.headers.get("Cookie"))
+            if path == "/sources":
+                body = json.dumps({
+                    "token": news.preference_token, "enabled": preferences.raw_sources,
+                    "threshold": ALERT_THRESHOLD,
+                    "sources": [{"id": source.raw_key, "name": source.name,
+                                 "description": source.description, "label": source.report_label,
+                                 "url": source.home} for source in SOURCES if source.raw_key],
+                }).encode()
+                self.send_payload(body, "application/json")
+                return
             if path == "/weights":
                 body = json.dumps({
                     "weights": preferences.weights, "focus": preferences.focus, "token": news.preference_token,
@@ -1233,6 +1319,7 @@ def main():
                 now = now_utc()
                 story = next((item for status in statuses.values() for item in status.story_list
                               if item.guid == guid and fresh_until(item) > now
+                              and source_enabled(item.source, preferences)
                               and priority_level(relevance(item, preferences).points) == "Top"), None)
                 if story is None:
                     self.send_error(404)
@@ -1257,7 +1344,7 @@ def main():
                 self.send_error(404, "Unknown view")
                 return
             focused = view == "focused"
-            candidates = available_stories(statuses, wire_only=view == "wire")
+            candidates = available_stories(statuses, wire_only=view == "wire", preferences=preferences)
             scores = {story.guid: relevance(story, preferences) for story in candidates} if focused else {}
             stories, groups = story_index(candidates, scores, preferences, focused, rank=focused)
             all_count = sum(story.topic == topic for story in candidates) if topic else len(candidates)
@@ -1271,9 +1358,9 @@ def main():
                                         preferences)
                 content_type = "application/json"
             else:
-                wire_count = len(available_stories(statuses, wire_only=True))
+                wire_count = len(available_stories(statuses, wire_only=True, preferences=preferences))
                 body = status_payload(statuses, updated, stories, all_count, wire_count, news.archive_error,
-                                      news.activity_mode())
+                                      news.activity_mode(), preferences)
                 content_type = "application/json"
             self.send_payload(body, content_type)
 

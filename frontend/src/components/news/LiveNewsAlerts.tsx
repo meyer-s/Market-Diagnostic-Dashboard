@@ -75,6 +75,7 @@ export default function LiveNewsAlerts({ compact }: { compact: boolean }) {
                   {headline.title} <span className="sr-only">(opens in a new tab)</span>
                 </a>
                 <p className="mt-0.5 text-xs">{headline.source} · <time dateTime={headline.published_at}>{formatDateTimeWithWeekday(headline.published_at)} ET</time></p>
+                {headline.report_label && <p className="mt-0.5 text-xs font-semibold text-amber-200">Raw · {headline.report_label}</p>}
               </div>
             </li>
           ))}

@@ -45,6 +45,7 @@ type Article = {
   reasons: string[];
   summary: string;
   cached: boolean;
+  report_label?: string;
 };
 
 type Snapshot = {
@@ -61,6 +62,7 @@ type Snapshot = {
   articles: Article[];
   featured: Article[];
   alerts?: AlertSnapshot;
+  raw_sources?: string[];
 };
 
 type WeightSettings = {
@@ -73,6 +75,13 @@ type WeightSettings = {
 };
 
 type Preview = { text: string; origin: string };
+
+type SourceSettings = {
+  token: string;
+  threshold: number;
+  enabled: string[];
+  sources: { id: string; name: string; description: string; label: string; url: string }[];
+};
 
 async function request(path: string, options?: RequestInit) {
   const response = await fetch(`${LIVE_PATH}${path}`, options);
@@ -113,6 +122,7 @@ function HeadlineDetails({ article, topic, expanded, featured }: { article: Arti
         <span className="font-semibold text-stealth-100">{priority} priority · Relevance {article.score}</span>
         {article.reasons.length > 0 && <span>{article.reasons.join(" · ")}</span>}
       </p>
+      {article.report_label && <p>Raw source · {article.report_label}. Relevance measures your interests, not confidence in the report.</p>}
       {hasExcerpt && (
         <div className="space-y-1.5">
           <p className="text-sm leading-relaxed text-stealth-100">{summary || preview?.text || "Loading article preview…"}</p>
@@ -186,6 +196,7 @@ function Headline({ article, topic, featured = false }: { article: Article; topi
             <p className="flex flex-wrap gap-x-2 text-xs text-stealth-300">
               <span className="sr-only">{topic}</span>
               <span>{article.source}</span>
+              {article.report_label && <span className="font-semibold text-amber-200">Raw · {article.report_label}</span>}
               <time dateTime={article.published_at}>{formatDateTimeWithWeekday(article.published_at)} ET</time>
               {article.cached && <span>Cached</span>}
             </p>
@@ -268,6 +279,77 @@ function WeightsEditor({ close, onSaved }: { close: () => void; onSaved: () => v
   );
 }
 
+function SourcesEditor({ close, onSaved }: { close: () => void; onSaved: () => void }) {
+  const [settings, setSettings] = useState<SourceSettings>();
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    const controller = new AbortController();
+    request("/sources", { signal: controller.signal })
+      .then(async (response) => {
+        const data = await response.json() as SourceSettings;
+        if (!controller.signal.aborted) setSettings(data);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setError("Source settings could not be loaded. Reopen to try again.");
+      });
+    return () => controller.abort();
+  }, []);
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!settings || saving) return;
+    const data = new FormData(event.currentTarget, (event.nativeEvent as SubmitEvent).submitter);
+    const body = new URLSearchParams({ token: settings.token });
+    data.forEach((value, key) => body.set(key, String(value)));
+    setSaving(true);
+    setError("");
+    try {
+      await request("/sources", { method: "POST", body });
+      try {
+        localStorage.setItem("live-news:source-revision", String(Date.now()));
+      } catch {
+        // The server cookie still saves preferences when browser storage is unavailable.
+      }
+      window.dispatchEvent(new Event("live-news:sources-changed"));
+      onSaved();
+    } catch {
+      setError("Sources could not be saved. Reopen to renew the settings and try again.");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open title="Raw / breaking sources" onClose={close} description="Optional sources with more noise and less verification. Off by default; saved for this browser.">
+      {error && <ErrorState message={error} />}
+      {settings ? (
+        <form onSubmit={save} className="space-y-4">
+          <div className="space-y-3">
+            {settings.sources.map((source) => (
+              <div key={source.id} className="surface-card-muted p-3">
+                <label className="flex cursor-pointer items-start gap-3">
+                  <input type="checkbox" name={source.id} value="1" defaultChecked={settings.enabled.includes(source.id)} className="mt-1 h-4 w-4 shrink-0 accent-sky-400" />
+                  <span className="min-w-0 font-semibold text-stealth-100">
+                    {source.name}
+                    <span className="mt-1 block text-xs text-amber-200">{source.label}</span>
+                    <span className="mt-1 block text-sm font-normal text-stealth-300">{source.description}</span>
+                  </span>
+                </label>
+                <a href={source.url} target="_blank" rel="noopener noreferrer" className="ml-7 mt-1 inline-block text-xs text-sky-200 underline">Visit {source.name}<span className="sr-only"> (opens in a new tab)</span></a>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-stealth-300">Selected sources join your headlines and site-wide alerts above {settings.threshold}. Personal relevance is separate from credibility. Feeds follow publisher cache limits; a fast refresh does not guarantee new reports.</p>
+          <div className="field-dialog-footer">
+            <button type="submit" className="field-button field-button-primary disabled:opacity-50" disabled={saving}>{saving ? "Saving…" : "Save sources"}</button>
+            <button type="submit" className={BUTTON} name="reset" value="1" disabled={saving}>Turn off raw sources</button>
+          </div>
+        </form>
+      ) : !error && <LoadingState message="Loading news sources." />}
+    </Dialog>
+  );
+}
+
 export default function LiveNewsPanel({ compact = false, inViewport }: { compact?: boolean; inViewport: boolean }) {
   const [view, setView] = useState<View>(compact ? "focused" : "all");
   const [topic, setTopic] = useState("");
@@ -276,6 +358,7 @@ export default function LiveNewsPanel({ compact = false, inViewport }: { compact
   const [page, setPage] = useState(1);
   const [revision, setRevision] = useState(0);
   const [showWeights, setShowWeights] = useState(false);
+  const [showSources, setShowSources] = useState(false);
   const [result, setResult] = useState<{ query: string; data: Snapshot }>();
   const [failedQuery, setFailedQuery] = useState<string>();
   const [windowFocused, setWindowFocused] = useState(() => !document.hidden && document.hasFocus());
@@ -284,6 +367,7 @@ export default function LiveNewsPanel({ compact = false, inViewport }: { compact
   const nextActivity = useRef({ foreground: 0, background: 0 });
   const previousTarget = useRef<string>();
   const closeWeights = useCallback(() => setShowWeights(false), []);
+  const closeSources = useCallback(() => setShowSources(false), []);
   const feedQuery = new URLSearchParams({ view, topic }).toString();
   const query = new URLSearchParams({ view, topic, when, q: search, page: String(page) }).toString();
   const latestSnapshot = result?.data;
@@ -291,6 +375,19 @@ export default function LiveNewsPanel({ compact = false, inViewport }: { compact
   const topics = latestSnapshot?.topics ?? {};
   const error = failedQuery === query;
   const articles = data?.articles.slice(0, compact ? HOME_HEADLINE_LIMIT - data.featured.length : undefined) ?? [];
+
+  useEffect(() => {
+    const refresh = () => { setPage(1); setRevision((value) => value + 1); };
+    const sync = (event: StorageEvent) => {
+      if (event.key === "live-news:source-revision") refresh();
+    };
+    window.addEventListener("live-news:sources-changed", refresh);
+    window.addEventListener("storage", sync);
+    return () => {
+      window.removeEventListener("live-news:sources-changed", refresh);
+      window.removeEventListener("storage", sync);
+    };
+  }, []);
 
   useEffect(() => {
     const updateFocus = () => setWindowFocused(!document.hidden && document.hasFocus());
@@ -388,6 +485,9 @@ export default function LiveNewsPanel({ compact = false, inViewport }: { compact
         <div className="flex min-w-0 flex-wrap items-end gap-3">
           <SegmentedControl label="Live news view" options={VIEWS} value={view} onChange={(value) => { setView(value); setPage(1); }} />
           {compact && <div className="w-full sm:w-44">{topicField}</div>}
+          <button type="button" className={BUTTON} onClick={() => setShowSources(true)}>
+            Raw / breaking · {latestSnapshot?.raw_sources?.length ? `${latestSnapshot.raw_sources.length} on` : "Off"}
+          </button>
         </div>
         {compact ? (
           <p className="pb-1 text-xs tabular-nums text-stealth-300">
@@ -427,6 +527,7 @@ export default function LiveNewsPanel({ compact = false, inViewport }: { compact
       </form>}
 
       {showWeights && <WeightsEditor close={closeWeights} onSaved={() => { closeWeights(); setRevision((value) => value + 1); }} />}
+      {showSources && <SourcesEditor close={closeSources} onSaved={closeSources} />}
 
       {error && <ErrorState message={data ? "Live updates are delayed. Showing the last loaded snapshot." : "Live news could not be loaded. It will retry automatically."} />}
       {!data && !error && <LoadingState message="Loading live headlines." />}
